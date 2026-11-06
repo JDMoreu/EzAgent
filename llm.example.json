@@ -1,0 +1,40 @@
+{
+  "provider": "groq",
+  "providers": {
+    "opencode": {
+      "base_url": "https://opencode.ai/inference/go/openai/v1",
+      "api_key": "",
+      "model": "deepseek-v4.1-flash"
+    },
+    "openai": {
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "",
+      "model": "gpt-4.1-mini"
+    },
+    "groq": {
+      "base_url": "https://api.groq.com/openai/v1",
+      "api_key": "",
+      "model": "llama-3.3-70b-versatile"
+    },
+    "anthropic": {
+      "base_url": "https://api.anthropic.com/v1/",
+      "api_key": "",
+      "model": "claude-sonnet-5-5"
+    },
+    "gemini": {
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "api_key": "",
+      "model": "gemini-2.5-flash"
+    },
+    "openrouter": {
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "",
+      "model": "openai/gpt-4.1-mini"
+    },
+    "custom": {
+      "base_url": "https://api.tu-proveedor.com/v1",
+      "api_key": "",
+      "model": "tu-modelo"
+    }
+  }
+}

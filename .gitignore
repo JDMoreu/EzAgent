@@ -1,0 +1,32 @@
+# Entorno y cachés
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+*.log
+
+# Configuración local y secretos
+.env
+.env.*
+!.env.example
+llm.json
+*.local.json
+
+# Artefactos de compilación
+build/
+dist/
+*.spec
+!packaging/EzAgent.spec
+*.msi
+*.exe
+*.zip
+*.7z
+*.tmp
+
+# Salidas de herramientas de diseño
+docs/design/*.png
+tools/__pycache__/
+.impeccable/
