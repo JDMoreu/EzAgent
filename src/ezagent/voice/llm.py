@@ -276,6 +276,7 @@ class Messenger:
         mute: Callable[[int], None],
         request_close: Callable[[], None],
         mic_mute: Callable[[bool], None],
+        runtime: Any | None = None,
     ):
         self.cfg = cfg
         self.herdr = herdr
@@ -284,6 +285,7 @@ class Messenger:
         self.mute = mute
         self.request_close = request_close
         self.mic_mute = mic_mute
+        self.runtime = runtime
         self._configure_client()
         self.messages: list[dict[str, Any]] = [
             {"role": "system", "content": self._system_prompt()}
@@ -308,6 +310,11 @@ class Messenger:
     def reload_llm(self) -> None:
         """Recrea el cliente tras cambiar proveedor, modelo, URL o clave."""
         self._configure_client()
+        if self.runtime is not None:
+            try:
+                self.runtime.refresh()
+            except Exception:
+                pass
         self.messages = [
             {"role": "system", "content": self._system_prompt()}
         ]
@@ -315,6 +322,8 @@ class Messenger:
         self._last_agent_address = None
 
     def _system_prompt(self) -> str:
+        if self.runtime is not None:
+            return self.runtime.system_prompt()
         if self.cfg.confirm_actions:
             rule = (
                 "Confirmación de acciones: SÍ. Antes de lanzar, enviar o matar, "
@@ -335,6 +344,11 @@ class Messenger:
 
     def set_confirm_actions(self, enabled: bool) -> None:
         self.cfg.confirm_actions = bool(enabled)
+        if self.runtime is not None:
+            try:
+                self.runtime.set_confirm_actions(bool(enabled))
+            except Exception:
+                pass
         if self.messages and self.messages[0].get("role") == "system":
             self.messages[0]["content"] = self._system_prompt()
 
@@ -343,8 +357,18 @@ class Messenger:
         return any(
             word in text
             for word in (
-                "avísame", "avisame", "avisa", "notifica",
+                "avísame", "avisame", "avisa", "avísame cuando",
+                "me avisas", "me avise", "me avises",
+                "notifícame", "notificame", "notifica",
                 "cuando termine", "cuando acabe",
+                "cuando hayas terminado", "cuando esté", "cuando este",
+                "al terminar", "al acabar",
+                "estate atento", "estate pendiente",
+                "esté atento", "este atento",
+                "vigila", "vigílame", "vigilame", "pendiente de",
+                "me dice", "me digas", "me dices", "dime",
+                "me pasas", "me cuentas", "resumen",
+                "resúmeme", "resumeme",
             )
         )
 
@@ -360,18 +384,29 @@ class Messenger:
 
     def pending_notify_address(self) -> str | None:
         """Último agente lanzado, si el usuario pidió que se le avise."""
+        if self.runtime is not None:
+            try:
+                return self.runtime.pending_notify_address()
+            except Exception:
+                return None
         if self._wants_notify() and self._last_agent_address:
             return self._last_agent_address
         return None
 
     # ------------------------------------------------------------- tool loop
     def _trim_history(self) -> None:
+        """Recorta por grupos completos, nunca entre assistant y tool."""
         if len(self.messages) <= 14:
             return
+        system = self.messages[0]
         history = self.messages[1:]
-        while history and history[0].get("role") == "tool":
+        while len(history) > 12:
             history.pop(0)
-        self.messages = [self.messages[0]] + history[-12:]
+        # El primer mensaje del historial debe ser del usuario: así no queda
+        # un assistant.tool_calls sin sus resultados tool ni un tool huérfano.
+        while history and history[0].get("role") != "user":
+            history.pop(0)
+        self.messages = [system] + history
 
     def ask(self, text: str) -> str:
         answer = "".join(self.ask_stream(text)).strip()
@@ -380,9 +415,31 @@ class Messenger:
     def ask_stream(self, text: str) -> Iterator[str]:
         """Streaming de la respuesta, incluidas las llamadas a herramientas."""
         self._last_user_text = text
+        runtime = self.runtime
+        if runtime is not None:
+            try:
+                runtime.begin_turn(text)
+                self.messages[0] = {
+                    "role": "system",
+                    "content": runtime.system_prompt(),
+                }
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"[ezagent-voice] Núcleo agéntico: {exc}; uso el modo "
+                    "anterior en este turno.",
+                    flush=True,
+                )
+                runtime = None
         self.messages.append({"role": "user", "content": text})
         self._trim_history()
-        for _ in range(6):
+        max_steps = 4 if runtime is not None else 6
+        for _ in range(max_steps):
+            tools = TOOLS
+            if runtime is not None:
+                try:
+                    tools = runtime.tools_for(text)
+                except Exception:
+                    tools = TOOLS
             request = {
                 "model": self.cfg.llm_model,
                 "messages": self.messages,
@@ -391,7 +448,7 @@ class Messenger:
                     else self.cfg.llm_temperature
                 ),
                 "max_tokens": self.cfg.llm_max_tokens,
-                "tools": TOOLS,
+                "tools": tools,
                 "tool_choice": "auto",
                 "stream": True,
             }
@@ -454,23 +511,48 @@ class Messenger:
                     }
                 )
                 for call in ordered:
-                    result = self._execute(
-                        call["function"]["name"],
-                        call["function"]["arguments"],
-                    )
+                    if runtime is not None:
+                        try:
+                            result = runtime.execute(
+                                call["function"]["name"],
+                                call["function"]["arguments"],
+                            )
+                            content = runtime.render_result(result)
+                        except Exception as exc:  # noqa: BLE001
+                            content = json.dumps(
+                                {
+                                    "ok": False,
+                                    "error": (
+                                        "Error del núcleo agéntico: "
+                                        f"{type(exc).__name__}: {exc}"
+                                    ),
+                                },
+                                ensure_ascii=False,
+                            )
+                    else:
+                        result = self._execute(
+                            call["function"]["name"],
+                            call["function"]["arguments"],
+                        )
+                        content = json.dumps(result, ensure_ascii=False)
                     self.messages.append(
                         {
                             "role": "tool",
                             "tool_call_id": call["id"],
-                            "content": json.dumps(result, ensure_ascii=False),
+                            "content": content,
                         }
                     )
                 continue
 
             content = "".join(content_parts).strip()
             self.messages.append({"role": "assistant", "content": content})
+            if runtime is not None and content:
+                try:
+                    runtime.record_assistant(content)
+                except Exception:
+                    pass
             return
-        yield "Me he quedado dando vueltas con Herdr; prueba a preguntar de otra forma."
+        yield "Me he quedado dando vueltas con las herramientas; prueba a preguntar de otra forma."
 
     def _execute(self, name: str, arguments: str) -> Any:
         print(f"[ezagent-voice] Tool {name}: {arguments[:300]}", flush=True)
@@ -567,16 +649,29 @@ class Messenger:
 
     # --------------------------------------------------------------- avisos
     def note_done(
-        self, address: str, agent: str, reason: str, output: str
+        self,
+        address: str,
+        agent: str,
+        reason: str,
+        output: str,
+        *,
+        task: str = "",
     ) -> None:
         """Añade al contexto que un agente terminó, sin resumir todavía."""
+        task_line = (
+            f"La tarea que pidió el usuario era:\n{task}\n"
+            if str(task or "").strip()
+            else ""
+        )
         self.messages.append(
             {
                 "role": "system",
                 "content": (
                     f"El agente {agent} ({address}) ha terminado ({reason}). "
-                    "El usuario puede pedir la salida literal, un resumen o una "
-                    "nueva instrucción. No des el resumen hasta que lo pida.\n"
+                    "El usuario puede pedir la salida literal, un resumen, "
+                    "verla en pantalla o una nueva instrucción. No des el "
+                    "resumen hasta que lo pida.\n"
+                    f"{task_line}"
                     f"Salida reciente:\n{output}"
                 ),
             }

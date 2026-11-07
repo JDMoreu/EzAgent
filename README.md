@@ -24,6 +24,10 @@ Altavoz
 | LLM | Proveedor compatible con OpenAI, configurable | Nube |
 | TTS | Kokoro v1.0, voces españolas | Local, CPU (ONNX) |
 
+**Pipecat no se usa.** El pipeline es propio (VAD, whisper.cpp, Kokoro y el
+LLM); la carpeta `~/.cache/pipecat/kokoro-onnx` solo conserva los modelos Kokoro
+ya descargados.
+
 ## Arranque
 
 Requisitos: Windows 11, `uv`, `whisper-server` con Vulkan y un modelo
@@ -32,6 +36,8 @@ Requisitos: Windows 11, `uv`, `whisper-server` con Vulkan y un modelo
 ```powershell
 cd C:\Users\JDMoreu\Documents\EzAgent
 uv sync
+# Opcional: dependencias de las skills de Word/PDF/Excel
+uv sync --extra office
 copy .env.example .env
 # edita .env: elige LLM_PROVIDER y pon su clave
 
@@ -47,20 +53,37 @@ arranca escuchando; `Ctrl+Alt+Space` cuelga o retoma.
 
 ## El notch
 
-La isla cerrada mide **169×36** en horizontal o **36×186** acoplada a un
-lateral, y se puede arrastrar por el cuerpo:
+La isla cerrada mide **169×36** acoplada al borde superior o **151×36**
+flotando, y se puede arrastrar por el cuerpo:
 
-- Lejos de los bordes es una **píldora flotante**.
-- A ≤12 px del borde superior se acopla con el cuello hacia arriba; a ≤12 px del
-  borde inferior útil se acopla con el cuello hacia abajo.
-- A ≤12 px del borde izquierdo o derecho se acopla como **píldora vertical de
-  36×186**, con el mismo cuello girado hacia el lateral y los controles apilados
-  (micrófono arriba, ojos en el centro, flecha abajo).
-- Al desplegar el menú, la isla se ensancha con él hasta **320×596** (o
-  **356×560** si está acoplada de lado) y forma una sola pieza continua. En el
-  acople lateral, el menú crece hacia el interior de la pantalla.
-- El micrófono silenciado muestra el icono tachado en rojo.
+- Lejos del borde superior es una **píldora flotante** que se queda donde la
+  sueltas; el borde inferior y los laterales no acoplan nada. Puede colocarse
+  en cualquier punto del monitor, **incluida la franja de la barra de tareas**,
+  y se mantiene por encima de ella.
+- A ≤2 px del borde superior se acopla como **muesca** con el cuello hacia
+  arriba.
+- Al desplegar el menú, la isla se ensancha con él hasta **320×596** y forma
+  una sola pieza continua.
+- El micrófono refleja el estado real: **normal** cuando la escucha está
+  activa, **tachado gris** cuando está apagada y **tachado rojo** cuando está
+  silenciado. Pulsar el micrófono tachado reactiva la escucha y quita el mute;
+  con la escucha activa, el mismo botón silencia o reactiva.
 - La flecha derecha abre y cierra el menú; `Ctrl+Alt+O` hace lo mismo.
+
+## Bandeja del sistema
+
+Mientras EzAgent está abierto, aparece un icono en la bandeja de Windows con el
+menú contextual:
+
+- **Configurar:** muestra el notch si estaba oculto y abre Ajustes.
+- **Reiniciar EzAgent:** cierra esta instancia y lanza una nueva con la misma
+  configuración y argumentos.
+- **Cerrar:** cierra la aplicación.
+
+Windows puede colocar el icono nuevo en el desbordamiento de la bandeja (la
+flecha `^`) la primera vez; se puede arrastrar a la zona visible. El tooltip
+refleja el estado: en espera, escuchando, en conversación o micrófono
+silenciado.
 
 ## El menú es Ajustes
 
@@ -86,11 +109,159 @@ fuera. `Ctrl+V` pega desde el portapapeles.
 - **LLM · API:** perfil guardado, proveedor, **modelo en lista**, dirección,
   clave, temperatura, máximo de tokens y **nivel de razonamiento**.
 - **CONVERSACIÓN:** interrupción activa, confirmación opcional y prueba de voz.
+- **AGENTE:** abre `system.md` o `voice.json` con el editor predeterminado para
+  cambiar el comportamiento o los perfiles de modelo/esfuerzo de cada agente.
+- **ATAJOS:** los cinco atajos globales editables en línea (llamada, colgar,
+  repetir, silencio y ajustes). Se validan al guardar, no pueden repetirse y se
+  re-registran sin reiniciar; si otra app usa el mismo atajo, queda en el log.
 - Guardar, cambios sin guardar, ocultar la isla y cerrar el menú.
 
 Los ajustes de audio, voz, TTS, VAD, Whisper y conversación se guardan en
 `%APPDATA%\EzAgent\voice.json`; los perfiles de proveedor, en
 `%APPDATA%\EzAgent\llm.json`. No hay una segunda ventana de configuración.
+La posición de la isla se guarda como `notch_x`/`notch_y` en `voice.json` y se
+restaura al abrir la app.
+
+## Núcleo agéntico
+
+EzAgent no solo delega en Herdr: también puede trabajar con archivos, buscar y
+leer la web, cargar skills, recordar preferencias y controlar la escucha. Todo
+pasa por una política de permisos y queda en una auditoría.
+
+### Carpetas
+
+```
+%APPDATA%\EzAgent\
+  voice.json            ajustes del mensajero y posición del notch
+  llm.json              perfiles de proveedor
+  permissions.toml      política de rutas, niveles y confirmaciones
+  system.md             comportamiento y estilo (editable a mano)
+  memory\USER.md        quién eres (1.375 caracteres)
+  memory\MEMORY.md      hechos y flujo de trabajo (2.200 caracteres)
+  memory\history.db     historial buscable (SQLite FTS5, 180 días)
+  skills\               skills propias (una carpeta por skill con SKILL.md)
+  tools.d\              herramientas declarativas extra (*.toml)
+  logs\audit.jsonl      auditoría append-only, rota a 5 MB
+  journal\              operaciones deshacibles
+~\.agents\skills\       skills globales compartidas (solo lectura)
+~\EzAgentWorkspace\     carpeta de trabajo por defecto
+```
+
+`permissions.toml` y `system.md` se crean con valores seguros la primera vez.
+Se editan con un editor de texto; el agente nunca escribe `permissions.toml`.
+`system.md` se recarga al inicio de cada turno, sin reiniciar.
+
+### Herramientas
+
+- **Hora y archivos:** `get_datetime`, `list_dir`, `read_file`, `create_dir`,
+  `write_file`, `copy_path`, `move_path`, `delete_path`, `open_path`,
+  `undo_last`. Borrar siempre manda a la **Papelera**; nunca hay borrado
+  definitivo.
+- **Web:** `web_search` y `fetch_page` con bloqueo de `localhost`, IPs privadas
+  y redirecciones peligrosas. El contenido web se entrega al modelo como dato
+  no confiable y activa `taint`: en ese turno, cualquier escritura pide
+  confirmación.
+- **Skills:** `load_skill` y `run_skill_script`. Se descubren en
+  `%APPDATA%\EzAgent\skills\` y `~\.agents\skills\`; el catálogo se inyecta en
+  el prompt. Los scripts están desactivados por defecto
+  (`allow_scripts = false`) y, si se activan, piden confirmación y se aprueban
+  por hash de la carpeta.
+- **Memoria:** `remember` propone y solo guarda tras un sí; `recall` busca en el
+  historial; `forget` y `compact_memory` piden confirmación. Para borrar todo
+  el historial:
+  `python -m ezagent.agent.memory wipe` (pide escribir «borrar»; `--yes` para
+  modo no interactivo).
+- **Herdr:** `delegate_to_agent` (listar, leer, enviar, lanzar, enfocar,
+  vigilar o matar) y `voice_control` (cerrar escucha, silenciar, repetir).
+
+### Confirmaciones
+
+Las operaciones destructivas (borrar, sobrescribir, matar un agente) siempre
+piden confirmación. El toggle **CONVERSACIÓN · Confirmar acciones** solo añade
+confirmación a las operaciones de nivel 2 no destructivas. La pregunta se lee
+por voz y aparece como una fila bajo la isla con **Sí** y **No**; también se
+puede responder «sí», «confirmo», «adelante» o «dale». Para operaciones
+masivas hay que decir «confirmo» y el número de elementos. Si no hay respuesta
+en 15 s, se cancela.
+
+### Skills incluidas
+
+`organizar-carpetas`, `investigar-web`, `documentos-word`, `documentos-pdf`,
+`hojas-excel`, `resumir-documento` y `notas-rapidas`. `documentos-word`,
+`documentos-pdf` y `hojas-excel` necesitan `uv sync --extra office`. En el
+ejecutable portable, los
+scripts de skills buscan un Python del sistema; sin él, las skills que solo
+leen/escriben archivos siguen funcionando y las que ejecutan scripts muestran
+un error claro.
+
+## Tareas pendientes y avisos
+
+Cuando pides algo como «vigila esta tarea y avísame cuando termine», EzAgent
+guarda la dirección del agente y **la tarea concreta** en
+`%APPDATA%\EzAgent\tasks.json`. Esa tarea:
+
+- se inyecta en el prompt como `<pending_tasks>` para que el asistente sepa qué
+  está esperando;
+- se conserva si reinicias EzAgent;
+- se usa en el aviso de finalización: «Oye, ya terminé «…». ¿Quieres que te
+  resuma qué hizo, que te lea la salida o que te la muestre?»;
+- se elimina cuando el watcher avisa.
+
+Puedes preguntar «¿qué tareas pendientes tengo?» y el asistente las enumera.
+
+### Modelo y esfuerzo por agente
+
+Cada agente delegado tiene su propio perfil en `voice.json`, independiente del
+modelo del mensajero de voz. `delegate_to_agent` acepta `model` y `effort` en
+`action=run`; los flags se añaden solo al comando de ese agente:
+
+```json
+"agents": {
+  "claude": ["claude"],
+  "opencode": ["opencode"],
+  "mcode": ["mcode"],
+  "codex": ["codex"],
+  "kimi": ["kimi"]
+},
+"agent_profiles": {
+  "claude": {
+    "models": ["sonnet", "opus", "haiku"],
+    "efforts": ["low", "medium", "high"],
+    "default_model": "",
+    "default_effort": "",
+    "model_args": ["--model", "{model}"],
+    "effort_args": ["--effort", "{effort}"]
+  },
+  "opencode": {
+    "models": ["deepseek-v4.1-flash"],
+    "efforts": ["low", "medium", "high"],
+    "default_model": "",
+    "default_effort": "",
+    "model_args": ["--model", "{model}"],
+    "effort_args": ["--effort", "{effort}"]
+  }
+}
+```
+
+`default_model` y `default_effort` vacíos significan «solo aplica modelo o
+esfuerzo cuando el usuario o el LLM los piden». Si quieres un valor fijo para
+un agente, rellénalos. Ajusta `model_args`/`effort_args` a lo que acepte cada
+CLI (por ejemplo, Codex usa `-c model_reasoning_effort={effort}`). Las claves
+de `agents` son libres: puedes añadir `kimi`, `deepseek`, `minimax` o el agente
+que uses, y crear su perfil.
+
+### Encadenar la salida de un agente en otro
+
+Pasa `input_from` al segundo `action=run` con la dirección del primero. Si el
+primero sigue trabajando, EzAgent guarda la cadena, espera a que termine y lanza
+el segundo con su salida como contexto; si ya terminó, la pasa en el mismo
+turno. El destino conserva su propio modelo/esfuerzo y, al acabar, da el aviso
+con la tarea concreta.
+
+Ejemplo por voz:
+
+> «Abre Claude Code en esfuerzo low con Sonnet y pásale su salida a OpenCode
+> con DeepSeek en esfuerzo alto para que haga el plan. Avísame al terminar.»
 
 ## Proveedor y modelo LLM
 
@@ -123,8 +294,9 @@ Guía completa: [`docs/llm-providers.md`](docs/llm-providers.md).
 | `Ctrl+Alt+R` | Repetir el último resumen |
 
 El micrófono no se cierra entre turnos durante una llamada. Las acciones
-explícitas se ejecutan sin confirmación y el asistente responde en una frase
-corta con qué abre y dónde.
+explícitas de nivel 0 y 1 se ejecutan directamente y el asistente responde en
+una frase corta con qué hace; las destructivas o masivas piden confirmación
+aunque el usuario haya dado la orden.
 
 ## Pruebas
 

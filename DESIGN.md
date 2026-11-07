@@ -135,7 +135,7 @@ El notch es todo el producto y la referencia visual: la misma materia, la misma 
 - Cuerpo grafito sólido (`#0E0F13`), grupos (`#1C1C1F`), sin bordes decorativos; la forma se define con luz y hairlines.
 - Un solo acento: mint (`#5EEAC4`) para reposo, escucha y habla. Ámbar (`#FFC24A`) para procesar o pausar. Rojo (`#FF453A`) para error. Nada más.
 - Un solo símbolo: los ojos. Aparecen en el notch, el icono y el menú. La onda es una lectura de señal, no una segunda marca.
-- Nunca solo color: cada estado cambia también la forma (ancho, alto, giro). La isla no lleva texto; el menú conserva las etiquetas de sus controles.
+- Nunca solo color: cada estado cambia también la forma (ancho, alto, giro). La isla no lleva texto salvo la fila de confirmación; el menú conserva las etiquetas de sus controles.
 - Tipografía Geist para la voz; Geist Mono solo para medidas, tiempos, valores y micro-etiquetas.
 - Forma capsular en controles, grupos de 12 px y superficies flotantes de 18 px. Sin tarjetas anidadas.
 - Movimiento corto y preciso: 120/180/240/320 ms. Muelle solo en poses de ojos, apertura de la isla y thumbs; nunca en la altura del menú.
@@ -146,12 +146,12 @@ El notch es todo el producto y la referencia visual: la misma materia, la misma 
 
 **Decisiones posteriores a la spec original (v1.0).** Estas decisiones de producto sustituyen la especificación histórica donde entran en conflicto y son la referencia vigente:
 
-- La isla cerrada es **169×36** en horizontal o **36×186** en un lateral, no 320×36. Al abrir el menú se ensancha con él hasta 320×596 (356×560 en lateral) y comparte una sola silueta continua.
-- La isla **no dibuja texto**: ni palabra de estado, ni pistas, ni tooltips.
+- La isla cerrada es **169×36** como muesca superior o **151×36** como píldora flotante, no 320×36. Al abrir el menú crece con él hasta 320×596 y comparte una sola silueta continua.
+- La isla **no dibuja texto** salvo el resumen de confirmación: ni palabra de estado, ni pistas, ni tooltips.
 - No hay **botón de llamada**: se inicia/termina con `Ctrl+Alt+Space`; el mensajero arranca escuchando.
 - El micrófono y la flecha son **iconos desnudos**: sin discos, cápsulas, bordes ni fondos. El mute es el micrófono tachado en rojo, sin wash.
 - La flecha es un **chevrón de 14 px** a la derecha; gira 180° y pasa a mint al abrir. No hay tirador inferior.
-- El menú se abre hacia el lado con más espacio y la isla se acopla arriba/abajo o flota como píldora.
+- El menú se abre hacia el lado con más espacio; la isla solo se acopla al borde superior y en cualquier otro punto flota como píldora.
 - Los selectores de micrófono y voz **no agrandan** la ventana: usan la zona con scroll de C-11 dentro de los 560 px para no saltar de tamaño.
 - Los iconos usan Segoe Fluent si está disponible y el respaldo vectorial propio si falta; el resultado visual es el mismo glifo.
 - Las claves y rangos reales del menú son los de `settings.py`/`config.py` (RG-3); la tabla 7.4 de la spec es orientativa.
@@ -210,7 +210,7 @@ El notch es todo el producto y la referencia visual: la misma materia, la misma 
 
 ### Tema claro (solo notch)
 
-El notch sigue el tema de Windows (`auto`), o `dark`/`light` desde `voice.json`. En claro: `BODY #FFFFFF`, `GROUP #F5F5F7`, `GROUP_HOVER #EBEBEF`, `TRACK #D1D1D6`, `TEXT #1D1D1F`, `TEXT_2 #52525A`, `TEXT_3 #6E6E73`, `MINT #0C917E`, `WARM #C2760A`, `ERR #D70015`, `MINT_BTN #0A7A6A`, `MINT_INK #FFFFFF`, `WARM_BTN #B25000`, `WARM_INK #FFFFFF`, `EYE_IDLE #2F7F74`, `EYE_MUTE #A06412`. Sin hombros, canto superior recto, redondeo solo abajo, anillo hairline `LINE` y **glow 0**. La isla no dibuja texto en ningún tema; el menú conserva etiquetas y valores.
+El notch sigue el tema de Windows (`auto`), o `dark`/`light` desde `voice.json`. En claro: `BODY #FFFFFF`, `GROUP #F5F5F7`, `GROUP_HOVER #EBEBEF`, `TRACK #D1D1D6`, `TEXT #1D1D1F`, `TEXT_2 #52525A`, `TEXT_3 #6E6E73`, `MINT #0C917E`, `WARM #C2760A`, `ERR #D70015`, `MINT_BTN #0A7A6A`, `MINT_INK #FFFFFF`, `WARM_BTN #B25000`, `WARM_INK #FFFFFF`, `EYE_IDLE #2F7F74`, `EYE_MUTE #A06412`. Sin hombros, canto superior recto, redondeo solo abajo, anillo hairline `LINE` y **glow 0**. La isla no dibuja texto en ningún tema salvo la fila de confirmación; el menú conserva etiquetas y valores.
 
 ---
 
@@ -257,7 +257,7 @@ Geist es neutral y deja respirar la conversación. Geist Mono solo mide: contado
 - Campos y selects: 9 px. Superficies flotantes: 18 px. Elementos pequeños de menú: 6 px.
 - **Regla de radio contenido.** Controles a 9–12 px, superficies flotantes a 18 px, cápsulas solo para controles y estados. Un radio de 16+ px en un panel de escritorio se lee como tarjeta de marketing y queda fuera del mundo.
 - **Regla de no anidar.** Una superficie por frontera. Una tarjeta dentro de otra, un panel dentro de otro o un campo con borde dentro de otro son defectos. Usa hairline o un paso de tono.
-- La isla cerrada mide **169×36** en horizontal o **36×186** en vertical: el ancho justo para micrófono, ojos y flecha. No cambia entre estados; cambia la cara. Flota como píldora de radio 18 o se acopla a un borde visible con el cuello girado 90° en los laterales, hombros cóncavos de 7 px (oscuro) y redondeo solo en el lado libre; en claro, el canto acoplado es recto.
+- La isla cerrada mide **169×36** acoplada al borde superior o **151×36** flotando: el ancho justo para micrófono, ojos y flecha. No cambia entre estados; cambia la cara. Flota como píldora de radio 18; solo cuando se pega al borde superior (≤2 px) se convierte en muesca con hombros cóncavos de 7 px (oscuro) y canto superior recto; en claro, el canto acoplado también es recto.
 - El menú crece desde la isla en la **misma ventana**, hacia el lado con más espacio. El cuerpo mide 320 px para que los ajustes respiren; la pestaña compacta queda centrada sobre él. No hay costura, tooltips, popups ni segundas ventanas.
 
 ---
@@ -328,16 +328,26 @@ Foco global: outline de 2 px `MINT` con offset 2. No se diseña un foco distinto
 
 La unidad de densidad del producto. Etiqueta de sección fuera, en Micro (`TEXT_3`). Contenedor `GROUP` con radio 12 y sin borde; filas de 36 o 44 px separadas por hairline `LINE_2` insertada 12 px a cada lado. En tema claro, además, anillo `LINE` de 1 px. Hover de fila a `GROUP_HOVER` en 120 ms. Primera y última fila conservan las esquinas del grupo.
 
-En el notch, el grupo AUDIO mide 196 px (selector 36 + medidor 72 + 2 sliders 44), MOTOR 72 px, TTS 168 px, VAD 176 px, WHISPER · STT 160 px, LLM · API 328 px y CONVERSACIÓN 116 px. El menú visible sigue midiendo 560 px y el contenido que no cabe se desplaza con rueda. Al abrirse, la pestaña se ensancha con el menú hasta 320×596 y comparte la misma silueta. Acoplada a un lateral, la pieza mide 36×186 cerrada y crece hacia dentro hasta 356×560 (rail de controles de 36 + panel de 320). La isla cerrada no reserva ese ancho: mide 169×36 en horizontal o 36×186 en vertical.
+En el notch, el grupo AUDIO mide 168 px (selector 36 + medidor 44 + 2 sliders 44), MOTOR 72 px, TTS 168 px, VAD 176 px, WHISPER · STT 160 px, LLM · API 328 px, CONVERSACIÓN 116 px, AGENTE 44 px y ATAJOS 220 px. El menú visible sigue midiendo 560 px y el contenido que no cabe se desplaza con rueda. Al abrirse, la pestaña se ensancha con el menú hasta 320×596 y comparte la misma silueta. La isla cerrada no reserva ese ancho: mide 169×36 en la muesca superior o 151×36 flotando.
 
 ### Menú desplegable del notch (firma)
 
-Vive en la misma ventana layered. Cabecera de 28 px con «AJUSTES» y botón de ocultar; grupos AUDIO, MOTOR, TTS, VAD, WHISPER · STT, LLM · API y CONVERSACIÓN; pie con estado de guardado y botón Guardar. Selectores que se despliegan dentro del grupo (32 px por elemento, máximo 5 visibles, uno solo abierto), un medidor de entrada con nivel RMS en vivo y marca de umbral arrastrable, sliders con arrastre fuera de la ventana, filas de texto editable, toggles, botón de prueba de voz y scroll con pulgar visible. Los modelos de Whisper y LLM son filas de selección, no campos de texto.
+Vive en la misma ventana layered. Cabecera de 28 px con «AJUSTES» y botón de ocultar; grupos AUDIO, MOTOR, TTS, VAD, WHISPER · STT, LLM · API, CONVERSACIÓN, AGENTE y ATAJOS; pie con estado de guardado y botón Guardar. Selectores que se despliegan dentro del grupo (32 px por elemento, máximo 5 visibles, uno solo abierto), un medidor de entrada con nivel RMS en vivo y marca de umbral arrastrable, sliders con arrastre fuera de la ventana, filas de texto editable, toggles, botón de prueba de voz y scroll con pulgar visible. El medidor solo muestra la etiqueta, el umbral en dB y la pista; no dibuja el valor lineal ni la línea de estado inferior. Los modelos de Whisper y LLM son filas de selección, no campos de texto; los cinco atajos son filas de texto editable. AGENTE contiene las acciones «Abrir system.md» y «Abrir voice.json».
 
-- Abrir: altura 36→596 en 320 ms `EASE_OUT`; el ancho crece de 169 a 320 px a la vez; contenido con opacidad y +6 px, escalonado 60/100/140/180/220 ms; flecha 0→180° en 240 ms. La isla se queda en su ancla: el menú se despliega debajo o encima según el espacio y la ventana crece alrededor de la flecha.
+- Abrir: altura 36→596 en 320 ms `EASE_OUT`; el ancho crece de 169 (muesca) o 151 (píldora) a 320 px a la vez; contenido con opacidad y +6 px, escalonado 60/100/140/180/220 ms; flecha 0→180° en 240 ms. La isla se queda en su ancla: el menú se despliega debajo o encima según el espacio y la ventana crece alrededor de la flecha.
 - Cerrar: contenido a 0 en 120 ms; altura 596→36 en 260 ms `EASE_IN` desde 60 ms; flecha 180→0°.
 - Guardar: botón ámbar con cambios, check de 600 ms, «TODO GUARDADO» en mint 800 ms.
 - Si no cabe en pantalla, la zona entre cabecera y pie hace scroll con rueda de 40 px y barra de 3 px.
+
+### Fila de confirmación (firma)
+
+Cuando una operación destructiva o masiva espera permiso, la isla crece con una fila de 300×88 px en la misma ventana layered; no hay diálogo ni segunda ventana.
+
+- El resumen lo genera el código a partir de los argumentos reales (nunca el LLM): dos líneas máximo en `FS_BODY`/`TEXT`, con elipsis si no cabe. En confirmación fuerte, una micro-etiqueta `CONFIRMACIÓN FUERTE` en `WARM` sobre el resumen.
+- Botones **No** (72×28, `GROUP` con hairline `LINE`, texto `TEXT_2`) y **Sí** (72×28, `MINT_BTN`, texto `MINT_INK`), radio 12, alineados a la derecha. El clic resuelve; el fondo de la fila consume el clic y no arrastra la isla.
+- La fila se abre debajo de la isla o encima si hay más espacio; la isla no se mueve. El ancho pasa de 169 (muesca) o 151 (píldora) a 300 en 320 ms `EASE_OUT` y vuelve en 260 ms `EASE_IN`; el contenido aparece con el ancho.
+- Mientras se espera, los ojos usan `think` (ámbar). No hay pose nueva ni texto en la isla fuera de esta fila.
+- El menú no se abre mientras hay una confirmación pendiente. Si vence el tiempo (15 s) o se rechaza, la fila se retira y la operación no se ejecuta.
 
 ### Ojos y estados (firma)
 
@@ -354,16 +364,17 @@ Vive en la misma ventana layered. Cabecera de 28 px con «AJUSTES» y botón de 
 | `error` | ERROR | cápsula 8×12, ±18° | `ERR` | Una sacudida |
 | `close` | CIERRA | raya 11×3 | `EYE_IDLE` | Cierre |
 
-- La columna **Palabra** es el nombre canónico del estado, no texto dibujado en la isla: el notch no tiene texto ni tooltips.
+- La columna **Palabra** es el nombre canónico del estado, no texto dibujado en la isla: el notch no tiene texto de estado ni tooltips; la única excepción es el resumen de la fila de confirmación.
 - La onda de 5 cápsulas (3 px de ancho, 3 de separación, 27 en total) solo existe en HABLO; el hueco entre ojo y onda es de 10 px.
 - **Mute del micrófono:** el icono pasa a `microphone-slash` en `ERR`, con la diagonal visible y sin fondo. Los ojos conservan `EYE_MUTE`; el rojo pertenece al control que el usuario acaba de apagar, no al estado de la conversación.
+- **Escucha apagada:** el micrófono se dibuja tachado en `TEXT_3`. Al pulsarlo se reactiva la escucha y, si estaba muteado, se quita el mute; con la escucha activa, el micrófono normal silencia o reactiva. El icono cambia en el mismo fotograma del cambio de estado.
 - Glow aditivo máximo 0,10 en oscuro y 0 en claro; solo ojos activos. Sin sombra en botones, filas ni texto.
 - El estado mostrado es una función pura de `visible`, `error_active`, `base` y `muted`; `speak`, `think` y `notice` tienen prioridad sobre `mute`.
 - Permanencia mínima de 120 ms; `vad_end` con gracia de 250 ms; `notice` 1000 ms y vuelta a `idle` si no llega TTS en 1500 ms.
 
 ### Nombres de estado
 
-Los nombres canónicos (`ESPERA`, `ESCUCHO`, `PIENSO`, `HABLO`, `AVISO`, `PAUSA`, `ERROR`) sirven de referencia interna; el notch no dibuja texto y el menú usa etiquetas de control.
+Los nombres canónicos (`ESPERA`, `ESCUCHO`, `PIENSO`, `HABLO`, `AVISO`, `PAUSA`, `ERROR`) sirven de referencia interna; el notch no dibuja texto de estado (salvo la fila de confirmación) y el menú usa etiquetas de control.
 
 ### Ayuda y copy
 
@@ -371,23 +382,23 @@ Los nombres canónicos (`ESPERA`, `ESCUCHO`, `PIENSO`, `HABLO`, `AVISO`, `PAUSA`
 - Cada control tiene etiqueta visible. La ayuda aparece solo cuando evita un error o explica **cuándo** se aplica un cambio; una idea por ayuda, 1–2 líneas.
 - Se dice siempre la verdad del sistema: si un ajuste se aplica al reconectar, se dice; si el motor está parado, se dice; si el dato va a la nube, se dice.
 - Los errores explican qué pasó, por qué y qué hacer. Nunca se muestra un mensaje en inglés crudo.
-- La isla no tiene texto ni tooltips: los botones son iconos vectoriales y el estado se lee en los ojos. El menú desplegable sí etiqueta cada control.
+- La isla no tiene texto ni tooltips salvo el resumen de la fila de confirmación: los botones son iconos vectoriales y el estado se lee en los ojos. El menú desplegable sí etiqueta cada control.
 - No se inventan métricas, latencias ni capacidades. Las cifras salen del README o de una medición real.
 
 ---
 
 ## Layout
 
-- Notch cerrado: pestaña de 169×36 en la misma ventana layered. Controles: mic 19–47, ojos en `cx=86,5`, flecha 126–150; margen de 19 px a cada lado. Iconos desnudos: sin discos, cápsulas, bordes ni fondos. Ningún rectángulo se solapa; el grupo de ojos más ancho (63 px) queda entre 55 y 118. No hay botón de llamada: la conversación se inicia o termina con `Ctrl+Alt+Space`.
+- Notch cerrado en la misma ventana layered. Muesca superior (169×36): mic 19–47, ojos en `cx=86,5`, flecha 126–150; margen de 19 px a cada lado. Píldora flotante (151×36): mic 12–40, ojos en `cx=75,5` y flecha 115–139, con 4 px de hueco entre ojos y micro y 8 px entre ojos y flecha. Iconos desnudos: sin discos, cápsulas, bordes ni fondos. Ningún rectángulo se solapa; el grupo de ojos más ancho (63 px) queda entre 55 y 118 en la muesca y entre 44 y 107 en la píldora. No hay botón de llamada: la conversación se inicia o termina con `Ctrl+Alt+Space`.
 - **Arranque en escucha.** Al abrir el mensajero, la llamada se inicia sola a los 600 ms; el atajo queda para colgar o retomar. La isla se muestra aunque estuviera oculta en la sesión anterior.
 - **Flecha del menú.** Chevrón de 14 px sin cápsula, borde ni fondo, a la derecha de la isla. Gira 180° y pasa a mint cuando el menú está abierto; en hover solo cambia el color del glifo. El punto ámbar de cambios sin guardar vive junto a su esquina superior derecha.
-- **Pieza continua.** Cerrada, la isla es una píldora compacta. Al desplegar el menú, el ancho crece de 169 a 320 px junto con el alto; la barra y el panel se dibujan como una sola silueta, sin costura ni escalón. Al cerrar, ambos vuelven juntos a la píldora. En el acople lateral, la píldora de 36×186 crece hacia dentro hasta 356×560, conservando el cuello girado y un rail de 36 px para los controles.
-- Notch abierto: la pestaña se ensancha **con** el menú hasta 320 px y comparte una sola silueta continua, sin escalón entre barra y panel. Los controles se reparten: mic 19–47, ojos en `cx=160` y flecha 277–301, todos como iconos desnudos. La ventana mide 320×596 y el ancla es `(centro, borde superior)`; el menú se despliega encima o debajo y la isla no se mueve. En lateral, el panel mide 356×560, con un rail de 36 px para micrófono, ojos y flecha, y el menú crece hacia dentro.
-- Arrastre: el cuerpo de la pestaña (no los botones) mueve la isla. Lejos de los bordes es una píldora flotante; a ≤12 px del borde superior se acopla con el cuello hacia arriba; a ≤12 px del borde inferior útil se acopla con el cuello hacia abajo; a ≤12 px de un lateral se acopla como píldora vertical de 36×186 con el cuello girado y los controles apilados. La barra de tareas cuenta como borde inferior; la isla nunca sale del monitor y los laterales dejan 16 px a las esquinas.
+- **Pieza continua.** Cerrada, la isla es una muesca (si toca el borde superior) o una píldora. Al desplegar el menú, el ancho crece desde 169 o 151 hasta 320 px junto con el alto; la barra y el panel se dibujan como una sola silueta, sin costura ni escalón. Al cerrar, ambos vuelven juntos a la forma cerrada.
+- Notch abierto: la pestaña se ensancha **con** el menú hasta 320 px y comparte una sola silueta continua, sin escalón entre barra y panel. Los controles interpolan hasta la disposición ancha: mic 19–47, ojos en `cx=160` y flecha 277–301, todos como iconos desnudos. La ventana mide 320×596 y el ancla es `(centro, borde superior)`; el menú se despliega encima o debajo y la isla no se mueve.
+- Arrastre: el cuerpo de la pestaña (no los botones) mueve la isla. Solo el borde superior acopla: a ≤2 px del borde superior del monitor se convierte en muesca con el cuello hacia arriba. En cualquier otro punto, incluidos el borde inferior y los laterales, se queda donde el usuario la suelta como píldora flotante. La isla nunca sale del monitor. La píldora flotante **sí puede ocupar la franja de la barra de tareas** y se mantiene por encima de ella (ventana topmost reafirmada al mover y al mostrar); la muesca sigue reservada al borde superior.
 - Menú: cuerpo útil x 7–313; contenido x 19–301; filas x 31–289; etiquetas x 23. Cabecera 44–72, grupos según 7.3, pie 540–584, relleno inferior 12.
 - DPI: px lógicos a 96 DPI; `scale = dpi/96`; anti-alias de 1 px lógico; buffers y cachés se vacían en `WM_DPICHANGED`.
 
-**Regla de la isla arrastrable.** La isla cerrada es un mando, no un mueble: se agarra por su cuerpo y se coloca en cualquier punto. La forma sigue al puntero: dentro de la franja de 12 px de cualquiera de los cuatro bordes, el cuello mira a ese borde; en medio, es una píldora. El menú sigue el mismo principio: se abre hacia el lado que tiene espacio (en los laterales, hacia el interior) y nunca tapa la barra de tareas.
+**Regla de la isla arrastrable.** La isla cerrada es un mando, no un mueble: se agarra por su cuerpo y se coloca en cualquier punto, incluida la franja de la barra de tareas. La forma sigue al puntero: dentro de la franja de 2 px del borde superior, la muesca mira hacia arriba; en cualquier otro punto es una píldora que se queda donde se suelta y se dibuja por encima de la taskbar. El menú se abre hacia el lado que tiene espacio.
 
 ---
 

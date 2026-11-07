@@ -6,7 +6,7 @@ compone el fotograma BGRA premultiplicado y gestiona la ventana Win32.
 
 Reglas que se respetan aquí:
 - La ventana no se activa en reposo ni se mueve sola; la isla se acopla al
-  borde superior o inferior, o flota como píldora, y el menú crece hacia el
+  borde superior como muesca o flota como píldora, y el menú crece hacia el
   lado con espacio. Solo la edición de texto pide el teclado temporalmente.
 - El menú vive en la MISMA ventana que la isla; no hay Toplevel, tooltip ni
   segunda ventana.
@@ -25,30 +25,27 @@ from PIL import Image
 
 from . import layered as _shell
 from .anim import EASE_IN, EASE_OUT, EASE_SPRING, LevelFollower, Tween, lerp_rgb
+from .confirm import CONFIRM_H, CONFIRM_W, ConfirmPanel
 from .eyes import POSES, draw_eyes
 from .icons import draw_icon
-from .silhouette import render_side_surface, render_surface
+from .silhouette import render_surface
 from .state import UiState
 from .tokens import (
     ARROW_BUTTON_COMPACT,
-    ARROW_BUTTON_SIDE,
+    ARROW_BUTTON_FLOAT,
     BUTTON_PRESSED_SCALE,
     EYES_CX_COMPACT,
+    EYES_CX_FLOAT,
     EYES_CX_WIDE,
     EYES_CY,
-    EYES_CY_SIDE,
     H_ISLAND,
     H_MENU,
-    H_SIDE,
     ICON_ARROW_SIZE,
     ICON_MIC_SIZE,
     MIC_BUTTON_COMPACT,
-    MIC_BUTTON_SIDE,
+    MIC_BUTTON_FLOAT,
     Rect,
-    SIDE_EDGE_MARGIN,
-    SIDE_EYES_GAP,
-    SNAP_EDGE,
-    W_SIDE,
+    SNAP_TOP,
     T_BASE,
     T_CLOSE_EYES,
     T_CLOSE_RETRACT,
@@ -60,6 +57,7 @@ from .tokens import (
     VOICE_RELEASE,
     W,
     W_COMPACT,
+    W_FLOAT,
     palette,
 )
 
@@ -486,7 +484,17 @@ class Notch:
 
     FRAME_MS = 16
 
-    def __init__(self, root=None):
+    def __init__(
+        self,
+        root=None,
+        position: tuple[int, int] | None = None,
+    ):
+        """``position`` es la posición física guardada de la ventana.
+
+        Si se pasa, la isla se abre exactamente ahí (clampada al monitor y al
+        área de trabajo) y recalcula el acople; si no, aparece centrada en el
+        borde superior del monitor activo.
+        """
         self.root = root
         scale = 1.0
         try:
@@ -496,13 +504,13 @@ class Notch:
             scale = 1.0
         self.s = scale
         self.W = round(W * scale)                 # ancho del menú abierto
-        self.W_COMPACT = round(W_COMPACT * scale)  # ancho de la isla/pill
-        self.W_SIDE = round(W_SIDE * scale)
+        self.W_COMPACT = round(W_COMPACT * scale)  # ancho de la muesca
+        self.W_FLOAT = round(W_FLOAT * scale)      # ancho de la píldora
         self.H_ISLAND = round(H_ISLAND * scale)
-        self.H_SIDE = round(H_SIDE * scale)
         self.H_MAX = round((H_ISLAND + H_MENU) * scale)
         self.BODY_W = self.W_COMPACT
         self.BODY_H = self.H_ISLAND
+        self._position = position
 
         self._island: IslandWindow | None = None
         # Ancla = centro X y borde superior de la isla en pantalla. El menú
@@ -515,12 +523,19 @@ class Notch:
         self._dragging = False
         self._visible = False
         self._ui = UiState()
+        # Estado inmediato para el clic del micrófono. ``UiState`` usa una cola
+        # para el hilo de render; el clic no puede esperar un fotograma.
+        self._in_call = False
+        self._muted = False
         self._state = "idle"
         self._rms = 0.0
         self._mic_level = 0.0
         self._level = LevelFollower(VOICE_ATTACK, VOICE_RELEASE)
         self._theme_setting = "auto"
         self._theme = "dark"
+        self._confirm_panel = ConfirmPanel(self.s, self._theme)
+        self._confirm_above = False
+        self._confirm_pressed: str | None = None
         self._animations = self._prefers_animations()
         self._pose = _PoseAnimator(self._theme, self._animations)
         self._blink = _Blink()
@@ -534,9 +549,9 @@ class Notch:
         self._pressed: str | None = None
         self._pressed_inside = False
         self._arrow = Tween(0.0)
-        # Ancho de la pestaña: 169 cerrada, 320 abierta. El menú y la isla
-        # crecen juntos para leerse como una sola pieza.
-        self._tab_w = Tween(float(W_COMPACT))
+        # Ancho de la pestaña: cerrada (169 muesca / 151 píldora), 320 abierta.
+        # El menú y la isla crecen juntos para leerse como una sola pieza.
+        self._tab_w = Tween(float(self._compact_layout_width()))
         self._menu = None
         self._menu_open = False
         self._dirty = False
@@ -545,6 +560,8 @@ class Notch:
         self._pose_t0 = 0.0
 
         self.on_action = lambda action: None
+        self.on_menu_action = lambda action: None
+        self.on_position_change = lambda x, y: None
         self.menu_settings_provider = lambda: None
         self.on_save_settings = lambda values: False
         self.on_live_setting = lambda key, value: None
@@ -586,6 +603,7 @@ class Notch:
         if resolved != self._theme:
             self._theme = resolved
             self._pose.set_theme(resolved)
+            self._confirm_panel.set_theme(resolved)
             self._invalidate()
 
     def set_scale(self, scale: float) -> None:
@@ -595,9 +613,8 @@ class Notch:
         self.s = scale
         self.W = round(W * scale)
         self.W_COMPACT = round(W_COMPACT * scale)
-        self.W_SIDE = round(W_SIDE * scale)
+        self.W_FLOAT = round(W_FLOAT * scale)
         self.H_ISLAND = round(H_ISLAND * scale)
-        self.H_SIDE = round(H_SIDE * scale)
         self.H_MAX = round((H_ISLAND + H_MENU) * scale)
         self.BODY_W = self.W_COMPACT
         self.BODY_H = self.H_ISLAND
@@ -611,7 +628,8 @@ class Notch:
         _sil.clear_cache()
         if self._island is not None:
             self._island.max_height = self.H_MAX
-            self._island.resize(self.W_COMPACT, self.H_ISLAND)
+            self._island.resize(self._compact_width_px(), self.H_ISLAND)
+        self._confirm_panel.set_scale(scale)
         if self._menu is not None:
             try:
                 self._menu.set_scale(scale)
@@ -620,24 +638,52 @@ class Notch:
         self._invalidate()
 
     # ------------------------------------------------------------- ciclo de vida
+    def _initial_geometry(
+        self, position: tuple[int, int] | None
+    ) -> tuple[int, int, str]:
+        """``(x, y, acople)`` física inicial de la ventana cerrada.
+
+        Sin ``position`` se conserva el arranque centrado en el borde superior
+        del monitor activo. Con ``position`` se abre exactamente ahí, clampada
+        al monitor y al área de trabajo, y el acople se recalcula: ``top`` si
+        queda a ≤2 px lógicos del borde superior; ``float`` en cualquier otro
+        sitio.
+        """
+        if position is None:
+            mon = _shell.monitor_rect()
+            width = int(mon[2] - mon[0])
+            x = int(mon[0]) + (width - self.W_COMPACT) // 2
+            return x, int(mon[1]), "top"
+        px, py = int(position[0]), int(position[1])
+        mon, _work_bottom = self._monitor_bottom(px, py)
+        attachment = (
+            "top" if py <= mon[1] + SNAP_TOP * self.s else "float"
+        )
+        width = self.W_COMPACT if attachment == "top" else self.W_FLOAT
+        x = min(max(px, mon[0]), max(mon[0], mon[2] - width))
+        # La píldora flotante puede ocupar todo el monitor, incluida la zona
+        # de la barra de tareas; la muesca solo existe en el borde superior.
+        y = min(max(py, mon[1]), max(mon[1], mon[3] - self.H_ISLAND))
+        if attachment == "top":
+            y = int(mon[1])
+        return int(x), int(y), attachment
+
     def _create_window(self) -> bool:
         if self._island is None:
             try:
-                mon = _shell.monitor_rect()
-                width = int(mon[2] - mon[0])
-                x = int(mon[0]) + (width - self.W_COMPACT) // 2
-                y = int(mon[1])
+                x, y, attachment = self._initial_geometry(self._position)
             except Exception:
-                x = 200
-                y = 0
+                x, y, attachment = 200, 0, "float"
+            self._attachment = attachment
+            width = (
+                self.W_COMPACT if attachment == "top" else self.W_FLOAT
+            )
             self._island = IslandWindow(
-                self, x, y, self.W_COMPACT, self.H_ISLAND
+                self, x, y, width, self.H_ISLAND
             )
-            self._anchor_x = x + self.W_COMPACT / 2.0
+            self._anchor_x = x + width / 2.0
             self._anchor_y = float(y)
-            self._attachment = self._attachment_for_rect(
-                x, y, self.W_COMPACT, self.H_ISLAND
-            )
+            self._tab_w = Tween(float(self._compact_layout_width()))
         if not self._island.open():
             print("[ezagent-voice] Notch: no se pudo abrir la isla", flush=True)
             self._visible = False
@@ -671,6 +717,9 @@ class Notch:
     def hide(self, close_eyes: bool = True) -> None:
         if not self._visible:
             return
+        if self._confirm_panel.visible:
+            self._confirm_panel.hide()
+            self._confirm_pressed = None
         now = time.monotonic()
         if self._island_open():
             # A-05 manda: la isla espera a que el menú termine de plegarse.
@@ -696,7 +745,7 @@ class Notch:
     def _begin_hide(self, close_eyes: bool, now: float) -> None:
         self._arrow.to(0.0, now, T_BASE, EASE_OUT)
         self._tab_w.to(
-            float(W_COMPACT), now,
+            self._compact_layout_width(), now,
             0 if not self._animations else T_CLOSE_RETRACT,
             EASE_IN,
         )
@@ -761,45 +810,22 @@ class Notch:
             bottom = min(bottom, int(tb[1]))
         return mon, bottom
 
-    def _is_side_attachment(self, attachment: str | None = None) -> bool:
-        value = getattr(self, "_attachment", "float") if attachment is None else attachment
-        return value in ("left", "right")
+    def _compact_layout_width(self) -> float:
+        """Ancho lógico de la isla cerrada según el acople actual."""
+        top = getattr(self, "_attachment", "float") == "top"
+        return float(W_COMPACT if top else W_FLOAT)
+
+    def _compact_width_px(self) -> int:
+        """Ancho físico de la isla cerrada según el acople actual."""
+        top = getattr(self, "_attachment", "float") == "top"
+        return int(self.W_COMPACT if top else self.W_FLOAT)
 
     def _compact_size(self) -> tuple[float, float]:
         """Tamaño lógico de la isla cerrada según el acople actual."""
-        if self._is_side_attachment():
-            return float(W_SIDE), float(H_SIDE)
-        return float(W_COMPACT), float(H_ISLAND)
-
-    def _side_window_geometry(
-        self, menu_h: float
-    ) -> tuple[float, float, float, float, float, float]:
-        """``(ancho, alto, panel_x, tab_x, tab_y, progreso)`` lógicos."""
-        if menu_h <= 0.5:
-            return (
-                float(W_SIDE),
-                float(H_SIDE),
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-            )
-        viewport = float(H_MENU)
-        if self._menu is not None:
-            try:
-                viewport = max(1.0, float(self._menu.viewport_height))
-            except Exception:
-                pass
-        progress = min(1.0, max(0.0, float(menu_h) / viewport))
-        window_w = float(W_SIDE) + float(W) * progress
-        window_h = max(float(H_SIDE), float(menu_h))
-        panel_x = float(W_SIDE) if self._attachment == "left" else 0.0
-        tab_x = 0.0 if self._attachment == "left" else window_w - float(W_SIDE)
-        tab_y = (window_h - float(H_SIDE)) / 2.0
-        return window_w, window_h, panel_x, tab_x, tab_y, progress
+        return self._compact_layout_width(), float(H_ISLAND)
 
     def _attachment_for(self, anchor_y: float) -> str:
-        """Compatibilidad con la geometría histórica de la píldora horizontal."""
+        """Acople para un borde superior anclado en ``anchor_y``."""
         return self._attachment_for_rect(
             self._anchor_x - self.W_COMPACT / 2.0,
             anchor_y,
@@ -810,82 +836,50 @@ class Notch:
     def _attachment_for_rect(
         self, x: float, y: float, w: float, h: float
     ) -> str:
-        """Borde más cercano; empate o esquina: superior."""
-        mon, work_bottom = self._monitor_bottom(x + w / 2.0, y + h / 2.0)
-        snap = SNAP_EDGE * self.s
-        distances = {
-            "top": float(y - mon[1]),
-            "bottom": float(work_bottom - (y + h)),
-            "left": float(x - mon[0]),
-            "right": float(mon[2] - (x + w)),
-        }
-        for edge in ("top", "bottom", "left", "right"):
-            if distances[edge] <= snap:
-                return edge
-        return "float"
+        """Solo el borde superior acopla; el resto del escritorio es flotante."""
+        mon, _work_bottom = self._monitor_bottom(x + w / 2.0, y + h / 2.0)
+        return "top" if float(y - mon[1]) <= SNAP_TOP * self.s else "float"
 
     def clamp_position(self, x: int, y: int) -> tuple[int, int]:
-        """Mantiene la ventana dentro del monitor, permitiendo los bordes."""
+        """Mantiene la ventana dentro del monitor, incluida la taskbar.
+
+        La píldora flotante puede colocarse sobre la barra de tareas; la
+        ventana es topmost y se reafirma por encima de ella. La muesca solo
+        aparece cuando ``y`` está pegado al borde superior.
+        """
         island = getattr(self, "_island", None)
         if island is not None:
             w, h = island.w, island.h
         else:
             cw, ch = self._compact_size()
             w, h = int(round(cw * self.s)), int(round(ch * self.s))
-        mon, work_bottom = self._monitor_bottom(x + w / 2.0, y + h / 2.0)
+        mon, _work_bottom = self._monitor_bottom(x + w / 2.0, y + h / 2.0)
         nx = min(max(int(x), mon[0]), max(mon[0], mon[2] - w))
-        ny = min(max(int(y), mon[1]), max(mon[1], work_bottom - h))
+        ny = min(max(int(y), mon[1]), max(mon[1], mon[3] - h))
         return nx, ny
 
     def _sync_anchor_from_window(self) -> None:
         if self._island is None:
             return
         self._anchor_x = self._island.x + self._island.w / 2.0
-        if self._is_side_attachment():
-            self._anchor_y = self._island.y + self._island.h / 2.0
-        else:
-            self._anchor_y = float(self._island.y)
+        self._anchor_y = float(self._island.y)
 
     def _snap_compact(
         self,
         attachment: str,
         x: float,
         y: float,
-        center_y: float | None = None,
     ) -> tuple[int, int]:
         """Posición física final de la isla cerrada para un acople."""
-        mon, work_bottom = self._monitor_bottom(
-            self._anchor_x, center_y if center_y is not None else self._anchor_y
+        mon, _work_bottom = self._monitor_bottom(
+            self._anchor_x, self._anchor_y
         )
         if attachment == "top":
             y = float(mon[1])
             x = min(max(x, mon[0]), max(mon[0], mon[2] - self.W_COMPACT))
-        elif attachment == "bottom":
-            y = float(work_bottom - self.H_ISLAND)
-            x = min(max(x, mon[0]), max(mon[0], mon[2] - self.W_COMPACT))
-        elif attachment in ("left", "right"):
-            center = (
-                float(center_y)
-                if center_y is not None
-                else float(y) + self.H_SIDE / 2.0
-            )
-            y = min(
-                max(
-                    center - self.H_SIDE / 2.0,
-                    mon[1] + SIDE_EDGE_MARGIN * self.s,
-                ),
-                max(
-                    mon[1] + SIDE_EDGE_MARGIN * self.s,
-                    work_bottom - self.H_SIDE - SIDE_EDGE_MARGIN * self.s,
-                ),
-            )
-            if attachment == "left":
-                x = float(mon[0])
-            else:
-                x = float(mon[2] - self.W_SIDE)
         else:
-            x = min(max(x, mon[0]), max(mon[0], mon[2] - self.W_COMPACT))
-            y = min(max(y, mon[1]), max(mon[1], work_bottom - self.H_ISLAND))
+            x = min(max(x, mon[0]), max(mon[0], mon[2] - self.W_FLOAT))
+            y = min(max(y, mon[1]), max(mon[1], mon[3] - self.H_ISLAND))
         return int(round(x)), int(round(y))
 
     def window_drag_start(self, x: int, y: int) -> None:
@@ -897,18 +891,13 @@ class Notch:
         self._dragging = True
         self._sync_anchor_from_window()
         if self._island is not None:
-            previous = self._attachment
             self._attachment = self._attachment_for_rect(
                 self._island.x,
                 self._island.y,
                 self._island.w,
                 self._island.h,
             )
-            if previous != self._attachment:
-                if self._is_side_attachment():
-                    self._anchor_y = self._island.y + self._island.h / 2.0
-                else:
-                    self._anchor_y = float(self._island.y)
+            self._anchor_y = float(self._island.y)
         self._invalidate()
 
     def window_drag_end(self, x: int, y: int) -> None:
@@ -922,24 +911,22 @@ class Notch:
             self._island.w,
             self._island.h,
         )
-        if self._is_side_attachment():
-            self._anchor_y = self._island.y + self._island.h / 2.0
-        else:
-            self._anchor_y = float(self._island.y)
         nx, ny = self._snap_compact(
             self._attachment,
             float(self._island.x),
             float(self._island.y),
-            float(self._island.y + self._island.h / 2.0),
         )
         self._island.set_pos(nx, ny)
-        if self._is_side_attachment():
-            self._anchor_x = nx + self.W_SIDE / 2.0
-            self._anchor_y = ny + self.H_SIDE / 2.0
-        else:
-            self._anchor_x = nx + self.W_COMPACT / 2.0
-            self._anchor_y = float(ny)
+        self._anchor_x = nx + self._compact_width_px() / 2.0
+        self._anchor_y = float(ny)
+        self._tab_w = Tween(float(self._compact_layout_width()))
         self._invalidate()
+        try:
+            self.on_position_change(int(nx), int(ny))
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"[ezagent-voice] Notch posición: {exc}", flush=True
+            )
 
     # ------------------------------------------------------- teclado del menú
     def _menu_text_edit(self, active: bool) -> None:
@@ -992,15 +979,6 @@ class Notch:
             return False, float(H_MENU)
         self._sync_anchor_from_window()
         mon, work_bottom = self._monitor_bottom(self._anchor_x, self._anchor_y)
-        if self._is_side_attachment():
-            # El panel lateral se limita por la altura del área útil; crece
-            # hacia dentro, no arriba/abajo.
-            half = min(
-                self._anchor_y - mon[1],
-                work_bottom - self._anchor_y,
-            ) / self.s - SIDE_EDGE_MARGIN
-            available = max(160.0, 2.0 * half)
-            return False, available
         tab_bottom = self._anchor_y + self.H_ISLAND
         below = max(0.0, work_bottom - tab_bottom) / self.s
         above = max(0.0, self._anchor_y - mon[1]) / self.s
@@ -1017,11 +995,13 @@ class Notch:
         self._invalidate()
 
     def set_muted(self, muted: bool) -> None:
-        self._ui.set_muted(bool(muted))
+        self._muted = bool(muted)
+        self._ui.set_muted(self._muted)
         self._invalidate()
 
     def set_in_call(self, in_call: bool) -> None:
-        self._ui.set_in_call(bool(in_call))
+        self._in_call = bool(in_call)
+        self._ui.set_in_call(self._in_call)
         self._invalidate()
 
     def set_menu_open(self, open_: bool) -> None:
@@ -1071,11 +1051,32 @@ class Notch:
         self._ui.notice(time.monotonic())
         self._invalidate()
 
-    # ------------------------------------------------------------- menú
-    def _island_open(self) -> bool:
-        return bool(self._menu is not None and getattr(self._menu, "is_open", lambda: False)())
+    # ------------------------------------------------------- confirmación
+    @property
+    def confirmation_visible(self) -> bool:
+        return self._confirm_panel.visible
 
-    def toggle_menu(self) -> None:
+    def _confirmation_above_now(self) -> bool:
+        if self._island is None:
+            return False
+        mon, work_bottom = self._monitor_bottom(self._anchor_x, self._anchor_y)
+        below = work_bottom - (self._anchor_y + self.H_ISLAND * self.s)
+        above = self._anchor_y - mon[1]
+        return above > below
+
+    def show_confirmation(
+        self,
+        summary: str,
+        strong: bool,
+        on_yes,
+        on_no,
+    ) -> None:
+        """Expande la isla con el resumen y los botones Sí/No.
+
+        El resumen llega ya generado por el código de la herramienta. La
+        llamada se hace desde el hilo Tk (evento ``confirm_ask``); los
+        callbacks de los botones deben volver a la cola de la app.
+        """
         now = time.monotonic()
         if self._island_open():
             try:
@@ -1085,8 +1086,59 @@ class Notch:
             self._menu_open = False
             self._ui.set_menu_open(False)
             self._arrow.to(0.0, now, T_BASE, EASE_OUT)
+        self._confirm_panel.show(summary, strong, on_yes, on_no)
+        self._confirm_above = self._confirmation_above_now()
+        self._confirm_pressed = None
+        self._ui.set_base("think")
+        if not self._visible:
+            self.show("thinking")
+        self._tab_w.to(
+            float(CONFIRM_W),
+            now,
+            0 if not self._animations else T_SLOW,
+            EASE_OUT,
+        )
+        self._invalidate()
+
+    def hide_confirmation(self) -> None:
+        now = time.monotonic()
+        self._confirm_panel.hide()
+        self._confirm_pressed = None
+        self._tab_w.to(
+            float(self._compact_layout_width()),
+            now,
+            0 if not self._animations else T_CLOSE_RETRACT,
+            EASE_IN,
+        )
+        self._invalidate()
+
+    # ------------------------------------------------------------- menú
+    def _island_open(self) -> bool:
+        return bool(self._menu is not None and getattr(self._menu, "is_open", lambda: False)())
+
+    def open_menu(self) -> None:
+        """Abre Ajustes si no hay una confirmación pendiente ni está abierto."""
+        if self._confirm_panel.visible:
+            return
+        if self._island_open():
+            return
+        self.toggle_menu()
+
+    def toggle_menu(self) -> None:
+        now = time.monotonic()
+        if self._confirm_panel.visible:
+            # Una confirmación pendiente manda: no se abre el menú debajo.
+            return
+        if self._island_open():
+            try:
+                self._menu.close(now)
+            except Exception:
+                pass
+            self._menu_open = False
+            self._ui.set_menu_open(False)
+            self._arrow.to(0.0, now, T_BASE, EASE_OUT)
             self._tab_w.to(
-                float(W_COMPACT), now,
+                self._compact_layout_width(), now,
                 0 if not self._animations else T_CLOSE_RETRACT,
                 EASE_IN,
             )
@@ -1129,6 +1181,7 @@ class Notch:
                     on_hide=self._hide_from_menu,
                     on_close=self._menu_closed,
                     on_text_edit=self._menu_text_edit,
+                    on_action=self._menu_action,
                 )
             except Exception as exc:  # noqa: BLE001
                 print(f"[ezagent-voice] Menú: no pude crearlo: {exc}", flush=True)
@@ -1149,6 +1202,9 @@ class Notch:
         self._menu_open = True
         self._ui.set_menu_open(True)
         self._arrow.to(180.0, now, T_BASE, EASE_OUT)
+        # La pestaña parte del ancho cerrado real (169 en muesca, 151 flotando)
+        # y crece hasta los 320 px del menú.
+        self._tab_w = Tween(float(self._compact_layout_width()))
         self._tab_w.to(
             float(W), now,
             0 if not self._animations else T_SLOW,
@@ -1163,7 +1219,7 @@ class Notch:
         now = time.monotonic()
         self._arrow.to(0.0, now, T_BASE, EASE_OUT)
         self._tab_w.to(
-            float(W_COMPACT), now,
+            self._compact_layout_width(), now,
             0 if not self._animations else T_CLOSE_RETRACT,
             EASE_IN,
         )
@@ -1202,6 +1258,15 @@ class Notch:
         except Exception:
             pass
 
+    def _menu_action(self, action: str) -> None:
+        """Acción de una fila del menú que no es un ajuste persistido."""
+        try:
+            self.on_menu_action(str(action))
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"[ezagent-voice] Menú acción {action}: {exc}", flush=True
+            )
+
     def menu_height(self, now: float) -> float:
         if self._menu is None:
             return 0.0
@@ -1213,52 +1278,77 @@ class Notch:
 
     # ------------------------------------------------------------- puntero
     def _current_tab_width(self) -> float:
+        base = self._compact_layout_width()
         if self.menu_height(time.monotonic()) <= 0.5:
-            return float(W_COMPACT)
-        return min(float(W), max(float(W_COMPACT), float(self._tab_w.value)))
+            return base
+        return min(float(W), max(base, float(self._tab_w.value)))
 
     def _control_layout(
         self, tab_w: float | None = None
     ) -> tuple[Rect, float, Rect]:
-        """Devuelve (mic, centro de ojos, flecha) para el ancho actual."""
+        """Devuelve (mic, centro de ojos, flecha) para el ancho actual.
+
+        Cerrada, la disposición parte de la muesca (169) o de la píldora
+        (151). Al abrir el menú, los tres controles interpolan hasta la
+        disposición ancha: mic en 19–47, ojos en ``cx=160`` y flecha con
+        centro en ``x=289``.
+        """
         if tab_w is None:
             tab_w = self._current_tab_width()
-        span = float(W - W_COMPACT)
-        progress = 0.0 if span <= 0 else (tab_w - W_COMPACT) / span
+        if getattr(self, "_attachment", "float") == "top":
+            mic0 = MIC_BUTTON_COMPACT
+            eyes0 = EYES_CX_COMPACT
+            arrow0 = ARROW_BUTTON_COMPACT
+        else:
+            mic0 = MIC_BUTTON_FLOAT
+            eyes0 = EYES_CX_FLOAT
+            arrow0 = ARROW_BUTTON_FLOAT
+        base_w = self._compact_layout_width()
+        span = float(W) - base_w
+        progress = 0.0 if span <= 0 else (float(tab_w) - base_w) / span
         progress = min(1.0, max(0.0, progress))
-        eyes_cx = EYES_CX_COMPACT + (EYES_CX_WIDE - EYES_CX_COMPACT) * progress
-        arrow_cx = tab_w - 31.0
-        arrow = Rect(arrow_cx - 12.0, 6.0, arrow_cx + 12.0, 30.0)
-        return MIC_BUTTON_COMPACT, eyes_cx, arrow
-
-    @staticmethod
-    def _reflect_side_rect(rect: Rect) -> Rect:
-        return Rect(
-            float(W_SIDE) - rect.x1,
-            rect.y0,
-            float(W_SIDE) - rect.x0,
-            rect.y1,
+        mic = Rect(
+            mic0.x0 + (MIC_BUTTON_COMPACT.x0 - mic0.x0) * progress,
+            mic0.y0 + (MIC_BUTTON_COMPACT.y0 - mic0.y0) * progress,
+            mic0.x1 + (MIC_BUTTON_COMPACT.x1 - mic0.x1) * progress,
+            mic0.y1 + (MIC_BUTTON_COMPACT.y1 - mic0.y1) * progress,
         )
-
-    def _side_control_layout(self) -> tuple[Rect, float, float, Rect]:
-        """``(mic, cx_ojos, cy_ojos, flecha)`` para la píldora lateral."""
-        mic = MIC_BUTTON_SIDE
-        arrow = ARROW_BUTTON_SIDE
-        if self._attachment == "right":
-            mic = self._reflect_side_rect(mic)
-            arrow = self._reflect_side_rect(arrow)
-        return mic, float(W_SIDE) / 2.0, float(EYES_CY_SIDE), arrow
+        eyes_cx = eyes0 + (EYES_CX_WIDE - eyes0) * progress
+        arrow_cx = arrow0.center[0] + (
+            float(W) - 31.0 - arrow0.center[0]
+        ) * progress
+        arrow = Rect(arrow_cx - 12.0, 6.0, arrow_cx + 12.0, 30.0)
+        return mic, eyes_cx, arrow
 
     def _hit_button(
         self, x: float, y: float, tab_w: float | None = None
     ) -> str | None:
-        if self._is_side_attachment():
-            mic, _eyes_cx, _eyes_cy, arrow = self._side_control_layout()
-        else:
-            mic, _eyes_cx, arrow = self._control_layout(tab_w)
+        mic, _eyes_cx, arrow = self._control_layout(tab_w)
         for name, rect in (("mic", mic), ("arrow", arrow)):
             if rect.x0 <= x <= rect.x1 and rect.y0 <= y <= rect.y1:
                 return name
+        return None
+
+    def _current_confirm_height(self, menu_visible: bool | None = None) -> float:
+        if menu_visible is None:
+            menu_visible = self.menu_height(time.monotonic()) > 0.5
+        if menu_visible or not self._confirm_panel.visible:
+            return 0.0
+        return float(CONFIRM_H)
+
+    def _confirmation_point(
+        self, x: float, y: float
+    ) -> tuple[float, float] | None:
+        """Coordenadas locales del panel si ``(x, y)`` cae dentro."""
+        confirm_h = self._current_confirm_height()
+        if confirm_h <= 0.0:
+            return None
+        window_w = max(self._compact_layout_width(), float(CONFIRM_W))
+        panel_x = (window_w - float(CONFIRM_W)) / 2.0
+        panel_y = 0.0 if self._confirm_above else float(H_ISLAND)
+        lx, ly = x - panel_x, y - panel_y
+        if 0.0 <= lx <= CONFIRM_W and 0.0 <= ly <= confirm_h:
+            return lx, ly
         return None
 
     def _pointer_geometry(
@@ -1266,35 +1356,24 @@ class Notch:
     ) -> tuple[bool, tuple[float, float], tuple[float, float], bool, float]:
         menu_h = self.menu_height(time.monotonic())
         menu_visible = menu_h > 0.5
-        if self._is_side_attachment():
-            window_w, _window_h, panel_x, tab_x, tab_y, _p = (
-                self._side_window_geometry(menu_h)
-            )
-            tab_w = float(W_SIDE)
-            in_tab = (
-                tab_x <= x <= tab_x + tab_w
-                and tab_y <= y <= tab_y + H_SIDE
-            )
-            menu_coords = (
-                (x - panel_x, y + H_ISLAND)
-                if menu_visible
-                else (x, y)
-            )
-            return (
-                in_tab,
-                (x - tab_x, y - tab_y),
-                menu_coords,
-                menu_visible,
-                tab_w,
-            )
-        window_w = W if menu_visible else W_COMPACT
-        tab_w = (
-            min(float(W), max(float(W_COMPACT), float(self._tab_w.value)))
-            if menu_visible
-            else float(W_COMPACT)
-        )
+        confirm_h = self._current_confirm_height(menu_visible)
+        base = self._compact_layout_width()
+        if menu_visible:
+            window_w = float(W)
+            tab_w = min(float(W), max(base, float(self._tab_w.value)))
+        elif confirm_h > 0.0:
+            window_w = max(base, float(CONFIRM_W))
+            tab_w = min(window_w, max(base, float(self._tab_w.value)))
+        else:
+            window_w = base
+            tab_w = base
         tab_x = (window_w - tab_w) / 2.0
-        tab_y = menu_h if (menu_visible and self._menu_above) else 0.0
+        if menu_visible:
+            tab_y = menu_h if self._menu_above else 0.0
+        elif confirm_h > 0.0:
+            tab_y = confirm_h if self._confirm_above else 0.0
+        else:
+            tab_y = 0.0
         in_tab = (
             tab_x <= x <= tab_x + tab_w
             and tab_y <= y <= tab_y + H_ISLAND
@@ -1311,6 +1390,14 @@ class Notch:
         )
 
     def pointer_down(self, x: float, y: float) -> bool:
+        point = self._confirmation_point(x, y)
+        if point is not None:
+            action = self._confirm_panel.hit(*point)
+            if action is not None:
+                self._confirm_pressed = action
+            # El panel consume el clic aunque no sea sobre un botón: así no
+            # se arrastra la isla mientras hay una confirmación pendiente.
+            return True
         in_tab, (lx, ly), (mx, my), menu_visible, tab_w = self._pointer_geometry(x, y)
         if in_tab:
             if self._menu is not None:
@@ -1336,6 +1423,8 @@ class Notch:
         return False
 
     def pointer_move(self, x: float, y: float) -> bool:
+        if self._confirmation_point(x, y) is not None:
+            return True
         in_tab, (lx, ly), (mx, my), menu_visible, tab_w = self._pointer_geometry(x, y)
         if in_tab:
             action = self._hit_button(lx, ly, tab_w)
@@ -1355,6 +1444,15 @@ class Notch:
         return False
 
     def pointer_up(self, x: float, y: float) -> bool:
+        if self._confirm_pressed is not None:
+            action = self._confirm_pressed
+            self._confirm_pressed = None
+            point = self._confirmation_point(x, y)
+            if point is not None and self._confirm_panel.hit(*point) == action:
+                self._confirm_panel.activate(action)
+                self.hide_confirmation()
+            self._invalidate()
+            return True
         in_tab, (lx, ly), (mx, my), menu_visible, tab_w = self._pointer_geometry(x, y)
         if self._pressed is not None:
             action = self._pressed
@@ -1397,6 +1495,9 @@ class Notch:
         return self.wheel(x / self.s, y / self.s, delta)
 
     def cursor_hand(self, x: float, y: float) -> bool:
+        point = self._confirmation_point(x, y)
+        if point is not None:
+            return self._confirm_panel.hit(*point) is not None
         in_tab, (lx, ly), (mx, my), menu_visible, tab_w = self._pointer_geometry(x, y)
         if in_tab:
             return self._hit_button(lx, ly, tab_w) is not None
@@ -1417,9 +1518,13 @@ class Notch:
         if action == "arrow":
             self.toggle_menu()
             return
-        # La isla nombra el control ("mic"); la app escucha la intención
-        # ("mute"). Sin este puente, pulsar el micrófono no hacía nada.
-        intent = "mute" if action == "mic" else action
+        # La isla nombra el control ("mic"); la app escucha la intención.
+        # Si la escucha está apagada, el micrófono la reactiva; si está
+        # encendida, el mismo control silencia o reactiva el micrófono.
+        if action == "mic":
+            intent = "mute" if self._in_call else "listen"
+        else:
+            intent = action
         try:
             self.on_action(intent)
         except Exception as exc:  # noqa: BLE001
@@ -1482,16 +1587,15 @@ class Notch:
                 if self._island is not None:
                     self._island.hide()
                 # No cambiamos el tamaño del DIB al final: la ventana se oculta.
-                if self._is_side_attachment():
-                    return np.zeros((self.H_SIDE, self.W_SIDE, 4), np.uint8)
-                return np.zeros((self.H_ISLAND, self.W_COMPACT, 4), np.uint8)
+                return np.zeros(
+                    (self.H_ISLAND, self._compact_width_px(), 4), np.uint8
+                )
 
         menu_h = self.menu_height(now)
         menu_visible = menu_h > 0.5
         if not menu_visible:
             self._menu_open = False
         scale = self.s
-        side = self._is_side_attachment()
         if not self._dragging and not self._menu_open and self._island is not None:
             self._attachment = self._attachment_for_rect(
                 self._island.x,
@@ -1499,66 +1603,50 @@ class Notch:
                 self._island.w,
                 self._island.h,
             )
-            side = self._is_side_attachment()
-        if side:
-            window_w, height, panel_x, tab_x, tab_y, _progress = (
-                self._side_window_geometry(menu_h)
-            )
-            tab_w = float(W_SIDE)
-            tab_h = float(H_SIDE)
-            surface = render_side_surface(
-                window_w,
-                height,
-                self._theme,
-                scale,
-                attachment=self._attachment,
-                panel_width=float(W),
-                panel_height=menu_h,
-            )
+        confirm_h = self._current_confirm_height(menu_visible)
+        if confirm_h > 0.0:
+            self._confirm_above = self._confirmation_above_now()
+        panel_h = menu_h + confirm_h
+        base_w = self._compact_layout_width()
+        height = H_ISLAND + panel_h
+        if menu_visible:
+            window_w = float(W)
+            tab_w = min(float(W), max(base_w, float(self._tab_w.value)))
+            tab_y = menu_h if self._menu_above else 0.0
+            panel_above = self._menu_above
+        elif confirm_h > 0.0:
+            window_w = max(base_w, float(CONFIRM_W))
+            tab_w = min(window_w, max(base_w, float(self._tab_w.value)))
+            tab_y = confirm_h if self._confirm_above else 0.0
+            panel_above = self._confirm_above
         else:
-            height = H_ISLAND + menu_h
-            window_w = W if menu_visible else W_COMPACT
-            if menu_visible:
-                tab_w = min(
-                    float(W), max(float(W_COMPACT), float(self._tab_w.value))
-                )
-            else:
-                tab_w = float(W_COMPACT)
-            tab_h = float(H_ISLAND)
-            surface = render_surface(
-                window_w,
-                height,
-                self._theme,
-                scale,
-                tab_width=tab_w,
-                attachment=self._attachment,
-                menu_h=menu_h,
-                menu_above=self._menu_above,
-                body_width=tab_w,
-            )
-            tab_x = (window_w - tab_w) / 2.0
-            tab_y = menu_h if (menu_visible and self._menu_above) else 0.0
-            panel_x = 0.0
+            window_w = base_w
+            tab_w = base_w
+            tab_y = 0.0
+            panel_above = False
+        surface = render_surface(
+            window_w,
+            height,
+            self._theme,
+            scale,
+            tab_width=tab_w,
+            attachment=self._attachment,
+            menu_h=panel_h,
+            menu_above=panel_above,
+            body_width=tab_w,
+        )
+        tab_x = (window_w - tab_w) / 2.0
         frame_h = max(1, int(round(height * scale)))
         frame_w = max(1, int(round(window_w * scale)))
         buf = surface[..., [2, 1, 0, 3]].astype(np.float32) / 255.0
 
-        # La isla se mantiene anclada en pantalla: el menú crece hacia el lado
-        # con espacio y la ventana se desplaza en consecuencia.
-        if side:
-            mon, _work_bottom = self._monitor_bottom(
-                self._anchor_x, self._anchor_y
-            )
-            if self._attachment == "left":
-                window_x = float(mon[0])
-            else:
-                window_x = float(mon[2]) - window_w * scale
-            window_y = self._anchor_y - (height * scale) / 2.0
-        else:
-            window_x = self._anchor_x - (window_w * scale) / 2.0
-            window_y = self._anchor_y - (
-                menu_h * scale if self._menu_above and menu_visible else 0.0
-            )
+        # La isla se mantiene anclada en pantalla: el menú (o la fila de
+        # confirmación) crece hacia el lado con espacio y la ventana se
+        # desplaza en consecuencia.
+        window_x = self._anchor_x - (window_w * scale) / 2.0
+        window_y = self._anchor_y - (
+            panel_h * scale if panel_above else 0.0
+        )
         if self._island is not None:
             ix, iy = int(round(window_x)), int(round(window_y))
             if self._island.x != ix or self._island.y != iy:
@@ -1590,18 +1678,9 @@ class Notch:
         )
         level = 1.0 if pose_name in ("listen", "speak") else 0.0
         wave_alpha = self._pose.wave_alpha.value
-        if side:
-            _mic, eyes_cx, eyes_cy, _handle = self._side_control_layout()
-            eyes_x = tab_x + eyes_cx
-            eyes_y = tab_y + eyes_cy
-            gap_override = SIDE_EYES_GAP
-            wave_below = True
-        else:
-            _mic, eyes_cx, _handle = self._control_layout(tab_w)
-            eyes_x = tab_x + eyes_cx
-            eyes_y = tab_y + EYES_CY
-            gap_override = None
-            wave_below = False
+        _mic, eyes_cx, _handle = self._control_layout(tab_w)
+        eyes_x = tab_x + eyes_cx
+        eyes_y = tab_y + EYES_CY
         draw_eyes(
             buf,
             eyes_x,
@@ -1618,41 +1697,22 @@ class Notch:
             arc_alpha=arc_alpha,
             wave_alpha=wave_alpha,
             wave_width=pose.wave_w,
-            gap_override=gap_override,
-            wave_below=wave_below,
         )
 
         self._draw_controls(buf, now, menu_h, tab_x, tab_y, tab_w)
+        if confirm_h > 0.0:
+            origin_x = (window_w - tab_w) / 2.0
+            origin_y = 0.0 if self._confirm_above else float(H_ISLAND)
+            span = max(1.0, float(CONFIRM_W) - base_w)
+            progress = min(
+                1.0, max(0.0, (tab_w - base_w) / span)
+            )
+            self._confirm_panel.draw(
+                buf, origin_x, origin_y, alpha=progress
+            )
         if menu_visible and self._menu is not None:
             try:
-                if side:
-                    vh = float(self._menu.viewport_height)
-                    menu_buf = np.zeros(
-                        (
-                            max(1, int(round((H_ISLAND + vh) * scale))),
-                            max(1, int(round(W * scale))),
-                            4,
-                        ),
-                        np.float32,
-                    )
-                    self._menu.draw(menu_buf, now)
-                    src0 = int(round(H_ISLAND * scale))
-                    src_h = min(
-                        int(round(menu_h * scale)),
-                        max(0, menu_buf.shape[0] - src0),
-                        buf.shape[0],
-                    )
-                    dst_x = int(round(panel_x * scale))
-                    src_w = min(menu_buf.shape[1], max(0, buf.shape[1] - dst_x))
-                    if src_h > 0 and src_w > 0:
-                        src = menu_buf[src0:src0 + src_h, :src_w]
-                        dst = buf[:src_h, dst_x:dst_x + src_w]
-                        inv = 1.0 - src[..., 3:4]
-                        dst[..., :3] = src[..., :3] + dst[..., :3] * inv
-                        dst[..., 3] = (
-                            src[..., 3] + dst[..., 3] * inv[..., 0]
-                        )
-                elif self._menu_above:
+                if self._menu_above:
                     menu_buf = np.zeros_like(buf)
                     self._menu.draw(menu_buf, now)
                     src0 = int(round(H_ISLAND * scale))
@@ -1675,33 +1735,15 @@ class Notch:
             except Exception as exc:  # noqa: BLE001
                 print(f"[ezagent-voice] Menú render: {exc}", flush=True)
 
-        if menu_visible:
-            # Durante la expansión de ancho el contenido del menú se recorta a
-            # la silueta; así no asoma por los lados mientras la pieza crece.
+        if panel_h > 0.0:
+            # Durante la expansión de ancho el contenido se recorta a la
+            # silueta; así no asoma por los lados mientras la pieza crece.
             mask = surface[..., 3:4].astype(np.float32) / 255.0
             np.minimum(buf[..., 3:4], mask, out=buf[..., 3:4])
             np.minimum(buf[..., :3], buf[..., 3:4], out=buf[..., :3])
 
         # A-01/A-02: transformar el conjunto (cuerpo + contenido).
-        if side:
-            if self._show_t0 is not None:
-                k = min(1.0, max(0.0, (now - self._show_t0) / (T_OPEN / 1000.0)))
-                ease = EASE_SPRING(k) if self._animations else EASE_OUT(k)
-                buf = self._transform(buf, 1.0, 0.0, ease)
-            elif self._hide_t0 is not None:
-                elapsed = now - self._hide_t0
-                close_ms = T_CLOSE_EYES if self._hide_eyes else 0
-                if elapsed >= close_ms / 1000.0:
-                    k = min(
-                        1.0,
-                        max(
-                            0.0,
-                            (elapsed - close_ms / 1000.0)
-                            / (T_CLOSE_RETRACT / 1000.0),
-                        ),
-                    )
-                    buf = self._transform(buf, 1.0, 0.0, 1.0 - k)
-        elif self._show_t0 is not None:
+        if self._show_t0 is not None:
             k = min(1.0, max(0.0, (now - self._show_t0) / (T_OPEN / 1000.0)))
             ease = EASE_SPRING(k) if self._animations else EASE_OUT(k)
             buf = self._transform(buf, 0.55 + 0.45 * ease, -H_ISLAND * (1.0 - ease), ease)
@@ -1752,6 +1794,7 @@ class Notch:
                 or self._hide_t0 is not None
                 or menu_animating
                 or moving_pose
+                or self._tab_w.active
             )
             if active:
                 interval = 1.0 / 60.0
@@ -1797,6 +1840,19 @@ class Notch:
                     return (x0 + (x1 - x0) * f, 0.0)
         return (0.0, 0.0)
 
+    def mic_appearance(self) -> tuple[str, str]:
+        """Icono y color reales del micrófono en este fotograma.
+
+        - Escucha apagada y sin mute: micrófono tachado en gris.
+        - Micrófono silenciado: tachado en rojo (aunque la escucha esté apagada).
+        - Escucha activa: micrófono normal.
+        """
+        if self._muted:
+            return "microphone-slash", "ERR"
+        if not self._in_call:
+            return "microphone-slash", "TEXT_3"
+        return "microphone", "TEXT_2"
+
     def _draw_controls(
         self,
         buf: np.ndarray,
@@ -1804,33 +1860,26 @@ class Notch:
         menu_h: float,
         offset_x: float,
         offset_y: float,
-        tab_w: float = W_COMPACT,
+        tab_w: float | None = None,
     ) -> None:
         theme = palette(self._theme)
         hover = self._hover
         pressed = self._pressed
         ox, oy = offset_x, offset_y
-        if self._is_side_attachment():
-            mic_rect, _eyes_cx, _eyes_cy, arrow_rect = self._side_control_layout()
-        else:
-            mic_rect, _eyes_cx, arrow_rect = self._control_layout(tab_w)
+        mic_rect, _eyes_cx, arrow_rect = self._control_layout(tab_w)
         mic_cx = (mic_rect.x0 + mic_rect.x1) / 2 + ox
         mic_cy = (mic_rect.y0 + mic_rect.y1) / 2 + oy
         arrow_cx = (arrow_rect.x0 + arrow_rect.x1) / 2 + ox
         arrow_cy = (arrow_rect.y0 + arrow_rect.y1) / 2 + oy
 
-        # Micrófono: icono desnudo, sin disco ni fondo.
+        # Micrófono: icono desnudo, sin disco ni fondo. La cara cambia con el
+        # estado real: apagado (gris), silenciado (rojo) o escuchando (normal).
         mic_scale = BUTTON_PRESSED_SCALE if pressed == "mic" else 1.0
-        if self._ui.muted:
-            draw_icon(
-                buf, "microphone-slash", mic_cx, mic_cy,
-                ICON_MIC_SIZE * mic_scale, theme["ERR"][:3], self.s,
-            )
-        else:
-            draw_icon(
-                buf, "microphone", mic_cx, mic_cy,
-                ICON_MIC_SIZE * mic_scale, theme["TEXT_2"][:3], self.s,
-            )
+        mic_icon, mic_color_key = self.mic_appearance()
+        draw_icon(
+            buf, mic_icon, mic_cx, mic_cy,
+            ICON_MIC_SIZE * mic_scale, theme[mic_color_key][:3], self.s,
+        )
 
         # Flecha desnuda a la derecha: gira con el menú, sin cápsula.
         if self._menu_open:
@@ -1839,25 +1888,16 @@ class Notch:
             arrow_color = theme["TEXT"][:3]
         else:
             arrow_color = theme["TEXT_2"][:3]
-        base_angle = 0.0
-        if self._attachment == "left":
-            base_angle = -90.0
-        elif self._attachment == "right":
-            base_angle = 90.0
         draw_chevron(
             buf, arrow_cx, arrow_cy,
             ICON_ARROW_SIZE * (
                 BUTTON_PRESSED_SCALE if pressed == "arrow" else 1.0
             ),
-            arrow_color, self.s, angle_deg=base_angle + self._arrow.value,
+            arrow_color, self.s, angle_deg=self._arrow.value,
         )
         if self._dirty and menu_h <= 0.5:
-            if self._is_side_attachment():
-                dot_x = arrow_rect.x1 - 1.0 + ox
-                dot_y = arrow_rect.y1 - 3.0 + oy
-            else:
-                dot_x = arrow_rect.x1 - 2.0 + ox
-                dot_y = 8.0 + oy
+            dot_x = arrow_rect.x1 - 2.0 + ox
+            dot_y = 8.0 + oy
             fill_circle(
                 buf, dot_x, dot_y, 2.5, theme["WARM"][:3], self.s
             )

@@ -13,7 +13,7 @@ los dos: los usa por sus CLIs (`hc` y `herdr-app`).
 |---|---|---|
 | **Herdr core (`hc`)** | Ejecuta terminales y agentes, conserva procesos, buffers, estados (OSC 7501), labels, turnos y relaciones padre/hijo | No dibuja la interfaz |
 | **Herdr app (`herdr-app`)** | Espacios, pestañas, paneles, layouts, mods, foco, notificaciones y teclas | No es el runtime de los terminales |
-| **ezagent-voice** | Escucha, transcribe, razona, delega, vigila y narra | No ejecuta agentes por su cuenta |
+| **ezagent-voice** | Escucha, transcribe, razona, usa herramientas nativas, delega, vigila y narra | No ejecuta agentes por su cuenta ni shell libre |
 | **Agentes** (Claude Code, OpenCode, mcode, Codex) | Hacen la tarea real; pueden usar `cua-driver` para GUI | No orquestan a otros |
 | **Mod de Herdr** (opcional, futuro) | Panel/barra dentro de Herdr para estado, mute y últimos avisos | No captura audio ni ejecuta el LLM |
 
@@ -29,8 +29,11 @@ los dos: los usa por sus CLIs (`hc` y `herdr-app`).
 │ ezagent-voice (Python, proceso externo)                      │
 │                                                              │
 │  Hotkeys globales ──► estado IDLE/LISTENING/THINKING/SPEAKING│
-│  VAD adaptativo ──► whisper.cpp ──► OpenCode DeepSeek 4.1    │
+│  VAD adaptativo ──► whisper.cpp ──► LLM (OpenAI-compatible)  │
 │                                      │ tool calling          │
+│                                      ├─ Núcleo agéntico       │
+│                                      │  (permisos, archivos,  │
+│                                      │   web, skills, memoria)│
 │                                      ├─ Herdr adapter         │
 │                                      ├─ Watcher (polling)     │
 │                                      └─ Kokoro TTS ──► notch  │
@@ -188,10 +191,10 @@ Es deliberado:
 ## La isla como mando
 
 La isla es una ventana Win32 layered **interactiva** (`click_through=False`).
-Cerrada mide **169×36** en horizontal o **36×186** acoplada a un lateral; al
+Cerrada mide **169×36** como muesca superior o **151×36** flotando; al
 abrirse, la misma ventana contiene el menú completo y la pestaña se ensancha
-**con** él hasta **320×596** (o **356×560** en lateral, creciendo hacia dentro)
-alrededor del ancla, hacia el lado con más espacio. La barra y el panel comparten una sola silueta, sin escalón. No hay
+**con** él hasta **320×596** alrededor del ancla, hacia el lado con más espacio.
+La barra y el panel comparten una sola silueta, sin escalón. No hay
 `Toplevel`, tooltips ni ventanas secundarias. El WndProc y los hooks de puntero
 traducen clics, arrastre de la isla, arrastre de sliders y rueda; la ventana
 no se activa en reposo (`WS_EX_NOACTIVATE` + `MA_NOACTIVATE`) y solo la edición
@@ -201,24 +204,30 @@ de texto pide el teclado temporalmente.
 |---|---|
 | Micrófono | mute local: micrófono tachado y en rojo (`ERR`) |
 | Flecha | abre o cierra el menú en la misma ventana |
-| Cuerpo de la pestaña | arrastra la isla: píldora flotante, acople arriba/abajo/laterales a ≤12 px del borde |
+| Cuerpo de la pestaña | arrastra la isla: muesca si está a ≤2 px del borde superior, píldora flotante en el resto |
 | Menú | AUDIO, MOTOR, TTS, VAD, WHISPER · STT, LLM · API y CONVERSACIÓN + pie Guardar |
 | «–» del menú | oculta la isla hasta la próxima llamada o atajo |
 
 La isla ya no tiene botón de llamada: el mensajero entra en escucha solo a los 600 ms
 de arrancar y `Ctrl+Alt+Space` sirve para colgar o retomar. Los ojos de dos
-cápsulas son la única marca y quedan centradas en la isla (cx=86,5); la
-flecha del menú es un chevrón desnudo a la derecha. **La isla no tiene texto**: el estado se lee por la forma,
+cápsulas son la única marca y quedan centradas en la isla (cx=86,5 en la
+muesca y cx=75,5 en la píldora); la
+flecha del menú es un chevrón desnudo a la derecha. **La isla no tiene texto de estado** (salvo el resumen de la fila de confirmación): el estado se lee por la forma,
 el tamaño y el color de los ojos; la palabra (ESPERA, ESCUCHO, PIENSO, HABLO,
 AVISO, PAUSA, ERROR) vive en el menú. La onda de cinco cápsulas solo existe en
 HABLO. Los iconos son vectores dibujados por el proyecto; la tipografía del
 menú es **Geist / Geist Mono** y los colores salen de `DESIGN.md` (grafito
 `#0E0F13`, grupos `#1C1C1F`, mint `#5EEAC4`, ámbar `#FFC24A`, rojo
-`#FF453A`). El tema sigue a Windows o se fija en `voice.json`.
+`#FF453A`). El tema sigue a Windows o se fija en `voice.json`. El micrófono
+cambia con el estado real: normal con escucha activa, tachado gris con la
+escucha apagada y tachado rojo con mute; pulsarlo reactiva la escucha. La
+píldora flotante puede colocarse sobre la barra de tareas y se mantiene por
+encima de ella.
 
-Al arrastrar el cuerpo, la pestaña se convierte en píldora; al soltarla dentro
-de los 12 px del borde superior o del inferior útil, se acopla con el cuello
-hacia ese borde (`render_surface` con `attachment="top"|"bottom"|"float"`).
+Al arrastrar el cuerpo, la pestaña se convierte en píldora; solo si se suelta
+dentro de los 2 px del borde superior se acopla con el cuello hacia arriba
+(`render_surface` con `attachment="top"|"float"`). En cualquier otro punto,
+incluidos el borde inferior y los laterales, flota donde se suelta.
 `clamp_position` la mantiene dentro del monitor y por encima de la barra de
 tareas. El menú elige arriba o abajo con `menu_geometry`; si no cabe, limita el
 cuerpo y activa el scroll.
@@ -275,6 +284,7 @@ El proceso del mensajero tiene varios hilos:
 | TTS | Kokoro + PyAudio, frase a frase |
 | Watcher | `hc ls --json` cada 1 s |
 | Notch | Render nativo Win32 a 60 fps |
+| Bandeja del sistema | `pystray` en su propio hilo; los clics publican eventos |
 
 Los hilos de fondo no tocan Tk: ponen eventos en una cola; el hilo principal
 los procesa. El notch lee variables atómicas (estado, RMS, mute) y dibuja.
@@ -293,10 +303,71 @@ se descartan. Eso evita que una respuesta antigua hable encima de una nueva.
 - `Ctrl+Alt+M` mutea el micrófono; el notch muestra un micrófono con barra roja
   y el audio de fondo no se transcribe.
 
+## Núcleo agéntico
+
+`VoiceApp` construye un `AgentRuntime` (`src/ezagent/agent/`) y se lo pasa a
+`Messenger`. El bucle de streaming sigue siendo el mismo `Iterator[str]` que
+consume `_answer_worker`; lo único que cambia es de dónde salen las
+herramientas y cómo se ejecutan.
+
+- **Registro y política:** cada `ToolSpec` declara nivel 0–3, esquema JSON,
+  resumen generado por código y si su salida es no confiable. `policy.decide`
+  convierte eso en `allow`, `confirm`, `confirm_strong` o `deny`.
+- **Confirmaciones:** el hilo de herramientas llama a `ConfirmationManager.ask`
+  y se bloquea hasta la voz o el clic; la UI sigue libre. La app intercepta la
+  siguiente frase transcrita antes de `_fast_command` y la entrega al gestor.
+  La fila Sí/No vive en la misma ventana layered del notch.
+- **Taint:** leer un archivo, una página o el buffer de un agente activa
+  `taint` en el turno; cualquier escritura posterior pide confirmación.
+- **Auditoría:** cada llamada deja una línea en `logs/audit.jsonl` con rutas y
+  contadores, nunca contenidos, y redacta claves y tokens.
+- **Memoria y skills:** `system.md`, `USER.md`, `MEMORY.md`, el catálogo de
+  skills y `history.db` (FTS5) se ensamblan en el prompt al inicio de cada
+  turno; `system.md` se recarga por mtime sin reiniciar.
+- **Herdr:** todas las acciones se agrupan en `delegate_to_agent` y
+  `voice_control` para no inflar el prompt; los métodos de `herdr.py` no se
+  reescriben.
+- **Tareas pendientes:** cuando el usuario pide un aviso, el adaptador guarda
+  en `tasks.json` la dirección, el agente y la tarea concreta. El registro
+  sobrevive a un reinicio, se inyecta en el prompt como `<pending_tasks>` y el
+  aviso de finalización dice qué tarea terminó. El watcher elimina la entrada
+  al avisar; el comando «¿qué tareas pendientes tengo?» las enumera.
+- **Modelo y esfuerzo por agente:** `agent_profiles` en `voice.json` define
+  `model_args`/`effort_args` para cada CLI. `delegate_to_agent` acepta `model`
+  y `effort` y solo los aplica al agente lanzado; el LLM de voz conserva su
+  propio modelo global.
+- **Cadenas:** `delegate_to_agent` con `input_from` pasa la salida de un agente
+  a otro. Si la fuente sigue trabajando, la cadena se guarda en `tasks.json`
+  (dentro de `chains`) y el watcher lanza el destino al terminar; si ya
+  terminó, se lanza en el mismo turno. La salida se envuelve como dato y el
+  destino conserva su modelo/esfuerzo.
+- **Atajos:** los cinco atajos (`hotkey`, `cancel_hotkey`, `repeat_hotkey`,
+  `mute_hotkey`, `menu_hotkey`) se editan en el grupo ATAJOS del menú. Al
+  guardar se validan, se evita repetirlos y se re-registran en caliente; un
+  conflicto con otra aplicación queda en el log.
+
+## Pipecat (no se usa)
+
+EzAgent **no usa Pipecat**. El pipeline de voz es propio: `Segmenter`/`MicCapture`
+para VAD y captura, whisper.cpp por HTTP para STT, Kokoro ONNX + PyAudio para
+TTS y el LLM compatible con OpenAI para el razonamiento. La única referencia que
+queda en el código es la carpeta de caché `~/.cache/pipecat/kokoro-onnx`, que se
+conserva para reutilizar modelos Kokoro ya descargados; no es una dependencia ni
+un runtime de Pipecat. Los registros de Pipecat en
+`%APPDATA%/EzAgent/logs/engine.log` son de una versión anterior.
+
 ## Seguridad y consistencia
 
-- El mensajero solo llama a `hc` y `herdr-app`; no ejecuta shell arbitrario.
-- Lanzar, enviar o matar se ejecuta directamente ante una orden explícita; la respuesta es una frase corta con qué se abre y dónde.
+- No hay herramienta de shell: los comandos solo existen en `tools.d/*.toml`
+  (ejecutable permitido, argumentos en lista) o dentro de un agente de Herdr.
+- Las operaciones destructivas o masivas siempre piden confirmación; el toggle
+  «Confirmar acciones» solo afecta a las de nivel 2 no destructivas.
+- Borrar es mover a la Papelera con `send2trash`; no hay borrado definitivo.
+- `permissions.toml` lo edita el usuario; ninguna herramienta puede leerlo ni
+  escribirlo.
+- Lanzar, enviar o matar se ejecuta directamente ante una orden explícita,
+  salvo que la política pida confirmación; la respuesta es una frase corta con
+  qué se abre y dónde.
 - `background=true` solo si el usuario lo pide.
 - El watcher solo vigila agentes pedidos (`announce_all=false`).
 - El contexto del aviso incluye la salida reciente; no se resume hasta que el

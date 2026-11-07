@@ -1,10 +1,10 @@
 """Silueta de la isla y del menú abierto.
 
-Dibuja la muesca de 320 px de ancho con anti-alias SDF de 1 px lógico y salida
-BGRA premultiplicada. En tema oscuro conserva los hombros cóncavos de 7 px y
-extiende los lados rectos hasta cualquier alto. En tema claro no hay hombros:
-el canto superior es recto, el cuerpo va de x=7 a x=313 y lleva un hairline
-``LINE`` de 1 px.
+Dibuja la muesca superior y la píldora flotante con anti-alias SDF de 1 px
+lógico y salida BGRA premultiplicada. La muesca (``top``) conserva los hombros
+cóncavos de 7 px en tema oscuro; la píldora (``float``) es una cápsula de radio
+18. En tema claro la muesca no tiene hombros: el canto superior es recto y el
+cuerpo va de x=7 a x=313 con un hairline ``LINE`` de 1 px.
 
 La capa estática se cachea por ``(alto, tema, escala, sx)``; ``dy`` y
 ``opacity`` se aplican después sobre una copia, para que las animaciones de
@@ -22,14 +22,11 @@ from .tokens import (
     BODY_WIDTH,
     FLARE,
     H_ISLAND,
-    H_SIDE,
     R_FLOAT,
     R_ISLAND,
     R_MENU,
-    R_SIDE,
     W,
     W_COMPACT,
-    W_SIDE,
     WINDOW_OPEN_H,
     palette,
 )
@@ -82,63 +79,6 @@ def _sd_round_box(
         np.sqrt(np.maximum(qx, 0.0) ** 2 + np.maximum(qy, 0.0) ** 2)
         + np.minimum(np.maximum(qx, qy), 0.0)
         - radius
-    )
-
-
-def _sd_round_box_lr(
-    x: np.ndarray,
-    y: np.ndarray,
-    cx: float,
-    cy: float,
-    hw: float,
-    hh: float,
-    r_left: float,
-    r_right: float,
-) -> np.ndarray:
-    """Caja redondeada con radios independientes izquierda/derecha."""
-    radius = np.where(x < cx, r_left, r_right)
-    qx = np.abs(x - cx) - (hw - radius)
-    qy = np.abs(y - cy) - (hh - radius)
-    return (
-        np.sqrt(np.maximum(qx, 0.0) ** 2 + np.maximum(qy, 0.0) ** 2)
-        + np.minimum(np.maximum(qx, qy), 0.0)
-        - radius
-    )
-
-
-def _side_tab_distance(
-    x: np.ndarray,
-    y: np.ndarray,
-    tab_width: float,
-    tab_height: float,
-    attachment: str,
-    theme: str,
-    radius: float = R_SIDE,
-) -> np.ndarray:
-    """Pestaña lateral: franja llena en el borde y cuello girado en las puntas."""
-    if attachment == "right":
-        x = tab_width - x
-    if theme == "light":
-        return _sd_round_box_lr(
-            x, y, tab_width / 2.0, tab_height / 2.0,
-            tab_width / 2.0, tab_height / 2.0, 0.0, R_SIDE,
-        )
-    # Rotación exacta del cuello superior: una franja pegada al borde recorre
-    # toda la altura y el cuerpo retrocede 7 px en cada punta. El cuello queda
-    # lleno contra el borde, sin los huecos de la versión anterior.
-    body = _sd_round_box_lr(
-        x, y, tab_width / 2.0, tab_height / 2.0,
-        tab_width / 2.0, max(0.0, tab_height / 2.0 - FLARE),
-        0.0, radius,
-    )
-    spine = _sd_box(
-        x, y, FLARE / 2.0, tab_height / 2.0,
-        FLARE / 2.0, tab_height / 2.0,
-    )
-    dl = np.hypot(x - FLARE, y)
-    dr = np.hypot(x - FLARE, y - tab_height)
-    return np.maximum(
-        np.minimum(body, spine), FLARE - np.minimum(dl, dr)
     )
 
 
@@ -342,22 +282,19 @@ def _tab_distance(
     attachment: str,
     theme: str,
 ) -> np.ndarray:
-    # Coordenadas locales; el acople inferior es un espejo vertical del
-    # superior, así el cuello mira siempre al borde de la pantalla.
-    ty = tab_height - y if attachment == "bottom" else y
     if attachment == "float":
         return _sd_round_box(
-            x, ty, tab_width / 2.0, tab_height / 2.0,
+            x, y, tab_width / 2.0, tab_height / 2.0,
             tab_width / 2.0, tab_height / 2.0, R_FLOAT, R_FLOAT,
         )
     if theme == "light":
         return _sd_round_box(
-            x, ty, tab_width / 2.0, tab_height / 2.0,
+            x, y, tab_width / 2.0, tab_height / 2.0,
             (tab_width - 2.0 * FLARE) / 2.0, tab_height / 2.0,
             0.0, R_ISLAND,
         )
     return _sd_compact_notch(
-        x, ty, tab_width, tab_height, FLARE, R_ISLAND
+        x, y, tab_width, tab_height, FLARE, R_ISLAND
     )
 
 
@@ -375,13 +312,12 @@ def _continuous_distance(
             x, y, width / 2.0, height / 2.0,
             width / 2.0, height / 2.0, R_MENU, R_MENU,
         )
-    ty = height - y if attachment == "bottom" else y
     if theme == "light":
         return _sd_round_box(
-            x, ty, width / 2.0, height / 2.0,
+            x, y, width / 2.0, height / 2.0,
             width / 2.0, height / 2.0, 0.0, R_MENU,
         )
-    return _sd_compact_notch(x, ty, width, height, FLARE, R_MENU)
+    return _sd_compact_notch(x, y, width, height, FLARE, R_MENU)
 
 
 def _render_surface_base(
@@ -428,11 +364,8 @@ def _render_surface_base(
 
     mask = np.clip(0.5 - distance / AA_RAMP, 0.0, 1.0).astype(np.float32)
     # El canto pegado al borde físico queda opaco, sin línea gris.
-    if mask.shape[0] > 0:
-        if attachment == "top" and tab_y0 <= 0.01:
-            mask[0] = np.where(mask[0] >= 0.5, 1.0, 0.0)
-        if attachment == "bottom" and tab_y0 + tab_height >= height - 0.01:
-            mask[-1] = np.where(mask[-1] >= 0.5, 1.0, 0.0)
+    if mask.shape[0] > 0 and attachment == "top" and tab_y0 <= 0.01:
+        mask[0] = np.where(mask[0] >= 0.5, 1.0, 0.0)
 
     colors = palette(theme)
     body = np.asarray(colors["BODY"][:3], dtype=np.float32) / 255.0
@@ -456,123 +389,6 @@ def _render_surface_base(
     bgra[..., 2] = np.clip(out_c[..., 0] * 255.0 + 0.5, 0, 255).astype(np.uint8)
     bgra[..., 3] = np.clip(out_a * 255.0 + 0.5, 0, 255).astype(np.uint8)
     return bgra
-
-
-_SIDE_CACHE: dict[tuple, np.ndarray] = {}
-_SIDE_CACHE_LIMIT: Final[int] = 16
-
-
-def _render_side_surface_base(
-    width: float,
-    height: float,
-    theme: str,
-    scale: float,
-    attachment: str,
-    tab_width: float,
-    tab_height: float,
-    panel_width: float,
-    panel_height: float,
-) -> np.ndarray:
-    physical_w = max(1, int(round(width * scale)))
-    physical_h = max(1, int(round(height * scale)))
-    ys, xs = np.mgrid[0:physical_h, 0:physical_w].astype(np.float32)
-    x = ((xs + 0.5) / scale).astype(np.float32)
-    y = ((ys + 0.5) / scale).astype(np.float32)
-
-    if panel_height > 0.0 and theme == "dark":
-        # Abierto: el mismo cuello del notch superior, girado. La franja del
-        # borde recorre la altura completa y el panel se ensancha hacia dentro
-        # como una sola pieza.
-        distance = _side_tab_distance(
-            x, y, width, height, attachment, theme, R_MENU
-        )
-    elif panel_height > 0.0:
-        left_r = 0.0 if attachment == "left" else R_MENU
-        right_r = R_MENU if attachment == "left" else 0.0
-        distance = _sd_round_box_lr(
-            x, y, width / 2.0, height / 2.0,
-            width / 2.0, height / 2.0, left_r, right_r,
-        )
-    else:
-        tab_x0 = 0.0 if attachment == "left" else width - tab_width
-        distance = _side_tab_distance(
-            x - tab_x0, y, tab_width, height, attachment, theme
-        )
-
-    mask = np.clip(0.5 - distance / AA_RAMP, 0.0, 1.0).astype(np.float32)
-    # El canto pegado al borde físico queda opaco, sin línea gris.
-    if mask.shape[1] > 0:
-        if attachment == "left":
-            mask[:, 0] = np.where(mask[:, 0] >= 0.5, 1.0, 0.0)
-        if attachment == "right":
-            mask[:, -1] = np.where(mask[:, -1] >= 0.5, 1.0, 0.0)
-
-    colors = palette(theme)
-    body = np.asarray(colors["BODY"][:3], dtype=np.float32) / 255.0
-    out_a = mask
-    out_c = body[None, None, :] * mask[..., None]
-
-    if theme == "light":
-        line = colors["LINE"]
-        line_alpha = (line[3] / 255.0) if len(line) == 4 else 1.0
-        ring = _ring_coverage(distance) * line_alpha
-        line_rgb = np.asarray(line[:3], dtype=np.float32) / 255.0
-        out_c = line_rgb[None, None, :] * ring[..., None] + out_c * (
-            1.0 - ring[..., None]
-        )
-        out_a = ring + out_a * (1.0 - ring)
-
-    out_c = np.minimum(out_c, out_a[..., None])
-    bgra = np.empty((physical_h, physical_w, 4), dtype=np.uint8)
-    bgra[..., 0] = np.clip(out_c[..., 2] * 255.0 + 0.5, 0, 255).astype(np.uint8)
-    bgra[..., 1] = np.clip(out_c[..., 1] * 255.0 + 0.5, 0, 255).astype(np.uint8)
-    bgra[..., 2] = np.clip(out_c[..., 0] * 255.0 + 0.5, 0, 255).astype(np.uint8)
-    bgra[..., 3] = np.clip(out_a * 255.0 + 0.5, 0, 255).astype(np.uint8)
-    return bgra
-
-
-def render_side_surface(
-    width: float,
-    height: float,
-    theme: str = "dark",
-    scale: float = 1.0,
-    *,
-    attachment: str = "left",
-    tab_width: float = W_SIDE,
-    tab_height: float = H_SIDE,
-    panel_width: float = W,
-    panel_height: float = 0.0,
-) -> np.ndarray:
-    """Silueta de una isla acoplada a la izquierda o derecha.
-
-    La pestaña cerrada mide 36×186 y conserva el cuello girado del notch
-    superior. Si ``panel_height > 0``, el mismo cuello se extiende a lo largo
-    del borde y el panel del menú crece hacia el interior como una sola pieza.
-    """
-    if width <= 0 or height <= 0 or scale <= 0:
-        raise ValueError("width, height y scale deben ser mayores que cero")
-    if attachment not in ("left", "right"):
-        raise ValueError(f"acople lateral desconocido: {attachment!r}")
-    if tab_width <= 0 or tab_height <= 0:
-        raise ValueError("la pestaña lateral no puede estar vacía")
-    key = (
-        round(float(width), 3),
-        round(float(height), 3),
-        "light" if theme == "light" else "dark",
-        round(float(scale), 4),
-        attachment,
-        round(float(tab_width), 3),
-        round(float(tab_height), 3),
-        round(float(panel_width), 3),
-        round(float(panel_height), 3),
-    )
-    cached = _SIDE_CACHE.get(key)
-    if cached is None:
-        cached = _render_side_surface_base(*key)
-        if len(_SIDE_CACHE) >= _SIDE_CACHE_LIMIT:
-            _SIDE_CACHE.pop(next(iter(_SIDE_CACHE)))
-        _SIDE_CACHE[key] = cached
-    return cached.copy()
 
 
 def render_surface(
@@ -581,25 +397,28 @@ def render_surface(
     theme: str = "dark",
     scale: float = 1.0,
     *,
-    tab_width: float = W_COMPACT,
+    tab_width: float | None = None,
     tab_height: float = H_ISLAND,
     attachment: str = "float",
     menu_h: float = 0.0,
     menu_above: bool = False,
     body_width: float | None = None,
 ) -> np.ndarray:
-    """Silueta BGRA premultiplicada de la isla compacta y su menú.
+    """Silueta BGRA premultiplicada de la isla y su menú.
 
-    ``attachment``: ``top`` (hombros arriba), ``bottom`` (hombros abajo) o
-    ``float`` (píldora). Con ``menu_h > 0`` el cuerpo del menú se une a la
-    pestaña; si ``tab_width`` y ``body_width`` coinciden se dibuja una sola
-    pieza continua, sin escalón en la unión. ``body_width`` por defecto es el
-    ancho completo de la ventana.
+    ``attachment``: ``top`` (muesca con hombros) o ``float`` (píldora). Con
+    ``menu_h > 0`` el cuerpo del menú se une a la pestaña; si ``tab_width`` y
+    ``body_width`` coinciden se dibuja una sola pieza continua, sin escalón en
+    la unión. ``tab_width`` por defecto es el ancho de la pestaña cerrada
+    (169 px, o el ancho de la ventana si es menor). ``body_width`` por defecto
+    es el ancho completo de la ventana.
     """
     if width <= 0 or height <= 0 or scale <= 0:
         raise ValueError("width, height y scale deben ser mayores que cero")
-    if attachment not in ("top", "bottom", "float"):
+    if attachment not in ("top", "float"):
         raise ValueError(f"acople desconocido: {attachment!r}")
+    if tab_width is None:
+        tab_width = min(float(width), float(W_COMPACT))
     if tab_width <= 0 or tab_height <= 0 or tab_width > width:
         raise ValueError("la pestaña no cabe en el ancho")
     if body_width is None:
@@ -632,13 +451,11 @@ def clear_cache() -> None:
     """Vacía la caché de siluetas (cambio de DPI, tema o contenido)."""
     _CACHE.clear()
     _SURFACE_CACHE.clear()
-    _SIDE_CACHE.clear()
 
 
 __all__ = [
     "bottom_radius",
     "clear_cache",
-    "render_side_surface",
     "render_silhouette",
     "render_surface",
 ]

@@ -5,9 +5,9 @@ píxeles lógicos a 96 DPI. El layout devuelve rectángulos en coordenadas de
 ventana: y = 0 es el borde superior de la isla.
 
 Las claves de fila son las claves reales de `voice.json` (RG-3). El menú
-cubre audio, VAD, voz/TTS, Whisper/STT, LLM/API y conversación; el contenido
-que no cabe en el alto visible se desplaza con la rueda. `test_voice` y
-`llm_profile` son controles del menú, no claves persistidas.
+cubre audio, VAD, voz/TTS, Whisper/STT, LLM/API, conversación y atajos; el
+contenido que no cabe en el alto visible se desplaza con la rueda.
+`test_voice` y `llm_profile` son controles del menú, no claves persistidas.
 """
 
 from __future__ import annotations
@@ -29,7 +29,9 @@ ROW_SELECT = 36
 ROW_SLIDER = 44
 ROW_TOGGLE = 36
 ROW_TEXT = 44
-ROW_METER = 72
+# El medidor ya no dibuja la línea de estado inferior: cabe en una fila
+# compacta como el resto de controles.
+ROW_METER = 44
 ROW_ACTION = 44
 ROW = {
     "select": ROW_SELECT,
@@ -106,6 +108,23 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("test_voice", "action"),
         ),
     ),
+    (
+        "agent",
+        (
+            ("open_system_md", "action"),
+            ("open_voice_json", "action"),
+        ),
+    ),
+    (
+        "hotkeys",
+        (
+            ("hotkey", "text"),
+            ("cancel_hotkey", "text"),
+            ("repeat_hotkey", "text"),
+            ("mute_hotkey", "text"),
+            ("menu_hotkey", "text"),
+        ),
+    ),
 )
 
 GROUP_LABELS = {
@@ -116,6 +135,8 @@ GROUP_LABELS = {
     "stt": "WHISPER · STT",
     "llm": "LLM · API",
     "conversation": "CONVERSACIÓN",
+    "agent": "AGENTE",
+    "hotkeys": "ATAJOS",
 }
 
 MENU_HEIGHT = H_MENU

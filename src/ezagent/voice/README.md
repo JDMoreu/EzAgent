@@ -74,19 +74,16 @@ La isla no es solo un indicador: también es el mando del mensajero.
 | Cuerpo de la pestaña | Arrastrar la isla por la pantalla |
 | Flecha derecha | Abre o cierra el menú completo; es un chevrón sin fondo |
 
-La isla cerrada mide **169×36** en horizontal o **36×186** en un lateral: el espacio justo para los tres controles, sin
-el vacío que dejaba la antigua palabra de estado. Queda como **control compacto
-en reposo**; la llamada se inicia o termina con `Ctrl+Alt+Space`,
-no desde la isla. Al arrastrar su cuerpo se convierte en una **píldora
-flotante**; si la sueltas a menos de 12 px del borde superior se acopla con el
-cuello arriba; a menos de 12 px del borde inferior útil (barra de tareas
-incluida) con el cuello abajo; y a menos de 12 px de un lateral como píldora
-vertical 36×186 con el cuello girado y los controles apilados. En medio de la
-pantalla flota. La flecha derecha
-despliega el **menú completo dentro de la misma ventana** hacia el lado con más
-espacio; en un lateral crece hacia el interior. La píldora se ensancha junto
-con el menú hasta 320 px (356 px con el rail lateral), de modo que
-barra y panel son una sola pieza continua, sin costura, sin tooltips y sin
+La isla cerrada mide **169×36** en la muesca superior o **151×36** como píldora
+flotante: el espacio justo para los tres controles, sin el vacío que dejaba la
+antigua palabra de estado. Queda como **control compacto en reposo**; la llamada
+se inicia o termina con `Ctrl+Alt+Space`, no desde la isla. Al arrastrar su
+cuerpo se convierte en una **píldora flotante** que se queda donde la sueltas;
+solo si la sueltas a menos de 2 px del borde superior se acopla como muesca con
+el cuello arriba. El borde inferior y los laterales no acoplan nada. La flecha
+derecha despliega el **menú completo dentro de la misma ventana** hacia el lado
+con más espacio. La píldora se ensancha junto con el menú hasta 320 px, de modo
+que barra y panel son una sola pieza continua, sin costura, sin tooltips y sin
 ventanas secundarias. El menú se cierra con la flecha o con
 `Ctrl+Alt+O`; el botón `–` oculta la isla hasta la próxima llamada o atajo. El
 menú no roba el foco al abrirse ni al desplazarse: solo pide el teclado mientras
@@ -206,14 +203,25 @@ uv run ezagent-voice --say "Hola, soy el mensajero de Herdr."
 - “Repítemelo.”
 - “Silencio diez minutos.”
 
-Las acciones de lanzar, enviar o matar se ejecutan directamente cuando la
-orden es explícita; el asistente responde en una frase corta con qué abre y
-dónde. No pregunta «¿me confirmas?» en cada paso.
+Las órdenes explícitas de nivel 0 y 1 se ejecutan directamente; las
+destructivas (matar, borrar, sobrescribir) o masivas piden confirmación por voz
+o con la fila Sí/No del notch. El asistente responde en una frase corta con qué
+abre y dónde.
+
+## Núcleo agéntico
+
+Además de Herdr, el mensajero usa el núcleo de `src/ezagent/agent/`: permisos,
+archivos, web, skills y memoria. El detalle de carpetas, niveles y
+confirmaciones está en el README raíz. Las herramientas de Herdr se agrupan en
+`delegate_to_agent` (action list/get/read/send/run/open_terminal/focus/kill/watch)
+y `voice_control` (close/close_and_watch/mic_mute/repeat_last/mute) para no
+inflar el prompt.
 
 ## Visibilidad y CUA
 
-- **Por defecto todo se ve en Herdr.** `herdr_open_terminal` abre una terminal
-  visible y `herdr_run_agent` abre una pestaña visible con el agente y la tarea.
+- **Por defecto todo se ve en Herdr.** `delegate_to_agent` con
+  `action=open_terminal` abre una terminal visible y con `action=run` abre una
+  pestaña visible con el agente y la tarea.
 - Solo se usa `background=true` si el usuario dice explícitamente “en segundo
   plano”, “sin mostrarlo” o “no quiero verlo”.
 - Para tareas de interfaz gráfica (abrir Brave, YouTube, navegar, hacer clic,
@@ -222,8 +230,8 @@ dónde. No pregunta «¿me confirmas?» en cada paso.
 - La skill `cua-driver` está enlazada para Claude Code, Codex y OpenCode
   (`cua-driver skills status`). Si usas otro agente:
   `cua-driver skills install`.
-- El mensajero puede leer el terminal del agente con `herdr_read_agent` y
-  resumir el progreso; no hace falta que mires la pantalla para saber qué pasa.
+- El mensajero puede leer el terminal del agente con `action=read` y resumir el
+  progreso; no hace falta que mires la pantalla para saber qué pasa.
 
 Ejemplo:
 
@@ -234,6 +242,11 @@ El mensajero abre las pestañas visibles y delega; el agente usa `cua-driver`
 para manejar Brave/YouTube.
 
 ## Configuración (`voice.json`)
+
+Los cinco atajos (`hotkey`, `cancel_hotkey`, `repeat_hotkey`, `mute_hotkey`,
+`menu_hotkey`) se pueden editar en el grupo **ATAJOS** del menú o a mano aquí.
+Al guardar se validan, no pueden repetirse y se re-registran sin reiniciar.
+EzAgent no usa Pipecat; el pipeline es propio.
 
 | Campo | Por defecto | Qué hace |
 |---|---|---|
@@ -272,11 +285,13 @@ para manejar Brave/YouTube.
 | `llm_temperature` | `0.3` | Creatividad del LLM |
 | `llm_max_tokens` | `320` | Tope de la respuesta |
 | `llm_reasoning_effort` | `none` | `none`, `low`, `medium` o `high` |
-| `confirm_actions` | `false` | Confirmaciones opcionales; por defecto se ejecuta directo |
+| `confirm_actions` | `false` | Confirmar también las operaciones de nivel 2 no destructivas; las destructivas siempre confirman |
+| `notch_x` / `notch_y` | `null` | Última posición física de la isla; se guarda al arrastrar |
 | `hc_path` | `hc` | CLI de Herdr |
 | `herdr_app_path` | `herdr-app` | CLI de la ventana de Herdr (pestañas visibles) |
 | `default_cwd` | cwd actual | Carpeta por defecto para lanzar agentes |
 | `agents` | claude/opencode/mcode/codex | Comandos para lanzar cada agente |
+| `agent_profiles` | claude/opencode/mcode/minimax/codex | Modelos, esfuerzos y flags de cada agente delegado |
 | `announce_all` | `false` | Avisar de todos los agentes (no recomendado) |
 | `max_read_lines` | `40` | Líneas del buffer que se leen |
 

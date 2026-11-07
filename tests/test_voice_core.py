@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import queue
 import wave
 from io import BytesIO
 
@@ -567,3 +568,119 @@ def test_ensure_whisper_elige_puerto_local_libre(monkeypatch):
     command = captured["command"]
     assert "51234" in command
     assert "auto" in command
+
+
+def test_save_position_conserva_el_resto_y_no_deja_tmp(tmp_path):
+    import json
+
+    path = tmp_path / "voice.json"
+    path.write_text(
+        json.dumps(
+            {
+                "speed": 1.05,
+                "future_key": {"x": 1},
+                "notch_x": 10,
+                "notch_y": 20,
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = VoiceConfig.load(path)
+    cfg.save_position(321, -48, path)
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["notch_x"] == 321
+    assert data["notch_y"] == -48
+    assert data["speed"] == pytest.approx(1.05)
+    assert data["future_key"] == {"x": 1}
+    # No se vuelca el dataclass: las claves por defecto no aparecen.
+    assert "hotkey" not in data
+    assert not path.with_name(path.name + ".tmp").exists()
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ({"notch_x": 320.0, "notch_y": "48"}, (320, 48)),
+        ({"notch_x": "120", "notch_y": 64.0}, (120, 64)),
+        ({"notch_x": "izquierda", "notch_y": 64}, (None, None)),
+        ({"notch_x": 320}, (None, None)),
+        ({"notch_y": 48}, (None, None)),
+        ({}, (None, None)),
+    ],
+)
+def test_config_load_normaliza_la_posicion_del_notch(tmp_path, raw, expected):
+    import json
+
+    path = tmp_path / "voice.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    cfg = VoiceConfig.load(path)
+    assert (cfg.notch_x, cfg.notch_y) == expected
+    if expected[0] is not None:
+        assert isinstance(cfg.notch_x, int)
+        assert isinstance(cfg.notch_y, int)
+
+
+def test_saved_notch_position_requiere_ambas_coordenadas():
+    from types import SimpleNamespace
+
+    from ezagent.voice.app import saved_notch_position
+
+    assert saved_notch_position(
+        SimpleNamespace(notch_x=100, notch_y=-20)
+    ) == (100, -20)
+    assert saved_notch_position(SimpleNamespace(notch_x=100, notch_y=None)) is None
+    assert saved_notch_position(SimpleNamespace(notch_x=None, notch_y=-20)) is None
+    assert saved_notch_position(SimpleNamespace(notch_x="100", notch_y=20)) is None
+    assert saved_notch_position(VoiceConfig()) is None
+
+
+def test_notch_position_callback_encola_y_handle_event_guarda():
+    from ezagent.voice.app import VoiceApp
+
+    saved: list[tuple[int, int]] = []
+
+    class _Cfg:
+        notch_x: int | None = None
+        notch_y: int | None = None
+
+        @staticmethod
+        def save_position(x: int, y: int) -> None:
+            saved.append((x, y))
+
+    app = VoiceApp.__new__(VoiceApp)
+    app.events = queue.Queue()
+    app.cfg = _Cfg()
+
+    # El callback corre en el hilo Win32: solo encola, no escribe en disco.
+    app._notch_position_callback(1280, -200)
+    assert saved == []
+    event = app.events.get_nowait()
+    assert event == ("notch_position", 1280, -200)
+
+    # _handle_event corre en _tick (hilo Tk) y es quien persiste.
+    VoiceApp._handle_event(app, event)
+    assert (app.cfg.notch_x, app.cfg.notch_y) == (1280, -200)
+    assert saved == [(1280, -200)]
+
+
+def test_handle_event_notch_position_no_tumba_la_app_si_falla_el_guardado(
+    capsys,
+):
+    from ezagent.voice.app import VoiceApp
+
+    class _Cfg:
+        notch_x = None
+        notch_y = None
+
+        @staticmethod
+        def save_position(x: int, y: int) -> None:
+            raise OSError("disco lleno")
+
+    app = VoiceApp.__new__(VoiceApp)
+    app.events = queue.Queue()
+    app.cfg = _Cfg()
+
+    VoiceApp._handle_event(app, ("notch_position", 10, 20))
+    assert (app.cfg.notch_x, app.cfg.notch_y) == (10, 20)
+    assert "posición del notch" in capsys.readouterr().out

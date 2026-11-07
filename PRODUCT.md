@@ -10,8 +10,9 @@ desktop (Windows)
 
 Python voice messenger with a Win32 layered notch. VAD and turn segmentation run
 locally; whisper.cpp provides STT, Kokoro provides TTS, and the LLM is selected
-from any OpenAI-compatible provider. There is no Tauri/React app, dashboard,
-call panel, or secondary settings window.
+from any OpenAI-compatible provider. The pipeline is EzAgent's own: **Pipecat is
+not used**. There is no Tauri/React app, dashboard, call panel, or secondary
+settings window.
 
 ## Users
 
@@ -35,11 +36,12 @@ endpoint. The notch makes that hybrid pipeline visible without a dashboard.
 
 ## Operating Context
 
-Windows 11, an always-on-top layered notch, a global hotkey, an external
-whisper-server, and an optional Herdr app for agent orchestration. The notch is
-dragged like a floating pill and attaches to the top or bottom edge. Provider
-keys and models can be configured through `.env`, `llm.json` or the notch menu;
-the notch only takes keyboard focus while an inline text field is being edited.
+Windows 11, an always-on-top layered notch, a global hotkey, a system tray icon,
+an external whisper-server, and an optional Herdr app for agent orchestration.
+The notch is dragged like a floating pill and only becomes a notch at the top
+edge; the pill can sit over the taskbar. Provider keys and models can be
+configured through `.env`, `llm.json` or the notch menu; the notch only takes
+keyboard focus while an inline text field is being edited.
 
 ## Capabilities and Constraints
 
@@ -50,11 +52,47 @@ the notch only takes keyboard focus while an inline text field is being edited.
   and voice preview. Long content scrolls; all labels are Spanish.
 - Edit provider, model, endpoint and API key inline; save providers and switch
   between saved profiles without leaving the notch.
-- Drag the notch anywhere; attach it to the top or bottom work-area edge.
+- Drag the notch anywhere, including over the Windows taskbar, where the
+  floating pill stays above it. It attaches to the top edge as a notch only
+  when it is practically glued to it. The last position is restored on the
+  next launch.
+- Show the real microphone state in the notch: normal while listening, gray
+  crossed out when listening is off, and red crossed out when muted. Clicking
+  the crossed-out microphone resumes listening and clears the mute.
+- Keep a Windows system tray icon while the app is running, with options to
+  configure, restart and close it.
+- Remember pending tasks per agent, persist them across restarts, include them
+  in the model context, and announce what finished with the task description.
+- Choose the model and reasoning effort of each delegated agent independently
+  through its `agent_profiles` entry, and chain one agent's output into the
+  next with `input_from`.
+- Edit the five global keyboard shortcuts in the ATAJOS settings group; they
+  are validated, cannot be duplicated and are re-registered without restarting.
+- Work with local files, the web, skills and persistent memory through a
+  permission level system: reads are free, reversible writes are announced,
+  and destructive or bulk operations always ask for confirmation by voice or
+  with the on-screen Sí/No row.
+- Keep `system.md`, `permissions.toml`, memory Markdown, skills and an
+  append-only audit log under `%APPDATA%\EzAgent\`; all are plain text and
+  editable by the user.
+- Delegate to Herdr agents with a single `delegate_to_agent` dispatcher and
+  control the listening state with `voice_control`.
 - Configure the LLM provider/model through the menu, environment variables or
   `llm.json`.
 - No secondary configuration window, no dashboard, no analytics, no accounts.
 - Spanish UI; factual copy; no invented metrics or capabilities.
+
+## Safety Commitments
+
+- No shell tool: commands only run through declarative `tools.d` entries or a
+  delegated Herdr agent.
+- Deleting always means moving to the Recycle Bin with `send2trash`; the agent
+  cannot perform permanent deletion.
+- Web, file, skill and Herdr-buffer content is untrusted data. After reading
+  it, any write in the same turn requires confirmation.
+- The policy lives in `permissions.toml`, which the user edits and the agent
+  cannot modify. Audit records paths, counts and decisions, never file
+  contents, and redacts secrets.
 
 ## Brand Commitments
 

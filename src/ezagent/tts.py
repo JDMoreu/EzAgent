@@ -8,6 +8,8 @@ from pathlib import Path
 
 from loguru import logger
 
+# Ruta heredada de una versión con Pipecat. EzAgent NO usa Pipecat: solo
+# reutiliza esta caché para no volver a descargar los modelos Kokoro.
 CACHE_DIR = Path(os.path.expanduser("~/.cache/pipecat/kokoro-onnx"))
 VOICES_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
 MODEL_URLS = {

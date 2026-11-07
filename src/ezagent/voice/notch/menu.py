@@ -292,7 +292,9 @@ BLOCK_DELAYS_MS: Final[dict[str, float]] = {
     "stt": 260.0,
     "llm": 300.0,
     "conversation": 340.0,
-    "footer": 380.0,
+    "agent": 380.0,
+    "hotkeys": 420.0,
+    "footer": 460.0,
 }
 CONTENT_CLOSE_MS: Final[float] = T_MICRO
 CLOSE_HEIGHT_DELAY_MS: Final[float] = 60.0  # A-05: la retracción empieza tras el fundido
@@ -310,6 +312,13 @@ FS_VALUE: Final[FontStyle] = FontStyle(
     FS_MICRO.weight,
     FS_MICRO.tracking_em,
     uppercase=False,
+)
+
+# Acciones que no son claves persistidas: prueba de voz y abrir system.md.
+ACTION_KEYS: Final[tuple[str, ...]] = (
+    "test_voice",
+    "open_system_md",
+    "open_voice_json",
 )
 
 
@@ -648,6 +657,7 @@ class Menu:
         on_hide: VoidCallback | None = None,
         on_close: VoidCallback | None = None,
         on_text_edit: Callable[[bool], None] | None = None,
+        on_action: Callable[[str], None] | None = None,
     ) -> None:
         if not isinstance(settings, MenuSettings):
             raise TypeError("settings debe ser MenuSettings")
@@ -665,6 +675,7 @@ class Menu:
         self.on_hide = on_hide
         self.on_close = on_close
         self.on_text_edit = on_text_edit
+        self.on_action = on_action
 
         # Estado de apertura y contenido. La altura es la del cuerpo del menú,
         # sin la isla (0 .. min(560, 0.7 * pantalla - 36)).
@@ -691,7 +702,7 @@ class Menu:
         # Hover, pulsación y arrastre.
         self._row_hover: dict[str, Tween] = {
             key: Tween(0.0)
-            for key in (*ALL_KEYS, "input_meter", "test_voice")
+            for key in (*ALL_KEYS, "input_meter", *ACTION_KEYS)
         }
         self._button_hover: dict[str, Tween] = {
             "hide": Tween(0.0),
@@ -1350,6 +1361,18 @@ class Menu:
             cy + BUTTON_H / 2.0,
         )
 
+    def _action_rect(
+        self, layout: dict[str, LayoutRect], key: str, scroll: float
+    ) -> Rect:
+        row = layout[key]
+        cy = ((row.y0 + row.y1) / 2.0) - scroll
+        return Rect(
+            TEST_BUTTON_X1 - BUTTON_MIN_W,
+            cy - BUTTON_H / 2.0,
+            TEST_BUTTON_X1,
+            cy + BUTTON_H / 2.0,
+        )
+
     # ------------------------------------------------------------------
     # Hit testing
     # ------------------------------------------------------------------
@@ -1462,9 +1485,13 @@ class Menu:
                         ):
                             return MenuHit("meter", "input_meter", rect)
                     elif kind == "action":
-                        button = self._test_rect(layout, scroll)
-                        testing = float(self._testing_t.value) > 0.01
-                        disabled = testing
+                        if key == "test_voice":
+                            button = self._test_rect(layout, scroll)
+                            testing = float(self._testing_t.value) > 0.01
+                            disabled = testing
+                        else:
+                            button = self._action_rect(layout, key, scroll)
+                            disabled = False
                         if disabled and not include_disabled:
                             continue
                         if (
@@ -1473,7 +1500,7 @@ class Menu:
                         ):
                             return MenuHit(
                                 "action",
-                                "test_voice",
+                                key,
                                 button,
                                 disabled=disabled,
                             )
@@ -1730,7 +1757,10 @@ class Menu:
         elif hit.kind == "save":
             self._save(now)
         elif hit.kind == "action":
-            self._start_test(now)
+            if hit.key == "test_voice":
+                self._start_test(now)
+            else:
+                self._notify(self.on_action, hit.key)
         elif hit.kind == "select":
             self._toggle_selector(hit.key, now)
         elif hit.kind == "option":
@@ -2673,7 +2703,7 @@ class Menu:
         )
         self._text_at(
             layer,
-            f"{self.settings.format('min_rms')} · {threshold_db:.0f} dB",
+            f"{threshold_db:.0f} dB",
             FS_VALUE,
             pal["TEXT_2"],
             ROW_X1,
@@ -2736,38 +2766,9 @@ class Menu:
                 alpha,
             )
 
-        if self._meter_muted:
-            status, status_color = "Micrófono silenciado", pal["ERR"]
-        elif not self._meter_active:
-            status, status_color = "Sin escucha", pal["TEXT_3"]
-        elif self._meter_target >= threshold > 0.0:
-            status, status_color = "Escuchando", pal["MINT"]
-        else:
-            status, status_color = "En silencio", pal["TEXT_3"]
-        self._text_at(
-            layer,
-            status,
-            FS_MICRO,
-            status_color,
-            ROW_X0,
-            row_y0 + 56.0,
-            alpha,
-        )
-        level_text = (
-            f"Nivel {20.0 * math.log10(self._meter_level):.0f} dB"
-            if self._meter_level > 0.0
-            else f"Nivel < {METER_DB_FLOOR:.0f} dB"
-        )
-        self._text_at(
-            layer,
-            level_text,
-            FS_MICRO,
-            pal["TEXT_3"],
-            ROW_X1,
-            row_y0 + 56.0,
-            alpha,
-            align="right",
-        )
+        # La fila no dibuja estado ni nivel textual: solo el medidor, la
+        # etiqueta y el umbral en dB. El valor lineal de min_rms tampoco se
+        # muestra; se ajusta arrastrando el thumb.
 
     def _draw_text_row(
         self,
@@ -3001,6 +3002,11 @@ class Menu:
         scroll: float,
         alpha: float,
     ) -> None:
+        if key != "test_voice":
+            self._draw_generic_action_row(
+                layer, key, center_y, pal, alpha
+            )
+            return
         self._text_at(
             layer,
             LABELS[key],
@@ -3100,6 +3106,73 @@ class Menu:
                 bar_cy,
                 alpha * testing,
             )
+
+    def _draw_generic_action_row(
+        self,
+        layer: np.ndarray,
+        key: str,
+        center_y: float,
+        pal: dict[str, Color],
+        alpha: float,
+    ) -> None:
+        """Fila con etiqueta y un botón «Abrir» estático."""
+        self._text_at(
+            layer,
+            LABELS[key],
+            FS_ROW,
+            pal["TEXT"],
+            ROW_X0,
+            center_y,
+            alpha,
+        )
+        rect = Rect(
+            TEST_BUTTON_X1 - BUTTON_MIN_W,
+            center_y - BUTTON_H / 2.0,
+            TEST_BUTTON_X1,
+            center_y + BUTTON_H / 2.0,
+        )
+        hover = max(
+            0.0, min(1.0, float(self._row_hover[key].value))
+        )
+        fill, text_color = self._button_colors("secondary", pal)
+        if hover > 0.001:
+            target: Color = (
+                (255, 255, 255) if self._theme != "light" else (0, 0, 0)
+            )
+            fill = lerp_rgb(fill, target, BUTTON_HOVER_MIX * hover)  # type: ignore[arg-type]
+        _fill_round_rect(
+            layer,
+            rect.x0,
+            rect.y0,
+            rect.x1,
+            rect.y1,
+            BUTTON_RADIUS,
+            fill,
+            self._scale,
+            alpha,
+        )
+        if self._theme == "light":
+            _stroke_round_rect(
+                layer,
+                rect.x0,
+                rect.y0,
+                rect.x1,
+                rect.y1,
+                BUTTON_RADIUS,
+                pal["LINE"],
+                self._scale,
+                alpha,
+            )
+        self._text_at(
+            layer,
+            "Abrir",
+            FS_SECONDARY,
+            text_color,
+            rect.center[0],
+            rect.center[1],
+            alpha,
+            align="center",
+        )
 
     def _draw_selector_list(
         self,

@@ -215,21 +215,18 @@ def capsule_radius(height: float) -> float:
 # --------------------------------------------------------------------------
 
 W: Final[int] = 320
+# Ancho de la muesca acoplada al borde superior. La píldora flotante es más
+# estrecha; al abrir el menú, cualquiera de las dos crece hasta W.
 W_COMPACT: Final[int] = 169
+W_FLOAT: Final[int] = 151
 H_ISLAND: Final[int] = 36
-# Acople lateral: una píldora vertical pegada al borde. El menú crece hacia
-# dentro (320 px) y la pestaña mide 36 x 186, como en la referencia de acople.
-W_SIDE: Final[int] = 36
-H_SIDE: Final[int] = 186
-R_SIDE: Final[float] = 14.0
-SIDE_EDGE_MARGIN: Final[float] = 16.0
-EYES_CY_SIDE: Final[float] = H_SIDE / 2.0
-SIDE_EYES_GAP: Final[float] = 10.0
 BODY_X0: Final[float] = float(FLARE)
 BODY_X1: Final[float] = float(W - FLARE)
 BODY_WIDTH: Final[float] = BODY_X1 - BODY_X0
 BODY_MARGIN_MIN: Final[float] = float(SP_5)
-SNAP_EDGE: Final[float] = 12.0
+# Solo el borde superior acopla: a ≤2 px lógicos del monitor la isla se
+# convierte en muesca; en cualquier otro sitio flota como píldora.
+SNAP_TOP: Final[float] = 2.0
 R_FLOAT: Final[float] = 18.0
 
 # Alto de referencia del menú completo (spec 7.3). Se usa para interpolar el
@@ -241,13 +238,14 @@ MENU_MAX_SCREEN_FRACTION: Final[float] = 0.70
 # La imagen se dibuja con una rampa anti-alias de 1 px lógico (spec 4.4).
 AA_RAMP: Final[float] = 1.0
 
-# Isla compacta: 169 px. Controles: margen 19, mic 28, hueco 8, ojos 63
+# Muesca superior: 169 px. Controles: margen 19, mic 28, hueco 8, ojos 63
 # (grupo máximo), hueco 8, flecha 24, margen 19. Los iconos van desnudos:
 # sin discos, cápsulas, bordes ni fondos.
-# Los ojos quedan en 86,5; el grupo máximo entre 55 y 118. Con el menú abierto
-# (320 px) la pestaña se centra con +75,5, así que los ojos no se mueven en
-# pantalla.
+# Los ojos quedan en 86,5; el grupo máximo entre 55 y 118.
 EYES_CX_COMPACT: Final[float] = 86.5
+# Píldora flotante: 151 px. Mic 12–40, ojos en 75,5 (grupo máximo 44–107) y
+# flecha 115–139: quedan 4 px de hueco con el micro y 8 px con la flecha.
+EYES_CX_FLOAT: Final[float] = 75.5
 EYES_CX_WIDE: Final[float] = 160.0
 EYES_CY: Final[float] = 18.0
 EYES_GROUP_MAX_W: Final[float] = 63.0  # 8 + 10 + 27 + 10 + 8 (HABLO)
@@ -286,10 +284,8 @@ class Rect:
 
 MIC_BUTTON_COMPACT: Final[Rect] = Rect(19, 4, 47, 32)
 ARROW_BUTTON_COMPACT: Final[Rect] = Rect(126, 6, 150, 30)
-# Controles laterales, en coordenadas del borde izquierdo. Para el derecho se
-# reflejan sobre W_SIDE.
-MIC_BUTTON_SIDE: Final[Rect] = Rect(4, 10, 32, 38)
-ARROW_BUTTON_SIDE: Final[Rect] = Rect(6, 152, 30, 176)
+MIC_BUTTON_FLOAT: Final[Rect] = Rect(12, 4, 40, 32)
+ARROW_BUTTON_FLOAT: Final[Rect] = Rect(115, 6, 139, 30)
 
 # Controles de la isla (6.2/6.3): iconos desnudos, sin discos ni cápsulas.
 ICON_MIC_SIZE: Final[float] = 18.0
@@ -363,6 +359,7 @@ ICON_SSAA: Final[int] = 4  # supermuestreo interno del rasterizador vectorial
 __all__ = [
     "AA_RAMP",
     "ARROW_BUTTON_COMPACT",
+    "ARROW_BUTTON_FLOAT",
     "BEZIER_IN",
     "BEZIER_INOUT",
     "BEZIER_OUT",
@@ -374,6 +371,7 @@ __all__ = [
     "COLOR_KEYS",
     "DARK",
     "EYES_CX_COMPACT",
+    "EYES_CX_FLOAT",
     "EYES_CX_WIDE",
     "EYES_CY",
     "EYES_GROUP_MAX_W",
@@ -396,7 +394,6 @@ __all__ = [
     "GLOW_MAX_LIGHT",
     "H_ISLAND",
     "H_MENU",
-    "H_SIDE",
     "ICON_GRID",
     "ICON_SMALL_THRESHOLD",
     "ICON_SSAA",
@@ -405,12 +402,7 @@ __all__ = [
     "LIGHT",
     "MENU_MAX_SCREEN_FRACTION",
     "MIC_BUTTON_COMPACT",
-    "MIC_BUTTON_SIDE",
-    "ARROW_BUTTON_SIDE",
-    "SIDE_EDGE_MARGIN",
-    "SIDE_EYES_GAP",
-    "R_SIDE",
-    "EYES_CY_SIDE",
+    "MIC_BUTTON_FLOAT",
     "ICON_ARROW_SIZE",
     "R_GROUP",
     "R_ISLAND",
@@ -435,7 +427,7 @@ __all__ = [
     "VOICE_RELEASE",
     "W",
     "W_COMPACT",
-    "W_SIDE",
+    "W_FLOAT",
     "WAVE_BAR_COUNT",
     "WAVE_BAR_GAP",
     "WAVE_BAR_W",

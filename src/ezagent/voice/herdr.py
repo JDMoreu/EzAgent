@@ -194,6 +194,48 @@ class Herdr:
             "visible": True,
         }
 
+    def agent_argv(
+        self,
+        agent: str,
+        model: str | None = None,
+        effort: str | None = None,
+    ) -> list[str] | None:
+        """Comando del agente con modelo/esfuerzo según su perfil."""
+        key = agent.strip().lower()
+        base = self.cfg.agents.get(key)
+        if not base:
+            return None
+        profiles = getattr(self.cfg, "agent_profiles", {}) or {}
+        profile = profiles.get(key)
+        if (model or effort) and not isinstance(profile, dict):
+            return None
+        profile = profile if isinstance(profile, dict) else {}
+        command = profile.get("command") or base
+        if not isinstance(command, list):
+            return None
+        argv = [str(part) for part in command]
+        selected_model = str(
+            model or profile.get("default_model") or ""
+        ).strip()
+        selected_effort = str(
+            effort or profile.get("default_effort") or ""
+        ).strip()
+        if selected_model:
+            args = profile.get("model_args", ["--model", "{model}"])
+            if not isinstance(args, list) or not args:
+                return None
+            argv += [
+                str(part).replace("{model}", selected_model) for part in args
+            ]
+        if selected_effort:
+            args = profile.get("effort_args", ["--effort", "{effort}"])
+            if not isinstance(args, list) or not args:
+                return None
+            argv += [
+                str(part).replace("{effort}", selected_effort) for part in args
+            ]
+        return argv
+
     def run_agent(
         self,
         agent: str,
@@ -204,14 +246,24 @@ class Herdr:
         background: bool = False,
         gui: bool = False,
         space: str | None = None,
+        model: str | None = None,
+        effort: str | None = None,
     ) -> dict[str, Any]:
         key = agent.strip().lower()
-        argv = self.cfg.agents.get(key)
-        if not argv:
+        if key not in self.cfg.agents:
             return {
                 "ok": False,
                 "error": f"Agente desconocido: {agent!r}.",
                 "available": sorted(self.cfg.agents),
+            }
+        argv = self.agent_argv(key, model, effort)
+        if not argv:
+            return {
+                "ok": False,
+                "error": (
+                    f"El agente {key!r} no tiene perfil de modelo/esfuerzo. "
+                    "Configura agent_profiles en voice.json."
+                ),
             }
         folder = cwd or self.cfg.default_cwd
         label = name or f"{key} · voz"
@@ -237,6 +289,8 @@ class Herdr:
                 "address": address,
                 "terminal": address,
                 "agent": key,
+                "model": model or "",
+                "effort": effort or "",
                 "cwd": folder,
                 "visible": False,
                 "background": True,
@@ -265,6 +319,8 @@ class Herdr:
             "tab": data.get("tab"),
             "space": data.get("space"),
             "agent": key,
+            "model": model or "",
+            "effort": effort or "",
             "cwd": folder,
             "visible": True,
             "background": False,

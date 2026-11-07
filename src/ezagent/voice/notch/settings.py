@@ -59,6 +59,12 @@ EDITABLE_KEYS: Final[tuple[str, ...]] = (
     # Conversación.
     "barge_in",
     "confirm_actions",
+    # Atajos de teclado.
+    "hotkey",
+    "cancel_hotkey",
+    "repeat_hotkey",
+    "mute_hotkey",
+    "menu_hotkey",
 )
 
 # ``llm_profile`` es un selector de conveniencia: elige un perfil guardado y
@@ -105,6 +111,11 @@ TEXT_KEYS: Final[tuple[str, ...]] = (
     "stt_prompt",
     "kokoro_model_path",
     "kokoro_voices_path",
+    "hotkey",
+    "cancel_hotkey",
+    "repeat_hotkey",
+    "mute_hotkey",
+    "menu_hotkey",
 )
 SECRET_KEYS: Final[tuple[str, ...]] = ("api_key",)
 
@@ -142,6 +153,13 @@ LABELS: Final[dict[str, str]] = {
     "barge_in": "Interrupción activa",
     "confirm_actions": "Confirmar acciones",
     "test_voice": "Prueba de voz",
+    "hotkey": "Atajo de llamada",
+    "cancel_hotkey": "Atajo de colgar",
+    "repeat_hotkey": "Atajo de repetir",
+    "mute_hotkey": "Atajo de silencio",
+    "menu_hotkey": "Atajo de ajustes",
+    "open_system_md": "Abrir system.md",
+    "open_voice_json": "Abrir voice.json",
 }
 
 # Etiquetas de la lista real de voces del motor (los ids son los de Kokoro).
@@ -184,6 +202,11 @@ DEFAULT_VALUES: Final[dict[str, Any]] = {
     "stt_engine": "auto",
     "barge_in": True,
     "confirm_actions": False,
+    "hotkey": "ctrl+alt+space",
+    "cancel_hotkey": "ctrl+alt+e",
+    "repeat_hotkey": "ctrl+alt+r",
+    "mute_hotkey": "ctrl+alt+m",
+    "menu_hotkey": "ctrl+alt+o",
 }
 
 

@@ -86,8 +86,12 @@ class GlobalHotkey:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-    def stop(self) -> None:
+    def stop(self, wait: bool = False) -> None:
         self._stop.set()
+        if wait:
+            thread = self._thread
+            if thread is not None and thread.is_alive():
+                thread.join(timeout=1.0)
 
     def _run(self) -> None:
         try:

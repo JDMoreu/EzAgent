@@ -571,9 +571,11 @@ class LayeredWindow:
         if hwnd:
             try:
                 _u32.ShowWindow(hwnd, 4)          # SW_SHOWNOACTIVATE
+                # Sin SWP_NOZORDER: el notch se reafirma por encima de la
+                # barra de tareas (también es topmost) al mostrarse.
                 _u32.SetWindowPos(hwnd, _HWND_TOPMOST, self.x, self.y,
                                   self.w, self.h,
-                                  _SWP_NOACTIVATE | _SWP_NOZORDER)
+                                  _SWP_NOACTIVATE)
             except Exception:
                 pass
 
@@ -598,8 +600,10 @@ class LayeredWindow:
             hwnd = self.hwnd
         if hwnd:
             try:
+                # Sin SWP_NOZORDER: cada movimiento reafirma el topmost para
+                # que la píldora siga visible aunque esté sobre la taskbar.
                 _u32.SetWindowPos(hwnd, _HWND_TOPMOST, self.x, self.y, 0, 0,
-                                  _SWP_NOSIZE | _SWP_NOZORDER | _SWP_NOACTIVATE)
+                                  _SWP_NOSIZE | _SWP_NOACTIVATE)
             except Exception:
                 pass
 
@@ -991,7 +995,7 @@ class LayeredWindow:
             self._frame = frame
         if window_resized and hwnd:
             _u32.SetWindowPos(hwnd, _HWND_TOPMOST, self.x, self.y, fw, fh,
-                              _SWP_NOACTIVATE | _SWP_NOZORDER)
+                              _SWP_NOACTIVATE)
         pt_src = _POINT(0, 0)
         pt_dst = _POINT(self.x, self.y)
         size = _SIZE(fw, fh)

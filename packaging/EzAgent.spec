@@ -20,13 +20,23 @@ SRC = ROOT / "src"
 
 datas = [
     (str(SRC / "ezagent" / "voice" / "assets"), "ezagent/voice/assets"),
+    (str(SRC / "ezagent" / "agent" / "default_skills"), "ezagent/agent/default_skills"),
     (str(ROOT / "scripts"), "scripts"),
     (str(ROOT / "assets"), "assets"),
 ]
 binaries = []
 hiddenimports = []
 
-for package in ("kokoro_onnx", "onnxruntime"):
+for package in (
+    "kokoro_onnx",
+    "onnxruntime",
+    "ddgs",
+    "bs4",
+    "lxml",
+    "yaml",
+    "send2trash",
+    "pystray",
+):
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(package)
     datas += pkg_datas
     binaries += pkg_binaries

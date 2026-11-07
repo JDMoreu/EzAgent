@@ -97,6 +97,7 @@ def make_menu(
         "tested": [],
         "hidden": 0,
         "closed": 0,
+        "actions": [],
     }
 
     def on_live(key, value) -> None:
@@ -115,6 +116,9 @@ def make_menu(
     def on_close() -> None:
         calls["closed"] += 1
 
+    def on_action(action) -> None:
+        calls["actions"].append(action)
+
     menu = M.Menu(
         settings,
         scale=1.0,
@@ -125,6 +129,7 @@ def make_menu(
         on_test=on_test,
         on_hide=on_hide,
         on_close=on_close,
+        on_action=on_action,
     )
     return menu, calls
 
@@ -145,18 +150,26 @@ def opened(
 def test_layout_tabla_7_3_exacta():
     layout = layout_menu()
     assert (layout["header"].y0, layout["header"].y1) == (44, 72)
-    assert (layout["group_audio"].y0, layout["group_audio"].y1) == (100, 296)
-    assert (layout["group_engine"].y0, layout["group_engine"].y1) == (328, 400)
-    assert (layout["group_tts"].y0, layout["group_tts"].y1) == (432, 600)
-    assert (layout["group_vad"].y0, layout["group_vad"].y1) == (632, 808)
-    assert (layout["group_stt"].y0, layout["group_stt"].y1) == (840, 1000)
-    assert (layout["group_llm"].y0, layout["group_llm"].y1) == (1032, 1360)
+    assert (layout["group_audio"].y0, layout["group_audio"].y1) == (100, 268)
+    assert (layout["group_engine"].y0, layout["group_engine"].y1) == (300, 372)
+    assert (layout["group_tts"].y0, layout["group_tts"].y1) == (404, 572)
+    assert (layout["group_vad"].y0, layout["group_vad"].y1) == (604, 780)
+    assert (layout["group_stt"].y0, layout["group_stt"].y1) == (812, 972)
+    assert (layout["group_llm"].y0, layout["group_llm"].y1) == (1004, 1332)
     assert (
         layout["group_conversation"].y0,
         layout["group_conversation"].y1,
-    ) == (1392, 1508)
-    assert (layout["footer"].y0, layout["footer"].y1) == (1520, 1564)
-    assert layout["total"].y1 == 1576
+    ) == (1364, 1480)
+    assert (
+        layout["group_agent"].y0,
+        layout["group_agent"].y1,
+    ) == (1512, 1600)
+    assert (
+        layout["group_hotkeys"].y0,
+        layout["group_hotkeys"].y1,
+    ) == (1632, 1852)
+    assert (layout["footer"].y0, layout["footer"].y1) == (1864, 1908)
+    assert layout["total"].y1 == 1920
     assert visible_menu_height(1080) == 560
     assert visible_menu_height(600) == pytest.approx(384)
 
@@ -167,7 +180,7 @@ def test_layout_bajo_el_pie_se_mueve_y_el_scroll_existe():
     layout = menu._layout()
     assert layout["footer"].y0 == pytest.approx(364)
     # El contenido completo supera con holgura el viewport recortado.
-    assert menu.scroll_max == pytest.approx(1156)
+    assert menu.scroll_max == pytest.approx(1500)
     assert menu.viewport_height == pytest.approx(384)
     assert menu.height(now) == pytest.approx(384)
 
@@ -433,22 +446,22 @@ def test_fila_de_texto_editable_confirma_con_enter():
     menu._scroll_target = menu.scroll_max
     layout = menu._layout()
     scroll = menu.scroll_offset
-    row = layout["api_key"]
+    row = layout["hotkey"]
     x = 150.0
     y = (row.y0 + row.y1) / 2.0 - scroll
     hit = menu.hit(x, y, now)
-    assert hit is not None and hit.kind == "text" and hit.key == "api_key"
+    assert hit is not None and hit.kind == "text" and hit.key == "hotkey"
     menu.pointer_down(x, y, now)
     menu.pointer_up(x, y, now)
-    assert menu.editing_key == "api_key"
+    assert menu.editing_key == "hotkey"
     assert edits == [True]
-    menu.text_input("!")
-    assert menu.text_buffer.endswith("!")
+    menu.text_input("+k")
+    assert menu.text_buffer.endswith("+k")
     assert menu.text_key(13) is True
     assert menu.editing_key is None
     assert edits == [True, False]
-    assert settings.get("api_key").endswith("!")
-    assert calls["live"][-1] == ("api_key", settings.get("api_key"))
+    assert settings.get("hotkey").endswith("+k")
+    assert calls["live"][-1] == ("hotkey", settings.get("hotkey"))
     assert settings.dirty()
 
 
@@ -478,6 +491,7 @@ def test_etiquetas_en_espanol_y_secciones():
     assert labels["vad"] == "VAD"
     assert "STT" in labels["stt"]
     assert "LLM" in labels["llm"]
+    assert labels["hotkeys"] == "ATAJOS"
 
 
 def test_filas_de_seleccion_para_modelos():
@@ -531,12 +545,12 @@ def test_hit_de_cada_control():
         ((M.HIDE_CX, 58.0), "hide", "hide"),
         ((150.0, 118.0), "select", "input_device_index"),
         ((150.0, 166.0), "meter", "input_meter"),
-        ((150.0, 240.0), "slider", "noise_multiplier"),
-        ((150.0, 284.0), "slider", "silence_secs"),
-        ((150.0, 346.0), "select", "stt_engine"),
-        ((150.0, 382.0), "select", "tts_model_variant"),
-        ((150.0, 450.0), "select", "voice"),
-        ((150.0, 490.0), "slider", "speed"),
+        ((150.0, 212.0), "slider", "noise_multiplier"),
+        ((150.0, 256.0), "slider", "silence_secs"),
+        ((150.0, 318.0), "select", "stt_engine"),
+        ((150.0, 354.0), "select", "tts_model_variant"),
+        ((150.0, 422.0), "select", "voice"),
+        ((150.0, 472.0), "slider", "speed"),
         ((265.0, 562.0), "save", "save"),
     ]
     for (x, y), kind, key in cases:
@@ -557,12 +571,30 @@ def test_hit_de_cada_control():
     assert menu.hit(150, 595, now) is None
 
 
+def test_accion_abrir_system_md():
+    settings = make_settings()
+    menu, calls = make_menu(settings)
+    now = opened(menu)
+    menu._scroll.value = menu.scroll_max
+    menu._scroll_target = menu.scroll_max
+    layout = menu._layout()
+    row = layout["open_system_md"]
+    scroll = menu.scroll_offset
+    cy = (row.y0 + row.y1) / 2.0 - scroll
+    hit = menu.hit(253.0, cy, now)
+    assert hit is not None and hit.kind == "action"
+    assert hit.key == "open_system_md"
+    menu.pointer_down(253.0, cy, now)
+    menu.pointer_up(253.0, cy, now)
+    assert calls["actions"] == ["open_system_md"]
+
+
 def test_hit_slider_solo_en_la_franja_de_la_pista():
     menu, _ = make_menu(make_settings())
     now = opened(menu)
-    assert menu.hit(150, 212, now) is None  # fuera de la franja de la pista
-    assert menu.hit(150, 240, now).kind == "slider"  # Umbral de ruido
-    assert menu.hit(300, 240, now) is None  # fuera de x 31..289
+    assert menu.hit(150, 190, now) is None  # fuera de la franja de la pista
+    assert menu.hit(150, 212, now).kind == "slider"  # Umbral de ruido
+    assert menu.hit(300, 212, now) is None  # fuera de x 31..289
 
 
 # --------------------------------------------------------------------------
@@ -617,21 +649,21 @@ def test_clic_toggle_y_prueba_de_voz():
     now = opened(menu)
     menu._scroll.value = 960.0
     menu._scroll_target = 960.0
-    menu.pointer_down(270, 450, now)
-    menu.pointer_up(270, 450, now)
+    menu.pointer_down(270, 420, now)
+    menu.pointer_up(270, 420, now)
     assert settings.get("barge_in") is False
     assert calls["live"][-1] == ("barge_in", False)
 
     values_before = settings.snapshot()
-    menu.pointer_down(253, 526, now + 0.1)
-    menu.pointer_up(253, 526, now + 0.1)
+    menu.pointer_down(253, 498, now + 0.1)
+    menu.pointer_up(253, 498, now + 0.1)
     assert calls["tested"] and calls["tested"][-1] == values_before
     assert menu._testing_t.value == pytest.approx(0.0)  # aún no ha pasado 120 ms
     menu.update(now + 1.0)
     assert menu._testing_t.value == pytest.approx(1.0)
-    disabled = menu.hit(253, 526, now + 1.0, include_disabled=True)
+    disabled = menu.hit(253, 498, now + 1.0, include_disabled=True)
     assert disabled is not None and disabled.disabled
-    assert menu.hit(253, 526, now + 1.0) is None
+    assert menu.hit(253, 498, now + 1.0) is None
     menu.set_testing(False, now + 1.1)
     menu.update(now + 1.4)
     assert menu._testing_t.value == pytest.approx(0.0)
