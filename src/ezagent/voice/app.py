@@ -592,6 +592,10 @@ class VoiceApp:
 
     def _warm_stt(self) -> None:
         """Carga el modelo de whisper antes del primer turno real."""
+        if not _whisper_ready(self.cfg.whisper_url):
+            # Ya se avisó al arrancar: no repetir el error en cada intento.
+            log("whisper no disponible; salto el precalentamiento.")
+            return
         try:
             transcribe(self.cfg, pcm_to_wav(b"\x00\x00" * 3200, 16000))
             log("whisper precalentado.")
