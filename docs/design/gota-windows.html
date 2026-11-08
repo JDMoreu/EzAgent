@@ -67,8 +67,6 @@ code{font:500 12px var(--mono);color:var(--text)}
 .ctx button{display:flex;justify-content:space-between;gap:12px;width:100%;border:0;background:none;color:inherit;padding:8px 10px;border-radius:6px;text-align:left;font:inherit}
 .ctx button:hover{background:rgb(255 255 255 / .1)} .ctx kbd{font:400 11px var(--mono);color:#9a9ba6}
 .ctx hr{border:0;border-top:1px solid rgb(255 255 255 / .1);margin:4px 2px}
-.cap{position:absolute;right:20px;bottom:196px;width:260px;text-align:center;font:500 14px/1.35 var(--font);color:#F4EFE8;opacity:0;transition:opacity .18s;pointer-events:none;text-shadow:0 1px 10px rgb(0 0 0 / .7)}
-.cap.on{opacity:1}
 
 /* la gota */
 .dw{position:absolute;right:96px;bottom:74px;width:96px;height:96px;cursor:grab;touch-action:none;z-index:6}
@@ -82,6 +80,10 @@ code{font:500 12px var(--mono);color:var(--text)}
 .dw:hover .bud,.dw:focus-within .bud,.dw.hold .bud{opacity:1;transform:translateX(var(--bx)) scale(1)}
 .dw.open .bud.r{color:var(--signal)}
 .bud.muted{color:var(--fault)}
+.bud.ask{visibility:hidden}
+.dw.asking .bud.ask{visibility:visible;opacity:1;transform:translateX(var(--bx)) scale(1)}
+.dw.asking .bud:not(.ask){visibility:hidden;opacity:0}
+.bud.ask.yes{color:var(--signal)}
 .reduced .bud{transition:opacity .12s}
 .reduced .dw:hover .bud,.reduced .dw:focus-within .bud,.reduced .dw.hold .bud{transform:translateX(var(--bx)) scale(1)}
 
@@ -140,7 +142,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
   <header class="sec">
     <div class="eyebrow">EzAgent · la gota en Windows</div>
     <h1>Una gota que vive sobre la bandeja</h1>
-    <p>Sin barra, sin icono fijo: la gota flota en tu escritorio y, cuando te acercas, brotan dos gotas pequeñas, una para silenciar y otra para abrir los ajustes. Pásale el puntero.</p>
+    <p>Sin barra, sin icono fijo y sin texto: la gota flota en tu escritorio y todo lo cuenta con movimiento. Cuando te acercas, brotan dos gotas pequeñas, una para silenciar y otra para abrir los ajustes. Pásale el puntero.</p>
   </header>
 
   <section class="sec" aria-label="Escritorio simulado">
@@ -148,11 +150,12 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
       <div class="win" aria-hidden="true"><div class="tb"><span>herdr · ezagent</span><span>— ▢ ✕</span></div><pre id="term"></pre></div>
       <div class="win2" aria-hidden="true"><div class="tb">README.md — Editor</div><div class="l" style="width:70%"></div><div class="l" style="width:88%"></div><div class="l" style="width:54%"></div><div class="l" style="width:80%"></div><div class="l" style="width:62%"></div></div>
 
-      <div class="cap" id="cap" aria-live="polite"></div>
       <div class="dw" id="dw">
         <canvas id="cv" role="img" aria-label="EzAgent"></canvas>
         <button class="bud l" id="bMic" type="button" aria-label="Silenciar micrófono (Ctrl+Alt+M)"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path id="slash" d="M4 4l16 16" style="display:none"/></svg></button>
         <button class="bud r" id="bGear" type="button" aria-label="Abrir ajustes (Ctrl+Alt+O)" aria-expanded="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/></svg></button>
+        <button class="bud l ask" id="bNo" type="button" aria-label="No"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        <button class="bud r ask yes" id="bYes" type="button" aria-label="Sí"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg></button>
       </div>
 
       <div class="card" id="card" role="dialog" aria-label="Ajustes de EzAgent"><div class="in">
@@ -201,7 +204,8 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
         <button class="pill" id="sSpeak" type="button">Que responda</button>
         <button class="pill" id="sDispatch" type="button">Despachar a Claude</button>
         <button class="pill" id="sDone" type="button">Un agente termina</button>
-        <button class="pill" id="sBlock" type="button">Un agente se bloquea</button></div></div>
+        <button class="pill" id="sBlock" type="button">Un agente se bloquea</button>
+        <button class="pill" id="sAsk" type="button">Pedir confirmación</button></div></div>
       <div class="grpc"><div class="eyebrow" style="margin:0">Vista previa</div><div class="pills">
         <button class="pill" id="tTheme" type="button">Tema: sistema</button>
         <button class="pill" id="tMotion" type="button" aria-pressed="false">Movimiento reducido</button>
@@ -217,6 +221,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
       <tr><td>Silenciar / reactivar</td><td>Acercarte y pulsar la gota izquierda (micrófono)</td><td>Ctrl+Alt+M</td><td>Menú → Silenciar</td><td>«Silencia el micrófono» (para reactivar, usa las otras vías)</td></tr>
       <tr><td>Abrir ajustes</td><td>Acercarte y pulsar la gota derecha (engranaje)</td><td>Ctrl+Alt+O</td><td>Menú → Ajustes, o clic en el icono</td><td>«Abre los ajustes»</td></tr>
       <tr><td>Colgar / retomar</td><td>—</td><td>Ctrl+Alt+Espacio</td><td>Menú</td><td>«Cuelga»</td></tr>
+      <tr><td>Confirmar una acción</td><td>Brotan ✕ y ✓ junto a la gota, que late en ámbar (sin texto)</td><td>—</td><td>—</td><td>«sí» / «no»</td></tr>
       <tr><td>Mover la gota</td><td>Arrastrarla; se pega a los bordes</td><td>—</td><td>—</td><td>—</td></tr>
       <tr><td>Ocultarla</td><td>—</td><td>—</td><td>Menú → Ocultar la gota</td><td>—</td></tr>
     </tbody></table></div>
@@ -261,24 +266,30 @@ var F={spark:-1,rings:[],lastRing:0};
 var lvl=0,curCol=C['signal-dim'].slice(),R=11,T0=performance.now()/1000,last=T0;
 var FORCE=null;
 
-function colorFor(v){return {idle:'signal-dim',listen:'signal',think:'attention',speak:'signal',dispatch:'agent',done:'signal',blocked:'attention',mute:'text-3',error:'fault'}[v]||'signal-dim'}
-function setBase(s){S.base=s;S.since=performance.now()/1000;if(s==='dispatch')F.spark=S.since;var snd={dispatch:'dispatch',done:'done',blocked:'blocked',error:'error'}[s];if(snd)earcon(snd)}
+function colorFor(v){return {idle:'signal-dim',ask:'attention',listen:'signal',think:'attention',speak:'signal',dispatch:'agent',done:'signal',blocked:'attention',mute:'text-3',error:'fault'}[v]||'signal-dim'}
+function setBase(s){S.base=s;$('dw').classList.toggle('asking',s==='ask');S.since=performance.now()/1000;if(s==='dispatch')F.spark=S.since;var snd={dispatch:'dispatch',done:'done',blocked:'blocked',error:'error'}[s];if(snd)earcon(snd)}
 
 function blobPath(pts){ctx.beginPath();var n=pts.length,i,a,b;for(i=0;i<n;i++){a=pts[i];b=pts[(i+1)%n];var mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;if(i===0)ctx.moveTo(mx,my);else ctx.quadraticCurveTo(a[0],a[1],mx,my)}a=pts[0];b=pts[1];ctx.quadraticCurveTo(a[0],a[1],(a[0]+b[0])/2,(a[1]+b[1])/2);ctx.closePath()}
+var M={a2:.06,a3:.05,a4:.03,a5:.02,sx:1,sy:1,spd:.8},PH=[0,0],lastDraw=0;
 function draw(v,now,ts){
-  ctx.clearRect(0,0,W,W);var col=curCol,cx=W/2,cy=W/2,k,sx=1,sy=1,shift=0,spd=.8;
-  var a={2:.03,3:.03,4:.02,5:.015},tgtR=11+Math.sin(now*Math.PI*2/4)*.5;
+  var dt=Math.min(.05,Math.max(0,now-lastDraw));lastDraw=now;
+  ctx.clearRect(0,0,W,W);var col=curCol,cx=W/2,cy=W/2+(reduced?0:Math.sin(now*.7)*1.6),k,sx=1,sy=1,shift=0,spd=.9;
+  var a={2:.07,3:.055,4:.035,5:.02},tgtR=11+Math.sin(now*Math.PI*2/4)*.6;
   if(v==='listen'){tgtR=13+lvl*5;a={2:.05+lvl*.1,3:.04+lvl*.09,4:.03,5:.02};spd=2.2}
   else if(v==='think'){tgtR=11;a={2:.09,3:.1,4:.06,5:.03};spd=3.2}
   else if(v==='speak'){tgtR=12+lvl*3.5;a={2:.03+lvl*.16,3:.03+lvl*.14,4:.02+lvl*.09,5:.015+lvl*.06};spd=3}
+  else if(v==='ask'){sy=.9+Math.sin(now*Math.PI*2/1.2)*.06;sx=1.07;tgtR=12;a={2:.06,3:.05,4:.03,5:.02};spd=1.6}
   else if(v==='blocked'){sy=.8+Math.sin(now*Math.PI*2/1.6)*.05;sx=1.12;tgtR=11}
-  else if(v==='mute'){tgtR=7;a={2:0,3:0,4:0,5:0}}
+  else if(v==='mute'){tgtR=7;a={2:.02,3:.015,4:0,5:0};spd=.5}
   else if(v==='error'){shift=Math.sin(ts*45)*3*Math.max(0,1-ts/.5);tgtR=10}
   else if(v==='done'){tgtR=11+Math.exp(-ts*4)*Math.cos(ts*14)*4}
   else if(v==='dispatch'){sx=1+.5*Math.sin(Math.min(1,ts/.45)*Math.PI)}
-  R+=(tgtR-R)*Math.min(1,.2*60*(1/60)*3.2);
-  var pts=[],i,th,r;
-  for(i=0;i<72;i++){th=i/72*Math.PI*2;r=R;for(k=2;k<=5;k++)r+=R*a[k]*Math.sin(k*th+now*spd*(k%2?1:-1)+k);pts.push([cx+shift+r*Math.cos(th)*sx,cy+r*Math.sin(th)*sy])}
+  var kk=reduced?1:1-Math.exp(-dt/.14);
+  M.a2+=(a[2]-M.a2)*kk;M.a3+=(a[3]-M.a3)*kk;M.a4+=(a[4]-M.a4)*kk;M.a5+=(a[5]-M.a5)*kk;M.sx+=(sx-M.sx)*kk;M.sy+=(sy-M.sy)*kk;
+  M.spd+=(spd-M.spd)*(reduced?1:1-Math.exp(-dt/.35));PH[0]+=M.spd*dt;PH[1]+=M.spd*dt*.8;
+  R+=(tgtR-R)*(reduced?1:1-Math.exp(-dt/.09));
+  var am={2:M.a2,3:M.a3,4:M.a4,5:M.a5},pts=[],i,th,r;
+  for(i=0;i<72;i++){th=i/72*Math.PI*2;r=R;for(k=2;k<=5;k++)r+=R*am[k]*Math.sin(k*th+(k%2?PH[0]:-PH[1])+k);pts.push([cx+shift+r*Math.cos(th)*M.sx,cy+r*Math.sin(th)*M.sy])}
   if(v==='listen'&&now-F.lastRing>.34){F.rings.push(now);F.lastRing=now}
   F.rings=F.rings.filter(function(t0){return now-t0<.9});
   F.rings.forEach(function(t0){var q=(now-t0)/.9;ctx.strokeStyle=rgb(col,.5*(1-q));ctx.lineWidth=1.3;ctx.beginPath();ctx.arc(cx,cy,R+4+q*26,0,7);ctx.stroke()});
@@ -297,7 +308,7 @@ function frame(ms){
   var tc=C[colorFor(v)],kk=1-Math.exp(-dt/(reduced?.12:.07));for(var q=0;q<3;q++)curCol[q]+=(tc[q]-curCol[q])*kk;
   if(reduced){R=v==='mute'?7:11}
   draw(v,reduced?0:now,ts);
-  $('dw').style.opacity=S.hidden?0:(v==='idle'&&!S.open&&!$('dw').matches(':hover')?.72:1);
+  $('dw').style.opacity=S.hidden?0:(v==='idle'&&!S.open&&!$('dw').matches(':hover')?.9:1);
   requestAnimationFrame(frame);
 }
 
@@ -309,7 +320,7 @@ function earcon(name){if(!S.sound||!EAR[name])return;try{ac=ac||new (window.Audi
 /* escenarios */
 var seq=0;function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 function guard(){var m=++seq;return function(){return m===seq}}
-var capT=null;function cap(t,ms){var el=$('cap');el.textContent=t;el.classList.add('on');clearTimeout(capT);capT=setTimeout(function(){el.classList.remove('on')},ms||2200)}
+function cap(){}
 var lines=['<b>$</b> herdr ls','<span class="ag">claude</span> · ezagent · idle','<span class="ag">opencode</span> · api · idle'];
 function term(l){if(l)lines.push(l);while(lines.length>13)lines.shift();$('term').innerHTML=lines.join('\n')}
 function addAgent(){S.ag.push({name:'Claude Code',st:'working',born:performance.now()/1000});term('<span class="ag">▶ claude</span> arrancó en <b>ezagent</b>')}
@@ -319,7 +330,10 @@ async function sSpeak(){var ok=guard();if(S.muted)toggleMute();setBase('speak');
 async function sDispatch(){var ok=guard();if(S.muted)toggleMute();S.ag=[];setBase('listen');cap('«abre claude en ezagent y arregla los tests»',1600);await sleep(1700);if(!ok())return;setBase('think');await sleep(1000);if(!ok())return;setBase('dispatch');await sleep(750);if(!ok())return;addAgent();await sleep(350);if(!ok())return;setBase('speak');cap('Lancé Claude Code en ezagent. Te aviso al terminar.',2600);await sleep(2700);if(!ok())return;setBase('idle')}
 async function sDone(){var ok=guard();ensure();setBase('idle');await sleep(250);if(!ok())return;S.ag.forEach(function(a){a.st='done';a.born=performance.now()/1000});term('<span class="ok">✔ 14 passed</span> · claude terminó');setBase('done');await sleep(1500);if(!ok())return;setBase('speak');cap('Claude Code terminó en ezagent: los tests pasan.',2800);await sleep(2900);if(!ok())return;S.ag=[];setBase('idle')}
 async function sBlock(){var ok=guard();ensure();setBase('idle');await sleep(250);if(!ok())return;S.ag.forEach(function(a){a.st='blocked'});term('<span class="wr">? claude</span> pide permiso para instalar paquetes');setBase('blocked');cap('Claude Code necesita algo',2400)}
-['sListen','sSpeak','sDispatch','sDone','sBlock'].forEach(function(id){$(id).addEventListener('click',{sListen:sListen,sSpeak:sSpeak,sDispatch:sDispatch,sDone:sDone,sBlock:sBlock}[id])});
+async function sAsk(){var ok=guard();if(S.muted)toggleMute();ensure();toggleSettings(false);setBase('ask');await sleep(15000);if(!ok())return;setBase('idle')}
+function answer(yes){if(S.base!=='ask')return;guard();if(yes){S.ag=[];term('<span class="er">■ claude detenido</span>');setBase('dispatch');sleep(900).then(function(){if(S.base==='dispatch')setBase('idle')})}else setBase('idle')}
+$('bYes').addEventListener('click',function(){answer(true)});$('bNo').addEventListener('click',function(){answer(false)});
+['sListen','sSpeak','sDispatch','sDone','sBlock','sAsk'].forEach(function(id){$(id).addEventListener('click',{sListen:sListen,sSpeak:sSpeak,sDispatch:sDispatch,sDone:sDone,sBlock:sBlock,sAsk:sAsk}[id])});
 
 /* silenciar y ajustes */
 function toggleMute(){S.muted=!S.muted;guard();if(S.muted){setBase('idle')}
@@ -350,8 +364,7 @@ $('fold').addEventListener('click',function(){var on=$('fold').getAttribute('ari
   el.addEventListener('pointerdown',function(e){if(e.target.closest('.bud'))return;var r=el.getBoundingClientRect(),dr=desk.getBoundingClientRect();d={x:e.clientX,y:e.clientY,l:r.left-dr.left,t:r.top-dr.top,m:false};el.setPointerCapture(e.pointerId);el.style.cursor='grabbing'});
   el.addEventListener('pointermove',function(e){if(!d)return;var dx=e.clientX-d.x,dy=e.clientY-d.y;if(Math.abs(dx)+Math.abs(dy)>4)d.m=true;if(!d.m)return;
     var nx=Math.max(0,Math.min(desk.clientWidth-96,d.l+dx)),ny=Math.max(0,Math.min(desk.clientHeight-48-96,d.t+dy));
-    el.style.left=nx+'px';el.style.top=ny+'px';el.style.right='auto';el.style.bottom='auto';
-    $('cap').style.right='auto';$('cap').style.left=(nx-82)+'px';$('cap').style.bottom='auto';$('cap').style.top=(ny-34)+'px'});
+    el.style.left=nx+'px';el.style.top=ny+'px';el.style.right='auto';el.style.bottom='auto';});
   el.addEventListener('pointerup',function(){el.style.cursor='grab';d=null});
 })();
 
