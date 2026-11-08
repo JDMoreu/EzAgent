@@ -23,16 +23,22 @@ audio, voice and conversation behavior.
 
 ## Product Purpose
 
-EzAgent is a private, low-latency voice messenger. The notch is the entire
-interface: it shows attention through two eyes, listens, answers and exposes
-its settings only when expanded. Success is a conversation that starts
-immediately and a notch that stays out of the way.
+> **Repositioned on 2026-11-08** (see `docs/roadmap/01-producto-y-marca.md`).
+> Sections below describe the current build until stages E3–E4 land.
+
+EzAgent is the **local voice layer for your coding agents**: you speak, it
+dispatches the task to Claude Code, OpenCode, Codex or any configured CLI
+(directly or through Herdr), watches it and tells you when it finishes or gets
+blocked. It does not do the work itself and is not a general assistant. The
+notch is the visible witness: two eyes that show attention and agent state.
+Success is a sub-second spoken reply and an agent launched with one sentence.
 
 ## Positioning
 
 The listening pipeline runs locally — VAD, whisper.cpp and Kokoro — while the
-LLM can be OpenCode, OpenAI, Groq, Claude, Gemini or any OpenAI-compatible
-endpoint. The notch makes that hybrid pipeline visible without a dashboard.
+LLM is a cheap, fast OpenAI-compatible model (DeepSeek V4.1 Flash via OpenCode
+Go by default) used only to route intent. Open source first; Herdr becomes an
+optional backend.
 
 ## Operating Context
 

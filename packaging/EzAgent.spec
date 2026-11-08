@@ -4,8 +4,8 @@
 Se ejecuta con:
     .venv\\Scripts\\python.exe -m PyInstaller --clean --noconfirm packaging\\EzAgent.spec
 
-El resultado es ``dist/EzAgent/EzAgent.exe`` (onedir). Whisper sigue usando
-los binarios/modelos de Dicta instalados en el equipo; Kokoro descarga sus
+El resultado es ``dist/EzAgent/EzAgent.exe`` (onedir). Whisper se instala en
+``%LOCALAPPDATA%\EzAgent\whisper`` (binarios y modelos); Kokoro descarga sus
 modelos a la caché del usuario la primera vez.
 """
 

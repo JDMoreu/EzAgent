@@ -14,7 +14,6 @@ import pytest
 from ezagent.agent.runtime import (
     AgentRuntime,
     RuntimeCallbacks,
-    select_tool_names,
 )
 from ezagent.voice.config import VoiceConfig
 from ezagent.voice.llm import Messenger

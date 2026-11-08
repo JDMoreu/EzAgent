@@ -133,7 +133,7 @@ def _render_bitmap(
         image = Image.new("L", (canvas_w, canvas_h), 0)
         draw = ImageDraw.Draw(image)
         pen = float(pad)
-        for char, advance in zip(text, advances):
+        for char, advance in zip(text, advances, strict=False):
             draw.text((pen, float(pad)), char, font=font, fill=255)
             pen += advance + tracking_px
     else:

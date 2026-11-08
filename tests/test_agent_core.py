@@ -39,7 +39,6 @@ from ezagent.agent.registry import (
 )
 from ezagent.agent.tools_core import build_core_tools
 
-
 # ---------------------------------------------------------------------------
 # Utilidades de prueba
 # ---------------------------------------------------------------------------

@@ -468,7 +468,7 @@ def test_T24_expansion_continua_del_menu():
     assert eyes_float == pytest.approx(T.EYES_CX_FLOAT)
     assert arrow_float.center == (127, 18)
 
-    for mic, eyes_cx, arrow in (
+    for mic, _eyes_cx, arrow in (
         (mic_top, eyes_top, arrow_top),
         (mic_float, eyes_float, arrow_float),
     ):

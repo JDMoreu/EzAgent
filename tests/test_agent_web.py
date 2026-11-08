@@ -28,7 +28,6 @@ from ezagent.agent.tools_web import (
     MAX_FETCH_BYTES,
     build_web_tools,
     run_fetch_page,
-    run_web_search,
     wrap_untrusted,
 )
 

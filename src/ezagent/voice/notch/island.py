@@ -17,16 +17,18 @@ from __future__ import annotations
 
 import math
 import random
+import threading
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 import numpy as np
+from loguru import logger as log
 from PIL import Image
 
 from . import layered as _shell
 from .anim import EASE_IN, EASE_OUT, EASE_SPRING, LevelFollower, Tween, lerp_rgb
 from .confirm import CONFIRM_H, CONFIRM_W, ConfirmPanel
-from .eyes import POSES, draw_eyes
+from .eyes import POSES, EyePose, draw_eyes
 from .icons import draw_icon
 from .silhouette import render_surface
 from .state import UiState
@@ -44,7 +46,6 @@ from .tokens import (
     ICON_MIC_SIZE,
     MIC_BUTTON_COMPACT,
     MIC_BUTTON_FLOAT,
-    Rect,
     SNAP_TOP,
     T_BASE,
     T_CLOSE_EYES,
@@ -55,9 +56,10 @@ from .tokens import (
     T_SLOW,
     VOICE_ATTACK,
     VOICE_RELEASE,
-    W,
     W_COMPACT,
     W_FLOAT,
+    Rect,
+    W,
     palette,
 )
 
@@ -215,7 +217,7 @@ def draw_chevron(
     ca, sa = math.cos(a), math.sin(a)
     rot = [(cx + x * ca - y * sa, cy + x * sa + y * ca) for x, y in points]
     stroke = 1.8 if size >= 18 else 1.6
-    for p, q in zip(rot, rot[1:]):
+    for p, q in zip(rot, rot[1:], strict=False):
         draw_capsule_line(buf, p[0], p[1], q[0], q[1], stroke, color, scale, alpha)
 
 
@@ -405,8 +407,10 @@ class IslandWindow(_shell.LayeredWindow):
     """Ventana layered única de la isla y su menú."""
 
     def __init__(self, overlay: "Notch", x: int, y: int, w: int, h: int):
+        # DECISION: título "notch" para que el hilo quede "ezagent-notch" y no
+        # "ezagent-ezagent-notch"; el título de la ventana popup no se ve.
         super().__init__(int(w), int(h), int(x), int(y),
-                         click_through=False, title="ezagent-notch")
+                         click_through=False, title="notch")
         self.ov = overlay
         self.max_height = overlay.H_MAX
         self._interval = 1.0 / 60.0
@@ -479,6 +483,68 @@ class IslandWindow(_shell.LayeredWindow):
         self.stop()
 
 
+@dataclass(frozen=True, slots=True)
+class _IslandSnapshot:
+    """Estado coherente del que depende un fotograma (U4).
+
+    ``render_frame`` lo toma una vez bajo ``Notch._state_lock``; a partir de
+    ahí nadie lee estado vivo, así que un setter de otro hilo no puede mezclar
+    dos estados en el mismo frame. Los objetos mutables (pose, colores) se
+    copian a tuplas o ya son inmutables.
+    """
+
+    # Estado lógico del pipeline.
+    state: str
+    muted: bool
+    in_call: bool
+    level: float
+    rms_target: float
+    mic_level: float
+    # Pose y animaciones.
+    pose_name: str
+    pose: EyePose
+    pose_color: tuple[float, ...]
+    pose_offset: tuple[float, float]
+    pose_animating: bool
+    pose_t0: float
+    capsule_alpha: float
+    arc_alpha: float
+    wave_alpha: float
+    blink: float
+    animations: bool
+    show_t0: float | None
+    hide_t0: float | None
+    hide_eyes: bool
+    tab_w: float
+    tab_animating: bool
+    arrow: float
+    # Apariencia y geometría.
+    theme: str
+    scale: float
+    attachment: str
+    anchor_x: float
+    anchor_y: float
+    compact_w: float
+    compact_w_px: int
+    body_h_px: int
+    menu_h: float
+    menu_visible: bool
+    menu_above: bool
+    menu_open: bool
+    confirm_h: float
+    confirm_above: bool
+    hover: str | None
+    pressed: str | None
+    dirty: bool
+    mic_icon: str
+    mic_color_key: str
+    hidden_now: bool
+    # Referencias con efecto (ventana y paneles); no se leen sus campos aquí.
+    menu: object | None
+    confirm_panel: object
+    island: object | None
+
+
 class Notch:
     """Controlador de la isla; la app solo habla con esta clase."""
 
@@ -530,6 +596,10 @@ class Notch:
         self._state = "idle"
         self._rms = 0.0
         self._mic_level = 0.0
+        # U4: protege el estado mutable que leen los setters (hilo Tk/app) y
+        # ``render_frame`` (hilo de la ventana). Solo se copian campos aquí
+        # dentro; el dibujo y las llamadas Win32 quedan fuera.
+        self._state_lock = threading.Lock()
         self._level = LevelFollower(VOICE_ATTACK, VOICE_RELEASE)
         self._theme_setting = "auto"
         self._theme = "dark"
@@ -598,10 +668,12 @@ class Notch:
 
     def set_theme(self, theme: str) -> None:
         theme = theme if theme in ("auto", "dark", "light") else "auto"
-        self._theme_setting = theme
+        with self._state_lock:
+            self._theme_setting = theme
         resolved = self._resolve_theme()
         if resolved != self._theme:
-            self._theme = resolved
+            with self._state_lock:
+                self._theme = resolved
             self._pose.set_theme(resolved)
             self._confirm_panel.set_theme(resolved)
             self._invalidate()
@@ -618,7 +690,6 @@ class Notch:
         self.H_MAX = round((H_ISLAND + H_MENU) * scale)
         self.BODY_W = self.W_COMPACT
         self.BODY_H = self.H_ISLAND
-        from . import eyes as _eyes
         from . import icons as _icons
         from . import silhouette as _sil
         from . import text as _text
@@ -685,31 +756,32 @@ class Notch:
             self._anchor_y = float(y)
             self._tab_w = Tween(float(self._compact_layout_width()))
         if not self._island.open():
-            print("[ezagent-voice] Notch: no se pudo abrir la isla", flush=True)
+            log.error("[ezagent-voice] Notch: no se pudo abrir la isla")
             self._visible = False
             return False
         return True
 
     def show(self, state: str = "idle") -> None:
         now = time.monotonic()
-        self._state = state
+        with self._state_lock:
+            self._state = state
+            self._hide_t0 = None
+            opened = not self._visible
+            if opened:
+                self._visible = True
+                self._pose_t0 = now
+                if self._animations:
+                    self._show_t0 = now
+                    self._pose.set_pose("open", now)
+                    self._last_pose_name = "open"
+                else:
+                    self._show_t0 = None
+                    self._pose.set_pose("idle", now)
+                    self._last_pose_name = "idle"
         self._ui.set_app_state(state)
         self._ui.set_visible(True)
-        self._hide_t0 = None
-        if not self._visible:
-            self._visible = True
-            self._hide_t0 = None
-            self._pose_t0 = now
-            if self._animations:
-                self._show_t0 = now
-                self._pose.set_pose("open", now)
-                self._last_pose_name = "open"
-            else:
-                self._show_t0 = None
-                self._pose.set_pose("idle", now)
-                self._last_pose_name = "idle"
-            if not self._create_window():
-                return
+        if opened and not self._create_window():
+            return
         if self._island is not None:
             self._island.show()
             self._invalidate()
@@ -729,10 +801,11 @@ class Notch:
                 self._menu.close(now)
             except Exception:
                 pass
-            self._show_t0 = None
-            if close_eyes:
-                self._pose.set_pose("close", now)
-                self._last_pose_name = "close"
+            with self._state_lock:
+                self._show_t0 = None
+                if close_eyes:
+                    self._pose.set_pose("close", now)
+                    self._last_pose_name = "close"
             self._invalidate()
             return
         if self._menu is not None:
@@ -749,21 +822,24 @@ class Notch:
             0 if not self._animations else T_CLOSE_RETRACT,
             EASE_IN,
         )
-        self._show_t0 = None
+        with self._state_lock:
+            self._show_t0 = None
+            if not self._animations:
+                # Movimiento reducido: la isla se oculta sin deslizamiento.
+                self._visible = False
+                self._hide_t0 = None
+                self._hide_pending = False
+            else:
+                self._hide_t0 = now
+                self._hide_eyes = bool(close_eyes)
+                if close_eyes:
+                    self._pose.set_pose("close", now)
+                    self._last_pose_name = "close"
         if not self._animations:
-            # Movimiento reducido: la isla se oculta sin deslizamiento.
-            self._visible = False
-            self._hide_t0 = None
-            self._hide_pending = False
             self._ui.set_visible(False)
             if self._island is not None:
                 self._island.hide()
             return
-        self._hide_t0 = now
-        self._hide_eyes = bool(close_eyes)
-        if close_eyes:
-            self._pose.set_pose("close", now)
-            self._last_pose_name = "close"
         self._invalidate()
 
     def close(self) -> None:
@@ -781,12 +857,11 @@ class Notch:
             if frame is not None
             else "frame=None"
         )
-        print(
+        log.debug(
             f"[ezagent-voice] Notch: hwnd={self._island.hwnd} "
             f"pos=({self._island.x},{self._island.y}) "
             f"size=({self._island.w},{self._island.h}) "
-            f"visible={self._island.is_visible()} {alpha}",
-            flush=True,
+            f"visible={self._island.is_visible()} {alpha}"
         )
 
     def _invalidate(self) -> None:
@@ -924,9 +999,7 @@ class Notch:
         try:
             self.on_position_change(int(nx), int(ny))
         except Exception as exc:  # noqa: BLE001
-            print(
-                f"[ezagent-voice] Notch posición: {exc}", flush=True
-            )
+            log.warning(f"[ezagent-voice] Notch posición: {exc}")
 
     # ------------------------------------------------------- teclado del menú
     def _menu_text_edit(self, active: bool) -> None:
@@ -988,36 +1061,43 @@ class Notch:
 
     # ------------------------------------------------------------- estado
     def set_state(self, state: str) -> None:
-        self._state = state
+        with self._state_lock:
+            self._state = state
         self._ui.set_app_state(state)
         if state not in ("idle", "error", "cancelled") and not self._visible:
             self.show(state)
         self._invalidate()
 
     def set_muted(self, muted: bool) -> None:
-        self._muted = bool(muted)
+        with self._state_lock:
+            self._muted = bool(muted)
         self._ui.set_muted(self._muted)
         self._invalidate()
 
     def set_in_call(self, in_call: bool) -> None:
-        self._in_call = bool(in_call)
+        with self._state_lock:
+            self._in_call = bool(in_call)
         self._ui.set_in_call(self._in_call)
         self._invalidate()
 
     def set_menu_open(self, open_: bool) -> None:
-        self._menu_open = bool(open_)
+        with self._state_lock:
+            self._menu_open = bool(open_)
         self._ui.set_menu_open(bool(open_))
         self._invalidate()
 
     def set_mic_level(self, level: float) -> None:
         """Nivel RMS del micrófono para el medidor del menú."""
         try:
-            self._mic_level = max(0.0, float(level or 0.0))
+            value = max(0.0, float(level or 0.0))
         except (TypeError, ValueError):
-            self._mic_level = 0.0
+            value = 0.0
+        with self._state_lock:
+            self._mic_level = value
 
     def draw(self, rms: float, state: str | None = None, wave_data=()) -> None:
-        self._rms = float(rms or 0.0)
+        with self._state_lock:
+            self._rms = float(rms or 0.0)
         if state is not None:
             self.set_state(state)
         self._invalidate()
@@ -1032,7 +1112,8 @@ class Notch:
 
     def set_save_result(self, ok: bool) -> None:
         """El guardado se aplica en Tk; el resultado llega al menú aquí."""
-        self._pending_save_result = bool(ok)
+        with self._state_lock:
+            self._pending_save_result = bool(ok)
         self._invalidate()
 
     def refresh_menu_settings(self) -> None:
@@ -1057,11 +1138,14 @@ class Notch:
         return self._confirm_panel.visible
 
     def _confirmation_above_now(self) -> bool:
+        return self._confirmation_above_at(self._anchor_x, self._anchor_y)
+
+    def _confirmation_above_at(self, anchor_x: float, anchor_y: float) -> bool:
         if self._island is None:
             return False
-        mon, work_bottom = self._monitor_bottom(self._anchor_x, self._anchor_y)
-        below = work_bottom - (self._anchor_y + self.H_ISLAND * self.s)
-        above = self._anchor_y - mon[1]
+        mon, work_bottom = self._monitor_bottom(anchor_x, anchor_y)
+        below = work_bottom - (anchor_y + self.H_ISLAND * self.s)
+        above = anchor_y - mon[1]
         return above > below
 
     def show_confirmation(
@@ -1083,11 +1167,13 @@ class Notch:
                 self._menu.close(now)
             except Exception:
                 pass
-            self._menu_open = False
+            confirm_above = self._confirmation_above_now()
+            with self._state_lock:
+                self._menu_open = False
+                self._confirm_above = confirm_above
             self._ui.set_menu_open(False)
             self._arrow.to(0.0, now, T_BASE, EASE_OUT)
         self._confirm_panel.show(summary, strong, on_yes, on_no)
-        self._confirm_above = self._confirmation_above_now()
         self._confirm_pressed = None
         self._ui.set_base("think")
         if not self._visible:
@@ -1134,7 +1220,8 @@ class Notch:
                 self._menu.close(now)
             except Exception:
                 pass
-            self._menu_open = False
+            with self._state_lock:
+                self._menu_open = False
             self._ui.set_menu_open(False)
             self._arrow.to(0.0, now, T_BASE, EASE_OUT)
             self._tab_w.to(
@@ -1153,12 +1240,13 @@ class Notch:
         if Menu is None or MenuSettings is None:
             return
         menu_above, available = self.menu_geometry()
-        self._menu_above = menu_above
-        self._menu_available = available
+        with self._state_lock:
+            self._menu_above = menu_above
+            self._menu_available = available
         try:
             settings = self.menu_settings_provider()
         except Exception as exc:  # noqa: BLE001
-            print(f"[ezagent-voice] Menú: no pude leer ajustes: {exc}", flush=True)
+            log.warning(f"[ezagent-voice] Menú: no pude leer ajustes: {exc}")
             return
         if settings is None:
             return
@@ -1184,7 +1272,7 @@ class Notch:
                     on_action=self._menu_action,
                 )
             except Exception as exc:  # noqa: BLE001
-                print(f"[ezagent-voice] Menú: no pude crearlo: {exc}", flush=True)
+                log.warning(f"[ezagent-voice] Menú: no pude crearlo: {exc}")
                 self._menu = None
                 return
         try:
@@ -1197,9 +1285,10 @@ class Notch:
                 pass
             self._menu.open(now)
         except Exception as exc:  # noqa: BLE001
-            print(f"[ezagent-voice] Menú: no pude abrirlo: {exc}", flush=True)
+            log.warning(f"[ezagent-voice] Menú: no pude abrirlo: {exc}")
             return
-        self._menu_open = True
+        with self._state_lock:
+            self._menu_open = True
         self._ui.set_menu_open(True)
         self._arrow.to(180.0, now, T_BASE, EASE_OUT)
         # La pestaña parte del ancho cerrado real (169 en muesca, 151 flotando)
@@ -1213,7 +1302,8 @@ class Notch:
         self._invalidate()
 
     def _menu_closed(self) -> None:
-        self._menu_open = False
+        with self._state_lock:
+            self._menu_open = False
         self._ui.set_menu_open(False)
         self._menu_text_edit(False)
         now = time.monotonic()
@@ -1232,14 +1322,14 @@ class Notch:
         try:
             self.on_live_setting(key, value)
         except Exception as exc:  # noqa: BLE001
-            print(f"[ezagent-voice] Ajuste en vivo {key}: {exc}", flush=True)
+            log.warning(f"[ezagent-voice] Ajuste en vivo {key}: {exc}")
         self._invalidate()
 
     def _save_settings(self, values: dict) -> bool | None:
         try:
             result = self.on_save_settings(values)
         except Exception as exc:  # noqa: BLE001
-            print(f"[ezagent-voice] Guardar ajustes: {exc}", flush=True)
+            log.error(f"[ezagent-voice] Guardar ajustes: {exc}")
             return False
         self._invalidate()
         # None = aceptado y pendiente; el resultado real llega por
@@ -1250,7 +1340,7 @@ class Notch:
         try:
             self.on_test_voice(values)
         except Exception as exc:  # noqa: BLE001
-            print(f"[ezagent-voice] Probar voz: {exc}", flush=True)
+            log.warning(f"[ezagent-voice] Probar voz: {exc}")
 
     def _hide_from_menu(self) -> None:
         try:
@@ -1263,9 +1353,7 @@ class Notch:
         try:
             self.on_menu_action(str(action))
         except Exception as exc:  # noqa: BLE001
-            print(
-                f"[ezagent-voice] Menú acción {action}: {exc}", flush=True
-            )
+            log.warning(f"[ezagent-voice] Menú acción {action}: {exc}")
 
     def menu_height(self, now: float) -> float:
         if self._menu is None:
@@ -1284,7 +1372,7 @@ class Notch:
         return min(float(W), max(base, float(self._tab_w.value)))
 
     def _control_layout(
-        self, tab_w: float | None = None
+        self, tab_w: float | None = None, attachment: str | None = None
     ) -> tuple[Rect, float, Rect]:
         """Devuelve (mic, centro de ojos, flecha) para el ancho actual.
 
@@ -1295,7 +1383,9 @@ class Notch:
         """
         if tab_w is None:
             tab_w = self._current_tab_width()
-        if getattr(self, "_attachment", "float") == "top":
+        if attachment is None:
+            attachment = getattr(self, "_attachment", "float")
+        if attachment == "top":
             mic0 = MIC_BUTTON_COMPACT
             eyes0 = EYES_CX_COMPACT
             arrow0 = ARROW_BUTTON_COMPACT
@@ -1303,7 +1393,7 @@ class Notch:
             mic0 = MIC_BUTTON_FLOAT
             eyes0 = EYES_CX_FLOAT
             arrow0 = ARROW_BUTTON_FLOAT
-        base_w = self._compact_layout_width()
+        base_w = float(W_COMPACT if attachment == "top" else W_FLOAT)
         span = float(W) - base_w
         progress = 0.0 if span <= 0 else (float(tab_w) - base_w) / span
         progress = min(1.0, max(0.0, progress))
@@ -1528,97 +1618,226 @@ class Notch:
         try:
             self.on_action(intent)
         except Exception as exc:  # noqa: BLE001
-            print(f"[ezagent-voice] Notch acción {intent}: {exc}", flush=True)
+            log.warning(f"[ezagent-voice] Notch acción {intent}: {exc}")
 
     # ------------------------------------------------------------- render
     def render_frame(self) -> np.ndarray:
+        """Compone un fotograma; todo lo que lee viene de la instantánea."""
         now = time.monotonic()
-        dt = min(max(now - self._last_frame, 0.0), 0.05)
-        self._last_frame = now
-
-        self._ui.update(now)
-        self._pose.update(now)
-        self._arrow.update(now)
-        self._tab_w.update(now)
-        if self._menu is not None:
-            try:
-                self._menu.update(now)
-            except Exception:
-                pass
-            try:
-                self._dirty = bool(self._menu.settings.dirty())
-            except Exception:
-                pass
-            if self._pending_save_result is not None:
-                result, self._pending_save_result = self._pending_save_result, None
-                try:
-                    self._menu.on_applied(result)
-                except Exception:
-                    pass
-            try:
-                self._menu.set_input_level(
-                    self._mic_level,
-                    muted=self._ui.muted,
-                    active=(
-                        self._ui.in_call
-                        and self._state == "listening"
-                    ),
-                )
-            except Exception:
-                pass
-
-        target = min(1.0, max(0.0, (self._rms / RMS_FULL_SCALE) ** RMS_GAMMA))
-        self._level.step(target, dt * 1000.0)
-
-        # A-01/A-02
-        if self._show_t0 is not None:
-            elapsed = now - self._show_t0
-            if elapsed >= T_OPEN / 1000.0:
-                self._show_t0 = None
-                self._pose.set_pose(self._ui.pose, now)
-                self._last_pose_name = self._ui.pose
-        if self._hide_t0 is not None:
-            elapsed = now - self._hide_t0
-            close_ms = T_CLOSE_EYES if self._hide_eyes else 0
-            if elapsed >= (close_ms + T_CLOSE_RETRACT) / 1000.0:
-                self._visible = False
-                self._ui.set_visible(False)
-                self._hide_t0 = None
-                if self._island is not None:
-                    self._island.hide()
-                # No cambiamos el tamaño del DIB al final: la ventana se oculta.
-                return np.zeros(
-                    (self.H_ISLAND, self._compact_width_px(), 4), np.uint8
-                )
-
-        menu_h = self.menu_height(now)
+        with self._state_lock:
+            # El menú y la pose necesitan el estado ya drenado de la cola.
+            self._ui.update(now)
+        menu_h = self._update_menu(now)
         menu_visible = menu_h > 0.5
-        if not menu_visible:
-            self._menu_open = False
-        scale = self.s
-        if not self._dragging and not self._menu_open and self._island is not None:
-            self._attachment = self._attachment_for_rect(
-                self._island.x,
-                self._island.y,
-                self._island.w,
-                self._island.h,
-            )
-        confirm_h = self._current_confirm_height(menu_visible)
+        confirm_h = 0.0
+        if self._confirm_panel.visible and not menu_visible:
+            confirm_h = float(CONFIRM_H)
+        confirm_above = self._confirm_above
         if confirm_h > 0.0:
-            self._confirm_above = self._confirmation_above_now()
+            confirm_above = self._confirmation_above_at(
+                self._anchor_x, self._anchor_y
+            )
+        self._refresh_attachment(menu_visible)
+        snap = self._snapshot(now, menu_h, confirm_h, confirm_above)
+        return self._compose(snap, now)
+
+    def _update_menu(self, now: float) -> float:
+        """Actualiza el menú fuera del lock (sus callbacks pueden volver)."""
+        menu = self._menu
+        if menu is None:
+            return 0.0
+        try:
+            menu.update(now)
+        except Exception:
+            pass
+        dirty: bool | None = None
+        try:
+            dirty = bool(menu.settings.dirty())
+        except Exception:
+            pass
+        with self._state_lock:
+            if dirty is not None:
+                self._dirty = dirty
+            pending, self._pending_save_result = self._pending_save_result, None
+            mic_level = self._mic_level
+            muted = self._ui.muted
+            in_call = self._ui.in_call
+            state = self._state
+        if pending is not None:
+            try:
+                menu.on_applied(pending)
+            except Exception:
+                pass
+        try:
+            menu.set_input_level(
+                mic_level,
+                muted=muted,
+                active=(in_call and state == "listening"),
+            )
+        except Exception:
+            pass
+        return self.menu_height(now)
+
+    def _refresh_attachment(self, menu_visible: bool) -> None:
+        """Recalcula el acople; usa el monitor, así que va fuera del lock."""
+        # DECISION: ``_dragging`` y ``_menu_open`` se leen sin el lock porque
+        # son escalares benignos y el cálculo llama a Win32; escribir el
+        # acople sí va bajo el lock.
+        island = self._island
+        if island is None or self._dragging or (self._menu_open and menu_visible):
+            return
+        attachment = self._attachment_for_rect(
+            island.x,
+            island.y,
+            island.w,
+            island.h,
+        )
+        with self._state_lock:
+            self._attachment = attachment
+
+    def _snapshot(
+        self,
+        now: float,
+        menu_h: float,
+        confirm_h: float,
+        confirm_above: bool,
+    ) -> _IslandSnapshot:
+        """Avanza animaciones y copia el estado del fotograma (U4).
+
+        Todo se lee una sola vez bajo el lock: ``_compose`` no vuelve a tocar
+        el estado vivo, así que un setter de otro hilo no mezcla dos estados.
+        """
+        with self._state_lock:
+            dt = min(max(now - self._last_frame, 0.0), 0.05)
+            self._last_frame = now
+            self._pose.update(now)
+            self._arrow.update(now)
+            self._tab_w.update(now)
+            rms_target = min(
+                1.0, max(0.0, (self._rms / RMS_FULL_SCALE) ** RMS_GAMMA)
+            )
+            self._level.step(rms_target, dt * 1000.0)
+
+            # A-01/A-02
+            if self._show_t0 is not None:
+                if now - self._show_t0 >= T_OPEN / 1000.0:
+                    self._show_t0 = None
+                    self._pose.set_pose(self._ui.pose, now)
+                    self._last_pose_name = self._ui.pose
+            hidden_now = False
+            if self._hide_t0 is not None:
+                close_ms = T_CLOSE_EYES if self._hide_eyes else 0
+                if now - self._hide_t0 >= (close_ms + T_CLOSE_RETRACT) / 1000.0:
+                    self._visible = False
+                    self._ui.set_visible(False)
+                    self._hide_t0 = None
+                    hidden_now = True
+
+            pose_name = "open" if self._show_t0 is not None else (
+                "close" if self._hide_t0 is not None else self._ui.pose
+            )
+            if pose_name != self._last_pose_name:
+                self._pose.set_pose(pose_name, now)
+                self._last_pose_name = pose_name
+                self._pose_t0 = now
+            pose = self._pose.current()
+            if not self._animations and pose.glow:
+                # Movimiento reducido: sin glow, solo forma y color.
+                pose = replace(pose, glow=0.0)
+            capsule_alpha, arc_alpha = self._pose.shape_alphas(now)
+            blink_allowed = (
+                pose_name in ("idle", "listen")
+                and not self._pose.animating()
+                and self._show_t0 is None
+                and self._hide_t0 is None
+            )
+            blink = self._blink.update(now, blink_allowed and self._animations)
+            pose_offset = (
+                self._pose_offset(pose_name, now)
+                if self._animations
+                else (0.0, 0.0)
+            )
+            mic_icon, mic_color_key = self.mic_appearance()
+            menu_visible = menu_h > 0.5
+            if not menu_visible:
+                self._menu_open = False
+            if confirm_h > 0.0:
+                self._confirm_above = confirm_above
+            return _IslandSnapshot(
+                state=self._state,
+                muted=self._muted,
+                in_call=self._in_call,
+                level=self._level.value,
+                rms_target=rms_target,
+                mic_level=self._mic_level,
+                pose_name=pose_name,
+                pose=pose,
+                pose_color=tuple(self._pose.color),
+                pose_offset=pose_offset,
+                pose_animating=self._pose.animating(),
+                pose_t0=self._pose_t0,
+                capsule_alpha=capsule_alpha,
+                arc_alpha=arc_alpha,
+                wave_alpha=self._pose.wave_alpha.value,
+                blink=blink,
+                animations=self._animations,
+                show_t0=self._show_t0,
+                hide_t0=self._hide_t0,
+                hide_eyes=self._hide_eyes,
+                tab_w=float(self._tab_w.value),
+                tab_animating=self._tab_w.active,
+                arrow=float(self._arrow.value),
+                theme=self._theme,
+                scale=self.s,
+                attachment=self._attachment,
+                anchor_x=self._anchor_x,
+                anchor_y=self._anchor_y,
+                compact_w=self._compact_layout_width(),
+                compact_w_px=self._compact_width_px(),
+                body_h_px=self.H_ISLAND,
+                menu_h=menu_h,
+                menu_visible=menu_visible,
+                menu_above=self._menu_above,
+                menu_open=self._menu_open,
+                confirm_h=confirm_h,
+                confirm_above=self._confirm_above,
+                hover=self._hover,
+                pressed=self._pressed,
+                dirty=self._dirty,
+                mic_icon=mic_icon,
+                mic_color_key=mic_color_key,
+                hidden_now=hidden_now,
+                menu=self._menu,
+                confirm_panel=self._confirm_panel,
+                island=self._island,
+            )
+
+    def _compose(self, snap: _IslandSnapshot, now: float) -> np.ndarray:
+        """Dibuja el fotograma leyendo solo la instantánea."""
+        island = snap.island
+        if snap.hidden_now:
+            if island is not None:
+                island.hide()
+            # No cambiamos el tamaño del DIB al final: la ventana se oculta.
+            return np.zeros((snap.body_h_px, snap.compact_w_px, 4), np.uint8)
+
+        menu_h = snap.menu_h
+        menu_visible = snap.menu_visible
+        confirm_h = snap.confirm_h
         panel_h = menu_h + confirm_h
-        base_w = self._compact_layout_width()
+        base_w = snap.compact_w
+        scale = snap.scale
         height = H_ISLAND + panel_h
         if menu_visible:
             window_w = float(W)
-            tab_w = min(float(W), max(base_w, float(self._tab_w.value)))
-            tab_y = menu_h if self._menu_above else 0.0
-            panel_above = self._menu_above
+            tab_w = min(float(W), max(base_w, snap.tab_w))
+            tab_y = menu_h if snap.menu_above else 0.0
+            panel_above = snap.menu_above
         elif confirm_h > 0.0:
             window_w = max(base_w, float(CONFIRM_W))
-            tab_w = min(window_w, max(base_w, float(self._tab_w.value)))
-            tab_y = confirm_h if self._confirm_above else 0.0
-            panel_above = self._confirm_above
+            tab_w = min(window_w, max(base_w, snap.tab_w))
+            tab_y = confirm_h if snap.confirm_above else 0.0
+            panel_above = snap.confirm_above
         else:
             window_w = base_w
             tab_w = base_w
@@ -1627,10 +1846,10 @@ class Notch:
         surface = render_surface(
             window_w,
             height,
-            self._theme,
+            snap.theme,
             scale,
             tab_width=tab_w,
-            attachment=self._attachment,
+            attachment=snap.attachment,
             menu_h=panel_h,
             menu_above=panel_above,
             body_width=tab_w,
@@ -1643,78 +1862,55 @@ class Notch:
         # La isla se mantiene anclada en pantalla: el menú (o la fila de
         # confirmación) crece hacia el lado con espacio y la ventana se
         # desplaza en consecuencia.
-        window_x = self._anchor_x - (window_w * scale) / 2.0
-        window_y = self._anchor_y - (
+        window_x = snap.anchor_x - (window_w * scale) / 2.0
+        window_y = snap.anchor_y - (
             panel_h * scale if panel_above else 0.0
         )
-        if self._island is not None:
+        if island is not None:
             ix, iy = int(round(window_x)), int(round(window_y))
-            if self._island.x != ix or self._island.y != iy:
-                self._island.set_pos(ix, iy)
+            if island.x != ix or island.y != iy:
+                island.set_pos(ix, iy)
 
         # Ojos y controles (siempre sobre la isla); la isla no lleva texto.
-        pose_name = "open" if self._show_t0 is not None else (
-            "close" if self._hide_t0 is not None else self._ui.pose
-        )
-        if pose_name != self._last_pose_name:
-            self._pose.set_pose(pose_name, now)
-            self._last_pose_name = pose_name
-            self._pose_t0 = now
-        pose = self._pose.current()
-        if not self._animations and pose.glow:
-            # Movimiento reducido: sin glow, solo forma y color.
-            pose = replace(pose, glow=0.0)
-        capsule_alpha, arc_alpha = self._pose.shape_alphas(now)
-
-        blink_allowed = (
-            pose_name in ("idle", "listen")
-            and not self._pose.animating()
-            and self._show_t0 is None
-            and self._hide_t0 is None
-        )
-        blink = self._blink.update(now, blink_allowed and self._animations)
-        offset = (
-            self._pose_offset(pose_name, now) if self._animations else (0.0, 0.0)
-        )
-        level = 1.0 if pose_name in ("listen", "speak") else 0.0
-        wave_alpha = self._pose.wave_alpha.value
-        _mic, eyes_cx, _handle = self._control_layout(tab_w)
+        _mic, eyes_cx, _handle = self._control_layout(tab_w, snap.attachment)
         eyes_x = tab_x + eyes_cx
         eyes_y = tab_y + EYES_CY
+        level = 1.0 if snap.pose_name in ("listen", "speak") else 0.0
         draw_eyes(
             buf,
             eyes_x,
             eyes_y,
-            pose,
-            tuple(self._pose.color),
+            snap.pose,
+            snap.pose_color,
             scale,
-            level=self._level.value if level else 0.0,
+            level=snap.level if level else 0.0,
             t=now,
-            theme=self._theme,
-            blink=blink,
-            offset=offset,
-            capsule_alpha=capsule_alpha,
-            arc_alpha=arc_alpha,
-            wave_alpha=wave_alpha,
-            wave_width=pose.wave_w,
+            theme=snap.theme,
+            blink=snap.blink,
+            offset=snap.pose_offset,
+            capsule_alpha=snap.capsule_alpha,
+            arc_alpha=snap.arc_alpha,
+            wave_alpha=snap.wave_alpha,
+            wave_width=snap.pose.wave_w,
         )
 
-        self._draw_controls(buf, now, menu_h, tab_x, tab_y, tab_w)
+        self._draw_controls(snap, buf, now, menu_h, tab_x, tab_y, tab_w)
         if confirm_h > 0.0:
             origin_x = (window_w - tab_w) / 2.0
-            origin_y = 0.0 if self._confirm_above else float(H_ISLAND)
+            origin_y = 0.0 if snap.confirm_above else float(H_ISLAND)
             span = max(1.0, float(CONFIRM_W) - base_w)
             progress = min(
                 1.0, max(0.0, (tab_w - base_w) / span)
             )
-            self._confirm_panel.draw(
+            snap.confirm_panel.draw(
                 buf, origin_x, origin_y, alpha=progress
             )
-        if menu_visible and self._menu is not None:
+        menu = snap.menu
+        if menu_visible and menu is not None:
             try:
-                if self._menu_above:
+                if snap.menu_above:
                     menu_buf = np.zeros_like(buf)
-                    self._menu.draw(menu_buf, now)
+                    menu.draw(menu_buf, now)
                     src0 = int(round(H_ISLAND * scale))
                     src1 = min(menu_buf.shape[0], src0 + int(round(menu_h * scale)))
                     dst1 = max(0, min(buf.shape[0], src1 - src0))
@@ -1731,9 +1927,9 @@ class Notch:
                             src[..., 3] + dst[..., 3] * inv[..., 0]
                         )
                 else:
-                    self._menu.draw(buf, now)
+                    menu.draw(buf, now)
             except Exception as exc:  # noqa: BLE001
-                print(f"[ezagent-voice] Menú render: {exc}", flush=True)
+                log.debug(f"[ezagent-voice] Menú render: {exc}")
 
         if panel_h > 0.0:
             # Durante la expansión de ancho el contenido se recorta a la
@@ -1743,13 +1939,15 @@ class Notch:
             np.minimum(buf[..., :3], buf[..., 3:4], out=buf[..., :3])
 
         # A-01/A-02: transformar el conjunto (cuerpo + contenido).
-        if self._show_t0 is not None:
-            k = min(1.0, max(0.0, (now - self._show_t0) / (T_OPEN / 1000.0)))
-            ease = EASE_SPRING(k) if self._animations else EASE_OUT(k)
-            buf = self._transform(buf, 0.55 + 0.45 * ease, -H_ISLAND * (1.0 - ease), ease)
-        elif self._hide_t0 is not None:
-            elapsed = now - self._hide_t0
-            close_ms = T_CLOSE_EYES if self._hide_eyes else 0
+        if snap.show_t0 is not None:
+            k = min(1.0, max(0.0, (now - snap.show_t0) / (T_OPEN / 1000.0)))
+            ease = EASE_SPRING(k) if snap.animations else EASE_OUT(k)
+            buf = self._transform(
+                buf, 0.55 + 0.45 * ease, -H_ISLAND * (1.0 - ease), ease, scale
+            )
+        elif snap.hide_t0 is not None:
+            elapsed = now - snap.hide_t0
+            close_ms = T_CLOSE_EYES if snap.hide_eyes else 0
             if elapsed < close_ms / 1000.0:
                 # Los ojos ya están en close; el cuerpo aún no se retira.
                 pass
@@ -1762,49 +1960,49 @@ class Notch:
                         / (T_CLOSE_RETRACT / 1000.0),
                     ),
                 )
-                ease = EASE_IN(k) if self._animations else k
+                ease = EASE_IN(k) if snap.animations else k
                 buf = self._transform(
-                    buf, 1.0 - 0.45 * ease, -H_ISLAND * ease, 1.0 - ease
+                    buf, 1.0 - 0.45 * ease, -H_ISLAND * ease, 1.0 - ease, scale
                 )
 
         # FPS adaptativo: 60 con animación/voz/menú; 30 en reposo vivo.
         menu_animating = False
-        if self._menu is not None:
+        if menu is not None:
             try:
-                menu_animating = bool(self._menu.is_animating(now))
+                menu_animating = bool(menu.is_animating(now))
             except Exception:
                 menu_animating = False
-        if self._island is not None:
-            pose_age = now - self._pose_t0
+        if island is not None:
+            pose_age = now - snap.pose_t0
             moving_pose = (
-                pose_name == "think"
-                or (pose_name == "notice" and pose_age < 0.5)
-                or (pose_name == "error" and pose_age < 0.4)
+                snap.pose_name == "think"
+                or (snap.pose_name == "notice" and pose_age < 0.5)
+                or (snap.pose_name == "error" and pose_age < 0.4)
                 or (
-                    pose_name in ("listen", "speak")
+                    snap.pose_name in ("listen", "speak")
                     and (
-                        abs(self._level.value - target) > 0.002
-                        or self._level.value > 0.01
+                        abs(snap.level - snap.rms_target) > 0.002
+                        or snap.level > 0.01
                     )
                 )
             )
             active = (
-                self._pose.animating()
-                or self._show_t0 is not None
-                or self._hide_t0 is not None
+                snap.pose_animating
+                or snap.show_t0 is not None
+                or snap.hide_t0 is not None
                 or menu_animating
                 or moving_pose
-                or self._tab_w.active
+                or snap.tab_animating
             )
             if active:
                 interval = 1.0 / 60.0
-            elif pose_name in ("idle", "listen"):
+            elif snap.pose_name in ("idle", "listen"):
                 interval = 1.0 / 30.0
             else:
                 # Estados estáticos (mute, error ya sacudido, aviso ya
                 # saltado): no se repinta hasta el siguiente evento.
                 interval = 1.0
-            self._island._interval = interval
+            island._interval = interval
 
         if buf.shape[0] != frame_h or buf.shape[1] != frame_w:
             # La silueta y el buffer deben coincidir con el tamaño de ventana.
@@ -1834,7 +2032,7 @@ class Notch:
             if t >= 0.4:
                 return (0.0, 0.0)
             k = t / 0.4
-            for (k0, x0), (k1, x1) in zip(steps, steps[1:]):
+            for (k0, x0), (k1, x1) in zip(steps, steps[1:], strict=False):
                 if k <= k1:
                     f = (k - k0) / max(k1 - k0, 1e-6)
                     return (x0 + (x1 - x0) * f, 0.0)
@@ -1855,6 +2053,7 @@ class Notch:
 
     def _draw_controls(
         self,
+        snap: _IslandSnapshot,
         buf: np.ndarray,
         now: float,
         menu_h: float,
@@ -1862,11 +2061,13 @@ class Notch:
         offset_y: float,
         tab_w: float | None = None,
     ) -> None:
-        theme = palette(self._theme)
-        hover = self._hover
-        pressed = self._pressed
+        theme = palette(snap.theme)
+        hover = snap.hover
+        pressed = snap.pressed
         ox, oy = offset_x, offset_y
-        mic_rect, _eyes_cx, arrow_rect = self._control_layout(tab_w)
+        mic_rect, _eyes_cx, arrow_rect = self._control_layout(
+            tab_w, snap.attachment
+        )
         mic_cx = (mic_rect.x0 + mic_rect.x1) / 2 + ox
         mic_cy = (mic_rect.y0 + mic_rect.y1) / 2 + oy
         arrow_cx = (arrow_rect.x0 + arrow_rect.x1) / 2 + ox
@@ -1875,14 +2076,13 @@ class Notch:
         # Micrófono: icono desnudo, sin disco ni fondo. La cara cambia con el
         # estado real: apagado (gris), silenciado (rojo) o escuchando (normal).
         mic_scale = BUTTON_PRESSED_SCALE if pressed == "mic" else 1.0
-        mic_icon, mic_color_key = self.mic_appearance()
         draw_icon(
-            buf, mic_icon, mic_cx, mic_cy,
-            ICON_MIC_SIZE * mic_scale, theme[mic_color_key][:3], self.s,
+            buf, snap.mic_icon, mic_cx, mic_cy,
+            ICON_MIC_SIZE * mic_scale, theme[snap.mic_color_key][:3], snap.scale,
         )
 
         # Flecha desnuda a la derecha: gira con el menú, sin cápsula.
-        if self._menu_open:
+        if snap.menu_open:
             arrow_color = theme["MINT"][:3]
         elif hover == "arrow" or pressed == "arrow":
             arrow_color = theme["TEXT"][:3]
@@ -1893,21 +2093,26 @@ class Notch:
             ICON_ARROW_SIZE * (
                 BUTTON_PRESSED_SCALE if pressed == "arrow" else 1.0
             ),
-            arrow_color, self.s, angle_deg=self._arrow.value,
+            arrow_color, snap.scale, angle_deg=snap.arrow,
         )
-        if self._dirty and menu_h <= 0.5:
+        if snap.dirty and menu_h <= 0.5:
             dot_x = arrow_rect.x1 - 2.0 + ox
             dot_y = 8.0 + oy
             fill_circle(
-                buf, dot_x, dot_y, 2.5, theme["WARM"][:3], self.s
+                buf, dot_x, dot_y, 2.5, theme["WARM"][:3], snap.scale
             )
 
     def _transform(
-        self, buf: np.ndarray, sx: float, dy: float, opacity: float
+        self,
+        buf: np.ndarray,
+        sx: float,
+        dy: float,
+        opacity: float,
+        scale: float | None = None,
     ) -> np.ndarray:
         if abs(sx - 1.0) < 0.001 and abs(dy) < 0.01 and opacity >= 0.999:
             return buf
-        scale = self.s
+        scale = self.s if scale is None else scale
         h, w = buf.shape[:2]
         arr = np.clip(buf * 255.0 + 0.5, 0, 255).astype(np.uint8)
         img = Image.fromarray(arr, "RGBA")

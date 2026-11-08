@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import queue
 import wave
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 
@@ -64,7 +66,8 @@ def test_segmenter_does_not_cut_on_short_pauses():
 
 
 def test_segmenter_adapts_to_noise_and_waits_25s():
-    segmenter = Segmenter()  # defaults: min_rms 0.0006, silencio 2.5 s
+    # El default del Segmenter es 1,3 s; esta prueba cubre 2,5 s explícitos.
+    segmenter = Segmenter(silence_secs=2.5)
     chunk = b"\x00\x00" * 480
     for _ in range(20):  # ruido de fondo
         segmenter.feed(chunk, 0.004)
@@ -387,24 +390,18 @@ def test_run_agent_visible_uses_tab_new_and_gui_skill():
     assert "cua-driver" in " ".join(calls[0])
 
 
-def test_voice_close_tools_and_note_done():
+def test_voice_note_done_anade_aviso():
     cfg = VoiceConfig()
     herdr = Herdr(cfg)
-    calls: list[tuple] = []
     messenger = Messenger(
         cfg,
         herdr,
         last_summary=lambda: "",
-        watch=lambda address: calls.append(("watch", address)),
+        watch=lambda address: None,
         mute=lambda minutes: None,
-        request_close=lambda: calls.append(("close",)),
+        request_close=lambda: None,
         mic_mute=lambda muted: None,
     )
-    messenger._execute("voice_close", "{}")
-    assert ("close",) in calls
-    messenger._execute("voice_close_and_watch", '{"address":"t1"}')
-    assert ("watch", "t1") in calls
-    assert calls.count(("close",)) == 2
 
     messenger.note_done("t1", "claude-code", "done", "salida de prueba")
     last = messenger.messages[-1]
@@ -413,48 +410,93 @@ def test_voice_close_tools_and_note_done():
     assert "salida de prueba" in last["content"]
 
 
-def test_voice_close_heuristic_watches_last_agent():
+def test_mensajero_avisa_por_voz_si_falla_el_nucleo():
+    """Un error del runtime no rompe el turno: se avisa por el stream."""
+
+    class FakeRuntime:
+        def begin_turn(self, text):
+            return None
+
+        def system_prompt(self):
+            return "sistema"
+
+        def tools_for(self, text):
+            return [
+                {"type": "function", "function": {"name": "x", "parameters": {}}}
+            ]
+
+        def execute(self, name, arguments):
+            raise RuntimeError("boom")
+
+        def render_result(self, result):
+            return "{}"
+
+        def record_assistant(self, content):
+            return None
+
+    class Stream:
+        def __init__(self, chunks):
+            self._chunks = chunks
+
+        def __iter__(self):
+            return iter(self._chunks)
+
+        def close(self):
+            return None
+
+    call = SimpleNamespace(
+        index=0,
+        id="c1",
+        function=SimpleNamespace(name="x", arguments="{}"),
+    )
+    tool_chunk = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                delta=SimpleNamespace(content="", tool_calls=[call])
+            )
+        ]
+    )
+
+    class Completions:
+        calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return Stream([tool_chunk])
+            return Stream(
+                [
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(
+                                    content="Hecho.", tool_calls=[]
+                                )
+                            )
+                        ]
+                    )
+                ]
+            )
+
     cfg = VoiceConfig()
-    herdr = Herdr(cfg)
-    calls: list[tuple] = []
     messenger = Messenger(
         cfg,
-        herdr,
+        Herdr(cfg),
         last_summary=lambda: "",
-        watch=lambda address: calls.append(("watch", address)),
+        watch=lambda address: None,
         mute=lambda minutes: None,
-        request_close=lambda: calls.append(("close",)),
+        request_close=lambda: None,
         mic_mute=lambda muted: None,
+        runtime=FakeRuntime(),
     )
-    messenger._last_user_text = "ciérrate y avísame cuando termine"
-    messenger._last_agent_address = "t9"
-    messenger._execute("voice_close", "{}")
-    assert ("watch", "t9") in calls
-    assert ("close",) in calls
-
-
-def test_run_agent_notify_flags_register_watch_and_close():
-    cfg = VoiceConfig()
-    herdr = Herdr(cfg)
-    calls: list[tuple] = []
-    messenger = Messenger(
-        cfg,
-        herdr,
-        last_summary=lambda: "",
-        watch=lambda address: calls.append(("watch", address)),
-        mute=lambda minutes: None,
-        request_close=lambda: calls.append(("close",)),
-        mic_mute=lambda muted: None,
+    messenger.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=Completions())
     )
-    messenger.herdr.run_agent = lambda *a, **k: {"ok": True, "address": "t9"}  # type: ignore[method-assign]
-    result = messenger._execute(
-        "herdr_run_agent",
-        '{"agent":"claude","task":"x","confirmed":true,'
-        '"notify_on_done":true,"close_listening":true}',
-    )
-    assert result["ok"] is True
-    assert ("watch", "t9") in calls
-    assert ("close",) in calls
+    spoken = " ".join(messenger.ask_stream("haz algo"))
+    assert "No pude ejecutar la herramienta" in spoken
+    tool_messages = [m for m in messenger.messages if m.get("role") == "tool"]
+    assert tool_messages
+    assert json.loads(tool_messages[-1]["content"])["ok"] is False
 
 
 def test_watcher_respects_mute_filter():
@@ -521,7 +563,7 @@ def test_catalogo_local_de_modelos_whisper(tmp_path, monkeypatch):
     models.mkdir()
     (models / "ggml-small-q5_1.bin").write_bytes(b"x")
     (models / "ggml-large-v3-turbo-q5_0.bin").write_bytes(b"x")
-    monkeypatch.setenv("DICTA_HOME", str(tmp_path))
+    monkeypatch.setenv("EZAGENT_WHISPER_HOME", str(tmp_path))
     options = available_whisper_models("ggml-large-v3-turbo-q5_0")
     assert [value for value, _label in options] == [
         "ggml-small-q5_1",
@@ -531,8 +573,12 @@ def test_catalogo_local_de_modelos_whisper(tmp_path, monkeypatch):
     assert whisper_model_path("no-existe") is None
 
 
-def test_ensure_whisper_elige_puerto_local_libre(monkeypatch):
+def test_ensure_whisper_elige_puerto_local_libre(tmp_path, monkeypatch):
     from ezagent.voice import app as app_module
+
+    # ensure_whisper exige un home con whisper-server.exe o un modelo.
+    (tmp_path / "whisper-server.exe").write_bytes(b"x")
+    monkeypatch.setenv("EZAGENT_WHISPER_HOME", str(tmp_path))
 
     cfg = VoiceConfig(
         whisper_url="http://127.0.0.1:8088/inference",

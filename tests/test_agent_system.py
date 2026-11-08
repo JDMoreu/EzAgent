@@ -36,7 +36,6 @@ from ezagent.agent.system_prompt import (
 )
 from ezagent.agent.tools_d import clean_environment, load_tools_d
 
-
 # ---------------------------------------------------------------------------
 # Utilidades
 # ---------------------------------------------------------------------------

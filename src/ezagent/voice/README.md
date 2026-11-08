@@ -14,9 +14,12 @@ No hace las tareas de código: solo escucha, consulta, delega y narra.
 
 - Windows 11.
 - Herdr en marcha y `hc` en el PATH.
-- `whisper-server` en `http://127.0.0.1:8088/inference`
-  (`powershell -ExecutionPolicy Bypass -File scripts\start-whisper.ps1`).
-- `OPENCODE_API_KEY` en `.env`.
+- `whisper-server` con Vulkan y el modelo `ggml-large-v3-turbo-q5_0.bin` en
+  `%LOCALAPPDATA%\EzAgent\whisper` (la carpeta contiene `whisper-server.exe` y
+  `models\`). EzAgent lo arranca solo en un puerto local libre; para usar un
+  servidor externo, define `WHISPER_URL`.
+- La clave del proveedor LLM elegido en `.env` (por ejemplo,
+  `OPENCODE_API_KEY`).
 - Modelo Kokoro descargado (se descarga solo la primera vez).
 
 ## Arrancar
@@ -56,7 +59,8 @@ uv run ezagent-voice --write-config
 | **Ctrl+Alt+R** | Repetir el último resumen (`Ctrl+Alt+Y` si R está ocupado) |
 
 Se cambian en `voice.json` (`hotkey`, `cancel_hotkey`, `repeat_hotkey`).
-Se evitan Alt+Q/E/R de Dicta para que las dos apps puedan convivir.
+Los cinco atajos de EzAgent son globales y se re-registran sin reiniciar al
+guardar; si otro programa ya usa uno, queda anotado en el log.
 
 Al abrir el mensajero, entra en modo escucha automáticamente a los 600 ms: no hace
 falta pulsar nada. `Ctrl+Alt+Space` sirve para colgar o volver a llamar. En
@@ -177,8 +181,8 @@ uv run ezagent-voice --list-mics
 uv run ezagent-voice --mic 2
 ```
 
-En este equipo el TA82 tiene muy poca ganancia y la Webcam AC410 es lejana. El
-VAD parte de `min_rms = 0.0006` (antes 0.0015) y solo aprende ruido de los
+Hay micrófonos con poca ganancia (los de portátil) y webcams que quedan lejos.
+El VAD parte de `min_rms = 0.0006` (antes 0.0015) y solo aprende ruido de los
 niveles cercanos al suelo, para que una frase floja no se confunda con ruido ni
 suba el umbral del siguiente intento. Si aun así no te detecta, baja
 `min_rms` a `0.0003` en el menú del notch o en `voice.json`; si el ruido de
@@ -307,7 +311,7 @@ EzAgent no usa Pipecat; el pipeline es propio.
   Usa auriculares o pon `barge_in: false`.
 - El STT es por turnos (whisper batch); el streaming es del LLM/TTS. Para STT
   palabra a palabra haría falta un modelo streaming (Nemotron 3.5).
-- El notch reutiliza la capa de **Dicta** (MIT, del mismo autor).
+- El notch se basa en la capa layered de **Dicta** (MIT).
 
 ## Siguiente iteración
 

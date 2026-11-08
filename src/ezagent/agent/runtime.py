@@ -15,7 +15,7 @@ import json
 import re
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from .audit import AuditLog
@@ -593,14 +593,3 @@ class AgentRuntime:
         if wants and self.last_agent_address:
             return self.last_agent_address
         return None
-
-    def note_done(
-        self,
-        address: str,
-        agent: str,
-        reason: str,
-        output: str,
-        *,
-        task: str = "",
-    ) -> None:
-        """El mensajero añade el aviso a su historial; aquí no hay nada más."""

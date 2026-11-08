@@ -40,6 +40,7 @@ from .config import VoiceConfig, config_path
 from .herdr import Herdr
 from .hotkeys import GlobalHotkey, parse_hotkey
 from .llm import Messenger
+from .metrics import LatencyStats, TurnTimings
 from .notch.island import Notch
 from .stt import (
     STTError,
@@ -47,7 +48,6 @@ from .stt import (
     transcribe,
     whisper_model_path,
 )
-from .metrics import LatencyStats, TurnTimings
 from .tasks import TaskRegistry
 from .tts import Speaker
 from .watcher import Watcher
@@ -199,6 +199,22 @@ def ensure_whisper(
     if not script.exists():
         log(f"No encuentro {script}; arranca whisper-server a mano.")
         return None
+    try:
+        from .stt import whisper_home
+
+        home = whisper_home()
+    except Exception:
+        home = None
+    model_path = whisper_model_path(cfg.stt_model)
+    has_server = home is not None and any(
+        (home / sub / "whisper-server.exe").is_file()
+        for sub in ("", "whisper_vulkan")
+    )
+    if not has_server and model_path is None:
+        # DECISION: app.py usa log() propio (sin niveles); el aviso hablado lo
+        # emite la capa que trata el estado "error" del notch.
+        log("No encuentro whisper. Revisa la carpeta de whisper en la configuración.")
+        return None
     port = _free_local_port()
     cfg.whisper_url = urlunsplit(
         (parts.scheme or "http", f"127.0.0.1:{port}", parts.path, parts.query, "")
@@ -212,15 +228,8 @@ def ensure_whisper(
             "-Port", str(port),
             "-Engine", str(cfg.stt_engine or "auto"),
         ]
-        try:
-            from .stt import dicta_home
-
-            home = dicta_home()
-        except Exception:
-            home = None
         if home is not None:
-            command.extend(["-DictaHome", str(home)])
-        model_path = whisper_model_path(cfg.stt_model)
+            command.extend(["-WhisperHome", str(home)])
         if model_path is not None:
             command.extend(["-Model", str(model_path)])
         proc = subprocess.Popen(
@@ -271,6 +280,8 @@ class VoiceApp:
         self._call_stop: threading.Event | None = None
         self._call_thread: threading.Thread | None = None
         self._tts_stop: threading.Event | None = None
+        # Un único lock protege la reasignación del evento de parada.
+        self._tts_lock = threading.Lock()
         self._speaking_kind: str | None = None
         self._turn_gen = 0
         self._turn_started = 0.0
@@ -309,6 +320,17 @@ class VoiceApp:
                 pass
 
         self._whisper_proc = ensure_whisper(cfg)
+        if not _whisper_ready(cfg.whisper_url):
+            # DECISION: sin whisper la app arranca igual; el aviso hablado usa
+            # el canal de errores que ya existe y el notch queda en error.
+            self.notch.set_state("error")
+            self.events.put(
+                (
+                    "error",
+                    "No encuentro whisper. Revisa la carpeta de whisper "
+                    "en la configuración.",
+                )
+            )
         log("Cargando Kokoro…")
         self.speaker = Speaker(cfg)
         threading.Thread(target=self._warm_tts, daemon=True).start()
@@ -573,6 +595,10 @@ class VoiceApp:
 
     def _warm_stt(self) -> None:
         """Carga el modelo de whisper antes del primer turno real."""
+        if not _whisper_ready(self.cfg.whisper_url):
+            # Ya se avisó al arrancar: no repetir el error en cada intento.
+            log("whisper no disponible; salto el precalentamiento.")
+            return
         try:
             transcribe(self.cfg, pcm_to_wav(b"\x00\x00" * 3200, 16000))
             log("whisper precalentado.")
@@ -721,8 +747,7 @@ class VoiceApp:
         self._turn_gen += 1
         if self._call_stop is not None:
             self._call_stop.set()
-        if self._tts_stop is not None:
-            self._tts_stop.set()
+        self._signal_tts_stop()
         self.watcher.stop()
         for hotkey in self.hotkeys:
             hotkey.stop()
@@ -973,8 +998,7 @@ class VoiceApp:
             except Exception:
                 pass
         elif kind == "confirm_click":
-            if self._tts_stop is not None:
-                self._tts_stop.set()
+            self._signal_tts_stop()
             agent = getattr(self, "agent", None)
             if agent is not None:
                 agent.submit_confirmation_click(bool(event[1]))
@@ -992,8 +1016,7 @@ class VoiceApp:
     def _start_call(self) -> None:
         if self.in_call:
             return
-        if self._tts_stop is not None:
-            self._tts_stop.set()
+        self._signal_tts_stop()
         self._speaking_kind = None
         self.in_call = True
         self._user_speaking = False
@@ -1019,8 +1042,7 @@ class VoiceApp:
 
     def _cut_off(self) -> None:
         """Botón stop del notch: corta también un aviso en curso."""
-        if self._tts_stop is not None:
-            self._tts_stop.set()
+        self._signal_tts_stop()
         self._speaking_kind = None
         self._hang_up()
 
@@ -1050,8 +1072,7 @@ class VoiceApp:
             log("Llamada terminada; termino el aviso en curso.")
             return
         self._turn_gen += 1
-        if self._tts_stop is not None:
-            self._tts_stop.set()
+        self._signal_tts_stop()
         self._speaking_kind = None
         self.notch.set_in_call(False)
         self._set_idle()
@@ -1090,16 +1111,14 @@ class VoiceApp:
         if agent is not None and agent.confirm_pending:
             # La respuesta a la confirmación pertenece al turno bloqueado:
             # se corta el TTS pero no se invalida el turno.
-            if self._tts_stop is not None:
-                self._tts_stop.set()
+            self._signal_tts_stop()
             self._user_speaking = True
             self._ignore_utterance = False
             self._set_state(LISTENING)
             return
         log("Barge-in: te escucho.")
         self._turn_gen += 1
-        if self._tts_stop is not None:
-            self._tts_stop.set()
+        self._signal_tts_stop()
         self._user_speaking = True
         self._ignore_utterance = False
         self._set_state(LISTENING)
@@ -1118,8 +1137,7 @@ class VoiceApp:
             self._user_speaking = True
             self._ignore_utterance = False
             self._post_tts_ignore = False
-            if self._tts_stop is not None:
-                self._tts_stop.set()
+            self._signal_tts_stop()
             self._set_state(LISTENING)
             return
         if time.monotonic() < self._post_tts_until:
@@ -1133,8 +1151,7 @@ class VoiceApp:
             # No hay eco: el usuario puede corregir o repetir mientras el
             # modelo piensa. La respuesta pendiente se descarta.
             self._turn_gen += 1
-            if self._tts_stop is not None:
-                self._tts_stop.set()
+            self._signal_tts_stop()
             self._set_state(LISTENING)
             return
         if self.state == SPEAKING:
@@ -1148,8 +1165,7 @@ class VoiceApp:
                 self._close_after_answer = False
             log("Barge-in: te escucho.")
             self._turn_gen += 1
-            if self._tts_stop is not None:
-                self._tts_stop.set()
+            self._signal_tts_stop()
             self._set_state(LISTENING)
 
     def _on_utterance(self, pcm: bytes, rate: int) -> None:
@@ -1219,19 +1235,39 @@ class VoiceApp:
     def _set_idle(self) -> None:
         self._set_state(IDLE)
 
+    def _tts_guard(self) -> threading.Lock:
+        """Lock de ``_tts_stop``; lo crea si la instancia no pasó por __init__."""
+        # DECISION: las pruebas construyen VoiceApp con __new__; en la app real
+        # el lock existe siempre desde __init__.
+        lock = getattr(self, "_tts_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self._tts_lock = lock
+        return lock
+
+    def _new_tts_stop(self) -> threading.Event:
+        with self._tts_guard():
+            if self._tts_stop is not None:
+                self._tts_stop.set()
+            self._tts_stop = threading.Event()
+            return self._tts_stop
+
+    def _signal_tts_stop(self) -> None:
+        with self._tts_guard():
+            if self._tts_stop is not None:
+                self._tts_stop.set()
+
     def _speak(self, text: str, kind: str = "announce") -> None:
         if not text:
             return
         self._turn_gen += 1
         generation = self._turn_gen
-        if self._tts_stop is not None:
-            self._tts_stop.set()
-        self._tts_stop = threading.Event()
+        stop_event = self._new_tts_stop()
         self._speaking_kind = kind
         self._set_state(SPEAKING)
         threading.Thread(
             target=self._tts_worker,
-            args=(text, self._tts_stop, generation),
+            args=(text, stop_event, generation),
             daemon=True,
         ).start()
 
@@ -1245,14 +1281,12 @@ class VoiceApp:
         if not text:
             return
         generation = self._turn_gen
-        if self._tts_stop is not None:
-            self._tts_stop.set()
-        self._tts_stop = threading.Event()
+        stop_event = self._new_tts_stop()
         self._speaking_kind = kind
         self._set_state(SPEAKING)
         threading.Thread(
             target=self._tts_worker,
-            args=(text, self._tts_stop, generation),
+            args=(text, stop_event, generation),
             daemon=True,
         ).start()
 
@@ -1301,8 +1335,7 @@ class VoiceApp:
 
     def _answer_worker(self, text: str, gen: int) -> None:
         """Consume el LLM en streaming y habla cada frase en cuanto llega."""
-        stop_event = threading.Event()
-        self._tts_stop = stop_event
+        stop_event = self._new_tts_stop()
         self._speaking_kind = "answer"
         sentences = _Sentences()
         full: list[str] = []

@@ -15,7 +15,6 @@ import numpy as np
 
 from .tokens import (
     AA_RAMP,
-    Color,
     EYE_ARC_POINTS,
     EYE_ARC_STROKE,
     WAVE_BAR_COUNT,
@@ -29,6 +28,7 @@ from .tokens import (
     WAVE_SIN_PHASE_STEP,
     WAVE_SLOT,
     WAVE_W,
+    Color,
     glow_max,
     palette,
 )
@@ -145,7 +145,7 @@ def _arc_distance(
     ]
     stroke = EYE_ARC_STROKE * scale
     result = np.full(dx.shape, np.inf, dtype=np.float32)
-    for (ax, ay), (bx, by) in zip(points[:-1], points[1:]):
+    for (ax, ay), (bx, by) in zip(points[:-1], points[1:], strict=False):
         vx = bx - ax
         vy = by - ay
         length2 = vx * vx + vy * vy
