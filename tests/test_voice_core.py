@@ -563,7 +563,7 @@ def test_catalogo_local_de_modelos_whisper(tmp_path, monkeypatch):
     models.mkdir()
     (models / "ggml-small-q5_1.bin").write_bytes(b"x")
     (models / "ggml-large-v3-turbo-q5_0.bin").write_bytes(b"x")
-    monkeypatch.setenv("DICTA_HOME", str(tmp_path))
+    monkeypatch.setenv("EZAGENT_WHISPER_HOME", str(tmp_path))
     options = available_whisper_models("ggml-large-v3-turbo-q5_0")
     assert [value for value, _label in options] == [
         "ggml-small-q5_1",
@@ -573,8 +573,12 @@ def test_catalogo_local_de_modelos_whisper(tmp_path, monkeypatch):
     assert whisper_model_path("no-existe") is None
 
 
-def test_ensure_whisper_elige_puerto_local_libre(monkeypatch):
+def test_ensure_whisper_elige_puerto_local_libre(tmp_path, monkeypatch):
     from ezagent.voice import app as app_module
+
+    # ensure_whisper exige un home con whisper-server.exe o un modelo.
+    (tmp_path / "whisper-server.exe").write_bytes(b"x")
+    monkeypatch.setenv("EZAGENT_WHISPER_HOME", str(tmp_path))
 
     cfg = VoiceConfig(
         whisper_url="http://127.0.0.1:8088/inference",

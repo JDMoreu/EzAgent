@@ -94,8 +94,8 @@ def config_path() -> Path:
 
 @dataclass
 class VoiceConfig:
-    # Atajos globales (formato de Dicta: alt+q, ctrl+alt+space...).
-    # Se evitan Alt+Q/E/R de Dicta para que las dos apps convivan.
+    # Atajos globales (formato alt+q, ctrl+alt+space...).
+    # Alt+Q/E/R quedan libres para otras apps.
     hotkey: str = "ctrl+alt+space"
     cancel_hotkey: str = "ctrl+alt+e"
     repeat_hotkey: str = "ctrl+alt+r"
@@ -107,6 +107,8 @@ class VoiceConfig:
     auto_start_whisper: bool = True
     stt_model: str = "ggml-large-v3-turbo-q5_0"
     stt_engine: str = "auto"
+    # Carpeta con whisper-server.exe y models/ (vacío = autodetección).
+    whisper_home: str = ""
     stt_prompt: str = ""
     stt_timeout_secs: float = 60.0
     voice: str = "em_alex"

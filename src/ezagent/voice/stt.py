@@ -35,45 +35,45 @@ _WHISPER_LABELS = {
 }
 
 
-def dicta_home() -> Path | None:
-    """Raíz de la instalación de Dicta (modelos y whisper_vulkan)."""
-    explicit = os.getenv("DICTA_HOME")
-    if explicit:
-        root = Path(explicit).expanduser()
-        if root.is_dir():
-            return root
-    repo = Path(__file__).resolve().parents[3]
-    for candidate in (
-        repo.parent / "dicta",
-        Path.home() / "Documents" / "dicta",
-        Path.home() / "dicta",
-    ):
-        if candidate.is_dir():
-            return candidate
-    return None
+def whisper_home() -> Path | None:
+    """Carpeta con whisper-server.exe y models/.
+
+    Orden: env EZAGENT_WHISPER_HOME → cfg.whisper_home (voice.json)
+    → %LOCALAPPDATA%/EzAgent/whisper → None. Nunca lanza.
+    """
+    try:
+        explicit = os.getenv("EZAGENT_WHISPER_HOME")
+        if explicit:
+            root = Path(explicit).expanduser()
+            if root.is_dir():
+                return root
+        configured = str(VoiceConfig.load().whisper_home or "").strip()
+        if configured:
+            root = Path(configured).expanduser()
+            if root.is_dir():
+                return root
+        base = os.getenv("LOCALAPPDATA") or str(
+            Path.home() / "AppData" / "Local"
+        )
+        default = Path(base) / "EzAgent" / "whisper"
+        return default if default.is_dir() else None
+    except Exception:  # noqa: BLE001 - la autodetección nunca debe romper
+        return None
 
 
 def whisper_models_dir() -> Path | None:
-    """Busca la carpeta de modelos de Dicta sin depender del cwd."""
-    candidates: list[Path] = []
-    explicit = os.getenv("DICTA_HOME") or os.getenv("DICTA_MODELS_DIR")
-    if explicit:
-        root = Path(explicit).expanduser()
-        candidates.append(root / "models" if (root / "models").exists() else root)
-    home = dicta_home()
-    if home is not None:
-        candidates.append(home / "models")
-    repo = Path(__file__).resolve().parents[3]
-    candidates.extend(
-        (
-            repo.parent / "dicta" / "models",
-            Path.home() / "Documents" / "dicta" / "models",
-            Path.home() / "dicta" / "models",
-        )
-    )
-    for path in candidates:
-        if path.is_dir():
-            return path
+    """Carpeta de modelos: EZAGENT_WHISPER_MODELS o ``whisper_home()/models``."""
+    try:
+        explicit = os.getenv("EZAGENT_WHISPER_MODELS")
+        if explicit:
+            root = Path(explicit).expanduser()
+            if root.is_dir():
+                return root
+        home = whisper_home()
+        if home is not None and (home / "models").is_dir():
+            return home / "models"
+    except Exception:  # noqa: BLE001
+        pass
     return None
 
 
@@ -183,8 +183,8 @@ def transcribe(cfg: VoiceConfig, wav_bytes: bytes) -> str:
 __all__ = [
     "STTError",
     "available_whisper_models",
-    "dicta_home",
     "transcribe",
+    "whisper_home",
     "whisper_model_path",
     "whisper_models_dir",
 ]
