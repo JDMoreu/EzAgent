@@ -1,0 +1,412 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EzAgent Hilo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: marca y manifiesto arriba, el hilo vivo en un escenario, y debajo personalidad, sistema y uso de la marca. Una sola idea: tu voz es un hilo hacia tus agentes. */
+:root{
+  --font:'Geist','Segoe UI',system-ui,sans-serif; --mono:'Geist Mono','Cascadia Mono',Consolas,monospace;
+  --bg:#0C0B0A; --ink:#141210; --surface:#1E1B18; --surface-2:#282420; --track:#34302B;
+  --text:#F4EFE8; --text-2:#C2BAAE; --text-3:#9C9488; --line:rgb(244 239 232 / .09); --line-2:rgb(244 239 232 / .16);
+  --signal:#D4F25A; --signal-ink:#141210; --signal-dim:#8CA03F; --agent:#A8A1FF; --attention:#FFB23E; --fault:#FF5D52;
+  --wp-a:#1B2B2D; --wp-b:#0E1517; --wp-c:#2A2540; color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --bg:#F3F0EB; --ink:#FAF8F5; --surface:#F1EDE7; --surface-2:#E8E3DB; --track:#D6D0C6;
+  --text:#1A1714; --text-2:#4E4840; --text-3:#6F675C; --line:rgb(26 23 20 / .1); --line-2:rgb(26 23 20 / .18);
+  --signal:#4D6B00; --signal-ink:#FFFFFF; --signal-dim:#6F8A1F; --agent:#5B4FD6; --attention:#A35F00; --fault:#C8241A;
+  --wp-a:#C7D6CF; --wp-b:#E4ECE7; --wp-c:#D5D0EA; color-scheme:light}}
+:root[data-theme="light"]{
+  --bg:#F3F0EB; --ink:#FAF8F5; --surface:#F1EDE7; --surface-2:#E8E3DB; --track:#D6D0C6;
+  --text:#1A1714; --text-2:#4E4840; --text-3:#6F675C; --line:rgb(26 23 20 / .1); --line-2:rgb(26 23 20 / .18);
+  --signal:#4D6B00; --signal-ink:#FFFFFF; --signal-dim:#6F8A1F; --agent:#5B4FD6; --attention:#A35F00; --fault:#C8241A;
+  --wp-a:#C7D6CF; --wp-b:#E4ECE7; --wp-c:#D5D0EA; color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:400 15px/1.55 var(--font);padding-block:32px 88px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:64px}
+h1{font:600 clamp(34px,6vw,60px)/1.02 var(--font);letter-spacing:-.04em;margin:0;text-wrap:balance}
+h2{font:600 22px/1.15 var(--font);letter-spacing:-.025em;margin:0 0 6px;text-wrap:balance}
+h3{font:600 14px/1.2 var(--font);margin:0 0 4px}
+p{margin:0;color:var(--text-2);max-width:62ch}
+.eyebrow{font:500 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:12px}
+.sec{display:flex;flex-direction:column;gap:20px;min-width:0}
+:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+button{font:inherit;color:inherit;cursor:pointer}
+code{font:500 12px var(--mono);color:var(--text)}
+
+.hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:32px;align-items:center}
+.hero p{font-size:17px;margin-top:18px;color:var(--text-2)}
+.markbig{width:180px;height:180px;border-radius:44px;background:var(--ink);display:grid;place-items:center;box-shadow:inset 0 0 0 1px var(--line)}
+.markbig svg{width:116px;height:116px;overflow:visible}
+.mk-e{fill:none;stroke:var(--signal);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}
+.mk-b{fill:var(--agent)}
+.markbig .mk-e{stroke-dasharray:140;stroke-dashoffset:140;animation:draw 1.5s cubic-bezier(.2,.8,.2,1) .2s forwards}
+.markbig .mk-b{transform-origin:43px 30.6px;transform:scale(0);animation:pop .5s cubic-bezier(.34,1.56,.64,1) 1.35s forwards}
+@keyframes draw{to{stroke-dashoffset:0}} @keyframes pop{to{transform:scale(1)}}
+@media (prefers-reduced-motion: reduce){.markbig .mk-e{animation:none;stroke-dashoffset:0}.markbig .mk-b{animation:none;transform:none}}
+@media (max-width:640px){.hero{grid-template-columns:1fr}.markbig{width:120px;height:120px;border-radius:30px}.markbig svg{width:76px;height:76px}}
+
+.stage{position:relative;height:430px;border-radius:16px;overflow:hidden;border:1px solid var(--line);
+  background:radial-gradient(900px 400px at 18% 110%,var(--wp-c),transparent 60%),radial-gradient(700px 360px at 85% -10%,var(--wp-a),transparent 62%),linear-gradient(160deg,var(--wp-b),var(--wp-a))}
+.stage{--z:2}.thread{position:absolute;left:50%;top:40px;width:calc(320px*var(--z));height:calc(120px*var(--z));margin-left:calc(-160px*var(--z));cursor:grab;touch-action:none}
+.say{position:absolute;left:50%;top:300px;transform:translateX(-50%);width:min(440px,calc(100% - 40px));text-align:center;font:500 17px/1.4 var(--font);letter-spacing:-.01em;color:var(--text);opacity:0;transition:opacity .2s cubic-bezier(.2,.8,.2,1);text-shadow:0 1px 14px var(--bg),0 0 2px var(--bg)}
+.say.on{opacity:1}
+.hint{position:absolute;left:18px;top:14px;font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--text-3)}
+.chips{position:absolute;left:18px;right:18px;bottom:16px;display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:flex;align-items:center;gap:8px;background:rgb(10 9 8 / .55);border:1px solid var(--line);border-radius:999px;padding:5px 12px 5px 9px;font:500 12px/1 var(--font);color:#F4EFE8}
+:root[data-theme="light"] .chip{background:rgb(250 248 245 / .7);color:#1A1714}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]) .chip{background:rgb(250 248 245 / .7);color:#1A1714}}
+.chip i{width:7px;height:7px;border-radius:50%;background:var(--agent)} .chip[data-s="done"] i{background:var(--signal)} .chip[data-s="blocked"] i{background:var(--attention)}
+.chip small{font:400 11px var(--mono);opacity:.7}
+.ctl{display:flex;flex-wrap:wrap;gap:18px 30px}
+.grpc{display:flex;flex-direction:column;gap:8px;min-width:0}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.pill{height:32px;padding:0 13px;border-radius:999px;border:1px solid var(--line-2);background:transparent;color:var(--text-2);font-size:13px;font-weight:500;transition:background .12s,color .12s}
+.pill:hover{background:var(--surface);color:var(--text)}
+.pill[aria-pressed="true"]{background:var(--surface-2);color:var(--text);box-shadow:inset 0 0 0 1px var(--signal)}
+.seg{display:inline-flex;border:1px solid var(--line-2);border-radius:999px;padding:3px;gap:2px}
+.seg button{border:0;background:none;height:28px;padding:0 14px;border-radius:999px;color:var(--text-2);font-size:13px;font-weight:500}
+.seg button[aria-pressed="true"]{background:var(--surface-2);color:var(--text);box-shadow:inset 0 0 0 1px var(--signal)}
+.note{font-size:13px;color:var(--text-3);max-width:70ch}
+
+.three{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.card{background:var(--surface);border-radius:14px;padding:16px 18px 18px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.card p{font-size:14px}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);text-align:left;padding:8px 12px;border-bottom:1px solid var(--line-2)}
+.tbl td{padding:12px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--text-2)}
+.tbl td:first-child{color:var(--text);font-weight:600;white-space:nowrap}
+.tbl .no{color:var(--text-3);text-decoration:line-through;text-decoration-color:var(--fault)}
+.scroll{overflow-x:auto}
+.pal{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.sw{border-radius:14px;overflow:hidden;background:var(--surface)}
+.sw div{height:64px;border-bottom:1px solid var(--line)}
+.sw p{padding:10px 12px 12px;font-size:12px;line-height:1.4}
+.type{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.icons{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end}
+.ic{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.ic .tile{display:grid;place-items:center;border-radius:22%;background:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+.ic .tile.alt{background:var(--signal);}
+.ic .tile.alt .mk-e{stroke:var(--signal-ink)} .ic .tile.alt .mk-b{fill:var(--signal-ink)}
+.ic svg{overflow:visible}
+.ic span{font:500 11px var(--mono);color:var(--text-3)}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="mark" viewBox="0 0 48 48"><path class="mk-e" d="M11 24H33A11 11 0 1 0 29.78 31.78C34 35.2 38.5 34.8 43 30.6"/><circle class="mk-b" cx="43" cy="30.6" r="3"/></symbol>
+</svg>
+
+<div class="wrap" id="root">
+  <header class="hero">
+    <div>
+      <div class="eyebrow">EzAgent · dirección de arte</div>
+      <h1>Tu voz es un hilo hacia tus agentes</h1>
+      <p>EzAgent no es una caja con ojos. Es el hilo que une lo que dices con lo que hacen tus agentes: se tensa cuando hablas, vibra cuando responde, viaja cuando despacha y suena cuando algo termina.</p>
+    </div>
+    <div class="markbig" aria-label="Marca de EzAgent"><svg viewBox="0 0 48 48" role="img" aria-label="Una e dibujada con un solo trazo que termina en un punto"><path class="mk-e" d="M11 24H33A11 11 0 1 0 29.78 31.78C34 35.2 38.5 34.8 43 30.6"/><circle class="mk-b" cx="43" cy="30.6" r="3"/></svg></div>
+  </header>
+
+  <section class="sec" aria-label="Hilo vivo">
+    <div>
+      <div class="eyebrow">El hilo, vivo</div>
+      <h2>Una cuerda de verdad</h2>
+      <p>No hay marco ni caja: solo el hilo, flotando donde lo dejes. Lo que ves es una cuerda simulada con física real: la voz la hace vibrar, no hay barras ni curvas dibujadas a mano.</p>
+    </div>
+    <div class="stage" id="stage">
+      <div class="hint" id="hint">Hilo · arrastra para moverlo</div>
+      <canvas class="thread" id="cv" aria-label="Hilo de EzAgent" role="img"></canvas>
+      <div class="say" id="say" aria-live="polite"></div>
+      <div class="chips" id="chips" aria-label="Agentes activos"></div>
+    </div>
+    <div class="ctl">
+      <div class="grpc"><div class="eyebrow" style="margin:0">Concepto</div>
+        <div class="seg" role="group" aria-label="Concepto"><button id="mHilo" aria-pressed="true" type="button">Hilo</button><button id="mGota" aria-pressed="false" type="button">Gota</button></div></div>
+      <div class="grpc"><div class="eyebrow" style="margin:0">Escenarios</div><div class="pills">
+        <button class="pill" id="sDispatch" type="button">Despachar a Claude</button>
+        <button class="pill" id="sDone" type="button">Un agente termina</button>
+        <button class="pill" id="sBlock" type="button">Un agente se bloquea</button>
+        <button class="pill" id="sErr" type="button">Error</button></div></div>
+      <div class="grpc"><div class="eyebrow" style="margin:0">Estado directo</div><div class="pills" id="statePills"></div></div>
+      <div class="grpc"><div class="eyebrow" style="margin:0">Vista previa</div><div class="pills">
+        <button class="pill" id="tTheme" type="button">Tema: sistema</button>
+        <button class="pill" id="tMotion" type="button" aria-pressed="false">Movimiento reducido</button>
+        <button class="pill" id="tSound" type="button" aria-pressed="false">Sonido</button>
+        <button class="pill" id="tZoom" type="button" aria-pressed="true">Ampliado ×2</button></div></div>
+    </div>
+    <p class="note">«Hilo» es mi recomendación; «Gota» es la alternativa fluida y orgánica, para que veas la diferencia. El sonido se activa con tu primer clic en «Sonido».</p>
+  </section>
+
+  <section class="sec">
+    <div><div class="eyebrow">La idea</div><h2>Tres razones para un hilo</h2></div>
+    <div class="three">
+      <div class="card"><h3>Cuenta lo que pasa</h3><p>Tú a la izquierda, tus agentes a la derecha y EzAgent en medio. Siempre se ve el camino entre lo que dices y el trabajo que ocurre.</p></div>
+      <div class="card"><h3>Se mueve como algo real</h3><p>Es una cuerda con tensión y amortiguación. Tu voz entra como ondas, la suya la hace vibrar, un mensaje viaja como una chispa. Nada que explicar.</p></div>
+      <div class="card"><h3>Cabe en cualquier sitio</h3><p>Sin marco: 320×120 px de lienzo transparente y 2 px de trazo. Solo cuando abres los ajustes aparece una tarjeta que se condensa del hilo.</p></div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div><div class="eyebrow">Personalidad</div><h2>El relevo</h2>
+      <p>Quien recibe tu encargo y se lo pasa a la persona indicada, sin protagonismo. Rápido, sereno y con criterio. No es un robot servil ni un asistente que celebra cada cosa.</p></div>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Rasgo</th><th>Suena así</th><th>Nunca así</th></tr></thead><tbody>
+      <tr><td>Ágil</td><td>«Va. Se lo paso a Claude.»</td><td class="no">«¡Claro! Procedo a iniciar el agente solicitado…»</td></tr>
+      <tr><td>Sereno</td><td>«Codex se detuvo en web: pide permiso para instalar paquetes.»</td><td class="no">«¡Ups! ¡Algo salió mal!»</td></tr>
+      <tr><td>Directo</td><td>«¿En qué proyecto?»</td><td class="no">«¿Podrías indicarme, por favor, a qué proyecto te refieres?»</td></tr>
+      <tr><td>Cálido</td><td>«Listo, terminó. ¿Te lo resumo?»</td><td class="no">«Proceso 4412 finalizado con código 0.»</td></tr>
+      <tr><td>Discreto</td><td>Silencio cuando no hay nada que decir.</td><td class="no">Hablar para llenar el aire.</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section class="sec">
+    <div><div class="eyebrow">Movimiento</div><h2>Cada estado es un gesto de la cuerda</h2></div>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Estado</th><th>Qué hace el hilo</th><th>Sonido</th></tr></thead><tbody>
+      <tr><td>Espera</td><td>Respira: una onda lenta y mínima viaja de izquierda a derecha.</td><td>—</td></tr>
+      <tr><td>Te escucha</td><td>Tu punto late con tu voz y manda ondas por el hilo; cada pocos instantes nace un anillo.</td><td>—</td></tr>
+      <tr><td>Piensa</td><td>El hilo se aquieta y una chispa ámbar lo recorre una y otra vez.</td><td>—</td></tr>
+      <tr><td>Habla</td><td>La voz excita la cuerda y vibra con sílabas y pausas reales; la amplitud sigue el audio.</td><td>—</td></tr>
+      <tr><td>Despacha</td><td>Una chispa violeta viaja hasta el final y nace un punto nuevo, un agente.</td><td>dispatch</td></tr>
+      <tr><td>Agente trabaja</td><td>Su punto respira; el extremo del hilo toma un tinte violeta.</td><td>—</td></tr>
+      <tr><td>Agente terminó</td><td>El punto se enciende en lima y el hilo suena como una cuerda pulsada.</td><td>done</td></tr>
+      <tr><td>Agente bloqueado</td><td>El punto se vuelve ámbar y tira del hilo cada 1,6 s hasta que lo atiendes.</td><td>blocked</td></tr>
+      <tr><td>Silenciado</td><td>El hilo queda punteado y quieto.</td><td>—</td></tr>
+      <tr><td>Error</td><td>El hilo se parte un instante en rojo y se vuelve a unir.</td><td>error</td></tr>
+    </tbody></table></div>
+    <div class="three">
+      <div class="card"><h3>1. Física, no curvas</h3><p>Muelles y ondas reales. Si algo se ve falso, se corrige la física, no se dibuja encima.</p></div>
+      <div class="card"><h3>2. Un gesto a la vez</h3><p>Nunca dos cosas se mueven con la misma fuerza. El reposo respira, no baila.</p></div>
+      <div class="card"><h3>3. El silencio es calma</h3><p>Sin nada que decir, casi no se mueve. Con movimiento reducido, solo cambian color y grosor.</p></div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div><div class="eyebrow">Sistema visual</div><h2>Tinta, una señal y un violeta</h2><p>Los colores del hilo son los mismos que ya mirabas, con una regla: cada color significa una sola cosa.</p></div>
+    <div class="pal" id="pal"></div>
+    <div class="type">
+      <div class="card"><div class="eyebrow" style="margin:0">Geist 600 · títulos</div><div style="font:600 28px/1.1 var(--font);letter-spacing:-.03em">Va. Se lo paso a Claude.</div></div>
+      <div class="card"><div class="eyebrow" style="margin:0">Geist 400 · texto</div><div style="font:400 15px/1.5 var(--font);color:var(--text-2)">OpenCode terminó en api: los tests pasan. ¿Te lo resumo?</div></div>
+      <div class="card"><div class="eyebrow" style="margin:0">Geist Mono · medidas</div><div style="font:500 13px/1.5 var(--mono)">ttfa 640 ms · silencio 0,65 s · 1,00×</div></div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div><div class="eyebrow">La marca</div><h2>Una «e» con un solo trazo</h2><p>La e de EzAgent está dibujada de una vez y no se cierra: su trazo sale como un hilo y termina en un punto violeta, el agente. Funciona a 16 px y es el mismo gesto que el hilo en pantalla.</p></div>
+    <div class="icons">
+      <div class="ic"><div class="tile" style="width:96px;height:96px"><svg width="62" height="62"><use href="#mark"/></svg></div><span>App · 96</span></div>
+      <div class="ic"><div class="tile alt" style="width:96px;height:96px"><svg width="62" height="62"><use href="#mark"/></svg></div><span>App · variante</span></div>
+      <div class="ic"><div class="tile" style="width:48px;height:48px"><svg width="31" height="31"><use href="#mark"/></svg></div><span>48</span></div>
+      <div class="ic"><div class="tile" style="width:32px;height:32px"><svg width="21" height="21"><use href="#mark"/></svg></div><span>Bandeja · 32</span></div>
+      <div class="ic"><div class="tile" style="width:16px;height:16px;border-radius:4px"><svg width="12" height="12"><use href="#mark"/></svg></div><span>16</span></div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+'use strict';
+window.addEventListener('error',function(e){document.documentElement.setAttribute('data-err',e.message)});
+var $=function(id){return document.getElementById(id)};
+var root=document.documentElement, body=document.body;
+var reduced=false;try{reduced=matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){}
+
+/* tokens */
+var probe=document.createElement('span');probe.style.display='none';body.appendChild(probe);
+function res(n){probe.style.color='var(--'+n+')';var m=getComputedStyle(probe).color.match(/[\d.]+/g)||[0,0,0];return [+m[0],+m[1],+m[2]]}
+var C={};function readTokens(){['signal','signal-dim','agent','attention','fault','text-3','text','ink'].forEach(function(n){C[n]=res(n)})}readTokens();
+function rgb(c,a){return 'rgba('+(c[0]|0)+','+(c[1]|0)+','+(c[2]|0)+','+(a==null?1:a)+')'}
+
+/* cuerda: ecuación de onda 1D discretizada */
+function Str(N){this.N=N;this.u=new Float32Array(N);this.v=new Float32Array(N)}
+Str.prototype.step=function(dt,c,damp){
+  var u=this.u,v=this.v,N=this.N,c2=c*c,i;
+  for(i=1;i<N-1;i++)v[i]+=(c2*(u[i-1]-2*u[i]+u[i+1])-damp*v[i])*dt;
+  for(i=1;i<N-1;i++)u[i]+=v[i]*dt;
+};
+function speechEnv(t){
+  var g=Math.sin(t*2.3)+.6*Math.sin(t*1.07+1.2),gate=Math.max(0,Math.min(1,(g+1.1)*2.2));
+  var syl=Math.pow(.5+.5*Math.sin(t*Math.PI*2*3.8+Math.sin(t*1.3)*1.4),.9);
+  return Math.max(0,Math.min(1,gate*(.12+.88*syl)*(.7+.3*Math.sin(t*.8+2))));
+}
+function micEnv(t){return Math.max(0,Math.min(1,.5+.4*Math.sin(t*5.7)*Math.sin(t*1.7+1)+.1*Math.sin(t*13)))}
+
+/* lienzo */
+var W=320,H=120,CY=60,XL=40,XR=268,N=96;
+var cv=$('cv'),ctx=cv.getContext('2d'),dpr=Math.min(2,window.devicePixelRatio||1);
+cv.width=W*dpr;cv.height=H*dpr;ctx.scale(dpr,dpr);
+var str=new Str(N),mod=new Float32Array(N),modLvl=0,FORCE=null;
+var S={mode:'hilo',base:'idle',since:0,muted:false,sound:false,ag:[]};
+var F={spark:-1,rings:[],lastRing:0,snap:-1,tug:0,ringDone:-1};
+var lvl=0,curCol=C['signal-dim'].slice(),T0=performance.now()/1000,last=T0,acc=0;
+function bornAgo(a,now){return now-a.born}
+
+function setBase(s){S.base=s;S.since=performance.now()/1000;syncPills();
+  if(s==='dispatch'){F.spark=S.since}
+  if(s==='done'){for(var i=N-10;i<N-1;i++)str.v[i]+=900}
+  if(s==='error'){F.snap=S.since}
+  var snd={dispatch:'dispatch',done:'done',blocked:'blocked',error:'error'}[s];if(snd)earcon(snd)}
+function colorFor(v){return {idle:'signal-dim',listen:'signal',think:'attention',speak:'signal',dispatch:'agent',done:'signal',blocked:'attention',mute:'text-3',error:'fault'}[v]||'signal-dim'}
+
+/* ---- HILO ---- */
+function pathThread(p0,p1){
+  ctx.beginPath();var i,x=function(k){return XL+(XR-XL)*k/(N-1)},y=function(k){return CY+str.u[k]+mod[k]};
+  ctx.moveTo(x(p0),y(p0));
+  for(i=p0+1;i<p1;i++){ctx.quadraticCurveTo(x(i),y(i),(x(i)+x(i+1))/2,(y(i)+y(i+1))/2)}
+  ctx.lineTo(x(p1),y(p1));
+}
+function drawHilo(v,now,ts){
+  ctx.clearRect(0,0,W,H);
+  var col=curCol,amp=Math.min(1,Math.abs(str.u[48])/10+lvl*.3),lw=2.2+(v==='speak'?lvl*1.4:0);
+  var ends=[0,N-1],gap=0,xc=(XL+XR)/2;
+  if(F.snap>0){var a=now-F.snap;gap=a<.15?14*a/.15:a<.6?14:a<1?14*(1-(a-.6)/.4):0;if(a>1)F.snap=-1}
+  function strokeAll(style,w,dash){
+    ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.lineWidth=w;ctx.strokeStyle=style;ctx.setLineDash(dash||[]);
+    if(gap>.1){
+      ctx.save();ctx.beginPath();ctx.rect(0,0,xc-gap,H);ctx.clip();pathThread(0,N-1);ctx.stroke();ctx.restore();
+      ctx.save();ctx.beginPath();ctx.rect(xc+gap,0,W,H);ctx.clip();pathThread(0,N-1);ctx.stroke();ctx.restore();
+    }else{pathThread(0,N-1);ctx.stroke()}
+    ctx.restore();
+  }
+  var dash=v==='mute'?[2,7]:null;
+  strokeAll(rgb(C.ink,.38),lw+4,dash);
+  var g=ctx.createLinearGradient(XL,0,XR,0),ag=S.ag.length?C.agent:col;
+  g.addColorStop(0,rgb(col));g.addColorStop(.7,rgb(col));g.addColorStop(1,rgb(ag));
+  strokeAll(g,lw,dash);
+  /* chispas: pensar (ámbar, en bucle) y despachar (violeta, una vez) */
+  function spark(s,colr,n){var k=Math.round(s*(N-1)),i;for(i=0;i<n;i++){var kk=k-i;if(kk<0)break;var x=XL+(XR-XL)*kk/(N-1),y=CY+str.u[kk]+mod[kk];ctx.fillStyle=rgb(colr,Math.pow(1-i/n,1.6)*.95);ctx.beginPath();ctx.arc(x,y,3.2*(1-i/(n*1.3)),0,7);ctx.fill()}}
+  if(v==='think')spark((ts%1.1)/1.1,C.attention,18);
+  if(F.spark>0){var sp=(now-F.spark)/.75;if(sp>=1){F.spark=-1}else{var e=sp<.5?2*sp*sp:1-Math.pow(-2*sp+2,2)/2;spark(e,C.agent,22);if(sp>.9)for(var q=N-12;q<N-2;q++)str.v[q]+=18}}
+  /* tu punto */
+  var lr=5+(v==='listen'?lvl*3:0);
+  if(v==='listen'&&now-F.lastRing>.34){F.rings.push(now);F.lastRing=now}
+  F.rings=F.rings.filter(function(t0){return now-t0<.9});
+  F.rings.forEach(function(t0){var a=(now-t0)/.9;ctx.strokeStyle=rgb(col,.5*(1-a));ctx.lineWidth=1.3;ctx.beginPath();ctx.arc(XL,CY,5+a*20,0,7);ctx.stroke()});
+  ctx.fillStyle=rgb(v==='mute'?C['text-3']:(v==='listen'?C.signal:col));ctx.beginPath();ctx.arc(XL,CY,lr,0,7);ctx.fill();
+  ctx.strokeStyle=rgb(C.ink,.5);ctx.lineWidth=1;ctx.beginPath();ctx.arc(XL,CY,lr+.5,0,7);ctx.stroke();
+  if(v==='mute'){ctx.strokeStyle=rgb(C.fault);ctx.lineWidth=2;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(XL-8,CY+8);ctx.lineTo(XL+8,CY-8);ctx.stroke()}
+  /* agentes */
+  var n=S.ag.length;
+  S.ag.forEach(function(a,i){
+    var off=n===1?0:(i-(n-1)/2)*14,x=XR+12,y=CY+off,age=now-a.born,pop=1+Math.exp(-age*7)*Math.cos(age*16)*.9;
+    var c=a.st==='done'?C.signal:a.st==='blocked'?C.attention:C.agent,r=5.2*Math.max(.01,pop)+(a.st==='working'?Math.sin(now*3.5+i)*.7:a.st==='blocked'?Math.sin(now*Math.PI*2/1.6)*1.1:0);
+    if(n>1){ctx.strokeStyle=rgb(c,.55);ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(XR,CY+str.u[N-1]);ctx.lineTo(x,y);ctx.stroke()}
+    ctx.fillStyle=rgb(c);ctx.beginPath();ctx.arc(x,y,Math.max(.1,r),0,7);ctx.fill();
+    ctx.strokeStyle=rgb(C.ink,.5);ctx.lineWidth=1;ctx.beginPath();ctx.arc(x,y,Math.max(.1,r)+.5,0,7);ctx.stroke();
+  });
+}
+
+/* ---- GOTA ---- */
+function blobPath(pts){ctx.beginPath();var n=pts.length,i,a,b;for(i=0;i<n;i++){a=pts[i];b=pts[(i+1)%n];var mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;if(i===0)ctx.moveTo(mx,my);else ctx.quadraticCurveTo(a[0],a[1],mx,my)}
+  a=pts[0];b=pts[1];ctx.quadraticCurveTo(a[0],a[1],(a[0]+b[0])/2,(a[1]+b[1])/2);ctx.closePath()}
+function drawGota(v,now,ts){
+  ctx.clearRect(0,0,W,H);var col=curCol,cx=W/2,cy=CY,R=14,sx=1,sy=1,ph=now,k;
+  var a={2:.03,3:.03,4:.02,5:.015},spd=.8,shift=0;
+  var br=Math.sin(now*Math.PI*2/4);R+=br*.5;
+  if(v==='listen'){R+=lvl*5;a={2:.05+lvl*.1,3:.04+lvl*.09,4:.03,5:.02};spd=2.2}
+  else if(v==='think'){R=12;a={2:.1,3:.12,4:.08,5:.04};spd=3.4}
+  else if(v==='speak'){R+=lvl*4;a={2:.04+lvl*.24,3:.04+lvl*.2,4:.03+lvl*.14,5:.02+lvl*.1};spd=3}
+  else if(v==='blocked'){sy=.78+Math.sin(now*Math.PI*2/1.6)*.05;sx=1.12}
+  else if(v==='mute'){R=9;a={2:0,3:0,4:0,5:0}}
+  else if(v==='error'){shift=Math.sin(ts*45)*3*Math.max(0,1-ts/.5);R=12}
+  else if(v==='done'){R+=Math.exp(-ts*4)*Math.cos(ts*14)*4}
+  else if(v==='dispatch'){var e=Math.min(1,ts/.45);sx=1+.5*Math.sin(e*Math.PI)}
+  var pts=[],i,th,r;
+  for(i=0;i<72;i++){th=i/72*Math.PI*2;r=R;for(k=2;k<=5;k++)r+=R*a[k]*Math.sin(k*th+ph*spd*(k%2?1:-1)+k);pts.push([cx+shift+r*Math.cos(th)*sx,cy+r*Math.sin(th)*sy])}
+  if(v==='listen'&&now-F.lastRing>.34){F.rings.push(now);F.lastRing=now}
+  F.rings=F.rings.filter(function(t0){return now-t0<.9});
+  F.rings.forEach(function(t0){var q=(now-t0)/.9;ctx.strokeStyle=rgb(col,.5*(1-q));ctx.lineWidth=1.3;ctx.beginPath();ctx.arc(cx,cy,R+4+q*24,0,7);ctx.stroke()});
+  blobPath(pts);ctx.fillStyle=rgb(col);ctx.fill();ctx.strokeStyle=rgb(C.ink,.4);ctx.lineWidth=1;ctx.stroke();
+  if(v==='mute'){ctx.strokeStyle=rgb(C.fault);ctx.lineWidth=2;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(cx-9,cy+9);ctx.lineTo(cx+9,cy-9);ctx.stroke()}
+  /* gotas de dispatch y agentes en órbita */
+  var n=S.ag.length;
+  if(F.spark>0){var sp=(now-F.spark)/.75;if(sp>=1)F.spark=-1;else{var e2=sp*sp*(3-2*sp),x=cx+e2*70,y=cy-Math.sin(e2*Math.PI)*16;ctx.fillStyle=rgb(C.agent);ctx.beginPath();ctx.arc(x,y,5-e2*.6,0,7);ctx.fill()}}
+  S.ag.forEach(function(g,j){var ang=now*(.9+.15*j)+j*2.2,age=now-g.born,pop=1+Math.exp(-age*7)*Math.cos(age*16)*.9;
+    var c=g.st==='done'?C.signal:g.st==='blocked'?C.attention:C.agent,x=cx+Math.cos(ang)*(46+j*6),y=cy+Math.sin(ang)*22;
+    ctx.fillStyle=rgb(c);ctx.beginPath();ctx.arc(x,y,Math.max(.1,4.4*pop),0,7);ctx.fill();ctx.strokeStyle=rgb(C.ink,.45);ctx.lineWidth=1;ctx.stroke()});
+}
+
+/* bucle */
+function frame(ms){
+  var now=ms/1000,dt=Math.min(1/20,now-last);last=now;var ts=now-S.since,t=now-T0;
+  var v=(S.muted&&S.base==='idle')?'mute':S.base;
+  var tgt=v==='speak'?(FORCE!=null?FORCE:speechEnv(t)):v==='listen'?micEnv(t):0;
+  lvl+=(tgt-lvl)*(1-Math.exp(-dt/(tgt>lvl?.045:.2)));
+  if(S.mode==='hilo'){
+    var u=str.u,vv=str.v,i;
+    if(!reduced){
+      if(v==='blocked'){F.tug+=dt;if(F.tug>1.6){F.tug=0;for(i=N-14;i<N-2;i++)vv[i]+=170}}
+      if(v==='error'&&ts<.05)for(i=10;i<N-10;i++)vv[i]+=(Math.random()-.5)*160;
+      acc+=dt;var h=1/240,c=160,damp=v==='speak'?1.4:v==='mute'?7:v==='think'?4:2.2,n=0;
+      while(acc>=h&&n++<40){
+        if(v==='listen')u[0]=lvl*9*Math.sin(t*Math.PI*2*5.5);else if(v==='idle')u[0]=1.1*Math.sin(t*Math.PI*2*.45);else u[0]=0;
+        str.step(h,c,damp);acc-=h}
+    }else{for(i=0;i<N;i++){u[i]=0;vv[i]=0}}
+  }
+  /* la voz excita los primeros modos de la cuerda: curva limpia, como una cuerda que suena */
+  modLvl+=((v==='speak'&&!reduced?lvl:0)-modLvl)*(1-Math.exp(-dt/.18));
+  if(modLvl>.002){var f1=2.6+.4*Math.sin(t*.9),f2=4.4+.5*Math.sin(t*.7+1),f3=7.1+.8*Math.sin(t*1.1+2),P=Math.PI;
+    for(var m=0;m<N;m++){var xx=m/(N-1);mod[m]=15*Math.pow(modLvl,.75)*(.9*Math.sin(P*xx)*Math.sin(2*P*f1*t)+.55*Math.sin(2*P*xx)*Math.sin(2*P*f2*t+1.3)+.28*Math.sin(3*P*xx)*Math.sin(2*P*f3*t+2.1))}}
+  else if(modLvl!==0){mod.fill(0);modLvl=0}
+  var tc=C[colorFor(v)],kk=1-Math.exp(-dt/(reduced?.12:.07));
+  for(var q=0;q<3;q++)curCol[q]+=(tc[q]-curCol[q])*kk;
+  if(S.mode==='hilo')drawHilo(v,now,ts);else drawGota(v,now,ts);
+  requestAnimationFrame(frame);
+}
+
+/* sonido */
+var ac=null,EAR={dispatch:[[880,.07],[1319,.07]],done:[[1047,.08],[1319,.08],[1568,.08]],blocked:[[659,.12],[523,.12]],error:[[440,.09],[440,.09]]};
+function earcon(name){if(!S.sound||!EAR[name])return;try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();var t0=ac.currentTime+.01;
+  EAR[name].forEach(function(n,i){var o=ac.createOscillator(),g=ac.createGain(),d=n[1],st=t0+EAR[name].slice(0,i).reduce(function(a,b){return a+b[1]},0)+i*.02;
+    o.type='sine';o.frequency.value=n[0];g.gain.setValueAtTime(0,st);g.gain.linearRampToValueAtTime(.1,st+.005);g.gain.setValueAtTime(.1,st+d*.7);g.gain.linearRampToValueAtTime(0,st+d);o.connect(g);g.connect(ac.destination);o.start(st);o.stop(st+d+.02)})}catch(e){}}
+
+/* escenarios */
+var seq=0;function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function guard(){var m=++seq;return function(){return m===seq}}
+var sayT=null;function say(t,ms){var el=$('say');el.textContent=t;el.classList.add('on');clearTimeout(sayT);sayT=setTimeout(function(){el.classList.remove('on')},ms||2400)}
+function renderChips(){$('chips').innerHTML=S.ag.map(function(a){var l=a.st==='working'?'trabajando':a.st==='done'?'terminó':'necesita algo';return '<div class="chip" data-s="'+a.st+'"><i></i>'+a.name+' <small>'+a.proj+' · '+l+'</small></div>'}).join('')}
+function addAgent(){S.ag.push({name:'Claude Code',proj:'ezagent',st:'working',born:performance.now()/1000});renderChips()}
+function ensure(){if(!S.ag.length)addAgent()}
+async function sDispatch(){var ok=guard();S.ag=[];renderChips();setBase('listen');say('«abre claude en ezagent y arregla los tests»',1600);await sleep(1700);if(!ok())return;
+  setBase('think');await sleep(1100);if(!ok())return;setBase('dispatch');await sleep(700);if(!ok())return;addAgent();await sleep(350);if(!ok())return;
+  setBase('speak');say('Lancé Claude Code en ezagent. Te aviso al terminar.',2600);await sleep(2700);if(!ok())return;setBase('idle')}
+async function sDone(){var ok=guard();ensure();setBase('idle');await sleep(300);if(!ok())return;S.ag.forEach(function(a){a.st='done';a.born=performance.now()/1000});renderChips();setBase('done');await sleep(1600);if(!ok())return;
+  setBase('speak');say('Claude Code terminó en ezagent: los tests pasan. ¿Te lo resumo?',3000);await sleep(3000);if(!ok())return;S.ag=[];renderChips();setBase('idle')}
+async function sBlock(){var ok=guard();ensure();setBase('idle');await sleep(300);if(!ok())return;S.ag.forEach(function(a){a.st='blocked'});renderChips();F.tug=1.5;setBase('blocked');say('Pulsa el hilo para atenderlo',2200)}
+function resolveBlocked(){if(S.base!=='blocked')return;var ok=guard();S.ag.forEach(function(a){a.st='working'});renderChips();setBase('speak');say('Claude Code quiere instalar paquetes. ¿Lo permito?',2800);sleep(2800).then(function(){if(ok())setBase('idle')})}
+async function sErr(){var ok=guard();setBase('error');say('No pude lanzar OpenCode: no está instalado.',2600);await sleep(1400);if(!ok())return;setBase('idle')}
+$('sDispatch').addEventListener('click',sDispatch);$('sDone').addEventListener('click',sDone);$('sBlock').addEventListener('click',sBlock);$('sErr').addEventListener('click',sErr);
+$('cv').addEventListener('click',resolveBlocked);
+
+var ST=[['idle','Espera'],['listen','Escucha'],['think','Piensa'],['speak','Habla'],['mute','Silenciado']];
+var pills=$('statePills');ST.forEach(function(s){var b=document.createElement('button');b.className='pill';b.type='button';b.textContent=s[1];b.dataset.s=s[0];b.setAttribute('aria-pressed','false');
+  b.addEventListener('click',function(){guard();S.muted=(s[0]==='mute');setBase(s[0]==='mute'?'idle':s[0]);say('',1);syncPills();if(s[0]==='speak')say('Así suena cuando te contesto.',60000)});pills.appendChild(b)});
+function syncPills(){pills.querySelectorAll('.pill').forEach(function(b){var on=b.dataset.s==='mute'?S.muted:(!S.muted&&b.dataset.s===S.base);b.setAttribute('aria-pressed',String(on))})}
+
+function setMode(m){S.mode=m;F.rings=[];$('mHilo').setAttribute('aria-pressed',String(m==='hilo'));$('mGota').setAttribute('aria-pressed',String(m==='gota'));$('hint').textContent=(m==='hilo'?'Hilo':'Gota')+' · arrastra para moverlo'}
+$('mHilo').addEventListener('click',function(){setMode('hilo')});$('mGota').addEventListener('click',function(){setMode('gota')});
+
+var themes=['system','dark','light'],ti=0;
+$('tTheme').addEventListener('click',function(){ti=(ti+1)%3;var t=themes[ti];if(t==='system')root.removeAttribute('data-theme');else root.setAttribute('data-theme',t);$('tTheme').textContent='Tema: '+({system:'sistema',dark:'oscuro',light:'claro'})[t];readTokens();paintPalette()});
+$('tMotion').setAttribute('aria-pressed',String(reduced));$('tMotion').addEventListener('click',function(){reduced=!reduced;$('tMotion').setAttribute('aria-pressed',String(reduced))});
+$('tSound').addEventListener('click',function(){S.sound=!S.sound;$('tSound').setAttribute('aria-pressed',String(S.sound));$('tSound').textContent=S.sound?'Sonido activado':'Sonido';if(S.sound)earcon('dispatch')});
+
+$('tZoom').addEventListener('click',function(){var on=$('tZoom').getAttribute('aria-pressed')!=='true';$('tZoom').setAttribute('aria-pressed',String(on));$('tZoom').textContent=on?'Ampliado ×2':'Tamaño real';$('stage').style.setProperty('--z',on?2:1);var c=$('cv');if(c.style.left){c.style.left='';c.style.top='';c.style.marginLeft=''}$('say').style.top=on?'300px':'214px'});
+/* arrastrar el hilo */
+(function(){var el=$('cv'),st=$('stage'),d=null,pos={x:null,y:70};
+  el.addEventListener('pointerdown',function(e){d={x:e.clientX,y:e.clientY,l:el.offsetLeft,t:el.offsetTop,m:false};el.setPointerCapture(e.pointerId);el.style.cursor='grabbing'});
+  el.addEventListener('pointermove',function(e){if(!d)return;var dx=e.clientX-d.x,dy=e.clientY-d.y;if(Math.abs(dx)+Math.abs(dy)>4)d.m=true;if(!d.m)return;
+    var nx=Math.max(0,Math.min(st.clientWidth-el.offsetWidth,d.l+dx)),ny=Math.max(0,Math.min(st.clientHeight-el.offsetHeight,d.t+dy));el.style.left=nx+'px';el.style.marginLeft='0';el.style.top=ny+'px';$('say').style.top=(ny+el.offsetHeight-6)+'px'});
+  el.addEventListener('pointerup',function(e){el.style.cursor='grab';if(d&&d.m)e.stopPropagation();d=null},true);
+})();
+
+/* paleta */
+var PAL=[['ink','Tinta','El fondo de todo: tarjetas, iconos y el borde del hilo.'],['signal','Señal','Tu voz, la voz de EzAgent y todo lo que está vivo.'],['agent','Agente','Solo para agentes: sus puntos y la chispa al despachar.'],['attention','Atención','Pensando, o un agente que necesita algo.'],['fault','Falla','Error y micrófono silenciado.']];
+function paintPalette(){$('pal').innerHTML=PAL.map(function(p){var c=res(p[0]);var hex='#'+c.map(function(v){return Math.round(v).toString(16).padStart(2,'0')}).join('').toUpperCase();return '<div class="sw"><div style="background:var(--'+p[0]+')"></div><p><code>'+p[1]+' · '+hex+'</code><br>'+p[2]+'</p></div>'}).join('')}
+
+/* arranque; parámetros ?s=estado&m=modo&ag=n para capturas deterministas */
+var q=new URLSearchParams(location.search);if(q.get('rm')==='0'){reduced=false;$('tMotion').setAttribute('aria-pressed','false')}
+if(q.get('m')==='gota')setMode('gota');
+if(q.get('lv')!=null)FORCE=+q.get('lv');var ag=+q.get('ag')||0;for(var z=0;z<ag;z++)S.ag.push({name:'Claude Code',proj:'ezagent',st:z===1?'done':'working',born:-5});if(ag)renderChips();
+if(q.get('s')){setBase(q.get('s'));if(q.get('s')==='speak')say('Lancé Claude Code en ezagent. Te aviso al terminar.',60000)}
+paintPalette();syncPills();requestAnimationFrame(frame);
+})();
+</script>
+</html>

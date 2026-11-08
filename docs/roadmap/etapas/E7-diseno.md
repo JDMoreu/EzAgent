@@ -9,7 +9,7 @@
 | Hallazgos | D1, D2, D3, D4, U6, U7, U8, P7 |
 
 ## Objetivo
-Implementar la dirección «la mirada que delega» de
+Implementar la dirección de arte aprobada (propuesta actual: el hilo, `07-marca-hilo.md`; anterior: «la mirada que delega») de
 `03-diseno-y-movimiento.md` en la UI elegida en E6: tokens únicos, paleta
 nueva validada, estados de agentes, springs, coreografías, earcons
 integrados y un `DESIGN.md` nuevo que describa lo construido.
