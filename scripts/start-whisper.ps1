@@ -24,10 +24,15 @@ if (-not $WhisperHome) {
 }
 
 if (-not $Server) {
-    $Server = Join-Path $WhisperHome "whisper-server.exe"
-    if (-not (Test-Path $Server)) {
-        $Server = Join-Path $WhisperHome "whisper_vulkan\whisper-server.exe"
+    # Vulkan primero (si el motor lo permite); la compilacion de CPU es el respaldo.
+    $gpu = @("whisper-server.exe", "whisper_vulkan\whisper-server.exe", "vulkan\whisper-server.exe")
+    $cpu = @("cpu\whisper-server.exe")
+    $order = if ($Engine -ieq "cpu") { $cpu + $gpu } else { $gpu + $cpu }
+    foreach ($rel in $order) {
+        $candidate = Join-Path $WhisperHome $rel
+        if (Test-Path $candidate) { $Server = $candidate; break }
     }
+    if ($Server -and $Server -like "*\cpu\whisper-server.exe") { $Engine = "cpu" }
 }
 if (-not $Model)  { $Model  = Join-Path $WhisperHome "models\ggml-large-v3-turbo-q5_0.bin" }
 
