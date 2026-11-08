@@ -867,7 +867,18 @@ class LayeredWindow:
                     self._paint(now)
                 delay = 1.0 / 60.0 - (time.monotonic() - now)
                 if delay > 0.001:
-                    time.sleep(delay)
+                    # Esperar atendiendo mensajes: con un gancho global de
+                    # ratón, dormir con time.sleep retenía cada movimiento del
+                    # puntero del sistema hasta 16 ms (ratón «lento»).
+                    if _IS_WIN:
+                        try:
+                            _u32.MsgWaitForMultipleObjects(
+                                0, None, False, max(1, int(delay * 1000)), 0x04FF
+                            )
+                        except Exception:
+                            time.sleep(delay)
+                    else:
+                        time.sleep(delay)
         finally:
             self._uninstall_mouse_hook()
             self._dib_release()

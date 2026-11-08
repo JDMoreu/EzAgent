@@ -28,62 +28,62 @@ RGBA = tuple[int, int, int, int]
 Color = RGB | RGBA
 
 DARK: Final[dict[str, Color]] = {
-    "BODY": (14, 15, 19),          # #0E0F13
-    "GROUP": (28, 28, 31),         # #1C1C1F
-    "GROUP_HOVER": (38, 38, 42),   # #26262A
-    "TRACK": (47, 47, 52),         # #2F2F34
-    "TEXT": (245, 245, 247),       # #F5F5F7
-    "TEXT_2": (182, 182, 191),     # #B6B6BF
-    "TEXT_3": (148, 148, 158),     # #94949E
-    "LINE": (255, 255, 255, 23),   # rgba(255,255,255,.09)
-    "LINE_2": (255, 255, 255, 15), # rgba(255,255,255,.06)
-    "MINT": (94, 234, 196),        # #5EEAC4
-    "WARM": (255, 194, 74),        # #FFC24A
-    "ERR": (255, 69, 58),          # #FF453A
-    "MINT_BTN": (94, 234, 196),    # #5EEAC4
-    "MINT_INK": (11, 18, 32),      # #0B1220
-    "WARM_BTN": (255, 194, 74),    # #FFC24A
-    "WARM_INK": (26, 18, 0),       # #1A1200
-    "ERR_INK": (14, 15, 19),       # #0E0F13
-    "EYE_IDLE": (62, 146, 125),    # #3E927D
+    "BODY": (20, 18, 16),          # #0E0F13
+    "GROUP": (30, 27, 24),         # #1C1C1F
+    "GROUP_HOVER": (40, 36, 32),   # #26262A
+    "TRACK": (52, 48, 43),         # #2F2F34
+    "TEXT": (244, 239, 232),       # #F5F5F7
+    "TEXT_2": (194, 186, 174),     # #B6B6BF
+    "TEXT_3": (156, 148, 136),     # #94949E
+    "LINE": (244, 239, 232, 23),   # rgba(255,255,255,.09)
+    "LINE_2": (244, 239, 232, 15), # rgba(255,255,255,.06)
+    "MINT": (212, 242, 90),        # #5EEAC4
+    "WARM": (255, 178, 62),        # #FFC24A
+    "ERR": (255, 93, 82),          # #FF453A
+    "MINT_BTN": (212, 242, 90),    # #5EEAC4
+    "MINT_INK": (20, 18, 16),      # #0B1220
+    "WARM_BTN": (255, 178, 62),    # #FFC24A
+    "WARM_INK": (26, 16, 0),       # #1A1200
+    "ERR_INK": (20, 18, 16),       # #0E0F13
+    "EYE_IDLE": (140, 160, 63),    # #3E927D
     "EYE_MUTE": (183, 140, 58),    # #B78C3A
     # Variantes de texto de la palabra de estado (AA sobre BODY). En oscuro
     # coinciden con el color del ojo; en claro se oscurecen para el texto.
-    "WORD_IDLE": (62, 146, 125),
-    "WORD_MINT": (94, 234, 196),
-    "WORD_WARM": (255, 194, 74),
+    "WORD_IDLE": (140, 160, 63),
+    "WORD_MINT": (212, 242, 90),
+    "WORD_WARM": (255, 178, 62),
     "WORD_MUTE": (183, 140, 58),
-    "WORD_ERR": (255, 69, 58),
+    "WORD_ERR": (255, 93, 82),
 }
 
 LIGHT: Final[dict[str, Color]] = {
-    "BODY": (255, 255, 255),       # #FFFFFF
-    "GROUP": (245, 245, 247),      # #F5F5F7
-    "GROUP_HOVER": (235, 235, 239),# #EBEBEF
-    "TRACK": (209, 209, 214),      # #D1D1D6
-    "TEXT": (29, 29, 31),          # #1D1D1F
-    "TEXT_2": (82, 82, 90),        # #52525A
-    "TEXT_3": (110, 110, 115),     # #6E6E73
-    "LINE": (0, 0, 0, 26),         # rgba(0,0,0,.10)
-    "LINE_2": (0, 0, 0, 15),       # rgba(0,0,0,.06)
-    "MINT": (12, 145, 126),        # #0C917E
-    "WARM": (194, 118, 10),        # #C2760A
-    "ERR": (215, 0, 21),           # #D70015
-    "MINT_BTN": (10, 122, 106),    # #0A7A6A
+    "BODY": (250, 248, 245),       # #FFFFFF
+    "GROUP": (241, 237, 231),      # #F5F5F7
+    "GROUP_HOVER": (232, 227, 219),# #EBEBEF
+    "TRACK": (214, 208, 198),      # #D1D1D6
+    "TEXT": (26, 23, 20),          # #1D1D1F
+    "TEXT_2": (78, 72, 64),        # #52525A
+    "TEXT_3": (111, 103, 92),     # #6E6E73
+    "LINE": (26, 23, 20, 26),         # rgba(0,0,0,.10)
+    "LINE_2": (26, 23, 20, 15),       # rgba(0,0,0,.06)
+    "MINT": (77, 107, 0),        # #0C917E
+    "WARM": (163, 95, 0),        # #C2760A
+    "ERR": (200, 36, 26),           # #D70015
+    "MINT_BTN": (92, 127, 0),    # #0A7A6A
     "MINT_INK": (255, 255, 255),   # #FFFFFF
-    "WARM_BTN": (178, 80, 0),      # #B25000
+    "WARM_BTN": (163, 95, 0),      # #B25000
     "WARM_INK": (255, 255, 255),   # #FFFFFF
     "ERR_INK": (255, 255, 255),    # #FFFFFF
     # Ajuste AA sobre la spec: #6DBDB2 (2,19:1) y #D49F54 (2,36:1) no
     # alcanzaban ni el 3:1 gráfico sobre blanco. Se conserva la temperatura
     # mint/ámbar, un paso más profunda.
-    "EYE_IDLE": (47, 127, 116),    # #2F7F74
-    "EYE_MUTE": (160, 100, 18),    # #A06412
-    "WORD_IDLE": (47, 127, 116),
-    "WORD_MINT": (10, 122, 106),   # #0A7A6A
-    "WORD_WARM": (138, 82, 7),     # #8A5207
-    "WORD_MUTE": (160, 100, 18),
-    "WORD_ERR": (215, 0, 21),
+    "EYE_IDLE": (111, 138, 31),    # #2F7F74
+    "EYE_MUTE": (163, 95, 0),    # #A06412
+    "WORD_IDLE": (86, 110, 18),
+    "WORD_MINT": (77, 107, 0),   # #0A7A6A
+    "WORD_WARM": (163, 95, 0),     # #8A5207
+    "WORD_MUTE": (163, 95, 0),
+    "WORD_ERR": (200, 36, 26),
 }
 
 COLOR_KEYS: Final[tuple[str, ...]] = tuple(DARK)
