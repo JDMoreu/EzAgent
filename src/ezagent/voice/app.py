@@ -41,6 +41,7 @@ from .herdr import Herdr
 from .hotkeys import GlobalHotkey, parse_hotkey
 from .llm import Messenger
 from .metrics import LatencyStats, TurnTimings
+from .notch.drop import create_ui
 from .notch.island import Notch
 from .stt import (
     STTError,
@@ -316,7 +317,7 @@ class VoiceApp:
 
         self.root = tk.Tk()
         self.root.withdraw()
-        self.notch = Notch(self.root, position=saved_notch_position(cfg))
+        self.notch = create_ui(self.root, cfg)
         self.notch.on_position_change = self._notch_position_callback
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
