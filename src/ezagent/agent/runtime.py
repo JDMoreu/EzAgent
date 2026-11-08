@@ -593,14 +593,3 @@ class AgentRuntime:
         if wants and self.last_agent_address:
             return self.last_agent_address
         return None
-
-    def note_done(
-        self,
-        address: str,
-        agent: str,
-        reason: str,
-        output: str,
-        *,
-        task: str = "",
-    ) -> None:
-        """El mensajero añade el aviso a su historial; aquí no hay nada más."""

@@ -154,8 +154,8 @@ def pick_input_device(pa: pyaudio.PyAudio, preferred: int | None) -> int | None:
 class Segmenter:
     """Convierte un flujo continuo de chunks en utterances con VAD.
 
-    Usa el mismo enfoque que Dicta: un suelo de ruido adaptativo (percentil de
-    los niveles en silencio), un umbral de arranque y otro de cierre más bajo
+    Basado en Dicta (MIT): un suelo de ruido adaptativo (percentil de los
+    niveles en silencio), un umbral de arranque y otro de cierre más bajo
     (histéresis) y una espera de silencio larga. Así una sílaba floja o una
     pausa natural no cierran el turno.
     """
@@ -164,7 +164,7 @@ class Segmenter:
         self,
         *,
         min_rms: float = 0.0006,
-        silence_secs: float = 2.5,
+        silence_secs: float = 1.3,
         pre_roll_secs: float = 0.6,
         min_speech_secs: float = 0.2,
         max_utterance_secs: float = 30.0,
@@ -426,51 +426,3 @@ class MicCapture:
             except Exception:
                 pass
 
-    def record(
-        self,
-        stop_event: threading.Event,
-        on_level: Callable[[float], None] | None = None,
-    ) -> tuple[bytes, int]:
-        """Grabación de un solo turno (para pruebas/CLI)."""
-        if self.device_index is None:
-            raise RuntimeError("No hay ningún micrófono disponible.")
-        frames = max(160, int(self.rate * CHUNK_SECS))
-        stream = self._pa.open(
-            format=pyaudio.paInt16,
-            channels=1,
-            rate=self.rate,
-            input=True,
-            input_device_index=self.device_index,
-            frames_per_buffer=frames,
-        )
-        chunks: list[bytes] = []
-        speech_started = False
-        silence_started: float | None = None
-        started = time.monotonic()
-        try:
-            while not stop_event.is_set():
-                chunk = stream.read(frames, exception_on_overflow=False)
-                chunks.append(chunk)
-                level = pcm_rms(chunk)
-                if on_level is not None:
-                    on_level(level)
-                now = time.monotonic()
-                if level >= self.min_rms:
-                    speech_started = True
-                    silence_started = None
-                elif speech_started:
-                    if silence_started is None:
-                        silence_started = now
-                    elif now - silence_started >= self.silence_secs:
-                        break
-                if now - started >= self.max_utterance_secs:
-                    break
-        finally:
-            try:
-                stream.stop_stream()
-                stream.close()
-            except Exception:
-                pass
-        if not speech_started:
-            return b"", self.rate
-        return b"".join(chunks), self.rate
