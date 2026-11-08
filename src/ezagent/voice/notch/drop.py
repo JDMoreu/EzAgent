@@ -37,17 +37,18 @@ from .tokens import W as MENU_W
 from .tokens import palette as token_palette
 
 # ----------------------------------------------------------------- geometría
-BTN = 46.0              # diámetro de los botones redondos
-GAP = 10.0              # separación entre elementos de la fila
-PAD = 14.0              # margen para sombras dentro de la ventana
-PILL_W, PILL_H = 184.0, 50.0
-CIRCLE_D = 76.0
-ORB_GAP = 12.0          # separación entre el círculo y la fila de botones
-HOVER_MARGIN = 26.0     # el puntero «cerca» de la barra hace aparecer los botones
+BTN = 36.0              # diámetro de los botones redondos
+GAP = 8.0               # separación entre elementos de la fila
+PAD = 12.0              # margen para sombras dentro de la ventana
+PILL_W, PILL_H = 148.0, 38.0
+CIRCLE_D = 58.0
+ORB_GAP = 10.0          # separación entre el círculo y la fila de botones
+HOVER_MARGIN = 22.0     # el puntero «cerca» de la barra hace aparecer los botones
+DOUBLE_CLICK = 0.4      # s entre dos clics sobre la forma para cambiar pill ↔ circle
 HOVER_HOLD = 0.7        # s que los botones siguen tras retirar el puntero
 BUD_SS = 3              # supersampling de los sprites de los botones
 GRID_CELL = 2.0         # px lógicos por celda del fluido (se escala suavemente)
-SHADOW = 12.0           # margen de sombra de cada sprite
+SHADOW = 10.0           # margen de sombra de cada sprite
 
 NAMES = {"pill": ("gear", "repeat", "pill", "mic", "hang"),
          "circle": ("gear", "repeat", "mic", "hang")}
@@ -189,10 +190,10 @@ def _fluid_grid(layout: str):
     if g is None:
         if layout == "circle":
             w = h = CIRCLE_D
-            sc = 1 / 38.0
+            sc = 2.0 / CIRCLE_D
         else:
             w, h = PILL_W, PILL_H
-            sc = 1 / 46.0
+            sc = 4.0 / PILL_W
         nx, ny = max(2, round(w / GRID_CELL)), max(2, round(h / GRID_CELL))
         xs = ((np.arange(nx) + .5) * (w / nx) - w / 2).astype(np.float32)
         ys = ((np.arange(ny) + .5) * (h / ny) - h / 2).astype(np.float32)
@@ -421,14 +422,10 @@ def _glyph(d, name: str, cx: float, cy: float, u: float, color, width: float,
         if muted:
             _stroke(d, [P(4, 4), P(20, 20)], width * 1.15, fault)
     elif name == "gear":
-        r = 3 * u
-        c = P(12, 12)
-        d.ellipse((c[0] - r, c[1] - r, c[0] + r, c[1] + r), outline=color, width=w)
-        for k in range(8):
-            ang = k * math.pi / 4
-            a = (c[0] + math.cos(ang) * 6.6 * u, c[1] + math.sin(ang) * 6.6 * u)
-            b = (c[0] + math.cos(ang) * 9.2 * u, c[1] + math.sin(ang) * 9.2 * u)
-            _stroke(d, [a, b], width, color)
+        # DECISION: hamburguesa (tres rayas) en vez de rueda dentada: a 36 px un
+        # engranaje de 8 dientes se leía como un sol («brillo»).
+        for y in (6.5, 12, 17.5):
+            _stroke(d, [P(5, y), P(19, y)], width, color)
     elif name == "repeat":
         d.arc((*P(4, 4), *P(20, 20)), -132.5, 180, fill=color, width=w)
         _stroke(d, [P(4, 4), P(4, 8.5), P(8.5, 8.5)], width, color)
@@ -455,15 +452,16 @@ def button_sprite(glyph: str, theme: str, scale: float, *, hang: bool = False,
     big = size * q
     c, r = big / 2, BTN * scale * q / 2
     shadow = Image.new("RGBA", (big, big), (0, 0, 0, 0))
-    ImageDraw.Draw(shadow).ellipse((c - r, c - r + 4 * scale * q, c + r, c + r + 4 * scale * q), fill=ui["shadow"])
-    shadow = shadow.filter(ImageFilter.GaussianBlur(5 * scale * q))
+    ImageDraw.Draw(shadow).ellipse((c - r, c - r + 3 * scale * q, c + r, c + r + 3 * scale * q), fill=ui["shadow"])
+    shadow = shadow.filter(ImageFilter.GaussianBlur(4 * scale * q))
     disc = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     d = ImageDraw.Draw(disc)
     fill = ui["hang"] if hang else (ui["hover"] if hover else ui["disc"])
     ring = ui["ring"] if (hang or theme == "dark") else None
     d.ellipse((c - r, c - r, c + r, c + r), fill=fill, outline=ring, width=max(1, round(1.0 * scale * q)))
     icon = ui["hang_icon"] if hang else (ui["fault"] if muted else (ui["signal"] if signal else ui["icon"]))
-    _glyph(d, glyph, c, c, (20 / 24) * scale * q * 0.95, (*icon, 255), 1.8 * scale * q,
+    k = BTN / 46.0
+    _glyph(d, glyph, c, c, (20 / 24) * k * scale * q * 0.95, (*icon, 255), 1.8 * k * scale * q,
            muted=muted, fault=(*ui["fault"], 255))
     out = Image.alpha_composite(shadow, disc).convert("RGBa").reduce(q).convert("RGBA")
     if len(_SPRITES) > 120:
@@ -680,8 +678,8 @@ class DropUI:
         self.s = scale
         layout = str(getattr(cfg, "ui_layout", "pill") or "pill").lower()
         self.layout = layout if layout in LAYOUTS else "pill"
-        palette = str(getattr(cfg, "ui_palette", "ezagent") or "ezagent").lower()
-        self.palette_name = palette if palette in PALETTES else "ezagent"
+        palette = str(getattr(cfg, "ui_palette", "sky") or "sky").lower()
+        self.palette_name = palette if palette in PALETTES else "sky"
         buttons = str(getattr(cfg, "ui_buttons", "always") or "always").lower()
         self.buttons = buttons if buttons in BUTTON_MODES else "always"
         self._position = position
@@ -700,6 +698,7 @@ class DropUI:
         self._on_no = None
         self._hover_until = 0.0
         self._pressed: str | None = None
+        self._form_click = 0.0
         self._hover_item: str | None = None
         self._theme_setting = "auto"
         self._theme_cache = ("dark", 0.0)
@@ -875,11 +874,53 @@ class DropUI:
         return render_model(self.model, w, h, self.s, self._theme_name(), self._muted,
                             self._in_call, self._menu_open, now, self._hover_item)
 
+    # ------------------------------------------------------ forma: círculo ↔ píldora
+    def set_layout(self, layout: str) -> None:
+        """Cambia entre píldora y círculo sin mover la forma de color de sitio."""
+        layout = layout if layout in LAYOUTS else "pill"
+        if layout == self.layout:
+            return
+        win = self._win
+        anchor = None
+        if win is not None:
+            fx, fy = form_center(self.layout)
+            anchor = (win.x + fx * self.s, win.y + fy * self.s)
+        self._close_card_now()
+        self.layout = layout
+        self.model.layout = layout
+        if win is not None and anchor is not None:
+            fx, fy = form_center(layout)
+            nx, ny = self.clamp_position(round(anchor[0] - fx * self.s), round(anchor[1] - fy * self.s))
+            w, h = self._size()
+            win.resize(w, h)
+            win.set_pos(nx, ny)
+            self._position = (nx, ny)
+        if self.cfg is not None:
+            try:
+                self.cfg.save_key("ui_layout", layout)
+                if win is not None:
+                    self.cfg.save_key("drop_x", int(win.x))
+                    self.cfg.save_key("drop_y", int(win.y))
+                    self.cfg.save_key("drop_layout", layout)
+            except Exception:
+                pass
+
+    def toggle_layout(self) -> None:
+        self.set_layout("circle" if self.layout == "pill" else "pill")
+
     # ----------------------------------------------------------------- puntero
     def pointer_down(self, x: float, y: float) -> bool:
         name = self.model.item_at(x, y)
-        if name is None or name == "pill":
-            return False                    # la forma se arrastra: la ventana se mueve
+        if name is None:
+            return False
+        if name == "pill":
+            now = time.monotonic()
+            if now - self._form_click < DOUBLE_CLICK:       # doble clic: cambia la forma
+                self._form_click = 0.0
+                self.toggle_layout()
+                return True
+            self._form_click = now
+            return False                    # un clic en la forma arrastra la ventana
         self._pressed = name
         return True
 

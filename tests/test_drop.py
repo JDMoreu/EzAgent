@@ -30,8 +30,9 @@ def _alpha(model, scale=1.0, theme="dark", now=1000.0):
 def test_tamanos_de_ventana() -> None:
     wp, hp = D.layout_size("pill")
     wc, hc = D.layout_size("circle")
-    assert wp > 400 and hp < 100                 # barra baja y ancha
-    assert wc < 260 and hc > 140                 # círculo sobre la fila de botones
+    assert wp > 300 and hp < 80                  # barra baja y ancha
+    assert wc < 220 and hc > 100                 # círculo sobre la fila de botones
+    assert wp > wc and hp < hc
 
 
 def test_posiciones_de_la_capsula_ordenadas_y_centradas() -> None:
@@ -63,7 +64,8 @@ def test_al_preguntar_se_pliegan_ajustes_y_colgar_y_se_recentra() -> None:
     despues = m.positions()
     assert despues["gear"][2] < 0.05 and despues["hang"][2] < 0.05      # desaparecen
     assert despues["repeat"][2] > 0.9 and despues["mic"][2] > 0.9       # quedan ✕ y ✓
-    assert despues["repeat"][0] > antes["repeat"][0]                    # el resto se recoloca
+    assert despues["gear"][0] > antes["gear"][0]                        # los ocultos se pliegan hacia dentro
+    assert despues["hang"][0] < antes["hang"][0]
     assert abs(despues["pill"][0] - D.layout_size("pill")[0] / 2) < 0.5  # forma siempre centrada
 
 
@@ -347,13 +349,13 @@ def test_posicion_por_defecto_abajo_y_centrada() -> None:
 # ------------------------------------------------------------------ configuración
 def test_config_por_defecto_y_validacion() -> None:
     cfg = VoiceConfig()
-    assert (cfg.ui_style, cfg.ui_layout, cfg.ui_palette, cfg.ui_buttons) == ("drop", "pill", "ezagent", "always")
-    cfg.ui_layout, cfg.ui_palette, cfg.ui_buttons = "circle", "sky", "hover"
+    assert (cfg.ui_style, cfg.ui_layout, cfg.ui_palette, cfg.ui_buttons) == ("drop", "pill", "sky", "always")
+    cfg.ui_layout, cfg.ui_palette, cfg.ui_buttons = "circle", "ezagent", "hover"
     ui = D.DropUI(root=None, cfg=cfg)
-    assert (ui.layout, ui.palette_name, ui.buttons) == ("circle", "sky", "hover")
+    assert (ui.layout, ui.palette_name, ui.buttons) == ("circle", "ezagent", "hover")
     cfg.ui_layout, cfg.ui_palette, cfg.ui_buttons = "raro", "raro", "raro"
     ui = D.DropUI(root=None, cfg=cfg)
-    assert (ui.layout, ui.palette_name, ui.buttons) == ("pill", "ezagent", "always")
+    assert (ui.layout, ui.palette_name, ui.buttons) == ("pill", "sky", "always")
 
 
 def test_create_ui_respeta_ui_style() -> None:
@@ -383,3 +385,43 @@ def test_la_posicion_guardada_solo_vale_con_la_misma_disposicion() -> None:
     assert D.create_ui(None, cfg)._position == (500, 600)
     cfg.drop_layout = ""                          # posición antigua del orbe
     assert D.create_ui(None, cfg)._position is None
+
+
+# ------------------------------------------------------ cambio de forma al vuelo
+def test_set_layout_cambia_modelo_y_guarda_la_preferencia() -> None:
+    cfg = VoiceConfig()
+    saved: dict = {}
+    cfg.save_key = lambda k, v, path=None: saved.__setitem__(k, v)  # type: ignore[method-assign]
+    ui = D.DropUI(root=None, cfg=cfg)
+    assert ui.layout == "pill"
+    ui.set_layout("circle")
+    assert (ui.layout, ui.model.layout) == ("circle", "circle")
+    assert saved["ui_layout"] == "circle"
+    ui.set_layout("circle")                       # sin cambios: no hace nada
+    ui.toggle_layout()
+    assert (ui.layout, ui.model.layout, saved["ui_layout"]) == ("pill", "pill", "pill")
+    ui.set_layout("raro")                         # valor inválido: cae a la píldora
+    assert ui.layout == "pill"
+
+
+def test_doble_clic_en_la_forma_cambia_de_disposicion() -> None:
+    ui = D.DropUI(root=None, cfg=VoiceConfig())
+    _run(ui.model, "idle", 1.0)
+    fx, fy = D.form_center("pill")
+    assert ui.pointer_down(fx, fy) is False       # primer clic: arrastra la ventana
+    assert ui.layout == "pill"
+    assert ui.pointer_down(fx, fy) is True        # segundo clic rápido: cambia la forma
+    assert ui.layout == "circle"
+
+
+def test_el_boton_de_ajustes_es_una_hamburguesa_no_un_sol() -> None:
+    """Tres rayas horizontales (el engranaje de 8 dientes se leía como un sol)."""
+    sp = D.button_sprite("gear", "light", 2.0)
+    a = np.asarray(sp)[..., 3]
+    h, w = a.shape
+    icon = np.asarray(sp.convert("L")).astype(int)
+    core = icon[h // 2 - 10 : h // 2 + 10, w // 2 - 10 : w // 2 + 10]
+    rows = (core < core.max() - 60).any(axis=1)
+    # alterna raya / hueco / raya / hueco / raya
+    cambios = int(np.count_nonzero(np.diff(rows.astype(int)) != 0))
+    assert cambios == 6

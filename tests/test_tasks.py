@@ -6,6 +6,8 @@ import json
 import queue
 from types import SimpleNamespace
 
+import pytest
+
 from ezagent.agent.tools_herdr import HerdrCallbacks, build_herdr_tools
 from ezagent.voice.app import LISTENING, VoiceApp
 from ezagent.voice.tasks import TaskRegistry
@@ -317,3 +319,32 @@ def test_atajo_local_lista_las_tareas_pendientes(tmp_path):
     assert spoken
     assert "2 tareas pendientes" in spoken[0]
     assert "revisa la web" in spoken[0]
+
+
+def _app_for_mute(tmp_path, calls):
+    app = VoiceApp.__new__(VoiceApp)
+    app.tasks = TaskRegistry(tmp_path / "tasks.json")
+    app.last_summary = ""
+    app._set_mic_muted = lambda muted, source="": calls.append((muted, source))
+    app._speak = lambda text, kind="answer": None
+    return app
+
+
+@pytest.mark.parametrize(
+    "phrase", ["silencio", "silencia", "mute", "Silencio.", "silencio por favor"]
+)
+def test_palabras_sueltas_no_silencian_el_micro(tmp_path, phrase):
+    calls: list[tuple] = []
+    app = _app_for_mute(tmp_path, calls)
+    VoiceApp._fast_command(app, phrase)
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "phrase", ["silencia el micro", "Silencia el micrófono.", "mutea"]
+)
+def test_orden_explicita_si_silencia_el_micro(tmp_path, phrase):
+    calls: list[tuple] = []
+    app = _app_for_mute(tmp_path, calls)
+    assert VoiceApp._fast_command(app, phrase) is True
+    assert calls == [(True, "voz")]
