@@ -2,10 +2,9 @@
 # %LOCALAPPDATA%\EzAgent (o EZAGENT_HOME). Cada recurso lleva tamano y SHA256
 # verificados contra la fuente oficial; sin hash correcto no se instala.
 #
-# NOTA: whisper.cpp no publica binarios de Windows con Vulkan. El recurso
-# "whisper-vulkan" se anade aqui cuando exista un release de EzAgent que lo
-# distribuya (ver docs/roadmap/etapas/E8-onboarding.md). Hasta entonces el
-# motor "auto" cae a CPU salvo que la carpeta whisper/ ya contenga uno.
+# whisper.cpp no publica binarios de Windows con Vulkan: "whisper-vulkan" sale
+# de un release de este repositorio (deps-whisper-vulkan-610e664, compilado del
+# código original). El motor "auto" prefiere Vulkan y cae a CPU si no hay GPU.
 
 [[asset]]
 id = "whisper-cpu"
@@ -62,4 +61,14 @@ url = "https://raw.githubusercontent.com/snakers4/silero-vad/v5.1.2/src/silero_v
 sha256 = "2623a2953f6ff3d2c1e61740c6cdb7168133479b267dfef114a4a3cc5bdd788f"
 size = 2327524
 dest = "models/silero_vad.onnx"
+license = "MIT"
+
+[[asset]]
+id = "whisper-vulkan"
+label = "whisper.cpp (GPU Vulkan)"
+url = "https://github.com/JDMoreu/EzAgent/releases/download/deps-whisper-vulkan-610e664/whisper-vulkan-win-x64.zip"
+sha256 = "bd4162f7247bd8df090e32a4a368861dba6a4d261a2960648e1d654b64323293"
+size = 18648257
+dest = "whisper"
+unzip = true
 license = "MIT"
