@@ -77,7 +77,7 @@ input[type=range]{width:180px;accent-color:var(--signal)}
   <header>
     <div class="eyebrow">EzAgent · la barra</div>
     <h1>Una píldora de color entre tus botones</h1>
-    <p>Tomando el patrón de tus dos referencias: arriba o al centro, una forma suave con un degradado vivo que reacciona a la voz; alrededor, botones redondos y limpios. Sin una sola palabra en pantalla. Pruébala con los estados, el color y la forma.</p>
+    <p>La forma es fija, con el borde bien definido. Lo que se mueve es lo de dentro, como agua o nubes de color: fluye despacio en calma y corre y se arremolina más cuando hablas o escuchas. Alrededor, botones redondos y limpios. Sin una sola palabra en pantalla.</p>
   </header>
 
   <section>
@@ -116,8 +116,8 @@ input[type=range]{width:180px;accent-color:var(--signal)}
   <section>
     <div class="eyebrow">Qué decidir</div>
     <div class="notes">
-      <div class="card"><span class="tag">A · PÍLDORA</span><h2>Como la de tu primera imagen</h2><p>Forma alargada con degradado en el centro y cuatro botones redondos. Más ancha (unos 410 px), se siente como una barra de herramientas.</p></div>
-      <div class="card"><span class="tag">B · CÍRCULO</span><h2>Como la de tu segunda imagen</h2><p>Un círculo con degradado sobre una fila corta de botones. Más compacta y más cercana al orbe que ya tienes.</p></div>
+      <div class="card"><span class="tag">A · PÍLDORA</span><h2>Como la de tu primera imagen</h2><p>Cápsula de contorno fijo con el fluido dentro y cuatro botones redondos. Más ancha (unos 410 px); se siente como una barra de herramientas.</p></div>
+      <div class="card"><span class="tag">B · CÍRCULO</span><h2>Como la de tu segunda imagen</h2><p>Un círculo de contorno fijo con el fluido dentro, sobre una fila corta de botones. Más compacta y más cercana al orbe que ya tienes.</p></div>
       <div class="card"><span class="tag">COLOR</span><h2>EzAgent o cielo</h2><p>«EzAgent» usa lima, menta y violeta. «Cielo» usa azules y lavanda como tus referencias. Los estados de pregunta, error y silencio mantienen ámbar, rojo y gris.</p></div>
       <div class="card"><span class="tag">BOTONES</span><h2>Siempre o al acercar</h2><p>Siempre visibles dan acceso inmediato; «al acercar» deja solo el degradado y los botones brotan con el puntero, para no estorbar.</p></div>
     </div>
@@ -143,54 +143,57 @@ function speechEnv(t){var g=Math.sin(t*2.3)+.6*Math.sin(t*1.07+1.2),gate=Math.ma
 function micEnv(t){return Math.max(0,Math.min(1,.5+.4*Math.sin(t*5.7)*Math.sin(t*1.7+1)+.1*Math.sin(t*13)))}
 function ss(a,b,x){var t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t)}
 var BL=[[.9,1.3,0,1.7],[1.1,.8,2.1,.6],[.7,1.5,4.0,2.3],[1.3,.9,1.2,3.4],[.8,1.1,5.2,.9]];
-var lvl=0,ph=0,trm=0,trp=0,last=0;
+var lvl=0,ph=0,last=0;
 
 function makeField(cw,ch,cell){var nx=Math.round(cw/cell),ny=Math.round(ch/cell),off=document.createElement('canvas');off.width=nx;off.height=ny;return {nx:nx,ny:ny,cell:cell,cw:cw,ch:ch,off:off,ctx:off.getContext('2d'),img:off.getContext('2d').createImageData(nx,ny)}}
 var FP=makeField(230,90,2),FO=makeField(150,150,2);
 
-/* forma 'pill' = cápsula; 'circle' = círculo. Mismo motor para ambas. */
+/* ruido de valor con interpolación suave; fbm de tres octavas = «nubes» */
+function hsh(x,y){var h=Math.imul(x,374761393)+Math.imul(y,668265263);h=Math.imul(h^(h>>>13),1274126177);return ((h^(h>>>16))>>>0)/4294967295}
+function vn(x,y){var xi=Math.floor(x),yi=Math.floor(y),xf=x-xi,yf=y-yi,u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf);
+  var a=hsh(xi,yi),b=hsh(xi+1,yi),c=hsh(xi,yi+1),d=hsh(xi+1,yi+1);return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v}
+function fbm(x,y){return .72*vn(x,y)+.22*vn(x*2.03+3.1,y*2.03+1.7)+.06*vn(x*4.1+7.3,y*4.1+2.9)}
+
+/* La FORMA es fija (píldora o círculo, borde definido). Solo se mueve el interior:
+   un fluido de color con remolinos que corre más rápido y se vuelve más contrastado con la voz. */
 function paintField(F,shape,L,speed){
-  var d=F.img.data,p=0,cw=F.cw,ch=F.ch,i,x,y,sg,a,b,R;
-  var amp=.34+.26*L,tr=trm,pal=cur,bright=S.state==='mute'?.75:S.state==='idle'?.86:1+.22*L;
-  if(shape==='pill'){a=92*(1+.12*L);b=25*(1+.30*L)}else{R=38*(1+.20*L)}
-  var sigx=(shape==='pill'?44:30)*(1+.2*L),sigy=(shape==='pill'?30:30)*(1+.2*L);
-  var bx=[],by=[];for(i=0;i<5;i++){var ax=shape==='pill'?a*.8:R*.8,ay=shape==='pill'?b*.7:R*.8;bx.push(Math.cos(ph*BL[i][0]+BL[i][2])*ax*(amp/.34*.7+.3));by.push(Math.sin(ph*BL[i][1]+BL[i][3])*ay*(amp/.34*.7+.3))}
+  var d=F.img.data,p=0,cw=F.cw,ch=F.ch,x,y,a=92,b=25,R=38,pal=cur,st=S.state;
+  var bright=st==='mute'?.82:st==='idle'?.93:1+.1*L,wamp=.35+.55*L,contrast=.95+.4*L,cloud=.10+.28*L;
+  var t=ph,sc=shape==='pill'?1/46:1/38,breath=reduced?0:Math.sin(performance.now()/1000*Math.PI*2/4.2)*.02;
   for(y=0;y<F.ny;y++){var Y=(y+.5)*F.cell-ch/2;
     for(x=0;x<F.nx;x++){var X=(x+.5)*F.cell-cw/2,dist;
-      if(shape==='pill'){
-        var rip=b*((.02+.045*L)*Math.sin(X/a*3+ph*1.4)+(.012+.03*L)*Math.sin(X/a*5-ph*1.9))+tr*.7*Math.sin(X/a*13+trp)+tr*.45*Math.sin(X/a*21-trp*1.3);
-        var dx=Math.max(Math.abs(X)-(a-b),0);dist=Math.sqrt(dx*dx+Y*Y)-b-rip;
-      }else{
-        var th=Math.atan2(Y,X),rr=Math.sqrt(X*X+Y*Y);
-        var rip2=R*((.02+.05*L)*Math.sin(2*th+ph*1.2)+(.02+.045*L)*Math.sin(3*th-ph*1.5)+(.012+.03*L)*Math.sin(4*th+ph))+tr*.8*Math.sin(5*th+trp)+tr*.55*Math.sin(7*th-trp*1.3);
-        dist=rr-R-rip2;
-      }
-      var alpha=ss(2.5,-3.5,dist);   /* borde definido pero suave (~6 px), como en las referencias */
+      if(shape==='pill'){var dx=Math.max(Math.abs(X)-(a-b),0);dist=Math.sqrt(dx*dx+Y*Y)-b}else dist=Math.sqrt(X*X+Y*Y)-R;
+      var alpha=dist<3?1:0;                            /* el recorte exacto del borde se hace después, a resolución final */
       if(alpha<=0){d[p]=d[p+1]=d[p+2]=d[p+3]=0;p+=4;continue}
-      var sw=0,cr=0,cg=0,cb=0;
-      for(i=0;i<5;i++){var ddx=X-bx[i],ddy=Y-by[i],w=Math.exp(-(ddx*ddx/(sigx*sigx)+ddy*ddy/(sigy*sigy)));sw+=w;cr+=w*pal[i][0];cg+=w*pal[i][1];cb+=w*pal[i][2]}
-      var inv=1/(sw+1e-6),mk=Math.min(1,sw*1.1);
-      var depth=Math.min(1,Math.max(0,-dist/(shape==='pill'?b:R))),lum=bright*(.88+.18*Math.pow(depth,1.2));
-      var Rr=(cr*inv*mk+pal[0][0]*.22*(1-mk))*lum,Gg=(cg*inv*mk+pal[0][1]*.22*(1-mk))*lum,Bb=(cb*inv*mk+pal[0][2]*.22*(1-mk))*lum;
-      d[p]=Math.min(255,Rr);d[p+1]=Math.min(255,Gg);d[p+2]=Math.min(255,Bb);d[p+3]=alpha*255;p+=4;
+      var px=X*sc,py=Y*sc;
+      var wx=fbm(px*.7+t*.3,py*.7),wy=fbm(px*.7+5.2,py*.7+t*.26);
+      var qx=px+wamp*(wx-.5)*1.4,qy=py+wamp*(wy-.5)*1.4;
+      var n=fbm(qx*.85-t*.2,qy*.85+t*.16);
+      var g=(n-.5)*contrast*1.9+.5-py*.14;g=g<0?0:g>1?1:g;
+      var f=g*4,i0=Math.min(3,Math.floor(f)),tt=f-i0,c0=pal[i0],c1=pal[i0+1];
+      var r=c0[0]+(c1[0]-c0[0])*tt,gg=c0[1]+(c1[1]-c0[1])*tt,bb=c0[2]+(c1[2]-c0[2])*tt;
+      var cl=ss(.6,.9,n)*cloud*.5;r+=(255-r)*cl;gg+=(255-gg)*cl;bb+=(255-bb)*cl;   /* nubes más claras donde el ruido es alto */
+      var depth=Math.min(1,Math.max(0,-dist/(shape==='pill'?b:R))),lum=bright*(.9+.14*depth)*(1+breath);
+      d[p]=Math.min(255,r*lum);d[p+1]=Math.min(255,gg*lum);d[p+2]=Math.min(255,bb*lum);d[p+3]=alpha*255;p+=4;
     }}
   F.ctx.putImageData(F.img,0,0);
 }
 
 var cvP=$('pill'),cvO=$('orb'),dpr=Math.min(2,window.devicePixelRatio||1);
 [[cvP,230,90],[cvO,150,150]].forEach(function(a){a[0].width=a[1]*dpr;a[0].height=a[2]*dpr});
-function blit(cv,F){var c=cv.getContext('2d');c.clearRect(0,0,cv.width,cv.height);c.imageSmoothingEnabled=true;c.imageSmoothingQuality='high';c.drawImage(F.off,0,0,cv.width,cv.height)}
+function blit(cv,F,shape){var c=cv.getContext('2d'),k=cv.width/F.cw;c.clearRect(0,0,cv.width,cv.height);c.imageSmoothingEnabled=true;c.imageSmoothingQuality='high';c.drawImage(F.off,0,0,cv.width,cv.height);
+  /* contorno fijo y nítido: máscara exacta de la forma a la resolución del lienzo */
+  c.globalCompositeOperation='destination-in';c.beginPath();
+  if(shape==='pill'){c.roundRect((F.cw/2-92)*k,(F.ch/2-25)*k,184*k,50*k,25*k)}else{c.arc(F.cw/2*k,F.ch/2*k,38*k,0,Math.PI*2)}
+  c.fill();c.globalCompositeOperation='source-over'}
 
 function frame(ms){
   var now=ms/1000,dt=Math.min(.05,now-last);last=now;var st=S.state,fs=q.get('lv');
   var tgt=st==='speak'?(fs!=null?+fs:(S.auto?speechEnv(now):S.vol)):st==='listen'?(fs!=null?+fs:(S.auto?micEnv(now):S.vol)):0;
   lvl+=(tgt-lvl)*(1-Math.exp(-dt/(tgt>lvl?.05:.25)));
-  var sounding=(st==='speak'||st==='listen')&&lvl>.04,trT=sounding?Math.min(1,.35+lvl):0;
-  trm+=(trT-trm)*(1-Math.exp(-dt/(trT>trm?.05:.3)));
-  var spd=reduced?0:(st==='think'?1.6:st==='idle'||st==='mute'?.35:st==='error'?.5:.8+lvl*1.7);ph+=dt*spd;trp+=reduced?0:dt*22;
+    var spd=reduced?0:(st==='think'?1.6:st==='idle'||st==='mute'?.35:st==='error'?.5:.8+lvl*1.7);ph+=dt*spd;
   var pal=cols[S.color][st],kc=1-Math.exp(-dt/.2);for(var i=0;i<5;i++)for(var j=0;j<3;j++)cur[i][j]+=(pal[i][j]-cur[i][j])*kc;
-  var breath=reduced?0:Math.sin(now*Math.PI*2/4.2)*.04;
-  if(S.layout==='a'){paintField(FP,'pill',lvl+breath,spd);blit(cvP,FP)}else{paintField(FO,'circle',lvl+breath,spd);blit(cvO,FO)}
+    if(S.layout==='a'){paintField(FP,'pill',lvl,spd);blit(cvP,FP,'pill')}else{paintField(FO,'circle',lvl,spd);blit(cvO,FO,'circle')}
   requestAnimationFrame(frame);
 }
 
@@ -222,7 +225,7 @@ $('tDesk').addEventListener('click',function(){var l=!$('desk').classList.contai
 $('tUi').addEventListener('click',function(){S.uiDark=!S.uiDark;$('tUi').textContent='Botones: '+(S.uiDark?'oscuros':'claros');apply()});
 $('tMotion').addEventListener('click',function(){reduced=!reduced;$('tMotion').setAttribute('aria-pressed',String(reduced))});
 
-if(q.get('l'))S.layout=q.get('l');if(q.get('s'))S.state=q.get('s');if(q.get('c'))S.color=q.get('c');if(q.get('b'))S.btn=q.get('b');
+if(q.get('z'))document.getElementById('bar').style.zoom=q.get('z');if(q.get('l'))S.layout=q.get('l');if(q.get('s'))S.state=q.get('s');if(q.get('c'))S.color=q.get('c');if(q.get('b'))S.btn=q.get('b');
 if(q.get('desk')==='light')$('desk').classList.add('light');if(q.get('ui')==='dark')S.uiDark=true;if(q.get('mute')==='1')S.muted=true;
 cur=cols[S.color][S.state].map(function(c){return c.slice()});
 ['lPills','sPills','cPills','bPills'].forEach(function(id){var key={lPills:'layout',sPills:'state',cPills:'color',bPills:'btn'}[id];$(id).querySelectorAll('.pill').forEach(function(x){x.setAttribute('aria-pressed',String(x.dataset.k===S[key]))})});
