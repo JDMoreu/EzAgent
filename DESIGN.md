@@ -120,6 +120,12 @@ components:
 
 # Sistema de diseño: EzAgent
 
+> **Vigente hasta la etapa E7** (8 nov 2026). La dirección nueva («la mirada
+> que delega», paleta «Tinta y señal», estados de agentes, springs y earcons)
+> está en [`docs/roadmap/03-diseno-y-movimiento.md`](docs/roadmap/03-diseno-y-movimiento.md).
+> E7 reescribe este archivo a partir de lo construido. Hasta entonces, el
+> notch actual se rige por lo que sigue.
+
 ## Resumen
 
 > **Alcance vigente (6 nov 2026):** solo el notch y su menú desplegable. La app Tauri/React, el dashboard y el panel de llamada fueron eliminados. Cualquier referencia residual a una app de escritorio es histórica y no se implementa.
