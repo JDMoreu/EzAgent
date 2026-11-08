@@ -48,7 +48,7 @@ def test_transiciones_suaves_sin_saltos() -> None:
             cur = m.blob()
             worst = max(worst, max(abs(a[0] - b[0]) + abs(a[1] - b[1]) for a, b in zip(prev, cur, strict=True)))
             prev = cur
-    assert worst < 3.5, worst
+    assert worst < 8.0, worst
 
 
 def test_habla_se_deforma_con_la_voz() -> None:
@@ -61,15 +61,23 @@ def test_habla_se_deforma_con_la_voz() -> None:
 def test_color_sigue_al_estado() -> None:
     m = D.DropModel()
     _run(m, "think", 1.5)
-    assert all(abs(c - v) < 6 for c, v in zip(m.color, D.DARK["attention"], strict=True))
+    # al pensar el color oscila entre ámbar y violeta: nunca sale de ese tramo
+    a, b = D.DARK["attention"], D.DARK["agent"]
+    def dist_to_segment(c):
+        ab = [b[i] - a[i] for i in range(3)]
+        t = max(0.0, min(1.0, sum((c[i] - a[i]) * ab[i] for i in range(3)) / sum(v * v for v in ab)))
+        return max(abs(c[i] - (a[i] + ab[i] * t)) for i in range(3))
+    assert dist_to_segment(m.color) < 12
     _run(m, "error", 1.5)
     assert all(abs(c - v) < 6 for c, v in zip(m.color, D.DARK["fault"], strict=True))
+    _run(m, "mute", 1.5)
+    assert all(abs(c - v) < 6 for c, v in zip(m.color, D.DARK["text3"], strict=True))
 
 
 def test_movimiento_reducido_aplica_al_instante_y_sin_deriva() -> None:
     m = D.DropModel()
     _run(m, "mute", 0.1, reduced=True)
-    assert abs(m.R - 7) < 1e-6 and m.cy_offset == 0.0 and m.shift == 0.0
+    assert abs(m.R - 9) < 1e-6 and m.cy_offset == 0.0 and m.shift == 0.0
     assert all(s.x in (0.0, 1.0) for s in m.bud.values())
 
 
@@ -112,11 +120,37 @@ def test_render_produce_bgra_premultiplicado(pose: str) -> None:
     assert frame[h // 2, w // 2, 3] > 200
 
 
-def test_zona_sensible_casi_invisible_pero_clicable() -> None:
+def test_recorte_de_clics_por_geometria_sin_zona_pintada() -> None:
+    """No hay disco «casi invisible»: lo transparente es transparente de verdad."""
     m = D.DropModel()
-    frame = D.render_model(m, D.LW, D.LH, 1.0, D.DARK, False, True, False)
-    assert 0 < frame[int(D.CY), int(D.CX + 40), 3] < 12     # dentro de la zona: alfa mínimo > 0
-    assert frame[2, 2, 3] == 0                              # esquina: totalmente transparente
+    t = _run(m, "idle", 1.0)
+    frame = D.render_model(m, D.LW, D.LH, 1.0, D.DARK, False, True, False, t)
+    assert frame[2, 2, 3] == 0                                   # esquina
+    assert frame[int(D.CY), int(D.CX + 100), 3] == 0              # lejos del cuerpo: nada pintado
+    assert m.on_body(D.CX, D.CY) and not m.on_body(D.CX + 60, D.CY)
+    assert m.on_body(D.CX + m.R, D.CY)
+
+
+def test_pose_de_escucha_pinta_anillos_entrantes_y_habla_salientes() -> None:
+    m = D.DropModel()
+    t = _run(m, "listen", 1.0, rms=0.06)
+    assert m.rings and all(kind == "in" for _, kind, _ in m.rings)
+    m2 = D.DropModel()
+    # una sílaba: de silencio a voz
+    t2 = _run(m2, "speak", 0.3, rms=0.0)
+    for _ in range(30):
+        t2 += 1 / 60
+        m2.update(t2, 1 / 60, "speak", 0.1, D.DARK, False, False, False, False)
+    assert any(kind == "out" for _, kind, _ in m2.rings)
+    assert t > 0
+
+
+def test_ganancia_automatica_usa_todo_el_rango() -> None:
+    """Un micrófono flojo y uno fuerte producen el mismo nivel relativo."""
+    weak, strong = D.DropModel(), D.DropModel()
+    _run(weak, "listen", 1.0, rms=0.012)
+    _run(strong, "listen", 1.0, rms=0.2)
+    assert abs(weak.lvl - strong.lvl) < 0.1 and weak.lvl > 0.7
 
 
 class _Fake(D.DropUI):

@@ -12,7 +12,7 @@ import threading
 from pathlib import Path
 from typing import Callable
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
 try:  # pragma: no cover - depende del entorno de escritorio
     import pystray as _pystray
@@ -24,21 +24,10 @@ _TITLE = "EzAgent · activo"
 
 
 def _fallback_image() -> Image.Image:
-    """Marca de respaldo: cuadrado grafito con dos ojos mint."""
-    image = Image.new("RGBA", (ICON_SIZE, ICON_SIZE), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle(
-        (2, 2, ICON_SIZE - 2, ICON_SIZE - 2),
-        radius=16,
-        fill=(14, 15, 19, 255),
-    )
-    for x0, x1 in ((22, 28), (36, 42)):
-        draw.rounded_rectangle(
-            (x0, 23, x1, 41),
-            radius=3,
-            fill=(94, 234, 196, 255),
-        )
-    return image
+    """Marca de respaldo: la «e» de un solo trazo con su punto de agente."""
+    from .brand import mark_image
+
+    return mark_image(ICON_SIZE)
 
 
 def load_icon_image(path: Path | None = None) -> Image.Image:

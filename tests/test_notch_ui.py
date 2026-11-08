@@ -601,8 +601,10 @@ def test_T07_contraste_aa():
     flagged = {(item.foreground, item.background) for item in advisory}
     assert ("EYE_IDLE", "BODY") not in flagged
     assert ("EYE_MUTE", "BODY") not in flagged
-    assert ("MINT", "BODY") in flagged
-    assert ("WARM", "BODY") in flagged
+    # Con la paleta nueva MINT/WARM cumplen sobre BODY; solo quedan
+    # orientativos los pares de texto terciario sobre superficies elevadas.
+    assert ("MINT", "BODY") not in flagged
+    assert ("WARM", "BODY") not in flagged
 
 
 def test_T08_tokens_exactos():
@@ -642,18 +644,18 @@ def test_T08_tokens_exactos():
     assert T.FS_MICRO.uppercase
 
     assert set(T.DARK) == set(T.LIGHT) == set(T.COLOR_KEYS)
-    assert T.DARK["BODY"] == (14, 15, 19)
-    assert T.DARK["MINT"] == (94, 234, 196)
-    assert T.DARK["EYE_IDLE"] == (62, 146, 125)
-    assert T.LIGHT["BODY"] == (255, 255, 255)
-    assert T.LIGHT["MINT"] == (12, 145, 126)
-    assert T.LIGHT["EYE_IDLE"] == (47, 127, 116)
-    assert T.LIGHT["EYE_MUTE"] == (160, 100, 18)
-    assert T.LIGHT["WORD_MINT"] == (10, 122, 106)
-    assert T.DARK["LINE"] == (255, 255, 255, 23)
-    assert T.LIGHT["LINE"] == (0, 0, 0, 26)
-    assert T.DARK["LINE_2"] == (255, 255, 255, 15)
-    assert T.LIGHT["LINE_2"] == (0, 0, 0, 15)
+    assert T.DARK["BODY"] == (20, 18, 16)
+    assert T.DARK["MINT"] == (212, 242, 90)
+    assert T.DARK["EYE_IDLE"] == (140, 160, 63)
+    assert T.LIGHT["BODY"] == (250, 248, 245)
+    assert T.LIGHT["MINT"] == (77, 107, 0)
+    assert T.LIGHT["EYE_IDLE"] == (111, 138, 31)
+    assert T.LIGHT["EYE_MUTE"] == (163, 95, 0)
+    assert T.LIGHT["WORD_MINT"] == (77, 107, 0)
+    assert T.DARK["LINE"] == (244, 239, 232, 23)
+    assert T.LIGHT["LINE"] == (26, 23, 20, 26)
+    assert T.DARK["LINE_2"] == (244, 239, 232, 15)
+    assert T.LIGHT["LINE_2"] == (26, 23, 20, 15)
 
     assert T.W_COMPACT == 169
     assert T.W_FLOAT == 151

@@ -65,7 +65,18 @@ powershell -ExecutionPolicy Bypass -File scripts\start-voice.ps1
 O doble clic en `EzAgent.bat` y elige **Iniciar mensajero de voz**. La app
 arranca escuchando; `Ctrl+Alt+Space` cuelga o retoma.
 
-## El notch
+## La gota (interfaz por defecto)
+
+Desde la versión 0.2 la interfaz es **la gota**: una gota líquida sin texto que
+respira siempre y cuenta lo que pasa con forma, color y ondas. Escucha (anillos
+que entran), piensa (cometa ámbar y violeta), habla (anillos que salen y color
+que fluye), termina (destello) y pregunta (late en ámbar con ✕ y ✓). Al acercar
+el puntero brotan dos gotas pequeñas: micrófono y ajustes; los ajustes se abren
+en una tarjeta junto a la gota. Se arrastra y recuerda su posición (`drop_x` y
+`drop_y` en `voice.json`). Para volver a la isla antigua: `"ui_style": "notch"`.
+Los iconos se regeneran con `uv run python scripts/make_icons.py`.
+
+## El notch (interfaz anterior)
 
 La isla cerrada mide **169×36** acoplada al borde superior o **151×36**
 flotando, y se puede arrastrar por el cuerpo:
