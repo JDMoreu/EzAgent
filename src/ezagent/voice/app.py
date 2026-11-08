@@ -40,6 +40,7 @@ from .config import VoiceConfig, config_path
 from .herdr import Herdr
 from .hotkeys import GlobalHotkey, parse_hotkey
 from .llm import Messenger
+from .metrics import LatencyStats, TurnTimings
 from .notch.island import Notch
 from .stt import (
     STTError,
@@ -47,7 +48,6 @@ from .stt import (
     transcribe,
     whisper_model_path,
 )
-from .metrics import LatencyStats, TurnTimings
 from .tasks import TaskRegistry
 from .tts import Speaker
 from .watcher import Watcher

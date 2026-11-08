@@ -25,9 +25,9 @@ from .tokens import (
     R_FLOAT,
     R_ISLAND,
     R_MENU,
-    W,
     W_COMPACT,
     WINDOW_OPEN_H,
+    W,
     palette,
 )
 

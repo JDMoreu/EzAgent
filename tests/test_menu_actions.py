@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from ezagent.voice import app as app_module
 from ezagent.voice.app import VoiceApp

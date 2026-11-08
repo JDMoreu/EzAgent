@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
-
-from urllib.parse import urlsplit, urlunsplit
 
 from .config import VoiceConfig
 

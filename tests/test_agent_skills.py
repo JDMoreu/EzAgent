@@ -15,6 +15,8 @@ from typing import Any
 
 import pytest
 
+from ezagent.agent import skills as skills_module
+from ezagent.agent import tools_skills
 from ezagent.agent.config import (
     AgentConfig,
     ConfirmConfig,
@@ -24,7 +26,6 @@ from ezagent.agent.config import (
     ToolsDConfig,
     WebConfig,
 )
-from ezagent.agent import skills as skills_module
 from ezagent.agent.skills import (
     MAX_CATALOG,
     MAX_CATALOG_DESCRIPTION_CHARS,
@@ -37,7 +38,6 @@ from ezagent.agent.skills import (
     ensure_default_skills,
     hash_folder,
 )
-from ezagent.agent import tools_skills
 from ezagent.agent.tools_skills import build_skill_tools
 
 yaml = pytest.importorskip("yaml")

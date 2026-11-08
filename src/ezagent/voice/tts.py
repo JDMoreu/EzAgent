@@ -13,8 +13,8 @@ from kokoro_onnx import Kokoro
 from ezagent.speech_text import normalize_for_kokoro
 from ezagent.tts import resolve_kokoro_files
 
-from .config import VoiceConfig
 from .audio import pcm_rms
+from .config import VoiceConfig
 
 
 def _voice_style(kokoro: Kokoro, voice: str) -> np.ndarray:

@@ -44,7 +44,6 @@ from .tokens import (
     ICON_MIC_SIZE,
     MIC_BUTTON_COMPACT,
     MIC_BUTTON_FLOAT,
-    Rect,
     SNAP_TOP,
     T_BASE,
     T_CLOSE_EYES,
@@ -55,9 +54,10 @@ from .tokens import (
     T_SLOW,
     VOICE_ATTACK,
     VOICE_RELEASE,
-    W,
     W_COMPACT,
     W_FLOAT,
+    Rect,
+    W,
     palette,
 )
 
@@ -215,7 +215,7 @@ def draw_chevron(
     ca, sa = math.cos(a), math.sin(a)
     rot = [(cx + x * ca - y * sa, cy + x * sa + y * ca) for x, y in points]
     stroke = 1.8 if size >= 18 else 1.6
-    for p, q in zip(rot, rot[1:]):
+    for p, q in zip(rot, rot[1:], strict=False):
         draw_capsule_line(buf, p[0], p[1], q[0], q[1], stroke, color, scale, alpha)
 
 
@@ -618,7 +618,6 @@ class Notch:
         self.H_MAX = round((H_ISLAND + H_MENU) * scale)
         self.BODY_W = self.W_COMPACT
         self.BODY_H = self.H_ISLAND
-        from . import eyes as _eyes
         from . import icons as _icons
         from . import silhouette as _sil
         from . import text as _text
@@ -1834,7 +1833,7 @@ class Notch:
             if t >= 0.4:
                 return (0.0, 0.0)
             k = t / 0.4
-            for (k0, x0), (k1, x1) in zip(steps, steps[1:]):
+            for (k0, x0), (k1, x1) in zip(steps, steps[1:], strict=False):
                 if k <= k1:
                     f = (k - k0) / max(k1 - k0, 1e-6)
                     return (x0 + (x1 - x0) * f, 0.0)
