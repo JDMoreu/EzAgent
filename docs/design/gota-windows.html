@@ -1,0 +1,381 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EzAgent Gota en Windows</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: un escritorio simulado de Windows con la gota flotando sobre la bandeja; debajo, controles y las reglas de integración con el sistema. */
+:root{
+  --font:'Geist','Segoe UI',system-ui,sans-serif; --mono:'Geist Mono','Cascadia Mono',Consolas,monospace;
+  --bg:#0C0B0A; --ink:#141210; --surface:#1E1B18; --surface-2:#282420; --track:#34302B;
+  --text:#F4EFE8; --text-2:#C2BAAE; --text-3:#9C9488; --line:rgb(244 239 232 / .09); --line-2:rgb(244 239 232 / .16);
+  --signal:#D4F25A; --signal-fill:#D4F25A; --signal-ink:#141210; --signal-dim:#8CA03F; --agent:#A8A1FF; --attention:#FFB23E; --fault:#FF5D52;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --bg:#F3F0EB; --ink:#FAF8F5; --surface:#F1EDE7; --surface-2:#E8E3DB; --track:#D6D0C6;
+  --text:#1A1714; --text-2:#4E4840; --text-3:#6F675C; --line:rgb(26 23 20 / .1); --line-2:rgb(26 23 20 / .18);
+  --signal:#4D6B00; --signal-fill:#5C7F00; --signal-ink:#FFFFFF; --signal-dim:#6F8A1F; --agent:#5B4FD6; --attention:#A35F00; --fault:#C8241A;
+  color-scheme:light}}
+:root[data-theme="light"]{
+  --bg:#F3F0EB; --ink:#FAF8F5; --surface:#F1EDE7; --surface-2:#E8E3DB; --track:#D6D0C6;
+  --text:#1A1714; --text-2:#4E4840; --text-3:#6F675C; --line:rgb(26 23 20 / .1); --line-2:rgb(26 23 20 / .18);
+  --signal:#4D6B00; --signal-fill:#5C7F00; --signal-ink:#FFFFFF; --signal-dim:#6F8A1F; --agent:#5B4FD6; --attention:#A35F00; --fault:#C8241A;
+  color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:400 15px/1.55 var(--font);padding-block:32px 88px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:56px}
+h1{font:600 clamp(32px,5.4vw,52px)/1.04 var(--font);letter-spacing:-.04em;margin:0;text-wrap:balance}
+h2{font:600 22px/1.15 var(--font);letter-spacing:-.025em;margin:0 0 6px;text-wrap:balance}
+h3{font:600 14px/1.2 var(--font);margin:0 0 4px}
+p{margin:0;color:var(--text-2);max-width:64ch}
+.eyebrow{font:500 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:12px}
+.sec{display:flex;flex-direction:column;gap:18px;min-width:0}
+:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+button{font:inherit;color:inherit;cursor:pointer}
+code{font:500 12px var(--mono);color:var(--text)}
+.note{font-size:13px;color:var(--text-3);max-width:72ch}
+
+/* escritorio */
+.scrollx{overflow-x:auto;border-radius:16px}
+.desk{position:relative;min-width:860px;height:710px;border-radius:16px;overflow:hidden;border:1px solid var(--line);color:#F4EFE8;font-family:'Segoe UI',var(--font);
+  background:radial-gradient(800px 460px at 12% 8%,#2d4a6e 0,transparent 60%),radial-gradient(700px 420px at 92% 70%,#3b2f63 0,transparent 62%),linear-gradient(150deg,#14233a,#0d1424)}
+:root[data-theme="light"] .desk{background:radial-gradient(800px 460px at 12% 8%,#a8c4e6 0,transparent 60%),radial-gradient(700px 420px at 92% 70%,#cfc4ee 0,transparent 62%),linear-gradient(150deg,#d8e4f3,#c9d3ea)}
+.win{position:absolute;left:44px;top:42px;width:560px;height:360px;border-radius:10px;background:#1b1c20;border:1px solid rgb(255 255 255 / .1);box-shadow:0 24px 60px rgb(0 0 0 / .45);overflow:hidden}
+.win .tb{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px 0 14px;background:#202228;font-size:12px;color:#c9c9d1}
+.win .tb i{display:inline-block;width:10px;height:10px;margin-left:14px;border-radius:2px;border:1px solid #8b8b96}
+.win pre{margin:0;padding:14px 16px;font:400 12.5px/1.6 var(--mono);color:#b9bac4;white-space:pre-wrap}
+.win pre b{font-weight:500;color:#e8e8ee}.win .ok{color:#D4F25A}.win .ag{color:#A8A1FF}.win .wr{color:#FFB23E}.win .er{color:#FF5D52}
+.win2{position:absolute;left:380px;top:210px;width:380px;height:250px;border-radius:10px;background:#f4f4f6;border:1px solid rgb(0 0 0 / .12);box-shadow:0 24px 60px rgb(0 0 0 / .4);overflow:hidden;color:#222}
+.win2 .tb{height:34px;background:#e9e9ee;display:flex;align-items:center;padding:0 14px;font-size:12px;color:#555}
+.win2 div.l{height:9px;border-radius:5px;background:#d9d9e0;margin:14px 18px 0}
+.task{z-index:2;position:absolute;left:0;right:0;bottom:0;height:48px;background:rgb(24 26 34 / .86);border-top:1px solid rgb(255 255 255 / .08);display:flex;align-items:center;justify-content:center}
+:root[data-theme="light"] .task{background:rgb(236 238 245 / .9);border-top-color:rgb(0 0 0 / .08)}
+.task .icons{display:flex;gap:6px}.task .icons i{width:28px;height:28px;border-radius:8px;background:rgb(255 255 255 / .14)}
+:root[data-theme="light"] .task .icons i{background:rgb(0 0 0 / .14)}
+.task .icons i:first-child{background:#5b8def}
+.tray{position:absolute;right:10px;top:0;bottom:0;display:flex;align-items:center;gap:10px;font-size:11.5px;color:#e6e6ee;line-height:1.25;text-align:right}
+:root[data-theme="light"] .tray{color:#22242c}
+.tray .sys{width:16px;height:12px;border-radius:3px;border:1.5px solid currentColor;opacity:.7}
+.trayic{width:30px;height:30px;border:0;border-radius:6px;background:none;display:grid;place-items:center;color:inherit}
+.trayic:hover{background:rgb(255 255 255 / .12)}
+:root[data-theme="light"] .trayic:hover{background:rgb(0 0 0 / .08)}
+.trayic svg{width:20px;height:20px;overflow:visible}
+.trayic .mk-e{stroke:currentColor;stroke-width:3.6}.trayic .mk-b{fill:currentColor}
+.trayic.muted::after{content:"";position:absolute;width:9px;height:9px;border-radius:50%;background:var(--fault);margin:12px 0 0 14px;border:1.5px solid #20222a}
+.ctx{position:absolute;right:20px;bottom:56px;width:260px;padding:6px;border-radius:10px;background:#272a33;border:1px solid rgb(255 255 255 / .1);box-shadow:0 14px 40px rgb(0 0 0 / .5);font-size:13px;opacity:0;visibility:hidden;transform:translateY(6px);transition:opacity .14s,transform .14s,visibility .14s;color:#f0f0f5;z-index:9}
+.ctx.on{opacity:1;visibility:visible;transform:none}
+.ctx button{display:flex;justify-content:space-between;gap:12px;width:100%;border:0;background:none;color:inherit;padding:8px 10px;border-radius:6px;text-align:left;font:inherit}
+.ctx button:hover{background:rgb(255 255 255 / .1)} .ctx kbd{font:400 11px var(--mono);color:#9a9ba6}
+.ctx hr{border:0;border-top:1px solid rgb(255 255 255 / .1);margin:4px 2px}
+.cap{position:absolute;right:20px;bottom:196px;width:260px;text-align:center;font:500 14px/1.35 var(--font);color:#F4EFE8;opacity:0;transition:opacity .18s;pointer-events:none;text-shadow:0 1px 10px rgb(0 0 0 / .7)}
+.cap.on{opacity:1}
+
+/* la gota */
+.dw{position:absolute;right:96px;bottom:74px;width:96px;height:96px;cursor:grab;touch-action:none;z-index:6}
+.dw canvas{position:absolute;left:50%;top:50%;width:160px;height:160px;margin:-80px 0 0 -80px;pointer-events:none}
+.dw.ghost::before{content:"";position:absolute;inset:0;border-radius:50%;border:1px dashed rgb(255 255 255 / .28)}
+.bud{position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;border:1px solid var(--line-2);background:var(--ink);color:var(--text-2);display:grid;place-items:center;padding:0;
+  opacity:0;transform:translateX(0) scale(.2);transition:transform .3s cubic-bezier(.34,1.56,.64,1),opacity .14s,background .12s,color .12s;box-shadow:0 8px 22px rgb(0 0 0 / .4)}
+.bud svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.bud:hover{background:var(--surface-2);color:var(--text)}
+.bud.l{--bx:-52px}.bud.r{--bx:52px}
+.dw:hover .bud,.dw:focus-within .bud,.dw.hold .bud{opacity:1;transform:translateX(var(--bx)) scale(1)}
+.dw.open .bud.r{color:var(--signal)}
+.bud.muted{color:var(--fault)}
+.reduced .bud{transition:opacity .12s}
+.reduced .dw:hover .bud,.reduced .dw:focus-within .bud,.reduced .dw.hold .bud{transform:translateX(var(--bx)) scale(1)}
+
+/* tarjeta de ajustes */
+.card{position:absolute;right:62px;bottom:172px;width:340px;max-height:520px;overflow:hidden;border-radius:18px;background:var(--ink);color:var(--text);box-shadow:0 24px 70px rgb(0 0 0 / .5),inset 0 0 0 1px var(--line);
+  transform-origin:calc(100% - 82px) calc(100% + 40px);transform:scale(.12);opacity:0;visibility:hidden;border-radius:60px;
+  transition:transform .42s cubic-bezier(.2,.8,.2,1),opacity .16s,border-radius .42s cubic-bezier(.2,.8,.2,1),visibility .42s;z-index:7;font-family:var(--font)}
+.card.on{transform:none;opacity:1;visibility:visible;border-radius:18px}
+.reduced .card{transition:opacity .12s,visibility .12s;transform:none;border-radius:18px}
+.card .in{padding:6px 12px 12px;max-height:520px;overflow:auto}
+.hd{display:flex;align-items:center;justify-content:space-between;height:34px;margin:2px 4px 0}
+.hd span{font:500 11px/1 var(--mono);letter-spacing:.1em;color:var(--text-3)}
+.hd button{border:0;background:none;color:var(--text-3);font-size:12px;padding:4px 8px;border-radius:8px}.hd button:hover{color:var(--text)}
+.grp{margin-top:10px;opacity:0;transform:translateY(6px);transition:opacity .18s cubic-bezier(.2,.8,.2,1),transform .18s cubic-bezier(.2,.8,.2,1)}
+.card.on .grp{opacity:1;transform:none;transition-delay:calc(var(--i) * 35ms + 150ms)}
+.reduced .grp,.reduced .card.on .grp{transform:none;transition:opacity .12s;transition-delay:0s}
+.lbl{font:500 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);margin:0 0 6px 4px}
+.box{background:var(--surface);border-radius:12px;overflow:hidden}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:36px;padding:0 12px;font-size:13px;color:var(--text);width:100%;border:0;background:none;text-align:left;transition:background .12s}
+.row+.row{border-top:1px solid var(--line)} button.row:hover,label.row:hover{background:var(--surface-2)}
+.row .v{font:500 11px var(--mono);color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55%}
+.sw{width:36px;height:20px;border-radius:999px;background:var(--track);position:relative;flex:none;transition:background .18s}
+.sw::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:var(--text-2);transition:transform .22s cubic-bezier(.34,1.56,.64,1),background .18s}
+[aria-checked="true"] .sw{background:var(--signal-fill)}[aria-checked="true"] .sw::after{transform:translateX(16px);background:var(--signal-ink)}
+input[type=range]{-webkit-appearance:none;appearance:none;width:120px;height:20px;background:none;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(90deg,var(--signal-fill) var(--p,50%),var(--track) var(--p,50%))}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--text);margin-top:-5px}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:var(--text)}
+.adv{display:grid;grid-template-rows:0fr;transition:grid-template-rows .22s cubic-bezier(.2,.8,.2,1)}.adv.on{grid-template-rows:1fr}.adv>div{overflow:hidden}
+.fold{display:flex;align-items:center;gap:6px;border:0;background:none;color:var(--text-3);font:500 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:4px;margin-top:10px}
+.fold:hover{color:var(--text)}.fold span{display:inline-block;transition:transform .22s}.fold[aria-expanded="true"] span{transform:rotate(90deg)}
+.foot{display:flex;align-items:center;justify-content:space-between;margin:12px 4px 0}.foot small{font:500 11px var(--mono);color:var(--text-3)}.foot small.dirty{color:var(--attention)}
+.btn{height:32px;padding:0 14px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);color:var(--text);font-weight:600;font-size:12px}
+.btn.pri{background:var(--signal-fill);color:var(--signal-ink);border-color:transparent}
+
+/* controles de la página */
+.ctl{display:flex;flex-wrap:wrap;gap:18px 30px}.grpc{display:flex;flex-direction:column;gap:8px;min-width:0}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.pill{height:32px;padding:0 13px;border-radius:999px;border:1px solid var(--line-2);background:transparent;color:var(--text-2);font-size:13px;font-weight:500}
+.pill:hover{background:var(--surface);color:var(--text)}.pill[aria-pressed="true"]{background:var(--surface-2);color:var(--text);box-shadow:inset 0 0 0 1px var(--signal)}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);text-align:left;padding:8px 12px;border-bottom:1px solid var(--line-2)}
+.tbl td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--text-2)}.tbl td:first-child{color:var(--text);font-weight:600;white-space:nowrap}
+.scroll{overflow-x:auto}
+.three{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.cardp{background:var(--surface);border-radius:14px;padding:16px 18px 18px;display:flex;flex-direction:column;gap:6px;min-width:0}.cardp p{font-size:14px}
+.mk-e{fill:none;stroke:var(--signal);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}.mk-b{fill:var(--agent)}
+@media (prefers-reduced-motion: reduce){.sw::after,.adv,.bud,.card,.grp{transition:none}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="mark" viewBox="0 0 48 48"><path class="mk-e" d="M11 24H33A11 11 0 1 0 29.78 31.78C34 35.2 38.5 34.8 43 30.6"/><circle class="mk-b" cx="43" cy="30.6" r="3"/></symbol>
+</svg>
+
+<div class="wrap" id="root">
+  <header class="sec">
+    <div class="eyebrow">EzAgent · la gota en Windows</div>
+    <h1>Una gota que vive sobre la bandeja</h1>
+    <p>Sin barra, sin icono fijo: la gota flota en tu escritorio y, cuando te acercas, brotan dos gotas pequeñas, una para silenciar y otra para abrir los ajustes. Pásale el puntero.</p>
+  </header>
+
+  <section class="sec" aria-label="Escritorio simulado">
+    <div class="scrollx"><div class="desk" id="desk">
+      <div class="win" aria-hidden="true"><div class="tb"><span>herdr · ezagent</span><span>— ▢ ✕</span></div><pre id="term"></pre></div>
+      <div class="win2" aria-hidden="true"><div class="tb">README.md — Editor</div><div class="l" style="width:70%"></div><div class="l" style="width:88%"></div><div class="l" style="width:54%"></div><div class="l" style="width:80%"></div><div class="l" style="width:62%"></div></div>
+
+      <div class="cap" id="cap" aria-live="polite"></div>
+      <div class="dw" id="dw">
+        <canvas id="cv" role="img" aria-label="EzAgent"></canvas>
+        <button class="bud l" id="bMic" type="button" aria-label="Silenciar micrófono (Ctrl+Alt+M)"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path id="slash" d="M4 4l16 16" style="display:none"/></svg></button>
+        <button class="bud r" id="bGear" type="button" aria-label="Abrir ajustes (Ctrl+Alt+O)" aria-expanded="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/></svg></button>
+      </div>
+
+      <div class="card" id="card" role="dialog" aria-label="Ajustes de EzAgent"><div class="in">
+        <div class="hd"><span>AJUSTES</span><button id="close" type="button">Cerrar</button></div>
+        <div class="grp" style="--i:0"><div class="lbl">Voz</div><div class="box">
+          <button class="row cyc" type="button" data-o="Micrófono (TA82)|Auriculares BT|Micrófono integrado">Micrófono<span class="v">Micrófono (TA82)</span></button>
+          <button class="row cyc" type="button" data-o="Lucía|Mateo|Valeria">Voz<span class="v">Lucía</span></button>
+          <label class="row">Velocidad<input type="range" min="70" max="130" value="100" id="spd" aria-label="Velocidad de la voz" style="--p:50%"></label>
+        </div></div>
+        <div class="grp" style="--i:1"><div class="lbl">Modelo</div><div class="box">
+          <button class="row cyc" type="button" data-o="OpenCode Go|Groq|OpenRouter|Anthropic|Ollama local">Proveedor<span class="v">OpenCode Go</span></button>
+          <button class="row cyc" type="button" data-o="deepseek-v4.1-flash|minimax-m3.1-flash">Modelo<span class="v">deepseek-v4.1-flash</span></button>
+        </div></div>
+        <div class="grp" style="--i:2"><div class="lbl">Agentes</div><div class="box">
+          <button class="row cyc" type="button" data-o="OpenCode|Claude Code|Codex">Agente por defecto<span class="v">OpenCode</span></button>
+          <button class="row" type="button" role="switch" aria-checked="true" id="swSound">Avisos con sonido<span class="sw"></span></button>
+        </div></div>
+        <div class="grp" style="--i:3">
+          <button class="fold" id="fold" type="button" aria-expanded="false"><span>▸</span> Avanzado</button>
+          <div class="adv" id="adv"><div><div class="box" style="margin-top:6px">
+            <button class="row cyc" type="button" data-o="Automático|GPU · Vulkan|CPU">Motor de voz a texto<span class="v">GPU · Vulkan</span></button>
+            <button class="row cyc" type="button" data-o="Español|English">Idioma<span class="v">Español</span></button>
+            <button class="row" type="button">Atajos<span class="v">Ctrl+Alt+Espacio</span></button>
+          </div></div></div>
+        </div>
+        <div class="foot"><small id="savest">Todo guardado</small><button class="btn pri" id="save" type="button">Guardar</button></div>
+      </div></div>
+
+      <div class="ctx" id="ctx" role="menu" aria-label="Menú de la bandeja">
+        <button role="menuitem" id="cMute" type="button">Silenciar micrófono<kbd>Ctrl+Alt+M</kbd></button>
+        <button role="menuitem" id="cSet" type="button">Ajustes<kbd>Ctrl+Alt+O</kbd></button>
+        <button role="menuitem" id="cHide" type="button">Ocultar la gota<kbd></kbd></button>
+        <hr><button role="menuitem" type="button">Reiniciar EzAgent<kbd></kbd></button>
+        <button role="menuitem" type="button">Cerrar<kbd></kbd></button>
+      </div>
+
+      <div class="task" aria-hidden="true"><div class="icons"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="tray"><i class="sys"></i><i class="sys" style="width:14px"></i>
+          <button class="trayic" id="trayBtn" type="button" aria-label="EzAgent en la bandeja del sistema" style="position:relative"><svg viewBox="0 0 48 48"><use href="#mark"/></svg></button>
+          <div>15:42<br>8/11/2026</div></div></div>
+    </div></div>
+
+    <div class="ctl">
+      <div class="grpc"><div class="eyebrow" style="margin:0">Escenarios</div><div class="pills">
+        <button class="pill" id="sListen" type="button">Hablarle</button>
+        <button class="pill" id="sSpeak" type="button">Que responda</button>
+        <button class="pill" id="sDispatch" type="button">Despachar a Claude</button>
+        <button class="pill" id="sDone" type="button">Un agente termina</button>
+        <button class="pill" id="sBlock" type="button">Un agente se bloquea</button></div></div>
+      <div class="grpc"><div class="eyebrow" style="margin:0">Vista previa</div><div class="pills">
+        <button class="pill" id="tTheme" type="button">Tema: sistema</button>
+        <button class="pill" id="tMotion" type="button" aria-pressed="false">Movimiento reducido</button>
+        <button class="pill" id="tGhost" type="button" aria-pressed="false">Ver zona activa</button>
+        <button class="pill" id="tSound" type="button" aria-pressed="false">Sonido</button></div></div>
+    </div>
+    <p class="note">Atajos de esta demo (en la app real son globales): <code>M</code> silencia, <code>O</code> abre o cierra los ajustes, <code>Esc</code> cierra. Clic derecho en el icono «e» de la bandeja abre su menú. «Ver zona activa» muestra el único círculo que recibe clics: el resto de la pantalla atraviesa al programa de debajo.</p>
+  </section>
+
+  <section class="sec">
+    <div><div class="eyebrow">Cómo se usa</div><h2>Cuatro formas de hacer lo mismo</h2><p>Silenciar y abrir ajustes nunca dependen de una sola vía. Cada una sirve en un momento distinto.</p></div>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Acción</th><th>Puntero</th><th>Teclado</th><th>Bandeja</th><th>Voz</th></tr></thead><tbody>
+      <tr><td>Silenciar / reactivar</td><td>Acercarte y pulsar la gota izquierda (micrófono)</td><td>Ctrl+Alt+M</td><td>Menú → Silenciar</td><td>«Silencia el micrófono» (para reactivar, usa las otras vías)</td></tr>
+      <tr><td>Abrir ajustes</td><td>Acercarte y pulsar la gota derecha (engranaje)</td><td>Ctrl+Alt+O</td><td>Menú → Ajustes, o clic en el icono</td><td>«Abre los ajustes»</td></tr>
+      <tr><td>Colgar / retomar</td><td>—</td><td>Ctrl+Alt+Espacio</td><td>Menú</td><td>«Cuelga»</td></tr>
+      <tr><td>Mover la gota</td><td>Arrastrarla; se pega a los bordes</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>Ocultarla</td><td>—</td><td>—</td><td>Menú → Ocultar la gota</td><td>—</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section class="sec">
+    <div><div class="eyebrow">Integración con Windows</div><h2>Qué es técnicamente</h2></div>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Aspecto</th><th>Decisión</th></tr></thead><tbody>
+      <tr><td>Ventana</td><td>Una ventana transparente siempre encima. Sin foco, fuera de Alt+Tab y de la barra de tareas. Es una sola ventana que cubre la gota y su tarjeta; el resto atraviesa los clics.</td></tr>
+      <tr><td>Zona activa</td><td>Solo el círculo de unos 96 px recibe clics (y las gotas pequeñas mientras están visibles). Todo lo demás se comporta como si no existiera.</td></tr>
+      <tr><td>Posición inicial</td><td>Abajo a la derecha, 16 px sobre la barra de tareas y junto a la bandeja: se siente parte del sistema, lejos de barras de título y de cajas de texto. Arrastrable, con imán a bordes; se recuerda por monitor.</td></tr>
+      <tr><td>Tamaño</td><td>28 px en reposo, hasta 44 px al escuchar. En reposo baja al 70 % de opacidad. Respeta el escalado por monitor.</td></tr>
+      <tr><td>Se aparta</td><td>Se oculta sola con una aplicación a pantalla completa o en una presentación, y reaparece al salir. Solo si hay un aviso de agente pendiente muestra una notificación de Windows.</td></tr>
+      <tr><td>Bandeja</td><td>Icono «e» monocromo que sigue el tema de Windows, con un punto rojo si el micrófono está silenciado. Menú contextual con las mismas acciones.</td></tr>
+      <tr><td>Accesibilidad</td><td>Las gotas pequeñas son botones con nombre. Funciona con teclado, con movimiento reducido (sin brotes ni condensación: solo fundidos) y con alto contraste de Windows.</td></tr>
+    </tbody></table></div>
+    <div class="three">
+      <div class="cardp"><h3>Cuesta casi nada</h3><p>El dibujo es un contorno de 72 puntos en un lienzo de 160×160 px, sin Pillow ni sombras por fotograma. Va fluido junto a la voz y el audio.</p></div>
+      <div class="cardp"><h3>Sin trucos de ventana</h3><p>Una ventana por capas con transparencia por píxel y recorte de clics por región es el método estándar de Windows para esto; nada experimental.</p></div>
+      <div class="cardp"><h3>Un punto a decidir</h3><p>Hacer que la ventana atraviese los clics fuera de la gota es fácil en Win32 y algo más delicado en WebView2. Es lo primero que mide la prueba de E6.</p></div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+'use strict';
+window.addEventListener('error',function(e){document.documentElement.setAttribute('data-err',e.message)});
+var $=function(id){return document.getElementById(id)};
+var root=document.documentElement,body=document.body;
+var reduced=false;try{reduced=matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){}
+var probe=document.createElement('span');probe.style.display='none';body.appendChild(probe);
+function res(n){probe.style.color='var(--'+n+')';var m=getComputedStyle(probe).color.match(/[\d.]+/g)||[0,0,0];return [+m[0],+m[1],+m[2]]}
+var C={};function readTokens(){['signal','signal-dim','agent','attention','fault','text-3','ink'].forEach(function(n){C[n]=res(n)})}readTokens();
+function rgb(c,a){return 'rgba('+(c[0]|0)+','+(c[1]|0)+','+(c[2]|0)+','+(a==null?1:a)+')'}
+function speechEnv(t){var g=Math.sin(t*2.3)+.6*Math.sin(t*1.07+1.2),gate=Math.max(0,Math.min(1,(g+1.1)*2.2));var syl=Math.pow(.5+.5*Math.sin(t*Math.PI*2*3.8+Math.sin(t*1.3)*1.4),.9);return Math.max(0,Math.min(1,gate*(.12+.88*syl)*(.7+.3*Math.sin(t*.8+2))))}
+function micEnv(t){return Math.max(0,Math.min(1,.5+.4*Math.sin(t*5.7)*Math.sin(t*1.7+1)+.1*Math.sin(t*13)))}
+
+var W=160,cv=$('cv'),ctx=cv.getContext('2d'),dpr=Math.min(2,window.devicePixelRatio||1);cv.width=W*dpr;cv.height=W*dpr;ctx.scale(dpr,dpr);
+var S={base:'idle',since:0,muted:false,sound:false,open:false,hidden:false,ag:[]};
+var F={spark:-1,rings:[],lastRing:0};
+var lvl=0,curCol=C['signal-dim'].slice(),R=11,T0=performance.now()/1000,last=T0;
+var FORCE=null;
+
+function colorFor(v){return {idle:'signal-dim',listen:'signal',think:'attention',speak:'signal',dispatch:'agent',done:'signal',blocked:'attention',mute:'text-3',error:'fault'}[v]||'signal-dim'}
+function setBase(s){S.base=s;S.since=performance.now()/1000;if(s==='dispatch')F.spark=S.since;var snd={dispatch:'dispatch',done:'done',blocked:'blocked',error:'error'}[s];if(snd)earcon(snd)}
+
+function blobPath(pts){ctx.beginPath();var n=pts.length,i,a,b;for(i=0;i<n;i++){a=pts[i];b=pts[(i+1)%n];var mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;if(i===0)ctx.moveTo(mx,my);else ctx.quadraticCurveTo(a[0],a[1],mx,my)}a=pts[0];b=pts[1];ctx.quadraticCurveTo(a[0],a[1],(a[0]+b[0])/2,(a[1]+b[1])/2);ctx.closePath()}
+function draw(v,now,ts){
+  ctx.clearRect(0,0,W,W);var col=curCol,cx=W/2,cy=W/2,k,sx=1,sy=1,shift=0,spd=.8;
+  var a={2:.03,3:.03,4:.02,5:.015},tgtR=11+Math.sin(now*Math.PI*2/4)*.5;
+  if(v==='listen'){tgtR=13+lvl*5;a={2:.05+lvl*.1,3:.04+lvl*.09,4:.03,5:.02};spd=2.2}
+  else if(v==='think'){tgtR=11;a={2:.09,3:.1,4:.06,5:.03};spd=3.2}
+  else if(v==='speak'){tgtR=12+lvl*3.5;a={2:.03+lvl*.16,3:.03+lvl*.14,4:.02+lvl*.09,5:.015+lvl*.06};spd=3}
+  else if(v==='blocked'){sy=.8+Math.sin(now*Math.PI*2/1.6)*.05;sx=1.12;tgtR=11}
+  else if(v==='mute'){tgtR=7;a={2:0,3:0,4:0,5:0}}
+  else if(v==='error'){shift=Math.sin(ts*45)*3*Math.max(0,1-ts/.5);tgtR=10}
+  else if(v==='done'){tgtR=11+Math.exp(-ts*4)*Math.cos(ts*14)*4}
+  else if(v==='dispatch'){sx=1+.5*Math.sin(Math.min(1,ts/.45)*Math.PI)}
+  R+=(tgtR-R)*Math.min(1,.2*60*(1/60)*3.2);
+  var pts=[],i,th,r;
+  for(i=0;i<72;i++){th=i/72*Math.PI*2;r=R;for(k=2;k<=5;k++)r+=R*a[k]*Math.sin(k*th+now*spd*(k%2?1:-1)+k);pts.push([cx+shift+r*Math.cos(th)*sx,cy+r*Math.sin(th)*sy])}
+  if(v==='listen'&&now-F.lastRing>.34){F.rings.push(now);F.lastRing=now}
+  F.rings=F.rings.filter(function(t0){return now-t0<.9});
+  F.rings.forEach(function(t0){var q=(now-t0)/.9;ctx.strokeStyle=rgb(col,.5*(1-q));ctx.lineWidth=1.3;ctx.beginPath();ctx.arc(cx,cy,R+4+q*26,0,7);ctx.stroke()});
+  blobPath(pts);ctx.fillStyle=rgb(col,v==='idle'?.92:1);ctx.fill();ctx.strokeStyle=rgb(C.ink,.4);ctx.lineWidth=1;ctx.stroke();
+  if(v==='mute'){ctx.strokeStyle=rgb(C.fault);ctx.lineWidth=2;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(cx-8,cy+8);ctx.lineTo(cx+8,cy-8);ctx.stroke()}
+  if(F.spark>0){var sp=(now-F.spark)/.75;if(sp>=1)F.spark=-1;else{var e=sp*sp*(3-2*sp),x=cx+e*52,y=cy-Math.sin(e*Math.PI)*14;ctx.fillStyle=rgb(C.agent);ctx.beginPath();ctx.arc(x,y,5-e*.6,0,7);ctx.fill()}}
+  S.ag.forEach(function(g,j){var ang=now*(.9+.15*j)+j*2.2,age=now-g.born,pop=1+Math.exp(-age*7)*Math.cos(age*16)*.9;
+    var c=g.st==='done'?C.signal:g.st==='blocked'?C.attention:C.agent,x=cx+Math.cos(ang)*(34+j*5),y=cy+Math.sin(ang)*(18+j*2);
+    ctx.fillStyle=rgb(c);ctx.beginPath();ctx.arc(x,y,Math.max(.1,3.8*pop),0,7);ctx.fill();ctx.strokeStyle=rgb(C.ink,.45);ctx.lineWidth=1;ctx.stroke()});
+}
+function frame(ms){
+  var now=ms/1000,dt=Math.min(1/20,now-last);last=now;var ts=now-S.since,t=now-T0;
+  var v=S.muted&&(S.base==='idle'||S.base==='listen')?'mute':S.base;
+  var tgt=v==='speak'?(FORCE!=null?FORCE:speechEnv(t)):v==='listen'?micEnv(t):0;
+  lvl+=(tgt-lvl)*(1-Math.exp(-dt/(tgt>lvl?.045:.2)));
+  var tc=C[colorFor(v)],kk=1-Math.exp(-dt/(reduced?.12:.07));for(var q=0;q<3;q++)curCol[q]+=(tc[q]-curCol[q])*kk;
+  if(reduced){R=v==='mute'?7:11}
+  draw(v,reduced?0:now,ts);
+  $('dw').style.opacity=S.hidden?0:(v==='idle'&&!S.open&&!$('dw').matches(':hover')?.72:1);
+  requestAnimationFrame(frame);
+}
+
+/* sonido */
+var ac=null,EAR={dispatch:[[880,.07],[1319,.07]],done:[[1047,.08],[1319,.08],[1568,.08]],blocked:[[659,.12],[523,.12]],error:[[440,.09],[440,.09]]};
+function earcon(name){if(!S.sound||!EAR[name])return;try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();var t0=ac.currentTime+.01;
+  EAR[name].forEach(function(n,i){var o=ac.createOscillator(),g=ac.createGain(),d=n[1],st=t0+EAR[name].slice(0,i).reduce(function(a,b){return a+b[1]},0)+i*.02;o.type='sine';o.frequency.value=n[0];g.gain.setValueAtTime(0,st);g.gain.linearRampToValueAtTime(.1,st+.005);g.gain.setValueAtTime(.1,st+d*.7);g.gain.linearRampToValueAtTime(0,st+d);o.connect(g);g.connect(ac.destination);o.start(st);o.stop(st+d+.02)})}catch(e){}}
+
+/* escenarios */
+var seq=0;function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function guard(){var m=++seq;return function(){return m===seq}}
+var capT=null;function cap(t,ms){var el=$('cap');el.textContent=t;el.classList.add('on');clearTimeout(capT);capT=setTimeout(function(){el.classList.remove('on')},ms||2200)}
+var lines=['<b>$</b> herdr ls','<span class="ag">claude</span> · ezagent · idle','<span class="ag">opencode</span> · api · idle'];
+function term(l){if(l)lines.push(l);while(lines.length>13)lines.shift();$('term').innerHTML=lines.join('\n')}
+function addAgent(){S.ag.push({name:'Claude Code',st:'working',born:performance.now()/1000});term('<span class="ag">▶ claude</span> arrancó en <b>ezagent</b>')}
+function ensure(){if(!S.ag.length)addAgent()}
+async function sListen(){var ok=guard();if(S.muted)toggleMute();setBase('listen');cap('«abre claude en ezagent y arregla los tests»',2200);await sleep(2600);if(!ok())return;setBase('idle')}
+async function sSpeak(){var ok=guard();if(S.muted)toggleMute();setBase('speak');cap('Lancé Claude Code en ezagent. Te aviso al terminar.',3200);await sleep(3400);if(!ok())return;setBase('idle')}
+async function sDispatch(){var ok=guard();if(S.muted)toggleMute();S.ag=[];setBase('listen');cap('«abre claude en ezagent y arregla los tests»',1600);await sleep(1700);if(!ok())return;setBase('think');await sleep(1000);if(!ok())return;setBase('dispatch');await sleep(750);if(!ok())return;addAgent();await sleep(350);if(!ok())return;setBase('speak');cap('Lancé Claude Code en ezagent. Te aviso al terminar.',2600);await sleep(2700);if(!ok())return;setBase('idle')}
+async function sDone(){var ok=guard();ensure();setBase('idle');await sleep(250);if(!ok())return;S.ag.forEach(function(a){a.st='done';a.born=performance.now()/1000});term('<span class="ok">✔ 14 passed</span> · claude terminó');setBase('done');await sleep(1500);if(!ok())return;setBase('speak');cap('Claude Code terminó en ezagent: los tests pasan.',2800);await sleep(2900);if(!ok())return;S.ag=[];setBase('idle')}
+async function sBlock(){var ok=guard();ensure();setBase('idle');await sleep(250);if(!ok())return;S.ag.forEach(function(a){a.st='blocked'});term('<span class="wr">? claude</span> pide permiso para instalar paquetes');setBase('blocked');cap('Claude Code necesita algo',2400)}
+['sListen','sSpeak','sDispatch','sDone','sBlock'].forEach(function(id){$(id).addEventListener('click',{sListen:sListen,sSpeak:sSpeak,sDispatch:sDispatch,sDone:sDone,sBlock:sBlock}[id])});
+
+/* silenciar y ajustes */
+function toggleMute(){S.muted=!S.muted;guard();if(S.muted){setBase('idle')}
+  $('slash').style.display=S.muted?'':'none';$('bMic').classList.toggle('muted',S.muted);$('trayBtn').classList.toggle('muted',S.muted);
+  $('bMic').setAttribute('aria-label',S.muted?'Reactivar micrófono (Ctrl+Alt+M)':'Silenciar micrófono (Ctrl+Alt+M)');
+  $('cMute').firstChild.textContent=S.muted?'Reactivar micrófono':'Silenciar micrófono';
+  cap(S.muted?'Micrófono silenciado':'Micrófono activo',1400)}
+function toggleSettings(force){S.open=force==null?!S.open:force;$('card').classList.toggle('on',S.open);$('dw').classList.toggle('open',S.open);$('bGear').setAttribute('aria-expanded',String(S.open));if(S.open)closeCtx()}
+$('bMic').addEventListener('click',toggleMute);$('bGear').addEventListener('click',function(){toggleSettings()});$('close').addEventListener('click',function(){toggleSettings(false)});
+function closeCtx(){$('ctx').classList.remove('on')}
+$('trayBtn').addEventListener('click',function(){toggleSettings()});
+$('trayBtn').addEventListener('contextmenu',function(e){e.preventDefault();$('ctx').classList.toggle('on')});
+$('cMute').addEventListener('click',function(){toggleMute();closeCtx()});$('cSet').addEventListener('click',function(){closeCtx();toggleSettings(true)});
+$('cHide').addEventListener('click',function(){S.hidden=!S.hidden;$('dw').style.pointerEvents=S.hidden?'none':'';$('cHide').firstChild.textContent=S.hidden?'Mostrar la gota':'Ocultar la gota';closeCtx()});
+document.addEventListener('click',function(e){if(!e.target.closest('#ctx,#trayBtn'))closeCtx()});
+document.addEventListener('keydown',function(e){if(e.target.matches('input,textarea'))return;var k=e.key.toLowerCase();if(k==='m')toggleMute();else if(k==='o')toggleSettings();else if(k==='escape'){toggleSettings(false);closeCtx()}});
+
+/* tarjeta */
+document.querySelectorAll('.cyc').forEach(function(b){b.addEventListener('click',function(){var o=b.dataset.o.split('|'),v=b.querySelector('.v'),i=(o.indexOf(v.textContent)+1)%o.length;v.textContent=o[i];dirty()})});
+function dirty(){$('savest').textContent='Cambios sin guardar';$('savest').className='dirty'}
+$('swSound').addEventListener('click',function(){var on=$('swSound').getAttribute('aria-checked')!=='true';$('swSound').setAttribute('aria-checked',String(on));dirty()});
+$('spd').addEventListener('input',function(e){e.target.style.setProperty('--p',((e.target.value-70)/60*100)+'%');dirty()});
+$('save').addEventListener('click',function(){$('savest').textContent='Todo guardado ✓';$('savest').className=''});
+$('fold').addEventListener('click',function(){var on=$('fold').getAttribute('aria-expanded')!=='true';$('fold').setAttribute('aria-expanded',String(on));$('adv').classList.toggle('on',on)});
+
+/* arrastrar la gota */
+(function(){var el=$('dw'),desk=$('desk'),d=null;
+  el.addEventListener('pointerdown',function(e){if(e.target.closest('.bud'))return;var r=el.getBoundingClientRect(),dr=desk.getBoundingClientRect();d={x:e.clientX,y:e.clientY,l:r.left-dr.left,t:r.top-dr.top,m:false};el.setPointerCapture(e.pointerId);el.style.cursor='grabbing'});
+  el.addEventListener('pointermove',function(e){if(!d)return;var dx=e.clientX-d.x,dy=e.clientY-d.y;if(Math.abs(dx)+Math.abs(dy)>4)d.m=true;if(!d.m)return;
+    var nx=Math.max(0,Math.min(desk.clientWidth-96,d.l+dx)),ny=Math.max(0,Math.min(desk.clientHeight-48-96,d.t+dy));
+    el.style.left=nx+'px';el.style.top=ny+'px';el.style.right='auto';el.style.bottom='auto';
+    $('cap').style.right='auto';$('cap').style.left=(nx-82)+'px';$('cap').style.bottom='auto';$('cap').style.top=(ny-34)+'px'});
+  el.addEventListener('pointerup',function(){el.style.cursor='grab';d=null});
+})();
+
+/* vista previa */
+var themes=['system','dark','light'],ti=0;
+$('tTheme').addEventListener('click',function(){ti=(ti+1)%3;var t=themes[ti];if(t==='system')root.removeAttribute('data-theme');else root.setAttribute('data-theme',t);$('tTheme').textContent='Tema: '+({system:'sistema',dark:'oscuro',light:'claro'})[t];readTokens()});
+$('tMotion').setAttribute('aria-pressed',String(reduced));$('tMotion').addEventListener('click',function(){reduced=!reduced;$('tMotion').setAttribute('aria-pressed',String(reduced));root.classList.toggle('reduced',reduced)});
+if(reduced)root.classList.add('reduced');
+$('tGhost').addEventListener('click',function(){var on=$('tGhost').getAttribute('aria-pressed')!=='true';$('tGhost').setAttribute('aria-pressed',String(on));$('dw').classList.toggle('ghost',on)});
+$('tSound').addEventListener('click',function(){S.sound=!S.sound;$('tSound').setAttribute('aria-pressed',String(S.sound));$('tSound').textContent=S.sound?'Sonido activado':'Sonido';if(S.sound)earcon('dispatch')});
+
+/* arranque; parámetros para capturas: ?s=estado&ag=n&hover=1&open=1&ctx=1&mute=1&rm=0&lv=x */
+var q=new URLSearchParams(location.search);
+if(q.get('rm')==='0'){reduced=false;$('tMotion').setAttribute('aria-pressed','false');root.classList.remove('reduced')}
+if(q.get('lv')!=null)FORCE=+q.get('lv');
+var ag=+q.get('ag')||0;for(var z=0;z<ag;z++)S.ag.push({name:'Claude Code',st:z===1?'done':'working',born:-5});
+term();
+if(q.get('s'))setBase(q.get('s'));
+if(q.get('mute')==='1')toggleMute();
+if(q.get('hover')==='1')$('dw').classList.add('hold');
+if(q.get('ghost')==='1'){$('dw').classList.add('ghost');$('tGhost').setAttribute('aria-pressed','true')}
+if(q.get('open')==='1')setTimeout(function(){toggleSettings(true)},50);
+if(q.get('ctx')==='1')$('ctx').classList.add('on');
+requestAnimationFrame(frame);
+})();
+</script>
+</html>

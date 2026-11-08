@@ -68,3 +68,42 @@ voz del prototipo: mediana 6,9 px, P95 13 px, máximo 15,8 px sobre el lienzo.
    parece a cualquier orbe de IA.
 2. ¿Se confirma la «e» con punto como marca y la personalidad «el relevo»?
 3. ¿Nombre? Sigue pendiente para E9 (`01-producto-y-marca.md` §5).
+
+---
+
+## Decisión del usuario (8 nov 2026): se prefiere la Gota
+
+La dirección elegida es **la gota** (no el hilo). El resto de la marca (la «e» con
+punto, la personalidad «el relevo», la paleta) se mantiene. El hilo queda como
+alternativa descartada, conservada en `docs/design/hilo.html`.
+
+**Prototipo en Windows:** [`docs/design/gota-windows.html`](../design/gota-windows.html).
+
+### Cómo se interactúa sin iconos fijos
+| Acción | Puntero | Teclado | Bandeja | Voz |
+|---|---|---|---|---|
+| Silenciar / reactivar | Acercarse: brotan dos gotas pequeñas; la izquierda (micrófono) | Ctrl+Alt+M | Menú → Silenciar | «silencia el micrófono» |
+| Abrir ajustes | La gota derecha (engranaje) | Ctrl+Alt+O | Menú o clic en el icono «e» | «abre los ajustes» |
+| Mover | Arrastrar la gota (imán a bordes, se recuerda por monitor) | — | — | — |
+| Ocultar | — | — | Menú → Ocultar la gota | — |
+
+Las gotas pequeñas brotan con el muelle `launch` y se retiran 0,7 s después de
+quitar el puntero. Son botones con nombre accesible. La tarjeta de ajustes se
+condensa desde la gota (escala y radio, muelle `panel`, sin rebote).
+
+### Integración con Windows
+- Ventana transparente siempre encima, sin foco, fuera de Alt+Tab y de la barra
+  de tareas. Una sola ventana cubre la gota y su tarjeta; solo el círculo de
+  ~96 px (y las gotas pequeñas visibles) recibe clics, el resto atraviesa.
+- Posición inicial: abajo a la derecha, 16 px sobre la barra de tareas, junto a la
+  bandeja. Arrastrable; se recuerda por monitor; escalado por monitor.
+- Tamaño: 28 px en reposo (70 % de opacidad) y hasta 44 px al escuchar.
+- Se oculta con aplicaciones a pantalla completa; solo muestra una notificación
+  de Windows si hay un aviso de agente pendiente y la gota está oculta.
+- Icono «e» monocromo en la bandeja, con punto rojo si el micrófono está
+  silenciado, y menú contextual con las mismas acciones.
+- Alto contraste de Windows y movimiento reducido soportados (solo fundidos).
+
+### Pendiente de medir en E6
+Que el recorte de clics por región funcione igual de bien en WebView2 que en
+Win32 (es lo primero que debe comprobar el spike).
