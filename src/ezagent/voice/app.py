@@ -206,7 +206,10 @@ def ensure_whisper(
     except Exception:
         home = None
     model_path = whisper_model_path(cfg.stt_model)
-    has_server = home is not None and (home / "whisper-server.exe").is_file()
+    has_server = home is not None and any(
+        (home / sub / "whisper-server.exe").is_file()
+        for sub in ("", "whisper_vulkan")
+    )
     if not has_server and model_path is None:
         # DECISION: app.py usa log() propio (sin niveles); el aviso hablado lo
         # emite la capa que trata el estado "error" del notch.
