@@ -1,22 +1,22 @@
-"""El orbe: la interfaz de EzAgent (sin texto, solo movimiento y color).
+"""La barra de EzAgent: una forma fija con un fluido de color dentro (sin texto).
 
-Sustituye a la isla/notch. Es una ventana por capas transparente con una esfera
-suave y luminosa, sin bordes duros, con color que fluye por dentro:
+Dos disposiciones (``ui_layout`` en ``voice.json``):
 
-* **respira** y se deforma muy poco cuando está en calma;
-* **se expande con la voz** (la tuya o la de EzAgent) y las manchas de color se
-  agrandan y aceleran;
-* **tiembla sutilmente** mientras capta sonido y **vuelve a su forma base** al
-  callar;
-* cambia de paleta según el estado: espera, escucha, piensa, habla, pregunta,
-  error y silencio.
+* ``pill``: una cápsula de color entre cuatro botones redondos (ajustes, repetir,
+  silenciar y colgar);
+* ``circle``: un círculo de color sobre una fila corta con los mismos botones.
 
-Al acercar el puntero brotan dos gotas pequeñas (micrófono y ajustes); una
-confirmación pendiente hace brotar ✕ y ✓. Los ajustes se abren en una tarjeta
-propia junto al orbe. El recorte de clics se calcula por geometría: todo lo
-demás deja pasar el ratón.
+**La forma no se deforma nunca**: el contorno es fijo y nítido. Lo que se mueve
+es lo de dentro, como agua o nubes de color: fluye despacio en calma y corre y
+se arremolina más cuando hablas o escuchas. Los colores cambian con el estado
+(espera, escucha, piensa, habla, pregunta, error, silencio) y con la paleta
+elegida (``ui_palette``: ``ezagent`` o ``sky``).
 
-Tiene el mismo contrato que ``Notch`` (``island.py``) para que ``app.py`` no
+Una confirmación pendiente convierte los botones de los lados en ✕ y ✓. Los
+ajustes se abren en una tarjeta propia junto a la barra. El recorte de clics se
+calcula por geometría: todo lo que no es forma o botón deja pasar el ratón.
+
+Tiene el mismo contrato que ``Notch`` (``island.py``) para que ``app.py`` apenas
 cambie. La animación vive en ``DropModel`` (pura, sin Win32) para probarla.
 """
 
@@ -27,7 +27,7 @@ import threading
 import time
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 from . import layered as _shell
 from .anim import animations_enabled
@@ -36,33 +36,92 @@ from .tokens import FLARE, H_ISLAND, R_MENU
 from .tokens import W as MENU_W
 from .tokens import palette as token_palette
 
-# Lienzo lógico (px a 96 DPI) y geometría de la gota.
-LW, LH = 260, 170
-CX, CY = LW / 2.0, LH / 2.0
-BUD_R = 17.0          # radio de las gotas pequeñas
-BUD_X = 56.0          # separación de las gotas pequeñas al centro
-HIT_R = 54.0          # el puntero «cerca» hace brotar las gotas pequeñas
-SS = 2                # supersampling de la tarjeta
-BUD_SS = 3            # supersampling de las gotas pequeñas (el orbe no lo necesita)
-HOVER_HOLD = 0.7      # s que las gotas pequeñas siguen tras retirar el puntero
+# ----------------------------------------------------------------- geometría
+BTN = 46.0              # diámetro de los botones redondos
+GAP = 10.0              # separación entre elementos de la fila
+PAD = 14.0              # margen para sombras dentro de la ventana
+PILL_W, PILL_H = 184.0, 50.0
+CIRCLE_D = 76.0
+ORB_GAP = 12.0          # separación entre el círculo y la fila de botones
+HOVER_MARGIN = 26.0     # el puntero «cerca» de la barra hace aparecer los botones
+HOVER_HOLD = 0.7        # s que los botones siguen tras retirar el puntero
+BUD_SS = 3              # supersampling de los sprites de los botones
+GRID_CELL = 2.0         # px lógicos por celda del fluido (se escala suavemente)
+SHADOW = 12.0           # margen de sombra de cada sprite
 
-DARK = {
-    "ink": (0x14, 0x12, 0x10), "text2": (0xC2, 0xBA, 0xAE), "text3": (0x9C, 0x94, 0x88),
-    "signal": (0xD4, 0xF2, 0x5A), "signal_dim": (0x8C, 0xA0, 0x3F), "flow": (0x5E, 0xEA, 0xC4),
-    "agent": (0xA8, 0xA1, 0xFF), "attention": (0xFF, 0xB2, 0x3E), "fault": (0xFF, 0x5D, 0x52),
-    "line": (0xF4, 0xEF, 0xE8), "white": (255, 255, 255),
-}
-LIGHT = {
-    "ink": (0xFA, 0xF8, 0xF5), "text2": (0x4E, 0x48, 0x40), "text3": (0x6F, 0x67, 0x5C),
-    "signal": (0x4D, 0x6B, 0x00), "signal_dim": (0x6F, 0x8A, 0x1F), "flow": (0x0C, 0x91, 0x7E),
-    "agent": (0x5B, 0x4F, 0xD6), "attention": (0xA3, 0x5F, 0x00), "fault": (0xC8, 0x24, 0x1A),
-    "line": (0x1A, 0x17, 0x14), "white": (255, 255, 255),
-}
+NAMES = {"pill": ("gear", "repeat", "pill", "mic", "hang"),
+         "circle": ("gear", "repeat", "mic", "hang")}
+BUTTONS = ("gear", "repeat", "mic", "hang")
 
-# Estado visual (de UiState) -> pose de la gota.
+LAYOUTS = ("pill", "circle")
+PALETTES = ("ezagent", "sky")
+BUTTON_MODES = ("always", "hover")
+
+
+def layout_size(layout: str) -> tuple[float, float]:
+    """Tamaño lógico de la ventana según la disposición."""
+    if layout == "circle":
+        return (4 * BTN + 3 * GAP + 2 * PAD, PAD + CIRCLE_D + ORB_GAP + BTN + PAD)
+    return (4 * BTN + PILL_W + 4 * GAP + 2 * PAD, 2 * PAD + max(BTN, PILL_H))
+
+
+def row_center_y(layout: str) -> float:
+    _, h = layout_size(layout)
+    return (PAD + CIRCLE_D + ORB_GAP + BTN / 2) if layout == "circle" else h / 2
+
+
+def form_center(layout: str) -> tuple[float, float]:
+    """Centro de la forma de color (cápsula o círculo)."""
+    w, h = layout_size(layout)
+    return (w / 2, (PAD + CIRCLE_D / 2) if layout == "circle" else h / 2)
+
+
+# --------------------------------------------------------------------- color
+def _hex(h: str) -> tuple[float, float, float]:
+    return (float(int(h[1:3], 16)), float(int(h[3:5], 16)), float(int(h[5:7], 16)))
+
+
+_FLUID_HEX = {
+    "ezagent": {
+        "idle": ("#6F8A1F", "#2F8F7A", "#4A6B5A", "#7C9A2E", "#6E66C9"),
+        "listen": ("#D4F25A", "#5EEAC4", "#EAFBB0", "#9BE86A", "#4FC9E0"),
+        "think": ("#FFB23E", "#A8A1FF", "#FF7A5C", "#8C7BFF", "#FFC76A"),
+        "speak": ("#D4F25A", "#5EEAC4", "#A8A1FF", "#B8F060", "#47D6E8"),
+        "ask": ("#FFB23E", "#FFD27A", "#FF9A3E", "#FFE3A8", "#FF8A5C"),
+        "error": ("#FF5D52", "#FF8A6E", "#C8241A", "#FF6A61", "#FFB09A"),
+        "mute": ("#8A8174", "#9C9488", "#6F675C", "#8A8174", "#B8B0A4"),
+    },
+    "sky": {
+        "idle": ("#7D9BFF", "#9FB8FF", "#C9D6FF", "#8FA8FF", "#B7C6FF"),
+        "listen": ("#4B7BF5", "#8DB4FF", "#C4D4FF", "#6C8CFF", "#E1EAFF"),
+        "think": ("#6C8CFF", "#B28CFF", "#8DB4FF", "#D0A8FF", "#A9C4FF"),
+        "speak": ("#3F74F0", "#8DB4FF", "#B590FF", "#5C9BFF", "#CBE0FF"),
+        "ask": ("#FFB23E", "#FFD27A", "#FF9A3E", "#FFE3A8", "#FF8A5C"),
+        "error": ("#FF5D52", "#FF8A6E", "#C8241A", "#FF6A61", "#FFB09A"),
+        "mute": ("#9AA3B5", "#AEB6C6", "#8892A5", "#9AA3B5", "#C3CADA"),
+    },
+}
+FLUID = {name: {st: tuple(_hex(c) for c in cols) for st, cols in states.items()}
+         for name, states in _FLUID_HEX.items()}
+
+# Estado visual (de UiState) -> pose de la barra.
 POSE_OF = {
     "off": "idle", "idle": "idle", "listen": "listen", "think": "think",
-    "speak": "speak", "notice": "done", "mute": "mute", "error": "error",
+    "speak": "speak", "notice": "speak", "mute": "mute", "error": "error",
+}
+# Velocidad base del flujo por pose (la voz la acelera al escuchar/hablar).
+FLOW_SPEED = {"idle": .30, "listen": .7, "think": 1.5, "speak": .8, "ask": .9,
+              "error": .5, "mute": .12, "sleep": .15, "done": 1.2}
+BRIGHT = {"idle": .93, "mute": .82, "sleep": .7}
+
+# Colores de los botones por tema.
+UI = {
+    "light": {"disc": (255, 255, 255, 242), "hover": (255, 255, 255, 255), "icon": (43, 39, 51),
+              "fault": (216, 54, 43), "hang": (23, 20, 28, 255), "hang_icon": (255, 255, 255),
+              "ring": (255, 255, 255, 56), "shadow": (20, 20, 50, 70), "signal": (60, 120, 20)},
+    "dark": {"disc": (30, 27, 24, 245), "hover": (44, 40, 36, 255), "icon": (244, 239, 232),
+             "fault": (255, 106, 97), "hang": (244, 239, 232, 255), "hang_icon": (20, 18, 16),
+             "ring": (244, 239, 232, 31), "shadow": (0, 0, 0, 120), "signal": (212, 242, 90)},
 }
 
 
@@ -73,11 +132,6 @@ def level_from_rms(rms: float) -> float:
     except (TypeError, ValueError):
         return 0.0
     return min(1.0, (value ** 0.6) * 3.2)
-
-
-def mix(a, b, t: float) -> tuple[float, float, float]:
-    t = max(0.0, min(1.0, t))
-    return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t)
 
 
 class Spring:
@@ -102,76 +156,149 @@ class Spring:
         return self.x
 
 
-RMAX = 44.0     # semiancho lógico del parche donde se calcula el orbe
-GRID = 64       # resolución del parche (se escala suavemente al tamaño real)
+# ----------------------------------------------------------------- el fluido
+_RNG = np.random.default_rng(20261108)
+_LATTICE = _RNG.random((256, 256), dtype=np.float32)
 
 
-def orb_palette(pose: str, p: dict) -> list[tuple[float, float, float]]:
-    """Cinco colores que se mezclan por dentro del orbe según el estado."""
-    s, f, a, w, x = p["signal"], p["flow"], p["agent"], p["attention"], p["fault"]
-    ink, white, t3 = p["ink"], p["white"], p["text3"]
-    if pose == "idle":
-        return [mix(s, ink, .30), mix(f, ink, .25), mix(s, a, .35), mix(s, ink, .15), mix(a, ink, .40)]
-    if pose == "listen":
-        return [s, f, mix(s, white, .55), mix(s, f, .5), mix(f, white, .30)]
-    if pose == "think":
-        return [w, a, mix(w, x, .5), mix(a, w, .4), mix(w, white, .25)]
-    if pose in ("speak", "done"):
-        return [s, f, a, mix(s, f, .5), mix(f, a, .4)]
-    if pose == "ask":
-        return [w, mix(w, white, .35), mix(w, x, .3), mix(w, white, .55), w]
-    if pose == "error":
-        return [x, mix(x, white, .30), mix(x, ink, .30), x, mix(x, w, .30)]
-    if pose == "sleep":
-        return [mix(t3, ink, .45), mix(t3, ink, .55), mix(t3, ink, .40), mix(t3, ink, .50), mix(t3, ink, .35)]
-    return [t3, mix(t3, ink, .20), mix(t3, ink, .35), t3, mix(t3, white, .10)]   # mute
+def _vn(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Ruido de valor con interpolación suave (vectorizado)."""
+    xi = np.floor(x).astype(np.int32)
+    yi = np.floor(y).astype(np.int32)
+    xf, yf = x - xi, y - yi
+    u = xf * xf * (3.0 - 2.0 * xf)
+    v = yf * yf * (3.0 - 2.0 * yf)
+    x0, x1 = xi & 255, (xi + 1) & 255
+    y0, y1 = yi & 255, (yi + 1) & 255
+    a, b = _LATTICE[y0, x0], _LATTICE[y0, x1]
+    c, d = _LATTICE[y1, x0], _LATTICE[y1, x1]
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v
 
 
-# Posición y velocidad de las cinco manchas: (ωx, ωy, fase x, fase y)
-BLOBS = ((.9, 1.3, 0.0, 1.7), (1.1, .8, 2.1, .6), (.7, 1.5, 4.0, 2.3), (1.3, .9, 1.2, 3.4), (.8, 1.1, 5.2, .9))
-
-# Radio base por pose (px lógicos) y cuánto crece con la voz.
-BASE_R = {"idle": 24.0, "listen": 25.0, "think": 25.0, "speak": 26.0, "done": 25.0,
-          "ask": 26.0, "error": 22.0, "mute": 15.0, "sleep": 17.0}
-GROW = {"listen": 9.0, "speak": 11.0}
+def _fbm(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Tres octavas con poco peso en las altas: nubes grandes y suaves, no mármol."""
+    return .72 * _vn(x, y) + .22 * _vn(x * 2.03 + 3.1, y * 2.03 + 1.7) + .06 * _vn(x * 4.1 + 7.3, y * 4.1 + 2.9)
 
 
+_GRIDS: dict[str, tuple] = {}
+
+
+def _fluid_grid(layout: str):
+    """Coordenadas y profundidad del fluido (se calculan una sola vez)."""
+    g = _GRIDS.get(layout)
+    if g is None:
+        if layout == "circle":
+            w = h = CIRCLE_D
+            sc = 1 / 38.0
+        else:
+            w, h = PILL_W, PILL_H
+            sc = 1 / 46.0
+        nx, ny = max(2, round(w / GRID_CELL)), max(2, round(h / GRID_CELL))
+        xs = ((np.arange(nx) + .5) * (w / nx) - w / 2).astype(np.float32)
+        ys = ((np.arange(ny) + .5) * (h / ny) - h / 2).astype(np.float32)
+        xx, yy = np.meshgrid(xs, ys)
+        if layout == "circle":
+            dist = np.sqrt(xx * xx + yy * yy) - CIRCLE_D / 2
+            depth = np.clip(-dist / (CIRCLE_D / 2), 0.0, 1.0)
+        else:
+            dx = np.maximum(np.abs(xx) - (PILL_W / 2 - PILL_H / 2), 0.0)
+            dist = np.sqrt(dx * dx + yy * yy) - PILL_H / 2
+            depth = np.clip(-dist / (PILL_H / 2), 0.0, 1.0)
+        g = (xx * sc, yy * sc, depth.astype(np.float32))
+        _GRIDS[layout] = g
+    return g
+
+
+def render_fluid(model: DropModel, now: float = 0.0) -> np.ndarray:
+    """Interior de la forma: RGB uint8 en la cuadrícula gruesa (se escala después)."""
+    px, py, depth = _fluid_grid(model.layout)
+    lv, t = model.lvl, model.flow
+    wamp, contrast, cloud = .35 + .55 * lv, .95 + .4 * lv, .10 + .28 * lv
+    wx = _fbm(px * .7 + t * .3, py * .7)
+    wy = _fbm(px * .7 + 5.2, py * .7 + t * .26)
+    qx = px + wamp * (wx - .5) * 1.4
+    qy = py + wamp * (wy - .5) * 1.4
+    n = _fbm(qx * .85 - t * .2, qy * .85 + t * .16)
+    g = np.clip((n - .5) * contrast * 1.9 + .5 - py * .14, 0.0, 1.0)
+    f = g * 4.0
+    i0 = np.minimum(3, f.astype(np.int32))
+    tt = (f - i0)[..., None]
+    pal = np.asarray(model.cols, np.float32)
+    col = pal[i0] * (1.0 - tt) + pal[i0 + 1] * tt
+    k = np.clip((n - .6) / .3, 0.0, 1.0)
+    cl = (k * k * (3.0 - 2.0 * k) * cloud * .5)[..., None]       # nubes más claras donde el ruido es alto
+    col += (255.0 - col) * cl
+    breath = 0.0 if model.reduced else math.sin(now * math.tau / 4.2) * .02
+    lum = model.bright * (.9 + .14 * depth) * (1.0 + breath)
+    return np.clip(col * lum[..., None], 0, 255).astype(np.uint8)
+
+
+_MASKS: dict[tuple, Image.Image] = {}
+
+
+def form_mask(layout: str, scale: float) -> Image.Image:
+    """Máscara exacta (modo L) de la forma a la resolución final: borde fijo y nítido."""
+    key = (layout, round(scale * 100))
+    m = _MASKS.get(key)
+    if m is None:
+        if layout == "circle":
+            w = h = max(2, round(CIRCLE_D * scale))
+            xs = np.arange(w, dtype=np.float32) + .5 - w / 2
+            ys = np.arange(h, dtype=np.float32) + .5 - h / 2
+            xx, yy = np.meshgrid(xs, ys)
+            dist = np.sqrt(xx * xx + yy * yy) - w / 2
+        else:
+            w, h = max(2, round(PILL_W * scale)), max(2, round(PILL_H * scale))
+            xs = np.arange(w, dtype=np.float32) + .5 - w / 2
+            ys = np.arange(h, dtype=np.float32) + .5 - h / 2
+            xx, yy = np.meshgrid(xs, ys)
+            r = h / 2
+            dx = np.maximum(np.abs(xx) - (w / 2 - r), 0.0)
+            dist = np.sqrt(dx * dx + yy * yy) - r
+        alpha = np.clip(.5 - dist, 0.0, 1.0)
+        m = Image.fromarray((alpha * 255).astype(np.uint8), "L")
+        if len(_MASKS) > 8:
+            _MASKS.clear()
+        _MASKS[key] = m
+    return m
+
+
+# ------------------------------------------------------------------- modelo
 class DropModel:
-    """Animación pura del orbe: sin Win32, sin Pillow, probable en aislamiento.
+    """Animación pura de la barra: sin Win32, sin Pillow, probable en aislamiento.
 
-    El contorno respira y se deforma poco (modos 2–4, lentos). Con sonido se
-    expande y aparece un temblor fino (modos 5 y 7, rápidos) que se apaga al
-    callar, y la esfera vuelve a su forma base.
+    La forma es fija. Solo cambian el color, la velocidad y la amplitud del
+    fluido interior, y la aparición de los botones.
     """
 
-    def __init__(self) -> None:
-        self.R = 24.0
-        self.m = {"a2": .035, "a3": .03, "a4": .02, "tr": 0.0}
-        self.ph = [0.0, 1.3, 2.6]          # fases lentas del contorno (k = 2, 3, 4)
-        self.trph = [0.0, 0.0]             # fases rápidas del temblor (k = 5, 7)
-        self.blob_ph = 0.0
-        self.cols = [[float(v) for v in c] for c in orb_palette("idle", DARK)]
-        self.bright = .85
+    def __init__(self, layout: str = "pill") -> None:
+        self.layout = layout if layout in LAYOUTS else "pill"
+        self.flow = 0.0
+        self.speed = .3
+        self.cols = [list(c) for c in FLUID["ezagent"]["idle"]]
+        self.bright = .93
         self.lvl = 0.0
         self.peak = 0.008
-        self.bud = {n: Spring(0.0) for n in ("mic", "gear", "no", "yes")}
         self.pose = "idle"
-        self.shift = 0.0
         self.pose_since = 0.0
         self.ts = 0.0
-        self.cy_offset = 0.0
-        self.jitter = 0.0
-        self.speed = .35
+        self.reduced = False
+        self.asking = False
+        self.vis = {n: Spring(1.0, 260.0, 26.0) for n in BUTTONS}      # hueco que ocupa cada botón
+        self.appear = {n: Spring(1.0, 300.0, 22.0) for n in BUTTONS}   # aparición (modo «al acercar»)
+        self.ask = Spring(0.0, 300.0, 26.0)                            # fundido de iconos ✕ ✓
 
     # ------------------------------------------------------------ entrada
     def update(
-        self, now: float, dt: float, pose: str, rms: float, palette: dict,
-        hover: bool, asking: bool, menu_open: bool, reduced: bool,
+        self, now: float, dt: float, pose: str, rms: float, palette: str,
+        hover: bool, asking: bool, menu_open: bool, reduced: bool, buttons: str = "always",
     ) -> None:
+        self.reduced = reduced
+        self.asking = asking
         if pose != self.pose:
             self.pose = pose
             self.pose_since = now
-        ts = self.ts = now - self.pose_since
+        self.ts = now - self.pose_since
 
         # Nivel con ganancia automática: un micrófono flojo usa todo el rango.
         r = max(0.0, float(rms or 0.0))
@@ -181,188 +308,98 @@ class DropModel:
         else:
             self.peak = max(0.008, self.peak * 0.9995)
             target = 0.0
-        tau = 0.05 if target > self.lvl else 0.25     # ataque rápido, vuelta suave
+        tau = 0.05 if target > self.lvl else 0.25
         self.lvl += (target - self.lvl) * (1.0 - math.exp(-dt / tau))
         lv = self.lvl
 
-        # Temblor: aparece al captar sonido y se desvanece al callar.
-        sounding = pose in ("listen", "speak") and lv > .04
-        tr_t = min(1.0, .35 + lv) if sounding else 0.0
-        self.m["tr"] += (tr_t - self.m["tr"]) * (1.0 - math.exp(-dt / (.05 if tr_t > self.m["tr"] else .3)))
-
-        base = BASE_R.get(pose, 24.0)
-        breath = 0.0 if reduced else math.sin(now * math.tau / 4.2) * .7 + math.sin(now * math.tau / 7.3 + 1.3) * .4
-        tgt_r = base + breath + GROW.get(pose, 0.0) * lv
-        a = {"a2": .035, "a3": .03, "a4": .02}
-        spd = .35
-        shift = 0.0
-        if pose == "listen":
-            a = {"a2": .03 + lv * .07, "a3": .03 + lv * .06, "a4": .02 + lv * .04}
-            spd = .8 + lv * 1.6
-        elif pose == "think":
-            a = {"a2": .06, "a3": .07, "a4": .04}
-            spd = 1.6
-        elif pose == "speak":
-            a = {"a2": .03 + lv * .10, "a3": .03 + lv * .09, "a4": .02 + lv * .06}
-            spd = .9 + lv * 1.8
-        elif pose == "ask":
-            a = {"a2": .04, "a3": .035, "a4": .02}
-            spd = .9
-            tgt_r += math.sin(now * math.tau / 1.2) * 1.4
-        elif pose == "mute":
-            a = {"a2": .012, "a3": .01, "a4": 0.0}
-            spd = .15
-        elif pose == "sleep":
-            a = {"a2": .02, "a3": .015, "a4": .01}
-            spd = .2
-        elif pose == "error":
-            shift = math.sin(ts * 45) * 4 * max(0.0, 1 - ts / .5)
-            spd = .5
-        elif pose == "done":
-            tgt_r += math.exp(-ts * 4) * math.cos(ts * 14) * 5
-            spd = 1.2
-
-        k = 1.0 if reduced else 1.0 - math.exp(-dt / .14)
-        for key in ("a2", "a3", "a4"):
-            self.m[key] += (a[key] - self.m[key]) * k
-        self.speed += (spd - self.speed) * (1.0 if reduced else 1.0 - math.exp(-dt / .35))
+        base = FLOW_SPEED.get(pose, .3)
+        speed = base + (lv * (1.5 if pose == "listen" else 1.7) if pose in ("listen", "speak") else 0.0)
+        self.speed += (speed - self.speed) * (1.0 if reduced else 1.0 - math.exp(-dt / .3))
         if not reduced:
-            self.ph[0] += dt * self.speed * .9
-            self.ph[1] -= dt * self.speed * .7
-            self.ph[2] += dt * self.speed * 1.1
-            self.trph[0] += dt * 21.0
-            self.trph[1] -= dt * 27.0
-            self.blob_ph += dt * self.speed
-        self.R += (tgt_r - self.R) * (1.0 if reduced else 1.0 - math.exp(-dt / .09))
-        self.shift = 0.0 if reduced else shift
-        self.cy_offset = 0.0 if reduced else math.sin(now * .7) * 1.2
-        self.jitter = 0.0 if reduced else self.m["tr"] * .35 * math.sin(now * 47.0)
+            self.flow += dt * self.speed
 
-        bright_t = {"idle": .85, "mute": .7, "sleep": .6}.get(pose, 1.0 + .22 * lv)
+        bright_t = BRIGHT.get(pose, 1.0 + .1 * lv)
         if pose == "done":
-            bright_t += max(0.0, 1 - ts * 2.2) * .45
+            bright_t += max(0.0, 1 - self.ts * 2.2) * .35
         self.bright += (bright_t - self.bright) * (1.0 if reduced else 1.0 - math.exp(-dt / .15))
-        pal = orb_palette(pose, palette)
+
+        pal_name = palette if palette in FLUID else "ezagent"
+        key = pose if pose in FLUID[pal_name] else ("speak" if pose == "done" else "mute")
+        target_cols = FLUID[pal_name][key]
         kc = 1.0 - math.exp(-dt / (.12 if reduced else .2))
         for i in range(5):
             for j in range(3):
-                self.cols[i][j] += (pal[i][j] - self.cols[i][j]) * kc
+                self.cols[i][j] += (target_cols[i][j] - self.cols[i][j]) * kc
 
-        show_pair = hover or menu_open
-        self.bud["mic"].t = 1.0 if show_pair and not asking else 0.0
-        self.bud["gear"].t = 1.0 if show_pair and not asking else 0.0
-        self.bud["no"].t = 1.0 if asking else 0.0
-        self.bud["yes"].t = 1.0 if asking else 0.0
-        for spring in self.bud.values():
+        show = hover or asking or menu_open or buttons == "always"
+        for name in BUTTONS:
+            self.vis[name].t = 0.0 if (asking and name in ("gear", "hang")) else 1.0
+            self.appear[name].t = 1.0 if show else 0.0
+        self.ask.t = 1.0 if asking else 0.0
+        for spring in (*self.vis.values(), *self.appear.values(), self.ask):
             spring.step(dt, instant=reduced)
 
-    # ------------------------------------------------------------- forma
-    def contour(self, th: float) -> float:
-        """Factor del radio en el ángulo ``th`` (1.0 = círculo perfecto)."""
-        f = 1.0
-        for kk, key, i in ((2, "a2", 0), (3, "a3", 1), (4, "a4", 2)):
-            f += self.m[key] * math.sin(kk * th + self.ph[i])
-        f += self.m["tr"] * (.018 * math.sin(5 * th + self.trph[0]) + .014 * math.sin(7 * th + self.trph[1]))
-        return f
-
-    def blob(self) -> list[tuple[float, float]]:
-        """Contorno de 72 puntos en coordenadas lógicas del lienzo."""
-        cx, cy = CX + self.shift, CY + self.cy_offset
-        r0 = self.R + self.jitter
-        pts = []
-        for i in range(72):
-            th = i / 72 * math.tau
-            r = r0 * self.contour(th)
-            pts.append((cx + r * math.cos(th), cy + r * math.sin(th)))
-        return pts
-
     # -------------------------------------------------------- geometría
-    def bud_center(self, name: str) -> tuple[float, float, float]:
-        """(x, y, progreso) de una gota pequeña en coordenadas lógicas."""
-        p = self.bud[name].x
-        side = -1.0 if name in ("mic", "no") else 1.0
-        return (CX + side * BUD_X * p, CY, p)
+    def positions(self) -> dict[str, tuple[float, float, float, float]]:
+        """Para cada elemento: (cx, cy, escala, opacidad), en coordenadas lógicas."""
+        w, _ = layout_size(self.layout)
+        names = NAMES[self.layout]
+        size = {"gear": BTN, "repeat": BTN, "mic": BTN, "hang": BTN, "pill": PILL_W}
+        v = {n: max(0.0, self.vis[n].x) if n in self.vis else 1.0 for n in names}
+        gaps = [GAP * min(v[a], v[b]) for a, b in zip(names, names[1:], strict=False)]
+        total = sum(size[n] * v[n] for n in names) + sum(gaps)
+        x = w / 2 - total / 2
+        cy = row_center_y(self.layout)
+        out: dict[str, tuple[float, float, float, float]] = {}
+        for i, n in enumerate(names):
+            width = size[n] * v[n]
+            cx = x + width / 2
+            if n == "pill":
+                out[n] = (cx, cy, 1.0, 1.0)
+            else:
+                ap = max(0.0, self.appear[n].x)
+                out[n] = (cx, cy, ap * min(1.0, v[n]),
+                          max(0.0, min(1.0, ap * 1.4)) * min(1.0, v[n] * 1.6))
+            x += width + (gaps[i] if i < len(gaps) else 0.0)
+        if self.layout == "circle":
+            fx, fy = form_center("circle")
+            out["pill"] = (fx, fy, 1.0, 1.0)
+        return out
 
-    def bud_at(self, x: float, y: float) -> str | None:
-        """Gota pequeña visible bajo el punto (lógico), si hay alguna."""
-        for name in ("mic", "gear", "no", "yes"):
-            bx, by, p = self.bud_center(name)
-            if p > 0.6 and (x - bx) ** 2 + (y - by) ** 2 <= (BUD_R * 1.05) ** 2:
+    def item_at(self, x: float, y: float) -> str | None:
+        """Botón visible bajo el punto, o ``'pill'`` si es la forma (para arrastrar)."""
+        pos = self.positions()
+        for name in BUTTONS:
+            cx, cy, sc, al = pos[name]
+            if sc > .6 and al > .5 and (x - cx) ** 2 + (y - cy) ** 2 <= (BTN / 2 * 1.05) ** 2:
                 return name
-        return None
+        cx, cy, _, _ = pos["pill"]
+        if self.layout == "circle":
+            return "pill" if (x - cx) ** 2 + (y - cy) ** 2 <= (CIRCLE_D / 2) ** 2 else None
+        r = PILL_H / 2
+        dx = max(abs(x - cx) - (PILL_W / 2 - r), 0.0)
+        return "pill" if dx * dx + (y - cy) ** 2 <= r * r else None
 
-    def on_body(self, x: float, y: float) -> bool:
-        """¿Está el punto sobre el cuerpo del orbe (con un margen para agarrarlo)?"""
-        r = self.R + 6
-        return (x - CX) ** 2 + (y - CY) ** 2 <= r * r
+    def bar_rect(self) -> tuple[float, float, float, float]:
+        """Rectángulo que ocupan forma y botones, con margen (para el «cerca»)."""
+        pos = self.positions()
+        xs, ys = [], []
+        for name, (cx, cy, _, _) in pos.items():
+            if name == "pill":
+                half_w, half_h = ((PILL_W / 2, PILL_H / 2) if self.layout == "pill"
+                                  else (CIRCLE_D / 2, CIRCLE_D / 2))
+            else:
+                half_w = half_h = BTN / 2
+            xs += [cx - half_w, cx + half_w]
+            ys += [cy - half_h, cy + half_h]
+        return (min(xs) - HOVER_MARGIN, min(ys) - HOVER_MARGIN, max(xs) + HOVER_MARGIN, max(ys) + HOVER_MARGIN)
 
-    @staticmethod
-    def near(x: float, y: float) -> bool:
-        return (x - CX) ** 2 + (y - CY) ** 2 <= HIT_R ** 2
-
-
-_BASIS: dict[int, tuple] = {}
-
-
-def _basis(n: int):
-    """Mallas y bases trigonométricas del parche (se calculan una sola vez)."""
-    b = _BASIS.get(n)
-    if b is None:
-        ax = (np.arange(n, dtype=np.float32) + .5) / n * 2 - 1
-        nx, ny = np.meshgrid(ax, ax)
-        r = np.sqrt(nx * nx + ny * ny)
-        th = np.arctan2(ny, nx)
-        sc = {k: (np.sin(k * th), np.cos(k * th)) for k in (2, 3, 4, 5, 7)}
-        b = (nx, ny, r, sc)
-        _BASIS[n] = b
-    return b
+    def near(self, x: float, y: float) -> bool:
+        x0, y0, x1, y1 = self.bar_rect()
+        return x0 <= x <= x1 and y0 <= y <= y1
 
 
-def render_orb(model: DropModel, n: int = GRID) -> np.ndarray:
-    """Parche RGBA (n×n, recto) del orbe: manchas de color + borde suave."""
-    nx, ny, r, sc = _basis(n)
-    r0 = (model.R + model.jitter) / RMAX
-    edge = np.full_like(r, 1.0)
-    for kk, key, i in ((2, "a2", 0), (3, "a3", 1), (4, "a4", 2)):
-        s, c = sc[kk]
-        edge += model.m[key] * (s * math.cos(model.ph[i]) + c * math.sin(model.ph[i]))
-    tr = model.m["tr"]
-    if tr > .002:
-        s5, c5 = sc[5]
-        s7, c7 = sc[7]
-        edge += tr * (.018 * (s5 * math.cos(model.trph[0]) + c5 * math.sin(model.trph[0]))
-                      + .014 * (s7 * math.cos(model.trph[1]) + c7 * math.sin(model.trph[1])))
-    edge *= r0
-
-    # Cinco manchas gaussianas que recorren el interior; con la voz crecen y aceleran.
-    lv = model.lvl
-    amp = (.34 + .26 * lv) * r0 / .9
-    sig2 = ((.5 + .16 * lv) * r0 / .9) ** 2
-    acc = np.zeros((n, n, 3), np.float32)
-    sw = np.zeros((n, n), np.float32)
-    for i, (wx, wy, px, py) in enumerate(BLOBS):
-        bx = math.cos(model.blob_ph * wx + px) * amp
-        by = math.sin(model.blob_ph * wy + py) * amp
-        w = np.exp(-((nx - bx) ** 2 + (ny - by) ** 2) / sig2)
-        sw += w
-        acc += w[..., None] * np.asarray(model.cols[i], np.float32)
-    mixk = np.clip(sw * 1.1, 0.0, 1.0)[..., None]
-    base = np.asarray(model.cols[0], np.float32) * .22
-    rgb = acc / (sw[..., None] + 1e-6) * mixk + base * (1.0 - mixk)
-
-    e = np.clip(r / np.maximum(edge, 1e-3), 0.0, 1.0)
-    rgb *= (model.bright * (.80 + .30 * (1.0 - e) ** 1.6))[..., None]      # centro más luminoso
-
-    # Borde suave: la opacidad cae poco a poco; no hay línea ni contorno duro.
-    t = np.clip((r - (edge + .02)) / (-.16 - .02), 0.0, 1.0)
-    alpha = t * t * (3.0 - 2.0 * t)
-    out = np.empty((n, n, 4), np.uint8)
-    out[..., :3] = np.clip(rgb, 0, 255).astype(np.uint8)
-    out[..., 3] = (alpha * 255.0).astype(np.uint8)
-    return out
-
-
-# ------------------------------------------------------------------ dibujo
+# ------------------------------------------------------------------- dibujo
 def _stroke(d: ImageDraw.ImageDraw, pts, width: float, fill) -> None:
     d.line(pts, fill=fill, width=max(1, round(width)), joint="curve")
     r = width / 2.0
@@ -392,101 +429,109 @@ def _glyph(d, name: str, cx: float, cy: float, u: float, color, width: float,
             a = (c[0] + math.cos(ang) * 6.6 * u, c[1] + math.sin(ang) * 6.6 * u)
             b = (c[0] + math.cos(ang) * 9.2 * u, c[1] + math.sin(ang) * 9.2 * u)
             _stroke(d, [a, b], width, color)
-    elif name == "no":
+    elif name == "repeat":
+        d.arc((*P(4, 4), *P(20, 20)), -132.5, 180, fill=color, width=w)
+        _stroke(d, [P(4, 4), P(4, 8.5), P(8.5, 8.5)], width, color)
+    elif name in ("no", "hang"):
         _stroke(d, [P(6, 6), P(18, 18)], width, color)
         _stroke(d, [P(18, 6), P(6, 18)], width, color)
     elif name == "yes":
         _stroke(d, [P(5, 12.5), P(9.5, 17), P(19, 7)], width, color)
 
 
-class _Canvas:
-    """Lienzo RGBA donde cada forma se dibuja en su propia capa y se *compone*.
+_SPRITES: dict[tuple, Image.Image] = {}
 
-    ``ImageDraw`` sobre una imagen RGBA sustituye los píxeles en vez de
-    mezclarlos; con transparencias hay que componer.
-    """
+
+def button_sprite(glyph: str, theme: str, scale: float, *, hang: bool = False,
+                  hover: bool = False, muted: bool = False, signal: bool = False) -> Image.Image:
+    """Botón redondo con sombra suave (RGBA recto). Se dibuja una vez y se reutiliza."""
+    key = (glyph, theme, round(scale * 100), hang, hover, muted, signal)
+    sp = _SPRITES.get(key)
+    if sp is not None:
+        return sp
+    ui = UI[theme]
+    q = BUD_SS
+    size = round((BTN + 2 * SHADOW) * scale)
+    big = size * q
+    c, r = big / 2, BTN * scale * q / 2
+    shadow = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).ellipse((c - r, c - r + 4 * scale * q, c + r, c + r + 4 * scale * q), fill=ui["shadow"])
+    shadow = shadow.filter(ImageFilter.GaussianBlur(5 * scale * q))
+    disc = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    d = ImageDraw.Draw(disc)
+    fill = ui["hang"] if hang else (ui["hover"] if hover else ui["disc"])
+    ring = ui["ring"] if (hang or theme == "dark") else None
+    d.ellipse((c - r, c - r, c + r, c + r), fill=fill, outline=ring, width=max(1, round(1.0 * scale * q)))
+    icon = ui["hang_icon"] if hang else (ui["fault"] if muted else (ui["signal"] if signal else ui["icon"]))
+    _glyph(d, glyph, c, c, (20 / 24) * scale * q * 0.95, (*icon, 255), 1.8 * scale * q,
+           muted=muted, fault=(*ui["fault"], 255))
+    out = Image.alpha_composite(shadow, disc).convert("RGBa").reduce(q).convert("RGBA")
+    if len(_SPRITES) > 120:
+        _SPRITES.clear()
+    _SPRITES[key] = out
+    return out
+
+
+class _Canvas:
+    """Lienzo RGBA donde cada elemento se compone sobre los demás."""
 
     def __init__(self, w: int, h: int) -> None:
         self.img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
 
-    def custom(self, box, fn, ss: int = 1) -> None:
-        """Dibuja con ``fn(d, ox, oy)`` en la caja ``box`` = (x0, y0, x1, y1).
-
-        Con ``ss`` > 1 la capa se dibuja a ``ss``× (fn debe multiplicar sus
-        coordenadas por ``ss``) y se reduce antes de componerla.
-        """
-        x0, y0 = max(0, int(box[0])), max(0, int(box[1]))
-        x1, y1 = min(self.img.width, int(box[2]) + 1), min(self.img.height, int(box[3]) + 1)
-        if x1 <= x0 or y1 <= y0:
+    def paste(self, tile: Image.Image, cx: float, cy: float, scale: float = 1.0, alpha: float = 1.0) -> None:
+        if alpha <= 0.01 or scale <= 0.02:
             return
-        layer = Image.new("RGBA", ((x1 - x0) * ss, (y1 - y0) * ss), (0, 0, 0, 0))
-        fn(ImageDraw.Draw(layer), x0, y0)
-        if ss > 1:
-            layer = layer.convert("RGBa").reduce(ss).convert("RGBA")
-        self.img.alpha_composite(layer, (x0, y0))
-
-    def paste_orb(self, patch: np.ndarray, cx: float, cy: float, half_px: float) -> None:
-        """Escala el parche del orbe con suavidad y lo compone centrado en (cx, cy)."""
-        size = max(2, round(half_px * 2))
-        tile = Image.fromarray(patch, "RGBA").resize((size, size), Image.BICUBIC)
-        x0, y0 = round(cx - half_px), round(cy - half_px)
+        if abs(scale - 1.0) > .02:
+            tile = tile.resize((max(1, round(tile.width * scale)), max(1, round(tile.height * scale))), Image.BILINEAR)
+        if alpha < .99:
+            a = tile.getchannel("A").point(lambda v, f=alpha: int(v * f))
+            tile = tile.copy()
+            tile.putalpha(a)
+        x0, y0 = round(cx - tile.width / 2), round(cy - tile.height / 2)
         sx0, sy0 = max(0, -x0), max(0, -y0)
-        sx1, sy1 = min(size, self.img.width - x0), min(size, self.img.height - y0)
+        sx1, sy1 = min(tile.width, self.img.width - x0), min(tile.height, self.img.height - y0)
         if sx1 <= sx0 or sy1 <= sy0:
             return
-        if (sx0, sy0, sx1, sy1) != (0, 0, size, size):
+        if (sx0, sy0, sx1, sy1) != (0, 0, tile.width, tile.height):
             tile = tile.crop((sx0, sy0, sx1, sy1))
         self.img.alpha_composite(tile, (x0 + sx0, y0 + sy0))
 
 
-def render_model(model: DropModel, w: int, h: int, scale: float, palette: dict,
-                 muted: bool, in_call: bool, menu_open: bool, now: float | None = None) -> np.ndarray:
+def render_model(model: DropModel, w: int, h: int, scale: float, theme: str,
+                 muted: bool, in_call: bool, menu_open: bool, now: float | None = None,
+                 hover_item: str | None = None) -> np.ndarray:
     """Dibuja un fotograma BGRA premultiplicado de ``w``×``h`` px físicos."""
-    k = scale
+    now = time.monotonic() if now is None else now
     cv = _Canvas(w, h)
-    ink, line = palette["ink"], palette["line"]
-    pose = model.pose
-    cx = (CX + model.shift) * k
-    cy = (CY + model.cy_offset) * k
+    s = scale
+    pos = model.positions()
 
-    # El orbe: color que fluye dentro de una esfera de borde suave (sin halo, anillos ni brillo).
-    cv.paste_orb(render_orb(model), cx, cy, RMAX * k)
+    # 1) la forma: interior fluido + máscara exacta (contorno fijo y nítido)
+    mask = form_mask(model.layout, s)
+    interior = Image.fromarray(render_fluid(model, now), "RGB").resize(mask.size, Image.BICUBIC)
+    interior.putalpha(mask)
+    fx, fy, _, _ = pos["pill"]
+    cv.paste(interior, fx * s, fy * s)
 
-    if pose == "mute" or (muted and pose in ("idle", "listen")):
-        sx0, sy0, sx1, sy1 = cx - 10 * k, cy + 10 * k, cx + 10 * k, cy - 10 * k
-        cv.custom((cx - 14 * k, cy - 14 * k, cx + 14 * k, cy + 14 * k),
-                  lambda d, ox, oy: _stroke(
-                      d, [((sx0 - ox) * BUD_SS, (sy0 - oy) * BUD_SS), ((sx1 - ox) * BUD_SS, (sy1 - oy) * BUD_SS)],
-                      2.2 * k * BUD_SS, (*palette["fault"], 255)),
-                  ss=BUD_SS)
-
-    # Gotas pequeñas (botones): micrófono, ajustes, ✕ y ✓
-    for name in ("mic", "gear", "no", "yes"):
-        bx, by, p = model.bud_center(name)
-        if p < 0.03:
+    # 2) botones
+    ask = max(0.0, min(1.0, model.ask.x))
+    for name in ("gear", "repeat", "mic", "hang"):
+        cx, cy, sc, al = pos[name]
+        if sc <= .02 or al <= .01:
             continue
-        pr = max(0.2, p)
-        rad = BUD_R * pr * k
-        alpha = int(255 * max(0.0, min(1.0, p * 1.4)))
-        bcx, bcy = bx * k, by * k
-        if name == "mic":
-            gcol = palette["fault"] if muted else palette["text2"]
-        elif name == "gear":
-            gcol = palette["signal"] if menu_open else palette["text2"]
-        elif name == "yes":
-            gcol = palette["signal"]
-        else:
-            gcol = palette["text2"]
-
-        def bud(d, ox, oy, bcx=bcx, bcy=bcy, rad=rad, alpha=alpha, gcol=gcol, pr=pr, name=name):
-            q = BUD_SS
-            x, y, rr = (bcx - ox) * q, (bcy - oy) * q, rad * q
-            d.ellipse((x - rr, y - rr, x + rr, y + rr), fill=(*ink, alpha),
-                      outline=(*line, int(alpha * .22)), width=max(1, round(1.0 * k * q)))
-            _glyph(d, name, x, y, (16 / 24) * k * q * pr, (*gcol, alpha), 1.7 * k * q * pr,
-                   muted=(name == "mic" and muted), fault=(*palette["fault"], alpha))
-
-        cv.custom((bcx - rad - 3, bcy - rad - 3, bcx + rad + 3, bcy + rad + 3), bud, ss=BUD_SS)
+        hov = hover_item == name
+        if name == "gear":
+            tiles = [(button_sprite("gear", theme, s, hover=hov, signal=menu_open), 1.0)]
+        elif name == "hang":
+            tiles = [(button_sprite("hang", theme, s, hang=True, hover=hov), 1.0)]
+        elif name == "repeat":
+            tiles = [(button_sprite("repeat", theme, s, hover=hov), 1.0 - ask),
+                     (button_sprite("no", theme, s, hover=hov), ask)]
+        else:  # mic / ✓
+            tiles = [(button_sprite("mic", theme, s, hover=hov, muted=muted), 1.0 - ask),
+                     (button_sprite("yes", theme, s, hover=hov, signal=True), ask)]
+        for tile, share in tiles:
+            cv.paste(tile, cx * s, cy * s, sc, al * share)
 
     arr = np.asarray(cv.img.convert("RGBa"))
     return np.ascontiguousarray(arr[..., [2, 1, 0, 3]])
@@ -497,20 +542,19 @@ def render_card_body(w: int, h: int, scale: float, theme: str) -> np.ndarray:
     pal = token_palette(theme)
     body = tuple(pal["BODY"][:3])
     line = pal["LINE"]
-    img = Image.new("RGBA", (w * SS, h * SS), (0, 0, 0, 0))
+    ss = 2
+    img = Image.new("RGBA", (w * ss, h * ss), (0, 0, 0, 0))
     d = ImageDraw.Draw(img, "RGBA")
-    x0 = FLARE * scale * SS
-    d.rounded_rectangle((x0, 0, w * SS - x0 - 1, h * SS - 1), radius=R_MENU * scale * SS,
-                        fill=(*body, 255), outline=(*line[:3], int(line[3])), width=max(1, round(SS * scale)))
-    pm = img.convert("RGBa")
-    if SS > 1:
-        pm = pm.reduce(SS)
+    x0 = FLARE * scale * ss
+    d.rounded_rectangle((x0, 0, w * ss - x0 - 1, h * ss - 1), radius=R_MENU * scale * ss,
+                        fill=(*body, 255), outline=(*line[:3], int(line[3])), width=max(1, round(ss * scale)))
+    pm = img.convert("RGBa").reduce(ss)
     return np.asarray(pm).astype(np.float32) / 255.0
 
 
 # ----------------------------------------------------------------- ventanas
 class DropWindow(_shell.LayeredWindow):
-    def __init__(self, ui: "DropUI", x: int, y: int, w: int, h: int) -> None:
+    def __init__(self, ui: DropUI, x: int, y: int, w: int, h: int) -> None:
         super().__init__(int(w), int(h), int(x), int(y), click_through=False, title="drop")
         self.ui = ui
         self._interval = 1.0 / 30.0
@@ -519,17 +563,16 @@ class DropWindow(_shell.LayeredWindow):
         return self.ui.render_frame()
 
     def _install_mouse_hook(self) -> None:
-        """La gota no necesita el gancho global de ratón (solo es para la rueda
+        """La barra no necesita el gancho global de ratón (solo es para la rueda
         del menú): instalarlo hacía que cada movimiento del sistema esperase a
         este hilo."""
         return None
 
     def _alpha_at(self, x, y):
-        """Recorte de clics por geometría: ni un píxel «casi invisible»."""
+        """Recorte de clics por geometría: la forma y los botones son sólidos; el
+        resto deja pasar el ratón."""
         s = float(self.ui.s)
-        lx, ly = x / s, y / s
-        m = self.ui.model
-        if m.on_body(lx, ly) or m.bud_at(lx, ly) is not None:
+        if self.ui.model.item_at(x / s, y / s) is not None:
             return 255
         return super()._alpha_at(x, y)
 
@@ -544,8 +587,8 @@ class DropWindow(_shell.LayeredWindow):
         return self.ui.pointer_up(*self._logical(x, y))
 
     def cursor_hand(self, x: int, y: int) -> bool:
-        lx, ly = self._logical(x, y)
-        return self.ui.model.bud_at(lx, ly) is not None
+        item = self.ui.model.item_at(*self._logical(x, y))
+        return item is not None and item != "pill"
 
     def on_dpi_changed(self, dpi: int) -> None:
         self.ui.set_scale(max(1.0, dpi / 96.0))
@@ -560,7 +603,7 @@ class DropWindow(_shell.LayeredWindow):
 class CardWindow(_shell.LayeredWindow):
     """Ventana de la tarjeta de ajustes; aloja el ``Menu`` existente."""
 
-    def __init__(self, ui: "DropUI", x: int, y: int, w: int, h: int) -> None:
+    def __init__(self, ui: DropUI, x: int, y: int, w: int, h: int) -> None:
         super().__init__(int(w), int(h), int(x), int(y), click_through=False, title="card")
         self.ui = ui
         self._interval = 1.0 / 60.0
@@ -623,7 +666,7 @@ def _system_light() -> bool:
 
 
 class DropUI:
-    """Controlador de la gota; la app solo habla con esta clase."""
+    """Controlador de la barra; la app solo habla con esta clase."""
 
     def __init__(self, root=None, position: tuple[int, int] | None = None, cfg=None) -> None:
         self.root = root
@@ -635,9 +678,15 @@ class DropUI:
         except Exception:
             scale = 1.0
         self.s = scale
+        layout = str(getattr(cfg, "ui_layout", "pill") or "pill").lower()
+        self.layout = layout if layout in LAYOUTS else "pill"
+        palette = str(getattr(cfg, "ui_palette", "ezagent") or "ezagent").lower()
+        self.palette_name = palette if palette in PALETTES else "ezagent"
+        buttons = str(getattr(cfg, "ui_buttons", "always") or "always").lower()
+        self.buttons = buttons if buttons in BUTTON_MODES else "always"
         self._position = position
         self._ui = UiState()
-        self.model = DropModel()
+        self.model = DropModel(self.layout)
         self._win: DropWindow | None = None
         self._visible = False
         self._state = "idle"
@@ -651,6 +700,7 @@ class DropUI:
         self._on_no = None
         self._hover_until = 0.0
         self._pressed: str | None = None
+        self._hover_item: str | None = None
         self._theme_setting = "auto"
         self._theme_cache = ("dark", 0.0)
         self._last = time.monotonic()
@@ -674,12 +724,13 @@ class DropUI:
 
     # ---------------------------------------------------------------- ventana
     def _size(self) -> tuple[int, int]:
-        return (round(LW * self.s), round(LH * self.s))
+        w, h = layout_size(self.layout)
+        return (round(w * self.s), round(h * self.s))
 
     def _default_position(self) -> tuple[int, int]:
         wa = _shell.work_area()
         w, h = self._size()
-        return (wa[2] - w - round(8 * self.s), wa[3] - h + round(36 * self.s))
+        return ((wa[0] + wa[2] - w) // 2, wa[3] - h - round(6 * self.s))
 
     def _ensure_window(self) -> bool:
         if self._win is None:
@@ -757,7 +808,7 @@ class DropUI:
 
     # ------------------------------------------------------------ confirmación
     def show_confirmation(self, summary: str, strong: bool, on_yes, on_no) -> None:
-        """La pregunta se dice por voz; aquí solo brotan ✕ y ✓ (sin texto)."""
+        """La pregunta se dice por voz; aquí solo se muestran ✕ y ✓ (sin texto)."""
         self._on_yes, self._on_no = on_yes, on_no
         self._asking = True
         if self._menu_open:
@@ -770,20 +821,15 @@ class DropUI:
         self._on_yes = self._on_no = None
 
     # ------------------------------------------------------------------- tema
-    def _palette(self) -> dict:
-        if self._theme_setting == "dark":
-            return DARK
-        if self._theme_setting == "light":
-            return LIGHT
+    def _theme_name(self) -> str:
+        if self._theme_setting in ("dark", "light"):
+            return self._theme_setting
         value, at = self._theme_cache
         now = time.monotonic()
         if now - at > 3.0:
             value = "light" if _system_light() else "dark"
             self._theme_cache = (value, now)
-        return LIGHT if value == "light" else DARK
-
-    def _theme_name(self) -> str:
-        return "light" if self._palette() is LIGHT else "dark"
+        return value
 
     # ------------------------------------------------------------------ dibujo
     def _pose(self, now: float) -> str:
@@ -812,56 +858,68 @@ class DropUI:
             self._reduced = not animations_enabled()
             self._reduced_at = now
         cur = self._cursor_logical()
-        near = False
+        self._hover_item = None
         if cur is not None:
-            near = DropModel.near(*cur) or self.model.bud_at(*cur) is not None
-        if near:
-            self._hover_until = now + HOVER_HOLD
+            if self.model.near(*cur):
+                self._hover_until = now + HOVER_HOLD
+            item = self.model.item_at(*cur)
+            self._hover_item = item if item not in (None, "pill") else None
         hover = now < self._hover_until
-        palette = self._palette()
         pose = self._pose(now)
-        self.model.update(now, dt, pose, self._rms, palette, hover, self._asking,
-                          self._menu_open, self._reduced)
+        self.model.update(now, dt, pose, self._rms, self.palette_name, hover, self._asking,
+                          self._menu_open, self._reduced, self.buttons)
         if self._win is not None:
             busy = pose not in ("idle", "sleep", "mute") or hover or self._asking
             self._win._interval = 1.0 / (60.0 if busy else 24.0)
         w, h = self._size()
-        return render_model(self.model, w, h, self.s, palette, self._muted, self._in_call,
-                            self._menu_open, now)
+        return render_model(self.model, w, h, self.s, self._theme_name(), self._muted,
+                            self._in_call, self._menu_open, now, self._hover_item)
 
     # ----------------------------------------------------------------- puntero
     def pointer_down(self, x: float, y: float) -> bool:
-        name = self.model.bud_at(x, y)
-        if name is None:
-            return False
+        name = self.model.item_at(x, y)
+        if name is None or name == "pill":
+            return False                    # la forma se arrastra: la ventana se mueve
         self._pressed = name
         return True
 
     def pointer_up(self, x: float, y: float) -> bool:
         name, self._pressed = self._pressed, None
-        if name is None or self.model.bud_at(x, y) != name:
+        if name is None or self.model.item_at(x, y) != name:
             return True
-        try:
-            if name == "mic":
-                self.on_action("mute" if self._in_call else "listen")
-            elif name == "gear":
-                self.on_action("panel")
-            elif name == "yes" and self._on_yes:
-                self._on_yes()
-            elif name == "no" and self._on_no:
-                self._on_no()
-        except Exception:
-            pass
+        self._activate(name)
         return True
 
+    def _activate(self, name: str) -> None:
+        asking = self._asking
+        try:
+            if name == "gear":
+                self.on_action("panel")
+            elif name == "repeat":
+                if asking:
+                    if self._on_no:
+                        self._on_no()
+                else:
+                    self.on_action("repeat")
+            elif name == "mic":
+                if asking:
+                    if self._on_yes:
+                        self._on_yes()
+                else:
+                    self.on_action("mute" if self._in_call else "listen")
+            elif name == "hang":
+                self.on_action("hangup")
+        except Exception:
+            pass
+
     def clamp_position(self, x: int, y: int) -> tuple[int, int]:
-        """Mantiene la gota (no todo el lienzo) dentro del área de trabajo."""
+        """Mantiene la barra dentro del área de trabajo."""
         wa = _shell.work_area()
         w, h = self._size()
-        mx, my = round((CX - 40) * self.s), round((CY - 40) * self.s)
+        margin = round(PAD * self.s)
         return (
-            max(wa[0] - mx, min(int(x), wa[2] - w + mx)),
-            max(wa[1] - my, min(int(y), wa[3] - h + my)),
+            max(wa[0] - margin, min(int(x), wa[2] - w + margin)),
+            max(wa[1] - margin, min(int(y), wa[3] - h + margin)),
         )
 
     def drag_end(self, x: int, y: int) -> None:
@@ -869,6 +927,7 @@ class DropUI:
             try:
                 self.cfg.save_key("drop_x", int(x))
                 self.cfg.save_key("drop_y", int(y))
+                self.cfg.save_key("drop_layout", self.layout)
             except Exception:
                 pass
         self.on_position_change(int(x), int(y))
@@ -937,18 +996,27 @@ class DropUI:
                 self._menu = None
         return self._menu
 
+    def _bar_box(self) -> tuple[float, float, float]:
+        """(x central, arriba, abajo) de la barra en píxeles físicos de pantalla."""
+        win = self._win
+        w, h = layout_size(self.layout)
+        if self.layout == "circle":
+            top, bottom = PAD, h - PAD
+        else:
+            half = max(BTN, PILL_H) / 2
+            top, bottom = h / 2 - half, h / 2 + half
+        return (win.x + w / 2 * self.s, win.y + top * self.s, win.y + bottom * self.s)
+
     def _card_geometry(self) -> tuple[bool, int, float]:
         """(abre hacia arriba, x ancla física, alto disponible lógico)."""
-        win = self._win
-        gx = win.x + CX * self.s
-        gy = win.y + CY * self.s
+        cx, top, bottom = self._bar_box()
         wa = _shell.work_area()
-        gap = 40 * self.s
-        above_space = (gy - gap) - wa[1]
-        below_space = wa[3] - (gy + gap)
+        gap = 10 * self.s
+        above_space = (top - gap) - wa[1]
+        below_space = wa[3] - (bottom + gap)
         above = above_space >= below_space
         space = above_space if above else below_space
-        return above, int(gx), max(160.0, space / self.s - 12)
+        return above, int(cx), max(160.0, space / self.s - 12)
 
     def _place_card(self, create: bool = False) -> None:
         menu, win = self._menu, self._win
@@ -965,9 +1033,9 @@ class DropUI:
         h = round((vh + 4) * self.s)
         wa = _shell.work_area()
         x = max(wa[0] + round(8 * self.s), min(gx - w // 2, wa[2] - w - round(8 * self.s)))
-        gy = win.y + CY * self.s
-        gap = 40 * self.s
-        y = int(gy - gap - h) if above else int(gy + gap)
+        _, top, bottom = self._bar_box()
+        gap = 10 * self.s
+        y = int(top - gap - h) if above else int(bottom + gap)
         with self._card_lock:
             if self._card is None:
                 if not create:
@@ -1187,7 +1255,10 @@ def create_ui(root, cfg):
     if style == "drop":
         x = getattr(cfg, "drop_x", None)
         y = getattr(cfg, "drop_y", None)
-        pos = (int(x), int(y)) if isinstance(x, int) and isinstance(y, int) else None
+        layout = str(getattr(cfg, "ui_layout", "pill") or "pill").lower()
+        # La posición solo vale si se guardó con esta misma disposición (otro tamaño de ventana).
+        same = getattr(cfg, "drop_layout", "") == layout
+        pos = (int(x), int(y)) if same and isinstance(x, int) and isinstance(y, int) else None
         try:
             return DropUI(root, position=pos, cfg=cfg)
         except Exception:
