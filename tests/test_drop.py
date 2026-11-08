@@ -58,26 +58,26 @@ def test_habla_se_deforma_con_la_voz() -> None:
     assert loud.R > quiet.R and loud.m["a2"] > quiet.m["a2"]
 
 
-def test_color_sigue_al_estado() -> None:
+def test_colores_siguen_al_estado() -> None:
+    """Las manchas de color migran a la paleta del estado."""
     m = D.DropModel()
-    _run(m, "think", 1.5)
-    # al pensar el color oscila entre ámbar y violeta: nunca sale de ese tramo
-    a, b = D.DARK["attention"], D.DARK["agent"]
-    def dist_to_segment(c):
-        ab = [b[i] - a[i] for i in range(3)]
-        t = max(0.0, min(1.0, sum((c[i] - a[i]) * ab[i] for i in range(3)) / sum(v * v for v in ab)))
-        return max(abs(c[i] - (a[i] + ab[i] * t)) for i in range(3))
-    assert dist_to_segment(m.color) < 12
-    _run(m, "error", 1.5)
-    assert all(abs(c - v) < 6 for c, v in zip(m.color, D.DARK["fault"], strict=True))
-    _run(m, "mute", 1.5)
-    assert all(abs(c - v) < 6 for c, v in zip(m.color, D.DARK["text3"], strict=True))
+
+    def near(pose: str, key: str) -> bool:
+        target = D.orb_palette(pose, D.DARK)[0]
+        return all(abs(c - v) < 8 for c, v in zip(m.cols[0], target, strict=True)) and key
+
+    t = _run(m, "think", 3.0)
+    assert near("think", "think")
+    t = _run(m, "error", 3.0, t0=t)
+    assert near("error", "error")
+    _run(m, "mute", 3.0, t0=t)
+    assert near("mute", "mute")
 
 
 def test_movimiento_reducido_aplica_al_instante_y_sin_deriva() -> None:
     m = D.DropModel()
     _run(m, "mute", 0.1, reduced=True)
-    assert abs(m.R - 9) < 1e-6 and m.cy_offset == 0.0 and m.shift == 0.0
+    assert abs(m.R - D.BASE_R["mute"]) < 1e-6 and m.cy_offset == 0.0 and m.shift == 0.0
     assert all(s.x in (0.0, 1.0) for s in m.bud.values())
 
 
@@ -131,26 +131,74 @@ def test_recorte_de_clics_por_geometria_sin_zona_pintada() -> None:
     assert m.on_body(D.CX + m.R, D.CY)
 
 
-def test_pose_de_escucha_pinta_anillos_entrantes_y_habla_salientes() -> None:
+def test_respira_en_calma_con_cambios_pequenos() -> None:
+    """En reposo el radio oscila poco (respira) y el contorno se deforma poco."""
     m = D.DropModel()
-    t = _run(m, "listen", 1.0, rms=0.06)
-    assert m.rings and all(kind == "in" for _, kind, _ in m.rings)
-    m2 = D.DropModel()
-    # una sílaba: de silencio a voz
-    t2 = _run(m2, "speak", 0.3, rms=0.0)
-    for _ in range(30):
-        t2 += 1 / 60
-        m2.update(t2, 1 / 60, "speak", 0.1, D.DARK, False, False, False, False)
-    assert any(kind == "out" for _, kind, _ in m2.rings)
-    assert t > 0
+    t = _run(m, "idle", 1.0)
+    radios = []
+    for _ in range(600):
+        t += 1 / 60
+        m.update(t, 1 / 60, "idle", 0.0, D.DARK, False, False, False, False)
+        radios.append(m.R)
+    assert 0.8 < max(radios) - min(radios) < 3.0           # respira, sin saltos grandes
+    assert max(abs(v) for v in (m.m["a2"], m.m["a3"], m.m["a4"])) < 0.05
+    assert m.m["tr"] < 0.01                                  # sin sonido no hay temblor
 
 
-def test_ganancia_automatica_usa_todo_el_rango() -> None:
-    """Un micrófono flojo y uno fuerte producen el mismo nivel relativo."""
-    weak, strong = D.DropModel(), D.DropModel()
-    _run(weak, "listen", 1.0, rms=0.012)
-    _run(strong, "listen", 1.0, rms=0.2)
-    assert abs(weak.lvl - strong.lvl) < 0.1 and weak.lvl > 0.7
+def test_se_expande_con_la_voz_tiembla_y_vuelve_a_la_base_al_callar() -> None:
+    """El ciclo completo que se pidió: expandirse, temblar sutilmente y volver."""
+    m = D.DropModel()
+    t = _run(m, "speak", 1.0, rms=0.0)
+    base_r, base_tr = m.R, m.m["tr"]
+    assert base_tr < 0.05
+    t = _run(m, "speak", 1.0, rms=0.1, t0=t)                 # con voz
+    assert m.R > base_r + 6                                   # se expande
+    assert m.m["tr"] > 0.5                                    # tiembla
+    contour = [m.contour(i / 36 * 6.2831853) for i in range(36)]
+    assert 0.0 < max(contour) - min(contour) < 0.5            # deformación contenida
+    t = _run(m, "speak", 2.5, rms=0.0, t0=t)                 # calla
+    assert abs(m.R - base_r) < 1.5                            # vuelve a su forma base
+    assert m.m["tr"] < 0.05                                   # el temblor se apaga
+
+
+def test_el_temblor_es_rapido_y_pequeno() -> None:
+    m = D.DropModel()
+    _run(m, "listen", 1.0, rms=0.06)
+    f1 = [m.contour(i / 90 * 6.2831853) for i in range(90)]
+    t = 1000.0 + 2.0
+    m.update(t, 1 / 60, "listen", 0.06, D.DARK, False, False, False, False)
+    f2 = [m.contour(i / 90 * 6.2831853) for i in range(90)]
+    cambio = max(abs(a - b) for a, b in zip(f1, f2, strict=True))
+    assert 0.0 < cambio < 0.25      # cambia entre fotogramas, pero poco
+
+
+def test_borde_suave_sin_contorno_duro() -> None:
+    """La opacidad cae de forma gradual: ningún salto brusco entre píxeles vecinos."""
+    m = D.DropModel()
+    _run(m, "idle", 1.0)
+    patch = D.render_orb(m)
+    n = patch.shape[0]
+    fila = patch[n // 2, :, 3].astype(int)
+    assert fila.max() >= 250 and fila[0] == 0 and fila[-1] == 0
+    assert np.abs(np.diff(fila)).max() < 90                   # sin escalón duro
+    assert (fila > 10).sum() > 8                              # banda de transición ancha
+
+
+def test_el_orbe_no_dibuja_halo_ni_anillos() -> None:
+    m = D.DropModel()
+    t = _run(m, "speak", 1.0, rms=0.1)
+    frame = D.render_model(m, D.LW, D.LH, 1.0, D.DARK, False, True, False, t)
+    assert frame[int(D.CY), int(D.CX + 2 * D.RMAX), 3] == 0   # fuera del parche: nada
+    assert not hasattr(m, "rings") and not hasattr(m, "halo")
+
+
+def test_colores_distintos_por_estado() -> None:
+    pals = {
+        p: tuple(tuple(round(c) for c in col) for col in D.orb_palette(p, D.DARK))
+        for p in ("idle", "listen", "think", "speak", "ask", "error", "mute")
+    }
+    assert len(set(pals.values())) == 7
+
 
 
 class _Fake(D.DropUI):
