@@ -1,0 +1,41 @@
+name: Propuesta
+description: Sugiere una mejora o una función nueva para EzAgent
+title: "[Propuesta]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema que resuelve
+      description: Qué te falta o qué te resulta incómodo hoy.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Propuesta
+      description: Cómo imaginas la solución, aunque sea a grandes rasgos.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas
+      description: Otras formas de resolverlo y por qué no las prefieres.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área afectada
+      description: Si toca varias, elige la principal y menciónalas en la propuesta.
+      options:
+        - Voz (micrófono, STT, TTS)
+        - Notch e interfaz
+        - Agentes y herramientas
+        - Otra
+    validations:
+      required: true
