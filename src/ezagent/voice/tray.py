@@ -80,6 +80,9 @@ class TrayIcon:
                     default=True,
                 ),
                 _pystray.MenuItem(
+                    "Cambiar forma (círculo / píldora)", self._menu_shape
+                ),
+                _pystray.MenuItem(
                     "Reiniciar EzAgent", self._menu_restart
                 ),
                 _pystray.Menu.SEPARATOR,
@@ -120,6 +123,9 @@ class TrayIcon:
 
     def _menu_config(self, icon=None, item=None) -> None:
         self._dispatch("config")
+
+    def _menu_shape(self, icon=None, item=None) -> None:
+        self._dispatch("shape")
 
     def _menu_restart(self, icon=None, item=None) -> None:
         self._dispatch("restart")

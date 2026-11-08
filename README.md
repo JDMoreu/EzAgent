@@ -68,7 +68,7 @@ arranca escuchando; `Ctrl+Alt+Space` cuelga o retoma.
 ## La gota (interfaz por defecto)
 
 Desde la versión 0.2 la interfaz es **una barra sin texto**: una cápsula de color
-entre cuatro botones redondos (ajustes, repetir lo último, silenciar y colgar),
+entre cuatro botones redondos (ajustes ☰, repetir lo último, silenciar y colgar),
 anclada abajo al centro, sobre la barra de tareas. **La forma es fija y de borde
 nítido; lo que se mueve es el interior**, como agua o nubes de color: fluye
 despacio en calma y corre y se arremolina más cuando hablas o escuchas. El color
@@ -77,13 +77,19 @@ silencio). Una confirmación convierte los botones de los lados en ✕ y ✓ (la
 pregunta se dice por voz). Los ajustes se abren en una tarjeta encima de la
 barra. Se arrastra por la forma y recuerda su posición.
 
+**Círculo o píldora:** haz doble clic sobre la forma de color, o usa «Cambiar
+forma» en el menú de la bandeja; la elección se guarda. El silencio del
+micrófono solo se activa con el botón, el atajo `Ctrl+Alt+M` o una orden
+explícita («silencia el micro»): palabras sueltas como «silencio» ya no lo
+silencian.
+
 Se configura en `voice.json`:
 
 | Clave | Valores | Por defecto |
 |---|---|---|
 | `ui_style` | `drop` (la barra) · `notch` (la isla antigua) | `drop` |
 | `ui_layout` | `pill` (cápsula) · `circle` (círculo sobre la fila de botones) | `pill` |
-| `ui_palette` | `ezagent` (lima, menta, violeta) · `sky` (azules y lavanda) | `ezagent` |
+| `ui_palette` | `ezagent` (lima, menta, violeta) · `sky` (azules y lavanda) | `sky` |
 | `ui_buttons` | `always` (siempre visibles) · `hover` (aparecen al acercar el puntero) | `always` |
 
 Los iconos se regeneran con `uv run python scripts/make_icons.py`.

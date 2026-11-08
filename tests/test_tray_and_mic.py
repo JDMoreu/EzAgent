@@ -155,11 +155,16 @@ def test_tray_construye_el_menu_y_despacha(monkeypatch):
     labels = [
         item.text for item in menu.items if hasattr(item, "text")
     ]
-    assert labels == ["Configurar", "Reiniciar EzAgent", "Cerrar"]
+    assert labels == [
+        "Configurar",
+        "Cambiar forma (círculo / píldora)",
+        "Reiniciar EzAgent",
+        "Cerrar",
+    ]
     for item in menu.items:
         if hasattr(item, "action"):
             item.action(None, None)
-    assert actions == ["config", "restart", "quit"]
+    assert actions == ["config", "shape", "restart", "quit"]
     icon.stop()
     assert icon._icon is None
 

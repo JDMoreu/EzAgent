@@ -1,5 +1,5 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>EzAgent Barra</title>
+<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: un escritorio de Windows simulado con la barra anclada abajo al centro (sobre la barra de tareas); controles de vista previa debajo. La luz sale solo del degradado interior de la píldora o del círculo. */
@@ -37,12 +37,12 @@ button{font:inherit;color:inherit;cursor:pointer}
 
 /* la barra */
 .bar{position:absolute;left:50%;bottom:62px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:12px;z-index:5}
-.row{display:flex;align-items:center;gap:10px}
-.btn{width:46px;height:46px;border-radius:50%;border:0;display:grid;place-items:center;padding:0;position:relative;
+.row{display:flex;align-items:center;gap:8px}
+.btn{width:36px;height:36px;border-radius:50%;border:0;display:grid;place-items:center;padding:0;position:relative;
   background:rgb(255 255 255 / .94);color:#2B2733;box-shadow:0 6px 18px rgb(20 20 50 / .22),0 1px 3px rgb(20 20 50 / .18);
   transition:transform .3s cubic-bezier(.34,1.56,.64,1),opacity .18s,width .3s cubic-bezier(.2,.8,.2,1),margin .3s,background .12s}
 .btn:hover{transform:scale(1.07);background:#fff}.btn:active{transform:scale(.95)}
-.btn svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;position:absolute;transition:opacity .15s,transform .2s}
+.btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;position:absolute;transition:opacity .15s,transform .2s}
 .btn .alt{opacity:0;transform:scale(.6)}
 .btn.on .main{opacity:0;transform:scale(.6)}.btn.on .alt{opacity:1;transform:none}
 .btn.dark{background:#17141C;color:#fff;box-shadow:0 6px 18px rgb(0 0 0 / .35),inset 0 0 0 1px rgb(255 255 255 / .22)}
@@ -56,8 +56,8 @@ button{font:inherit;color:inherit;cursor:pointer}
 .asking .btn.gone *{display:none}
 .pillwrap{position:relative;display:grid;place-items:center}
 canvas{display:block}
-#pill{width:230px;height:90px;margin:-12px -20px}
-#orb{width:150px;height:150px;margin:-20px 0 -16px}
+#pill{width:184px;height:72px;margin:-10px -16px}
+#orb{width:120px;height:120px;margin:-16px 0 -12px}
 .bar.b #pill{display:none}.bar:not(.b) #orb{display:none}
 .bar:not(.b) .rowtop{display:none}
 .rowtop{display:grid;place-items:center}
@@ -90,7 +90,7 @@ input[type=range]{width:180px;accent-color:var(--signal)}
       <div class="bar" id="bar">
         <div class="rowtop"><canvas id="orb" role="img" aria-label="EzAgent"></canvas></div>
         <div class="row sheet show" id="row">
-          <button class="btn gone-l" id="bGear" type="button" aria-label="Ajustes"><svg class="main" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/></svg></button>
+          <button class="btn gone-l" id="bGear" type="button" aria-label="Ajustes"><svg class="main" viewBox="0 0 24 24"><path d="M5 6.5h14M5 12h14M5 17.5h14"/></svg></button>
           <button class="btn" id="bNo" type="button" aria-label="Repetir lo último"><svg class="main" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.6-5.9M4 4v4.5h4.5"/></svg><svg class="alt" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
           <div class="pillwrap" id="pw"><canvas id="pill" role="img" aria-label="EzAgent"></canvas></div>
           <button class="btn" id="bYes" type="button" aria-label="Silenciar micrófono"><svg class="main" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path id="slash" d="M4 4l16 16" style="opacity:0"/></svg><svg class="alt" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg></button>
@@ -110,15 +110,15 @@ input[type=range]{width:180px;accent-color:var(--signal)}
         <label style="display:flex;gap:10px;align-items:center"><input type="range" id="vol" min="0" max="100" value="60" aria-label="Volumen"><button class="pill" id="auto" type="button" aria-pressed="true">Automático</button></label></div>
       <div class="grpc"><div class="eyebrow" style="margin:0">Aspecto</div><div class="pills"><button class="pill" id="tDesk" type="button">Escritorio: oscuro</button><button class="pill" id="tUi" type="button">Botones: claros</button><button class="pill" id="tMotion" type="button" aria-pressed="false">Movimiento reducido</button></div></div>
     </div>
-    <p class="note" style="margin-top:12px">Pulsa el micrófono para silenciar, el ✕ oscuro para colgar y «repetir» o el engranaje para acciones; en el estado «Pregunta» los botones de los lados se convierten en ✕ y ✓. No hay texto: la pregunta se dice por voz.</p>
+    <p class="note" style="margin-top:12px">Pulsa el micrófono para silenciar, el ✕ oscuro para colgar y «repetir» o el botón ☰ para los ajustes; en el estado «Pregunta» los botones de los lados se convierten en ✕ y ✓. No hay texto: la pregunta se dice por voz.</p>
   </section>
 
   <section>
     <div class="eyebrow">Qué decidir</div>
     <div class="notes">
-      <div class="card"><span class="tag">A · PÍLDORA</span><h2>Como la de tu primera imagen</h2><p>Cápsula de contorno fijo con el fluido dentro y cuatro botones redondos. Más ancha (unos 410 px); se siente como una barra de herramientas.</p></div>
-      <div class="card"><span class="tag">B · CÍRCULO</span><h2>Como la de tu segunda imagen</h2><p>Un círculo de contorno fijo con el fluido dentro, sobre una fila corta de botones. Más compacta y más cercana al orbe que ya tienes.</p></div>
-      <div class="card"><span class="tag">COLOR</span><h2>EzAgent o cielo</h2><p>«EzAgent» usa lima, menta y violeta. «Cielo» usa azules y lavanda como tus referencias. Los estados de pregunta, error y silencio mantienen ámbar, rojo y gris.</p></div>
+      <div class="card"><span class="tag">A · PÍLDORA</span><h2>Como la de tu primera imagen</h2><p>Cápsula de contorno fijo con el fluido dentro y cuatro botones redondos. Más ancha (unos 330 px); se siente como una barra de herramientas.</p></div>
+      <div class="card"><span class="tag">B · CÍRCULO</span><h2>Como la de tu segunda imagen</h2><p>Un círculo de contorno fijo con el fluido dentro, sobre una fila corta de botones. Más compacta. En la app se cambia con doble clic sobre la forma o desde el menú de la bandeja.</p></div>
+      <div class="card"><span class="tag">COLOR</span><h2>Cielo (por defecto) o EzAgent</h2><p>«EzAgent» usa lima, menta y violeta. «Cielo» usa azules y lavanda como tus referencias. Los estados de pregunta, error y silencio mantienen ámbar, rojo y gris.</p></div>
       <div class="card"><span class="tag">BOTONES</span><h2>Siempre o al acercar</h2><p>Siempre visibles dan acceso inmediato; «al acercar» deja solo el degradado y los botones brotan con el puntero, para no estorbar.</p></div>
     </div>
   </section>
@@ -137,8 +137,8 @@ var PAL={
   sky:{idle:['#7D9BFF','#9FB8FF','#C9D6FF','#8FA8FF','#B7C6FF'],listen:['#4B7BF5','#8DB4FF','#C4D4FF','#6C8CFF','#E1EAFF'],think:['#6C8CFF','#B28CFF','#8DB4FF','#D0A8FF','#A9C4FF'],speak:['#3F74F0','#8DB4FF','#B590FF','#5C9BFF','#CBE0FF'],ask:['#FFB23E','#FFD27A','#FF9A3E','#FFE3A8','#FF8A5C'],error:['#FF5D52','#FF8A6E','#C8241A','#FF6A61','#FFB09A'],mute:['#9AA3B5','#AEB6C6','#8892A5','#9AA3B5','#C3CADA']}
 };
 var cols={};Object.keys(PAL).forEach(function(k){cols[k]={};Object.keys(PAL[k]).forEach(function(s){cols[k][s]=PAL[k][s].map(hex)})});
-var S={layout:'a',state:'idle',color:'ez',btn:'always',auto:true,vol:.6,muted:false,uiDark:false};
-var cur=cols.ez.idle.map(function(c){return c.slice()});
+var S={layout:'a',state:'idle',color:'sky',btn:'always',auto:true,vol:.6,muted:false,uiDark:false};
+var cur=cols.sky.idle.map(function(c){return c.slice()});
 function speechEnv(t){var g=Math.sin(t*2.3)+.6*Math.sin(t*1.07+1.2),gate=Math.max(0,Math.min(1,(g+1.1)*2.2));var syl=Math.pow(.5+.5*Math.sin(t*Math.PI*2*3.8+Math.sin(t*1.3)*1.4),.9);return Math.max(0,Math.min(1,gate*(.12+.88*syl)*(.7+.3*Math.sin(t*.8+2))))}
 function micEnv(t){return Math.max(0,Math.min(1,.5+.4*Math.sin(t*5.7)*Math.sin(t*1.7+1)+.1*Math.sin(t*13)))}
 function ss(a,b,x){var t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t)}
@@ -146,7 +146,7 @@ var BL=[[.9,1.3,0,1.7],[1.1,.8,2.1,.6],[.7,1.5,4.0,2.3],[1.3,.9,1.2,3.4],[.8,1.1
 var lvl=0,ph=0,last=0;
 
 function makeField(cw,ch,cell){var nx=Math.round(cw/cell),ny=Math.round(ch/cell),off=document.createElement('canvas');off.width=nx;off.height=ny;return {nx:nx,ny:ny,cell:cell,cw:cw,ch:ch,off:off,ctx:off.getContext('2d'),img:off.getContext('2d').createImageData(nx,ny)}}
-var FP=makeField(230,90,2),FO=makeField(150,150,2);
+var FP=makeField(184,72,2),FO=makeField(120,120,2);
 
 /* ruido de valor con interpolación suave; fbm de tres octavas = «nubes» */
 function hsh(x,y){var h=Math.imul(x,374761393)+Math.imul(y,668265263);h=Math.imul(h^(h>>>13),1274126177);return ((h^(h>>>16))>>>0)/4294967295}
@@ -157,9 +157,9 @@ function fbm(x,y){return .72*vn(x,y)+.22*vn(x*2.03+3.1,y*2.03+1.7)+.06*vn(x*4.1+
 /* La FORMA es fija (píldora o círculo, borde definido). Solo se mueve el interior:
    un fluido de color con remolinos que corre más rápido y se vuelve más contrastado con la voz. */
 function paintField(F,shape,L,speed){
-  var d=F.img.data,p=0,cw=F.cw,ch=F.ch,x,y,a=92,b=25,R=38,pal=cur,st=S.state;
+  var d=F.img.data,p=0,cw=F.cw,ch=F.ch,x,y,a=74,b=19,R=29,pal=cur,st=S.state;
   var bright=st==='mute'?.82:st==='idle'?.93:1+.1*L,wamp=.35+.55*L,contrast=.95+.4*L,cloud=.10+.28*L;
-  var t=ph,sc=shape==='pill'?1/46:1/38,breath=reduced?0:Math.sin(performance.now()/1000*Math.PI*2/4.2)*.02;
+  var t=ph,sc=shape==='pill'?4/148:2/58,breath=reduced?0:Math.sin(performance.now()/1000*Math.PI*2/4.2)*.02;
   for(y=0;y<F.ny;y++){var Y=(y+.5)*F.cell-ch/2;
     for(x=0;x<F.nx;x++){var X=(x+.5)*F.cell-cw/2,dist;
       if(shape==='pill'){var dx=Math.max(Math.abs(X)-(a-b),0);dist=Math.sqrt(dx*dx+Y*Y)-b}else dist=Math.sqrt(X*X+Y*Y)-R;
@@ -180,11 +180,11 @@ function paintField(F,shape,L,speed){
 }
 
 var cvP=$('pill'),cvO=$('orb'),dpr=Math.min(2,window.devicePixelRatio||1);
-[[cvP,230,90],[cvO,150,150]].forEach(function(a){a[0].width=a[1]*dpr;a[0].height=a[2]*dpr});
+[[cvP,184,72],[cvO,120,120]].forEach(function(a){a[0].width=a[1]*dpr;a[0].height=a[2]*dpr});
 function blit(cv,F,shape){var c=cv.getContext('2d'),k=cv.width/F.cw;c.clearRect(0,0,cv.width,cv.height);c.imageSmoothingEnabled=true;c.imageSmoothingQuality='high';c.drawImage(F.off,0,0,cv.width,cv.height);
   /* contorno fijo y nítido: máscara exacta de la forma a la resolución del lienzo */
   c.globalCompositeOperation='destination-in';c.beginPath();
-  if(shape==='pill'){c.roundRect((F.cw/2-92)*k,(F.ch/2-25)*k,184*k,50*k,25*k)}else{c.arc(F.cw/2*k,F.ch/2*k,38*k,0,Math.PI*2)}
+  if(shape==='pill'){c.roundRect((F.cw/2-74)*k,(F.ch/2-19)*k,148*k,38*k,19*k)}else{c.arc(F.cw/2*k,F.ch/2*k,29*k,0,Math.PI*2)}
   c.fill();c.globalCompositeOperation='source-over'}
 
 function frame(ms){
@@ -213,8 +213,9 @@ function apply(){
 }
 pills('lPills',[['a','A · Píldora'],['b','B · Círculo']],'layout',apply);
 pills('sPills',ST,'state',function(){if(S.state==='mute'){}apply()});
-pills('cPills',[['ez','EzAgent'],['sky','Cielo']],'color');
+pills('cPills',[['sky','Cielo'],['ez','EzAgent']],'color');
 pills('bPills',[['always','Siempre'],['hover','Al acercar']],'btn',apply);
+['pill','orb'].forEach(function(id){$(id).addEventListener('dblclick',function(){S.layout=S.layout==='a'?'b':'a';$('lPills').querySelectorAll('.pill').forEach(function(x){x.setAttribute('aria-pressed',String(x.dataset.k===S.layout))});apply()})});
 $('bYes').addEventListener('click',function(){if(S.state==='ask'){S.state='idle';sync();return}S.muted=!S.muted;apply()});
 $('bNo').addEventListener('click',function(){if(S.state==='ask'){S.state='idle';sync()}});
 $('bHang').addEventListener('click',function(){S.state='idle';sync()});
@@ -232,4 +233,3 @@ cur=cols[S.color][S.state].map(function(c){return c.slice()});
 apply();requestAnimationFrame(frame);
 })();
 </script>
-</html>

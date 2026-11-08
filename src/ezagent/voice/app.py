@@ -367,7 +367,7 @@ class VoiceApp:
             watch=self._watch,
             mute=self._mute,
             request_close=self._request_close,
-            mic_mute=self._set_mic_muted,
+            mic_mute=lambda muted: self._set_mic_muted(muted, source="llm"),
             runtime=self.agent,
         )
         self.watcher = Watcher(
@@ -414,7 +414,7 @@ class VoiceApp:
             callbacks = RuntimeCallbacks(
                 watch=self._watch,
                 request_close=self._request_close,
-                mic_mute=self._set_mic_muted,
+                mic_mute=lambda muted: self._set_mic_muted(muted, source="llm"),
                 last_summary=lambda: self.last_summary,
                 mute=self._mute,
                 get_last_user_text=lambda: getattr(
@@ -487,6 +487,13 @@ class VoiceApp:
                 self.notch.open_menu()
             except Exception as exc:  # noqa: BLE001
                 log(f"No pude abrir Ajustes desde la bandeja: {exc}")
+        elif action == "shape":
+            toggle = getattr(self.notch, "toggle_layout", None)
+            if callable(toggle):
+                try:
+                    toggle()
+                except Exception as exc:  # noqa: BLE001
+                    log(f"No pude cambiar la forma: {exc}")
         elif action == "restart":
             self._restart_app()
         elif action == "quit":
@@ -843,7 +850,7 @@ class VoiceApp:
             elif self.state == IDLE:
                 self._speak("No hay nada que repetir todavía.", "answer")
         elif event == "mute":
-            self._set_mic_muted(not self.muted)
+            self._set_mic_muted(not self.muted, source="atajo")
         elif event == "menu":
             if self._notch_hidden:
                 self._notch_hidden = False
@@ -1533,9 +1540,14 @@ class VoiceApp:
     def _fast_command(self, text: str) -> bool:
         """Órdenes de control que no necesitan pasar por el LLM."""
         key = re.sub(r"\s+", " ", self._normalize(text))
+        # DECISION: «silencio» / «silencia» / «mute» sueltos ya no silencian: Whisper
+        # los alucina con ruido y se dicen al hablar con otras personas. Solo una
+        # orden explícita que nombre el micrófono silencia por voz.
         mute_words = {
-            "mute", "mutea", "muteate", "silencia", "silencio",
-            "silencia el micro", "silencio el micro", "silencio el microfono",
+            "silencia el micro", "silencia el microfono", "silencio el micro",
+            "silencio el microfono", "mutea el micro", "mutea el microfono",
+            "silencia mi micro", "silencia mi microfono", "apaga el micro",
+            "apaga el microfono", "mutea", "muteate",
         }
         unmute_words = {
             "desmute", "desmutea", "unmute", "activa el micro",
@@ -1621,7 +1633,7 @@ class VoiceApp:
             return True
         if key in mute_words:
             log("Atajo local: mute.")
-            self._set_mic_muted(True)
+            self._set_mic_muted(True, source="voz")
             self._speak("Micrófono silenciado.", "answer")
             return True
         if key in unmute_words:
@@ -1657,7 +1669,7 @@ class VoiceApp:
 
     def _notch_action_ui(self, action: str) -> None:
         if action == "mute":
-            self._set_mic_muted(not self.muted)
+            self._set_mic_muted(not self.muted, source="boton")
         elif action == "listen":
             self._resume_listening_from_mic()
         elif action == "panel":
@@ -2176,16 +2188,16 @@ class VoiceApp:
     def _request_close(self) -> None:
         self._close_after_answer = True
 
-    def _set_mic_muted(self, muted: bool) -> None:
+    def _set_mic_muted(self, muted: bool, source: str = "") -> None:
         self.muted = bool(muted)
         self.notch.set_muted(self.muted)
         self._reset_capture.set()
         if self.muted:
             self._ignore_utterance = True
-            log("Micrófono silenciado.")
+            log(f"Micrófono silenciado ({source or 'sin origen'}).")
         else:
             self._ignore_utterance = False
-            log("Micrófono activo.")
+            log(f"Micrófono activo ({source or 'sin origen'}).")
         self._update_tray_title()
 
     def _remember_task(
