@@ -107,3 +107,18 @@ condensa desde la gota (escala y radio, muelle `panel`, sin rebote).
 ### Pendiente de medir en E6
 Que el recorte de clics por región funcione igual de bien en WebView2 que en
 Win32 (es lo primero que debe comprobar el spike).
+
+---
+
+## Decisión final de la interfaz (8 nov 2026): la barra
+
+Tras probar el hilo, la gota y el orbe, la interfaz implementada es **la barra**
+(`docs/design/barra.html`): una forma de contorno **fijo** con un fluido de color
+dentro (agua o nubes) que reacciona a la voz, entre cuatro botones redondos
+(ajustes, repetir, silenciar y colgar). Valores por defecto elegidos por el
+equipo de desarrollo, configurables en `voice.json`: disposición `pill`, paleta
+`ezagent`, botones `always`. Código: `src/ezagent/voice/notch/drop.py`.
+
+Reglas que no se rompen: la forma nunca se deforma; la voz solo acelera y amplía
+el flujo interior; sin texto en pantalla; la pregunta de una confirmación se dice
+por voz y se responde con ✕ y ✓.

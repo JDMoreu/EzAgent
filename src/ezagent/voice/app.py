@@ -1662,6 +1662,10 @@ class VoiceApp:
             self._resume_listening_from_mic()
         elif action == "panel":
             self._toggle_menu()
+        elif action == "repeat":
+            self._handle_hotkey("repeat")
+        elif action == "hangup":
+            self._handle_hotkey("cancel")
         elif action == "hide":
             self.hide_notch()
 

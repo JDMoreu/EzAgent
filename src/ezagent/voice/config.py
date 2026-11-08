@@ -168,6 +168,12 @@ class VoiceConfig:
     ui_style: str = "drop"
     drop_x: int | None = None
     drop_y: int | None = None
+    drop_layout: str = ""      # disposición con la que se guardó drop_x/drop_y
+    # Aspecto de la barra: «pill» (cápsula) o «circle» (círculo sobre los botones);
+    # paleta «ezagent» o «sky»; botones «always» (siempre) u «hover» (al acercar).
+    ui_layout: str = "pill"
+    ui_palette: str = "ezagent"
+    ui_buttons: str = "always"
 
     # Tema del notch: auto (sigue a Windows), dark o light. Se guarda al
     # instante y no cuenta para «cambios sin guardar».

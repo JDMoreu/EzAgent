@@ -67,16 +67,26 @@ arranca escuchando; `Ctrl+Alt+Space` cuelga o retoma.
 
 ## La gota (interfaz por defecto)
 
-Desde la versión 0.2 la interfaz es **el orbe**: una esfera suave y luminosa, sin
-texto y sin bordes duros, con color que fluye por dentro. Respira y se deforma
-poco en calma; **se expande con la voz**, **tiembla sutilmente al captar sonido**
-y **vuelve a su forma base al callar**. La paleta de colores cambia con el estado
-(espera, escucha, piensa, habla, pregunta, error y silencio). Una confirmación
-late en ámbar y hace brotar ✕ y ✓. Al acercar el puntero brotan dos gotas
-pequeñas: micrófono y ajustes; los ajustes se abren en una tarjeta junto al
-orbe. Se arrastra y recuerda su posición (`drop_x` y `drop_y` en `voice.json`).
-Para volver a la isla antigua: `"ui_style": "notch"`. Los iconos se regeneran con
-`uv run python scripts/make_icons.py`.
+Desde la versión 0.2 la interfaz es **una barra sin texto**: una cápsula de color
+entre cuatro botones redondos (ajustes, repetir lo último, silenciar y colgar),
+anclada abajo al centro, sobre la barra de tareas. **La forma es fija y de borde
+nítido; lo que se mueve es el interior**, como agua o nubes de color: fluye
+despacio en calma y corre y se arremolina más cuando hablas o escuchas. El color
+cambia con el estado (espera, escucha, piensa, habla, pregunta, error y
+silencio). Una confirmación convierte los botones de los lados en ✕ y ✓ (la
+pregunta se dice por voz). Los ajustes se abren en una tarjeta encima de la
+barra. Se arrastra por la forma y recuerda su posición.
+
+Se configura en `voice.json`:
+
+| Clave | Valores | Por defecto |
+|---|---|---|
+| `ui_style` | `drop` (la barra) · `notch` (la isla antigua) | `drop` |
+| `ui_layout` | `pill` (cápsula) · `circle` (círculo sobre la fila de botones) | `pill` |
+| `ui_palette` | `ezagent` (lima, menta, violeta) · `sky` (azules y lavanda) | `ezagent` |
+| `ui_buttons` | `always` (siempre visibles) · `hover` (aparecen al acercar el puntero) | `always` |
+
+Los iconos se regeneran con `uv run python scripts/make_icons.py`.
 
 ## El notch (interfaz anterior)
 
