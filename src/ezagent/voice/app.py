@@ -208,12 +208,15 @@ def ensure_whisper(
     model_path = whisper_model_path(cfg.stt_model)
     has_server = home is not None and any(
         (home / sub / "whisper-server.exe").is_file()
-        for sub in ("", "whisper_vulkan")
+        for sub in ("", "whisper_vulkan", "vulkan", "cpu")
     )
     if not has_server and model_path is None:
         # DECISION: app.py usa log() propio (sin niveles); el aviso hablado lo
         # emite la capa que trata el estado "error" del notch.
-        log("No encuentro whisper. Revisa la carpeta de whisper en la configuración.")
+        log(
+            "No encuentro whisper. Descárgalo con: "
+            "uv run python -m ezagent.core.downloads --all"
+        )
         return None
     port = _free_local_port()
     cfg.whisper_url = urlunsplit(

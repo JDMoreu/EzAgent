@@ -1,0 +1,65 @@
+# Recursos que EzAgent descarga la primera vez. Todo vive bajo
+# %LOCALAPPDATA%\EzAgent (o EZAGENT_HOME). Cada recurso lleva tamano y SHA256
+# verificados contra la fuente oficial; sin hash correcto no se instala.
+#
+# NOTA: whisper.cpp no publica binarios de Windows con Vulkan. El recurso
+# "whisper-vulkan" se anade aqui cuando exista un release de EzAgent que lo
+# distribuya (ver docs/roadmap/etapas/E8-onboarding.md). Hasta entonces el
+# motor "auto" cae a CPU salvo que la carpeta whisper/ ya contenga uno.
+
+[[asset]]
+id = "whisper-cpu"
+label = "whisper.cpp (CPU)"
+url = "https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-x64.zip"
+sha256 = "6ba69e3482d7826214f90a6a9c84ca07782aec1e1d0c6a7c30c994fd5d816ccb"
+size = 8928640
+dest = "whisper/cpu"
+unzip = true
+strip_prefix = "Release/"
+license = "MIT"
+
+[[asset]]
+id = "whisper-model-turbo"
+label = "Modelo Whisper large-v3-turbo (q5_0)"
+url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin"
+sha256 = "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
+size = 574041195
+dest = "whisper/models/ggml-large-v3-turbo-q5_0.bin"
+license = "MIT"
+
+[[asset]]
+id = "kokoro-int8"
+label = "Kokoro v1.0 (int8)"
+url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.int8.onnx"
+sha256 = "6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb"
+size = 92361271
+dest = "models/kokoro/kokoro-v1.0.int8.onnx"
+license = "Apache-2.0"
+
+[[asset]]
+id = "kokoro-fp32"
+label = "Kokoro v1.0 (fp32)"
+url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
+sha256 = "7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5"
+size = 325532387
+dest = "models/kokoro/kokoro-v1.0.onnx"
+license = "Apache-2.0"
+optional = true
+
+[[asset]]
+id = "kokoro-voices"
+label = "Voces de Kokoro"
+url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+sha256 = "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d"
+size = 28214398
+dest = "models/kokoro/voices-v1.0.bin"
+license = "Apache-2.0"
+
+[[asset]]
+id = "silero-vad"
+label = "Silero VAD v5"
+url = "https://raw.githubusercontent.com/snakers4/silero-vad/v5.1.2/src/silero_vad/data/silero_vad.onnx"
+sha256 = "2623a2953f6ff3d2c1e61740c6cdb7168133479b267dfef114a4a3cc5bdd788f"
+size = 2327524
+dest = "models/silero_vad.onnx"
+license = "MIT"

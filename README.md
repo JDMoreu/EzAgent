@@ -25,18 +25,25 @@ Altavoz
 | TTS | Kokoro v1.0, voces españolas | Local, CPU (ONNX) |
 
 **Pipecat no se usa.** El pipeline es propio (VAD, whisper.cpp, Kokoro y el
-LLM); la carpeta `~/.cache/pipecat/kokoro-onnx` solo conserva los modelos Kokoro
-ya descargados.
+LLM); la carpeta `~/.cache/pipecat/kokoro-onnx` es una caché antigua que solo se lee para migrar los modelos Kokoro
+(se copian una vez a `%LOCALAPPDATA%zAgentmodelskokoro`).
 
 ## Arranque
 
-Requisitos: Windows 11, `uv`, `whisper-server` con Vulkan, el modelo
-`ggml-large-v3-turbo-q5_0.bin` y una clave del proveedor LLM elegido.
+Requisitos: Windows 11, `uv` y una clave del proveedor LLM elegido. Los modelos
+y binarios se descargan una sola vez, con verificación SHA256, a
+`%LOCALAPPDATA%\EzAgent` (whisper.cpp, modelo Whisper, Kokoro y Silero VAD):
 
-Whisper se instala en `%LOCALAPPDATA%\EzAgent\whisper`: copia ahí
-`whisper-server.exe` (build de whisper.cpp con Vulkan) y el modelo en
-`models\ggml-large-v3-turbo-q5_0.bin`. Si lo tienes en otra ruta, indícala con
-`EZAGENT_WHISPER_HOME`.
+```powershell
+uv run python -m ezagent.core.downloads --list   # qué falta
+uv run python -m ezagent.core.downloads --all    # descarga lo necesario
+```
+
+La descarga automática instala whisper.cpp en **CPU**, porque el proyecto
+oficial no publica binarios de Windows con Vulkan. Si tienes uno propio, copia
+su `whisper-server.exe` y DLL a `%LOCALAPPDATA%\EzAgent\whisper` y se usará
+antes que el de CPU. Otra carpeta: `EZAGENT_WHISPER_HOME` o `whisper_home` en
+`voice.json`.
 
 ```powershell
 git clone <url-del-repositorio> EzAgent

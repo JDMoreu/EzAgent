@@ -1,41 +1,42 @@
-"""Gestión del modelo Kokoro: por defecto usa la variante int8 (más rápida en CPU)."""
+"""Gestión del modelo Kokoro: por defecto usa la variante int8 (más rápida en CPU).
+
+Los archivos viven en ``%LOCALAPPDATA%\\EzAgent\\models\\kokoro``. Si existen en
+la caché heredada de una versión anterior (``~/.cache/pipecat/kokoro-onnx``) se
+copian una sola vez, tras comprobar su hash; si no, los descarga el gestor.
+"""
 
 from __future__ import annotations
 
 import os
-import urllib.request
 from pathlib import Path
 
 from loguru import logger
 
-# Ruta heredada de una versión con Pipecat. EzAgent NO usa Pipecat: solo
-# reutiliza esta caché para no volver a descargar los modelos Kokoro.
-CACHE_DIR = Path(os.path.expanduser("~/.cache/pipecat/kokoro-onnx"))
-VOICES_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
-MODEL_URLS = {
-    "int8": (
-        "kokoro-v1.0.int8.onnx",
-        "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.int8.onnx",
-    ),
-    "fp32": (
-        "kokoro-v1.0.onnx",
-        "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
-    ),
-}
+from ezagent.core.downloads import (
+    Asset,
+    DownloadError,
+    adopt,
+    asset_path,
+    download,
+    is_installed,
+    load_manifest,
+)
+
+# Caché heredada de una versión con Pipecat. EzAgent NO usa Pipecat: solo se
+# lee, nunca se escribe, para no obligar a descargar de nuevo los modelos.
+LEGACY_DIR = Path(os.path.expanduser("~/.cache/pipecat/kokoro-onnx"))
+VOICES_ASSET = "kokoro-voices"
+MODEL_ASSETS = {"int8": "kokoro-int8", "fp32": "kokoro-fp32"}
 
 
-def _download(url: str, dest: Path) -> None:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Descargando {url} -> {dest}")
-    tmp = dest.with_suffix(dest.suffix + ".part")
-    urllib.request.urlretrieve(url, tmp)
-    tmp.replace(dest)
-
-
-def _ensure(path: Path, url: str) -> Path:
-    if not path.exists():
-        _download(url, path)
-    return path
+def _ensure(asset: Asset) -> Path:
+    if not is_installed(asset):
+        legacy = LEGACY_DIR / Path(asset.dest).name
+        if adopt(asset, legacy):
+            logger.info(f"{asset.id}: copiado desde la caché anterior")
+        else:
+            download(asset)
+    return asset_path(asset)
 
 
 def resolve_kokoro_files(
@@ -44,15 +45,15 @@ def resolve_kokoro_files(
     voices_path: str | None = None,
 ) -> tuple[str | None, str | None]:
     """Devuelve (modelo, voces) para Kokoro."""
+    manifest = load_manifest()
     voices: Path | None = Path(voices_path) if voices_path else None
     if voices is None:
-        voices = _ensure(CACHE_DIR / "voices-v1.0.bin", VOICES_URL)
+        voices = _ensure(manifest[VOICES_ASSET])
 
     if model_path:
         model: Path | None = Path(model_path)
-    elif variant in MODEL_URLS:
-        filename, url = MODEL_URLS[variant]
-        model = _ensure(CACHE_DIR / filename, url)
+    elif variant in MODEL_ASSETS:
+        model = _ensure(manifest[MODEL_ASSETS[variant]])
     else:
         logger.warning(
             f"KOKORO_MODEL_VARIANT={variant!r} no reconocido; usa KOKORO_MODEL_PATH"
@@ -60,3 +61,6 @@ def resolve_kokoro_files(
         model = None
 
     return (str(model) if model else None, str(voices) if voices else None)
+
+
+__all__ = ["DownloadError", "resolve_kokoro_files"]
