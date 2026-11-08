@@ -1,19 +1,20 @@
-"""La gota: la interfaz de EzAgent (sin texto, solo movimiento y color).
+"""El orbe: la interfaz de EzAgent (sin texto, solo movimiento y color).
 
-Sustituye a la isla/notch. Es una ventana por capas transparente con una gota
-líquida que respira siempre y cuenta lo que pasa con forma, color y ondas:
+Sustituye a la isla/notch. Es una ventana por capas transparente con una esfera
+suave y luminosa, sin bordes duros, con color que fluye por dentro:
 
-* **te escucha**: anillos que *entran* hacia la gota con tu voz y el cuerpo se
-  hincha y aclara con el volumen;
-* **piensa**: un cometa ámbar y violeta le da vueltas;
-* **habla**: anillos que *salen* con cada sílaba y el color fluye entre lima y
-  menta;
-* **termina**: destello y chispas; **confirma**: late en ámbar; **error**: rojo.
+* **respira** y se deforma muy poco cuando está en calma;
+* **se expande con la voz** (la tuya o la de EzAgent) y las manchas de color se
+  agrandan y aceleran;
+* **tiembla sutilmente** mientras capta sonido y **vuelve a su forma base** al
+  callar;
+* cambia de paleta según el estado: espera, escucha, piensa, habla, pregunta,
+  error y silencio.
 
 Al acercar el puntero brotan dos gotas pequeñas (micrófono y ajustes); una
 confirmación pendiente hace brotar ✕ y ✓. Los ajustes se abren en una tarjeta
-propia junto a la gota. No dibuja zonas «casi invisibles»: el recorte de clics
-se calcula por geometría y todo lo demás deja pasar el ratón.
+propia junto al orbe. El recorte de clics se calcula por geometría: todo lo
+demás deja pasar el ratón.
 
 Tiene el mismo contrato que ``Notch`` (``island.py``) para que ``app.py`` no
 cambie. La animación vive en ``DropModel`` (pura, sin Win32) para probarla.
@@ -41,7 +42,8 @@ CX, CY = LW / 2.0, LH / 2.0
 BUD_R = 17.0          # radio de las gotas pequeñas
 BUD_X = 56.0          # separación de las gotas pequeñas al centro
 HIT_R = 54.0          # el puntero «cerca» hace brotar las gotas pequeñas
-SS = 2                # supersampling del dibujo
+SS = 2                # supersampling de la tarjeta
+BUD_SS = 3            # supersampling de las gotas pequeñas (el orbe no lo necesita)
 HOVER_HOLD = 0.7      # s que las gotas pequeñas siguen tras retirar el puntero
 
 DARK = {
@@ -62,9 +64,6 @@ POSE_OF = {
     "off": "idle", "idle": "idle", "listen": "listen", "think": "think",
     "speak": "speak", "notice": "done", "mute": "mute", "error": "error",
 }
-# Intensidad del halo por pose (0..1); crece con el volumen al escuchar/hablar.
-HALO = {"idle": .22, "listen": .45, "think": .5, "speak": .5, "done": .8, "ask": .55,
-        "error": .6, "mute": 0.0, "sleep": 0.0}
 
 
 def level_from_rms(rms: float) -> float:
@@ -103,49 +102,66 @@ class Spring:
         return self.x
 
 
-def target_color(pose: str, now: float, lvl: float, ts: float, p: dict):
-    """Color objetivo de cada pose; se mueve con el tiempo para que «viva»."""
+RMAX = 44.0     # semiancho lógico del parche donde se calcula el orbe
+GRID = 64       # resolución del parche (se escala suavemente al tamaño real)
+
+
+def orb_palette(pose: str, p: dict) -> list[tuple[float, float, float]]:
+    """Cinco colores que se mezclan por dentro del orbe según el estado."""
+    s, f, a, w, x = p["signal"], p["flow"], p["agent"], p["attention"], p["fault"]
+    ink, white, t3 = p["ink"], p["white"], p["text3"]
     if pose == "idle":
-        return mix(p["signal_dim"], mix(p["flow"], p["ink"], .35), .5 + .5 * math.sin(now * .55))
+        return [mix(s, ink, .30), mix(f, ink, .25), mix(s, a, .35), mix(s, ink, .15), mix(a, ink, .40)]
     if pose == "listen":
-        return mix(mix(p["signal"], p["flow"], .25 * lvl), p["white"], lvl * .4)
+        return [s, f, mix(s, white, .55), mix(s, f, .5), mix(f, white, .30)]
     if pose == "think":
-        return mix(p["attention"], p["agent"], .5 + .5 * math.sin(now * 2.4))
-    if pose == "speak":
-        flow = .5 + .5 * math.sin(now * 3.2 + lvl * 3.0)
-        return mix(mix(p["signal"], p["flow"], flow), p["white"], lvl * .25)
-    if pose == "done":
-        return mix(p["signal"], p["white"], max(0.0, 1 - ts * 2.2) * .8)
+        return [w, a, mix(w, x, .5), mix(a, w, .4), mix(w, white, .25)]
+    if pose in ("speak", "done"):
+        return [s, f, a, mix(s, f, .5), mix(f, a, .4)]
     if pose == "ask":
-        return mix(p["attention"], p["white"], (.5 + .5 * math.sin(now * math.tau / 1.2)) * .25)
+        return [w, mix(w, white, .35), mix(w, x, .3), mix(w, white, .55), w]
     if pose == "error":
-        return p["fault"]
+        return [x, mix(x, white, .30), mix(x, ink, .30), x, mix(x, w, .30)]
     if pose == "sleep":
-        return mix(p["text3"], p["ink"], .3)
-    return p["text3"]  # mute
+        return [mix(t3, ink, .45), mix(t3, ink, .55), mix(t3, ink, .40), mix(t3, ink, .50), mix(t3, ink, .35)]
+    return [t3, mix(t3, ink, .20), mix(t3, ink, .35), t3, mix(t3, white, .10)]   # mute
+
+
+# Posición y velocidad de las cinco manchas: (ωx, ωy, fase x, fase y)
+BLOBS = ((.9, 1.3, 0.0, 1.7), (1.1, .8, 2.1, .6), (.7, 1.5, 4.0, 2.3), (1.3, .9, 1.2, 3.4), (.8, 1.1, 5.2, .9))
+
+# Radio base por pose (px lógicos) y cuánto crece con la voz.
+BASE_R = {"idle": 24.0, "listen": 25.0, "think": 25.0, "speak": 26.0, "done": 25.0,
+          "ask": 26.0, "error": 22.0, "mute": 15.0, "sleep": 17.0}
+GROW = {"listen": 9.0, "speak": 11.0}
 
 
 class DropModel:
-    """Animación pura de la gota: sin Win32, sin Pillow, probable en aislamiento."""
+    """Animación pura del orbe: sin Win32, sin Pillow, probable en aislamiento.
+
+    El contorno respira y se deforma poco (modos 2–4, lentos). Con sonido se
+    expande y aparece un temblor fino (modos 5 y 7, rápidos) que se apaga al
+    callar, y la esfera vuelve a su forma base.
+    """
 
     def __init__(self) -> None:
-        self.R = 15.0
-        self.m = {"a2": .07, "a3": .055, "a4": .035, "a5": .02, "sx": 1.0, "sy": 1.0, "spd": .9}
-        self.ph = [0.0, 0.0]
-        self.color = [float(v) for v in DARK["signal_dim"]]
+        self.R = 24.0
+        self.m = {"a2": .035, "a3": .03, "a4": .02, "tr": 0.0}
+        self.ph = [0.0, 1.3, 2.6]          # fases lentas del contorno (k = 2, 3, 4)
+        self.trph = [0.0, 0.0]             # fases rápidas del temblor (k = 5, 7)
+        self.blob_ph = 0.0
+        self.cols = [[float(v) for v in c] for c in orb_palette("idle", DARK)]
+        self.bright = .85
         self.lvl = 0.0
         self.peak = 0.008
-        self.prev_lvl = 0.0
-        self.halo = 0.0
-        self.rings: list[tuple[float, str, float]] = []   # (t0, "in"|"out", fuerza)
-        self.last_ring = 0.0
         self.bud = {n: Spring(0.0) for n in ("mic", "gear", "no", "yes")}
         self.pose = "idle"
         self.shift = 0.0
         self.pose_since = 0.0
         self.ts = 0.0
         self.cy_offset = 0.0
-        self.comet = 0.0
+        self.jitter = 0.0
+        self.speed = .35
 
     # ------------------------------------------------------------ entrada
     def update(
@@ -155,12 +171,9 @@ class DropModel:
         if pose != self.pose:
             self.pose = pose
             self.pose_since = now
-            if pose == "done" and not reduced:
-                self.rings.append((now, "out", 1.0))
         ts = self.ts = now - self.pose_since
 
-        # Nivel con ganancia automática: sin importar si el micrófono es flojo
-        # o la salida es fuerte, la gota usa todo su rango.
+        # Nivel con ganancia automática: un micrófono flojo usa todo el rango.
         r = max(0.0, float(rms or 0.0))
         if pose in ("listen", "speak"):
             self.peak = max(0.008, self.peak * 0.9985, r)
@@ -168,86 +181,72 @@ class DropModel:
         else:
             self.peak = max(0.008, self.peak * 0.9995)
             target = 0.0
-        tau = 0.045 if target > self.lvl else 0.2
+        tau = 0.05 if target > self.lvl else 0.25     # ataque rápido, vuelta suave
         self.lvl += (target - self.lvl) * (1.0 - math.exp(-dt / tau))
         lv = self.lvl
 
-        a = {"a2": .07, "a3": .055, "a4": .035, "a5": .02}
-        tgt_r = 15.0 + math.sin(now * math.tau / 4.0) * .8
-        sx = sy = 1.0
-        spd = .9
+        # Temblor: aparece al captar sonido y se desvanece al callar.
+        sounding = pose in ("listen", "speak") and lv > .04
+        tr_t = min(1.0, .35 + lv) if sounding else 0.0
+        self.m["tr"] += (tr_t - self.m["tr"]) * (1.0 - math.exp(-dt / (.05 if tr_t > self.m["tr"] else .3)))
+
+        base = BASE_R.get(pose, 24.0)
+        breath = 0.0 if reduced else math.sin(now * math.tau / 4.2) * .7 + math.sin(now * math.tau / 7.3 + 1.3) * .4
+        tgt_r = base + breath + GROW.get(pose, 0.0) * lv
+        a = {"a2": .035, "a3": .03, "a4": .02}
+        spd = .35
         shift = 0.0
         if pose == "listen":
-            tgt_r = 17 + lv * 9
-            a = {"a2": .05 + lv * .12, "a3": .04 + lv * .10, "a4": .03 + lv * .05, "a5": .02}
-            spd = 2.2 + lv * 1.5
+            a = {"a2": .03 + lv * .07, "a3": .03 + lv * .06, "a4": .02 + lv * .04}
+            spd = .8 + lv * 1.6
         elif pose == "think":
-            tgt_r = 15
-            a = {"a2": .09, "a3": .10, "a4": .06, "a5": .03}
-            spd = 3.2
-        elif pose == "speak":
-            tgt_r = 16 + lv * 8
-            a = {"a2": .04 + lv * .24, "a3": .04 + lv * .20, "a4": .03 + lv * .14, "a5": .02 + lv * .10}
-            spd = 3.0 + lv * 2.0
-        elif pose == "ask":
-            sy = .9 + math.sin(now * math.tau / 1.2) * .06
-            sx = 1.07
-            tgt_r = 16
-            a = {"a2": .06, "a3": .05, "a4": .03, "a5": .02}
+            a = {"a2": .06, "a3": .07, "a4": .04}
             spd = 1.6
+        elif pose == "speak":
+            a = {"a2": .03 + lv * .10, "a3": .03 + lv * .09, "a4": .02 + lv * .06}
+            spd = .9 + lv * 1.8
+        elif pose == "ask":
+            a = {"a2": .04, "a3": .035, "a4": .02}
+            spd = .9
+            tgt_r += math.sin(now * math.tau / 1.2) * 1.4
         elif pose == "mute":
-            tgt_r = 9
-            a = {"a2": .02, "a3": .015, "a4": 0.0, "a5": 0.0}
-            spd = .5
+            a = {"a2": .012, "a3": .01, "a4": 0.0}
+            spd = .15
         elif pose == "sleep":
-            tgt_r = 10 + math.sin(now * math.tau / 5.0) * .5
-            a = {"a2": .03, "a3": .02, "a4": .01, "a5": 0.0}
-            spd = .4
+            a = {"a2": .02, "a3": .015, "a4": .01}
+            spd = .2
         elif pose == "error":
             shift = math.sin(ts * 45) * 4 * max(0.0, 1 - ts / .5)
-            tgt_r = 13
+            spd = .5
         elif pose == "done":
-            tgt_r = 15 + math.exp(-ts * 4) * math.cos(ts * 14) * 5
+            tgt_r += math.exp(-ts * 4) * math.cos(ts * 14) * 5
+            spd = 1.2
 
         k = 1.0 if reduced else 1.0 - math.exp(-dt / .14)
-        for key in ("a2", "a3", "a4", "a5"):
+        for key in ("a2", "a3", "a4"):
             self.m[key] += (a[key] - self.m[key]) * k
-        self.m["sx"] += (sx - self.m["sx"]) * k
-        self.m["sy"] += (sy - self.m["sy"]) * k
-        self.m["spd"] += (spd - self.m["spd"]) * (1.0 if reduced else 1.0 - math.exp(-dt / .35))
+        self.speed += (spd - self.speed) * (1.0 if reduced else 1.0 - math.exp(-dt / .35))
         if not reduced:
-            self.ph[0] += self.m["spd"] * dt
-            self.ph[1] += self.m["spd"] * dt * .8
-            self.comet += dt * 3.4
+            self.ph[0] += dt * self.speed * .9
+            self.ph[1] -= dt * self.speed * .7
+            self.ph[2] += dt * self.speed * 1.1
+            self.trph[0] += dt * 21.0
+            self.trph[1] -= dt * 27.0
+            self.blob_ph += dt * self.speed
         self.R += (tgt_r - self.R) * (1.0 if reduced else 1.0 - math.exp(-dt / .09))
         self.shift = 0.0 if reduced else shift
-        self.cy_offset = 0.0 if reduced else math.sin(now * .7) * 1.8
+        self.cy_offset = 0.0 if reduced else math.sin(now * .7) * 1.2
+        self.jitter = 0.0 if reduced else self.m["tr"] * .35 * math.sin(now * 47.0)
 
-        tc = target_color(pose, now, lv, ts, palette)
-        kc = 1.0 - math.exp(-dt / (.12 if reduced else .07))
-        for i in range(3):
-            self.color[i] += (tc[i] - self.color[i]) * kc
-
-        halo_t = HALO.get(pose, .2)
-        if pose in ("listen", "speak"):
-            halo_t = .4 + .6 * lv
-        elif pose == "done":
-            halo_t = max(.25, 1 - ts * 1.6)
-        self.halo += (halo_t - self.halo) * (1.0 if reduced else 1.0 - math.exp(-dt / .18))
-
-        # Anillos: hacia dentro con TU voz, hacia fuera con la de EzAgent.
-        if not reduced:
-            if pose == "listen" and lv > .18 and now - self.last_ring > .24:
-                self.rings.append((now, "in", lv))
-                self.last_ring = now
-            elif pose == "speak" and lv > .32 >= self.prev_lvl and now - self.last_ring > .16:
-                self.rings.append((now, "out", lv))
-                self.last_ring = now
-            elif pose == "ask" and now - self.last_ring > 1.2:
-                self.rings.append((now, "out", .6))
-                self.last_ring = now
-        self.prev_lvl = lv
-        self.rings = [t for t in self.rings if now - t[0] < 1.0]
+        bright_t = {"idle": .85, "mute": .7, "sleep": .6}.get(pose, 1.0 + .22 * lv)
+        if pose == "done":
+            bright_t += max(0.0, 1 - ts * 2.2) * .45
+        self.bright += (bright_t - self.bright) * (1.0 if reduced else 1.0 - math.exp(-dt / .15))
+        pal = orb_palette(pose, palette)
+        kc = 1.0 - math.exp(-dt / (.12 if reduced else .2))
+        for i in range(5):
+            for j in range(3):
+                self.cols[i][j] += (pal[i][j] - self.cols[i][j]) * kc
 
         show_pair = hover or menu_open
         self.bud["mic"].t = 1.0 if show_pair and not asking else 0.0
@@ -258,19 +257,23 @@ class DropModel:
             spring.step(dt, instant=reduced)
 
     # ------------------------------------------------------------- forma
+    def contour(self, th: float) -> float:
+        """Factor del radio en el ángulo ``th`` (1.0 = círculo perfecto)."""
+        f = 1.0
+        for kk, key, i in ((2, "a2", 0), (3, "a3", 1), (4, "a4", 2)):
+            f += self.m[key] * math.sin(kk * th + self.ph[i])
+        f += self.m["tr"] * (.018 * math.sin(5 * th + self.trph[0]) + .014 * math.sin(7 * th + self.trph[1]))
+        return f
+
     def blob(self) -> list[tuple[float, float]]:
         """Contorno de 72 puntos en coordenadas lógicas del lienzo."""
-        R = self.R
-        cx = CX + self.shift
-        cy = CY + self.cy_offset
+        cx, cy = CX + self.shift, CY + self.cy_offset
+        r0 = self.R + self.jitter
         pts = []
         for i in range(72):
             th = i / 72 * math.tau
-            r = R
-            for kk, key in ((2, "a2"), (3, "a3"), (4, "a4"), (5, "a5")):
-                phase = self.ph[0] if kk % 2 else -self.ph[1]
-                r += R * self.m[key] * math.sin(kk * th + phase + kk)
-            pts.append((cx + r * math.cos(th) * self.m["sx"], cy + r * math.sin(th) * self.m["sy"]))
+            r = r0 * self.contour(th)
+            pts.append((cx + r * math.cos(th), cy + r * math.sin(th)))
         return pts
 
     # -------------------------------------------------------- geometría
@@ -289,13 +292,74 @@ class DropModel:
         return None
 
     def on_body(self, x: float, y: float) -> bool:
-        """¿Está el punto sobre el cuerpo de la gota (con un margen para agarrarla)?"""
-        r = self.R * 1.15 + 8
+        """¿Está el punto sobre el cuerpo del orbe (con un margen para agarrarlo)?"""
+        r = self.R + 6
         return (x - CX) ** 2 + (y - CY) ** 2 <= r * r
 
     @staticmethod
     def near(x: float, y: float) -> bool:
         return (x - CX) ** 2 + (y - CY) ** 2 <= HIT_R ** 2
+
+
+_BASIS: dict[int, tuple] = {}
+
+
+def _basis(n: int):
+    """Mallas y bases trigonométricas del parche (se calculan una sola vez)."""
+    b = _BASIS.get(n)
+    if b is None:
+        ax = (np.arange(n, dtype=np.float32) + .5) / n * 2 - 1
+        nx, ny = np.meshgrid(ax, ax)
+        r = np.sqrt(nx * nx + ny * ny)
+        th = np.arctan2(ny, nx)
+        sc = {k: (np.sin(k * th), np.cos(k * th)) for k in (2, 3, 4, 5, 7)}
+        b = (nx, ny, r, sc)
+        _BASIS[n] = b
+    return b
+
+
+def render_orb(model: DropModel, n: int = GRID) -> np.ndarray:
+    """Parche RGBA (n×n, recto) del orbe: manchas de color + borde suave."""
+    nx, ny, r, sc = _basis(n)
+    r0 = (model.R + model.jitter) / RMAX
+    edge = np.full_like(r, 1.0)
+    for kk, key, i in ((2, "a2", 0), (3, "a3", 1), (4, "a4", 2)):
+        s, c = sc[kk]
+        edge += model.m[key] * (s * math.cos(model.ph[i]) + c * math.sin(model.ph[i]))
+    tr = model.m["tr"]
+    if tr > .002:
+        s5, c5 = sc[5]
+        s7, c7 = sc[7]
+        edge += tr * (.018 * (s5 * math.cos(model.trph[0]) + c5 * math.sin(model.trph[0]))
+                      + .014 * (s7 * math.cos(model.trph[1]) + c7 * math.sin(model.trph[1])))
+    edge *= r0
+
+    # Cinco manchas gaussianas que recorren el interior; con la voz crecen y aceleran.
+    lv = model.lvl
+    amp = (.34 + .26 * lv) * r0 / .9
+    sig2 = ((.5 + .16 * lv) * r0 / .9) ** 2
+    acc = np.zeros((n, n, 3), np.float32)
+    sw = np.zeros((n, n), np.float32)
+    for i, (wx, wy, px, py) in enumerate(BLOBS):
+        bx = math.cos(model.blob_ph * wx + px) * amp
+        by = math.sin(model.blob_ph * wy + py) * amp
+        w = np.exp(-((nx - bx) ** 2 + (ny - by) ** 2) / sig2)
+        sw += w
+        acc += w[..., None] * np.asarray(model.cols[i], np.float32)
+    mixk = np.clip(sw * 1.1, 0.0, 1.0)[..., None]
+    base = np.asarray(model.cols[0], np.float32) * .22
+    rgb = acc / (sw[..., None] + 1e-6) * mixk + base * (1.0 - mixk)
+
+    e = np.clip(r / np.maximum(edge, 1e-3), 0.0, 1.0)
+    rgb *= (model.bright * (.80 + .30 * (1.0 - e) ** 1.6))[..., None]      # centro más luminoso
+
+    # Borde suave: la opacidad cae poco a poco; no hay línea ni contorno duro.
+    t = np.clip((r - (edge + .02)) / (-.16 - .02), 0.0, 1.0)
+    alpha = t * t * (3.0 - 2.0 * t)
+    out = np.empty((n, n, 4), np.uint8)
+    out[..., :3] = np.clip(rgb, 0, 255).astype(np.uint8)
+    out[..., 3] = (alpha * 255.0).astype(np.uint8)
+    return out
 
 
 # ------------------------------------------------------------------ dibujo
@@ -335,169 +399,68 @@ def _glyph(d, name: str, cx: float, cy: float, u: float, color, width: float,
         _stroke(d, [P(5, 12.5), P(9.5, 17), P(19, 7)], width, color)
 
 
-def _scaled(pts, cx, cy, f, dx=0.0, dy=0.0):
-    return [(cx + (x - cx) * f + dx, cy + (y - cy) * f + dy) for x, y in pts]
-
-
-_GLOW_GRIDS: dict[int, np.ndarray] = {}
-
-
 class _Canvas:
-    """Lienzo RGBA donde cada forma se dibuja en una capa propia y se *compone*.
+    """Lienzo RGBA donde cada forma se dibuja en su propia capa y se *compone*.
 
     ``ImageDraw`` sobre una imagen RGBA sustituye los píxeles en vez de
-    mezclarlos; con transparencias (halo, brillo, anillos) hay que componer.
+    mezclarlos; con transparencias hay que componer.
     """
 
     def __init__(self, w: int, h: int) -> None:
         self.img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        self._fx: Image.Image | None = None
-        self._fxd: ImageDraw.ImageDraw | None = None
 
-    def fx(self) -> ImageDraw.ImageDraw:
-        """Capa compartida para anillos, cometa y chispas: se compone una sola vez."""
-        if self._fx is None:
-            self._fx = Image.new("RGBA", self.img.size, (0, 0, 0, 0))
-            self._fxd = ImageDraw.Draw(self._fx)
-        return self._fxd
+    def custom(self, box, fn, ss: int = 1) -> None:
+        """Dibuja con ``fn(d, ox, oy)`` en la caja ``box`` = (x0, y0, x1, y1).
 
-    def flush_fx(self) -> None:
-        if self._fx is not None:
-            self.img.alpha_composite(self._fx)
-            self._fx = self._fxd = None
-
-    def _layer(self, x0: float, y0: float, x1: float, y1: float, fn) -> None:
-        x0, y0 = max(0, int(x0)), max(0, int(y0))
-        x1, y1 = min(self.img.width, int(x1) + 1), min(self.img.height, int(y1) + 1)
+        Con ``ss`` > 1 la capa se dibuja a ``ss``× (fn debe multiplicar sus
+        coordenadas por ``ss``) y se reduce antes de componerla.
+        """
+        x0, y0 = max(0, int(box[0])), max(0, int(box[1]))
+        x1, y1 = min(self.img.width, int(box[2]) + 1), min(self.img.height, int(box[3]) + 1)
         if x1 <= x0 or y1 <= y0:
             return
-        layer = Image.new("RGBA", (x1 - x0, y1 - y0), (0, 0, 0, 0))
+        layer = Image.new("RGBA", ((x1 - x0) * ss, (y1 - y0) * ss), (0, 0, 0, 0))
         fn(ImageDraw.Draw(layer), x0, y0)
+        if ss > 1:
+            layer = layer.convert("RGBa").reduce(ss).convert("RGBA")
         self.img.alpha_composite(layer, (x0, y0))
 
-    def ellipse(self, cx, cy, r, fill=None, outline=None, width=1) -> None:
-        pad = width + 1
-        self._layer(cx - r - pad, cy - r - pad, cx + r + pad, cy + r + pad,
-                    lambda d, ox, oy: d.ellipse((cx - ox - r, cy - oy - r, cx - ox + r, cy - oy + r),
-                                                fill=fill, outline=outline, width=max(1, int(width))))
-
-    def polygon(self, pts, fill=None, outline_line=None, line_width=1) -> None:
-        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
-        pad = line_width + 1
-
-        def fn(d, ox, oy):
-            local = [(x - ox, y - oy) for x, y in pts]
-            if fill is not None:
-                d.polygon(local, fill=fill)
-            if outline_line is not None:
-                d.line(local + [local[0]], fill=outline_line, width=max(1, int(line_width)))
-
-        self._layer(min(xs) - pad, min(ys) - pad, max(xs) + pad, max(ys) + pad, fn)
-
-    def glow(self, cx: float, cy: float, r_px: float, col, amount: float) -> None:
-        """Halo: un único degradado radial (numpy) compuesto una sola vez."""
-        extent = int(r_px * 2.9)
-        size = 2 * extent + 1
-        grid = _GLOW_GRIDS.get(extent)
-        if grid is None:
-            yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
-            grid = np.sqrt((xx - extent) ** 2 + (yy - extent) ** 2)
-            if len(_GLOW_GRIDS) > 12:
-                _GLOW_GRIDS.clear()
-            _GLOW_GRIDS[extent] = grid
-        d = grid / max(r_px, 1.0)
-        alpha = np.clip((2.9 - d) / 1.8, 0.0, 1.0) ** 1.6 * (120.0 * amount)
-        patch = np.empty((size, size, 4), np.uint8)
-        patch[..., 0], patch[..., 1], patch[..., 2] = col[0], col[1], col[2]
-        patch[..., 3] = alpha.astype(np.uint8)
-        x0, y0 = int(cx) - extent, int(cy) - extent
-        # recorte a los límites del lienzo
+    def paste_orb(self, patch: np.ndarray, cx: float, cy: float, half_px: float) -> None:
+        """Escala el parche del orbe con suavidad y lo compone centrado en (cx, cy)."""
+        size = max(2, round(half_px * 2))
+        tile = Image.fromarray(patch, "RGBA").resize((size, size), Image.BICUBIC)
+        x0, y0 = round(cx - half_px), round(cy - half_px)
         sx0, sy0 = max(0, -x0), max(0, -y0)
-        sx1 = min(size, self.img.width - x0)
-        sy1 = min(size, self.img.height - y0)
+        sx1, sy1 = min(size, self.img.width - x0), min(size, self.img.height - y0)
         if sx1 <= sx0 or sy1 <= sy0:
             return
-        tile = Image.fromarray(patch[sy0:sy1, sx0:sx1], "RGBA")
+        if (sx0, sy0, sx1, sy1) != (0, 0, size, size):
+            tile = tile.crop((sx0, sy0, sx1, sy1))
         self.img.alpha_composite(tile, (x0 + sx0, y0 + sy0))
-
-    def custom(self, box, fn) -> None:
-        """Dibuja con ``fn(d, ox, oy)`` en la caja ``box`` = (x0, y0, x1, y1)."""
-        self._layer(*box, fn)
 
 
 def render_model(model: DropModel, w: int, h: int, scale: float, palette: dict,
                  muted: bool, in_call: bool, menu_open: bool, now: float | None = None) -> np.ndarray:
     """Dibuja un fotograma BGRA premultiplicado de ``w``×``h`` px físicos."""
-    now = time.monotonic() if now is None else now
-    k = scale * SS
-    cv = _Canvas(w * SS, h * SS)
-    ink, line, white = palette["ink"], palette["line"], palette["white"]
+    k = scale
+    cv = _Canvas(w, h)
+    ink, line = palette["ink"], palette["line"]
     pose = model.pose
-    col = tuple(int(v) for v in model.color)
-    R = model.R
     cx = (CX + model.shift) * k
     cy = (CY + model.cy_offset) * k
 
-    # 1) halo: círculos concéntricos que se apilan en un resplandor suave
-    if model.halo > .02:
-        cv.glow(cx, cy, R * k, col, model.halo)
-
-    # 2) anillos: entran con tu voz, salen con la de EzAgent
-    for t0, kind, strength in model.rings:
-        age = (now - t0) / (.7 if kind == "in" else .9)
-        if not 0 <= age <= 1:
-            continue
-        if kind == "in":
-            rr = (R + (1 - age) * (30 + 14 * strength)) * k
-            alpha = int(190 * strength * age)
-        else:
-            rr = (R + 2 + age * (30 + 18 * strength)) * k
-            alpha = int(190 * strength * (1 - age))
-        cv.fx().ellipse((cx - rr, cy - rr, cx + rr, cy + rr), outline=(*col, max(0, alpha)),
-                        width=max(1, round((1.8 - age) * k)))
-
-    # 3) cometa al pensar: ámbar → violeta, con cola
-    if pose == "think":
-        fx = cv.fx()
-        for i in range(11, -1, -1):
-            ang = model.comet - i * .13
-            rr = (R + 9) * k
-            t = i / 12
-            c = mix(palette["attention"], palette["agent"], t)
-            px, py, rad = cx + math.cos(ang) * rr, cy + math.sin(ang) * rr, (3.4 - 2.4 * t) * k
-            fx.ellipse((px - rad, py - rad, px + rad, py + rad),
-                       fill=(int(c[0]), int(c[1]), int(c[2]), int(255 * (1 - t) ** 1.3)))
-
-    cv.flush_fx()
-
-    # 4) cuerpo líquido: borde oscuro, masa de color y brillo desplazado
-    pts = [(x * k, y * k) for x, y in model.blob()]
-    rim = tuple(int(v) for v in mix(col, ink, .45))
-    hi = tuple(int(v) for v in mix(col, white, .55))
-    alpha_main = 235 if pose == "idle" else 255
-    cv.polygon(pts, fill=(*rim, alpha_main))
-    cv.polygon(_scaled(pts, cx, cy, .9), fill=(*col, alpha_main))
-    cv.polygon(_scaled(pts, cx, cy, .46, -.22 * R * k, -.3 * R * k), fill=(*hi, 120))
-    cv.ellipse(cx - .36 * R * k, cy - .4 * R * k, .13 * R * k, fill=(*white, 150))
-    cv.polygon(pts, outline_line=(*ink, 90), line_width=max(1, round(1.0 * k)))
-
-    # 5) chispas al terminar
-    if pose == "done" and model.ts < .9:
-        for i in range(8):
-            ang = i * math.tau / 8 + .3
-            dist = (R + 4 + model.ts * 52) * k
-            rad = max(.4, (2.6 - model.ts * 2.2)) * k
-            a = int(255 * max(0.0, 1 - model.ts / .9))
-            px, py = cx + math.cos(ang) * dist, cy + math.sin(ang) * dist
-            cv.fx().ellipse((px - rad, py - rad, px + rad, py + rad), fill=(*palette["signal"], a))
+    # El orbe: color que fluye dentro de una esfera de borde suave (sin halo, anillos ni brillo).
+    cv.paste_orb(render_orb(model), cx, cy, RMAX * k)
 
     if pose == "mute" or (muted and pose in ("idle", "listen")):
         sx0, sy0, sx1, sy1 = cx - 10 * k, cy + 10 * k, cx + 10 * k, cy - 10 * k
         cv.custom((cx - 14 * k, cy - 14 * k, cx + 14 * k, cy + 14 * k),
-                  lambda d, ox, oy: _stroke(d, [(sx0 - ox, sy0 - oy), (sx1 - ox, sy1 - oy)],
-                                            2.2 * k, (*palette["fault"], 255)))
+                  lambda d, ox, oy: _stroke(
+                      d, [((sx0 - ox) * BUD_SS, (sy0 - oy) * BUD_SS), ((sx1 - ox) * BUD_SS, (sy1 - oy) * BUD_SS)],
+                      2.2 * k * BUD_SS, (*palette["fault"], 255)),
+                  ss=BUD_SS)
 
-    # 6) gotas pequeñas
+    # Gotas pequeñas (botones): micrófono, ajustes, ✕ y ✓
     for name in ("mic", "gear", "no", "yes"):
         bx, by, p = model.bud_center(name)
         if p < 0.03:
@@ -516,18 +479,16 @@ def render_model(model: DropModel, w: int, h: int, scale: float, palette: dict,
             gcol = palette["text2"]
 
         def bud(d, ox, oy, bcx=bcx, bcy=bcy, rad=rad, alpha=alpha, gcol=gcol, pr=pr, name=name):
-            x, y = bcx - ox, bcy - oy
-            d.ellipse((x - rad, y - rad, x + rad, y + rad), fill=(*ink, alpha),
-                      outline=(*line, int(alpha * .22)), width=max(1, round(1.0 * k)))
-            _glyph(d, name, x, y, (16 / 24) * k * pr, (*gcol, alpha), 1.7 * k * pr,
+            q = BUD_SS
+            x, y, rr = (bcx - ox) * q, (bcy - oy) * q, rad * q
+            d.ellipse((x - rr, y - rr, x + rr, y + rr), fill=(*ink, alpha),
+                      outline=(*line, int(alpha * .22)), width=max(1, round(1.0 * k * q)))
+            _glyph(d, name, x, y, (16 / 24) * k * q * pr, (*gcol, alpha), 1.7 * k * q * pr,
                    muted=(name == "mic" and muted), fault=(*palette["fault"], alpha))
 
-        cv.custom((bcx - rad - 3, bcy - rad - 3, bcx + rad + 3, bcy + rad + 3), bud)
+        cv.custom((bcx - rad - 3, bcy - rad - 3, bcx + rad + 3, bcy + rad + 3), bud, ss=BUD_SS)
 
-    pm = cv.img.convert("RGBa")
-    if SS > 1:
-        pm = pm.reduce(SS)
-    arr = np.asarray(pm)
+    arr = np.asarray(cv.img.convert("RGBa"))
     return np.ascontiguousarray(arr[..., [2, 1, 0, 3]])
 
 
