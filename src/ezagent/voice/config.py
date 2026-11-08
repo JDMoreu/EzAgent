@@ -163,6 +163,12 @@ class VoiceConfig:
     notch_x: int | None = None
     notch_y: int | None = None
 
+    # Interfaz: «drop» (la gota, por defecto) o «notch» (la isla antigua). La
+    # gota guarda su propia posición física al terminar un arrastre.
+    ui_style: str = "drop"
+    drop_x: int | None = None
+    drop_y: int | None = None
+
     # Tema del notch: auto (sigue a Windows), dark o light. Se guarda al
     # instante y no cuenta para «cambios sin guardar».
     theme: str = "auto"
