@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
-"""dicta_layered — ventanas *layered* de 64 bits para la isla de dictado.
+"""Ventanas *layered* de 64 bits para la isla de EzAgent.
 
 Maquinaria Win32 de ventanas con transparencia real por píxel: la clase
-``LayeredWindow`` (UpdateLayeredWindow + DIB propio) es la base sobre la que
-``dicta_ui`` dibuja la muesca que aparece al dictar. También da la geometría
-del escritorio (``work_area``, ``taskbar_rect``).
+``LayeredWindow`` (UpdateLayeredWindow + DIB propio) es la base sobre la que se
+dibuja la muesca del notch. También da la geometría del escritorio
+(``work_area``, ``taskbar_rect``).
 
 Por qué existe este módulo: el código anterior declaraba ``ctypes.WinDLL`` sin
 ``argtypes``/``restype``. En x64 eso trunca cualquier HANDLE a 32 bits y, con
 extensión de signo, ``GetModuleHandleW`` devolvía ``0xffffffffdb4e0000`` en vez
 de ``0x7ff6db4e0000``: un puntero basura que hacía que ``RegisterClassExW`` y
-``CreateWindowExW`` reventaran con *access violation* (21 veces registradas en
-``dicta_crash.log``, cada una matando el hilo de la muesca). Aquí TODAS las
-funciones llevan prototipo, y la ventana *layered* es una clase reutilizable
-con gestión de DIB protegida por cerrojo (la carrera de liberación también
-provocaba AV en ``memmove``).
+``CreateWindowExW`` reventaran con *access violation* (una por hilo de la
+muesca). Aquí TODAS las funciones llevan prototipo, y la ventana *layered* es
+una clase reutilizable con gestión de DIB protegida por cerrojo (la carrera de
+liberación también provocaba AV en ``memmove``).
 
-Solo depende de ctypes y numpy: no importa nada de dicta.py/dicta_ui.py para no
-crear ciclos.
+Solo depende de ctypes y numpy: no importa la UI de la isla para no crear
+ciclos.
+
+Basado en Dicta (MIT).
 """
 
 import ctypes
@@ -399,7 +400,7 @@ _BY_HWND = {}                       # hwnd   -> instancia
 _WM_SEQ = [0]
 _CLASS_ATOM = [None]
 _CLASS_LOCK = threading.Lock()
-_CLASS_NAME = "dicta-layered-window"
+_CLASS_NAME = "ezagent-layered-window"
 
 _WM_CLOSE = 0x0010
 _WM_PAINT = 0x000F
@@ -488,7 +489,7 @@ class LayeredWindow:
 
     FPS_ACTIVE = 30
 
-    def __init__(self, w, h, x=0, y=0, click_through=False, title="dicta"):
+    def __init__(self, w, h, x=0, y=0, click_through=False, title="ezagent"):
         self.w = int(w)
         self.h = int(h)
         self.x = int(x)
@@ -542,7 +543,7 @@ class LayeredWindow:
             return True
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True,
-                                        name=f"dicta-{self.title}")
+                                        name=f"ezagent-{self.title}")
         self._thread.start()
         self._created.wait(timeout=4.0)
         return self._ok
