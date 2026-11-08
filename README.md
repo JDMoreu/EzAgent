@@ -25,8 +25,9 @@ Altavoz
 | TTS | Kokoro v1.0, voces españolas | Local, CPU (ONNX) |
 
 **Pipecat no se usa.** El pipeline es propio (VAD, whisper.cpp, Kokoro y el
-LLM); la carpeta `~/.cache/pipecat/kokoro-onnx` es una caché antigua que solo se lee para migrar los modelos Kokoro
-(se copian una vez a `%LOCALAPPDATA%zAgentmodelskokoro`).
+LLM); la carpeta `~/.cache/pipecat/kokoro-onnx` es una caché antigua que solo
+se lee para migrar los modelos Kokoro, que se copian una vez a
+`%LOCALAPPDATA%\EzAgent\models\kokoro`.
 
 ## Arranque
 
