@@ -1,0 +1,120 @@
+{"id": "run-es-001", "lang": "es", "text": "abre claude en ezagent y arregla los tests", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "ezagent"}, "contains": {"task": ["test"]}}}
+{"id": "run-es-002", "lang": "es", "text": "lanza open code en el proyecto ezagent para que revise los errores de lint", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "opencode", "project": "ezagent"}, "contains": {"task": ["lint"]}}}
+{"id": "run-es-003", "lang": "es", "text": "pídele a codex que escriba pruebas para el módulo de descargas en ezagent", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "codex", "project": "ezagent"}, "contains": {"task": ["prueba"]}}}
+{"id": "run-es-004", "lang": "es", "text": "ponle a claude code a trabajar en api: actualiza el readme", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "api"}, "contains": {"task": ["readme"]}}}
+{"id": "run-es-005", "lang": "es", "text": "con opencode en api, refactoriza el parser", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "opencode", "project": "api"}, "contains": {"task": ["parser"]}}}
+{"id": "run-es-006", "lang": "es", "text": "necesito que codex arregle los tests en api", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "codex", "project": "api"}, "contains": {"task": ["test"]}}}
+{"id": "run-es-007", "lang": "es", "text": "abre claude en web y revisa los errores de lint", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "web"}, "contains": {"task": ["lint"]}}}
+{"id": "run-es-008", "lang": "es", "text": "lanza open code en el proyecto web para que escriba pruebas para el módulo de descargas", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "opencode", "project": "web"}, "contains": {"task": ["prueba"]}}}
+{"id": "run-es-009", "lang": "es", "text": "pídele a codex que actualice el readme en web", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "codex", "project": "web"}, "contains": {"task": ["readme"]}}}
+{"id": "run-es-010", "lang": "es", "text": "ponle a claude code a trabajar en ezagent: refactoriza el parser", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "ezagent"}, "contains": {"task": ["parser"]}}}
+{"id": "run-es-011", "lang": "es", "text": "con opencode en ezagent, arregla los tests", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "opencode", "project": "ezagent"}, "contains": {"task": ["test"]}}}
+{"id": "run-es-012", "lang": "es", "text": "necesito que codex revise los errores de lint en ezagent", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "codex", "project": "ezagent"}, "contains": {"task": ["lint"]}}}
+{"id": "run-es-013", "lang": "es", "text": "abre claude en api y escribe pruebas para el módulo de descargas", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "api"}, "contains": {"task": ["prueba"]}}}
+{"id": "run-es-014", "lang": "es", "text": "lanza open code en el proyecto api para que actualice el readme", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "opencode", "project": "api"}, "contains": {"task": ["readme"]}}}
+{"id": "run-es-015", "lang": "es", "text": "pídele a codex que refactorice el parser en api", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "codex", "project": "api"}, "contains": {"task": ["parser"]}}}
+{"id": "run-es-016", "lang": "es", "text": "ponle a claude code a trabajar en web: arregla los tests", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "web"}, "contains": {"task": ["test"]}}}
+{"id": "run-es-017", "lang": "es", "text": "con opencode en web, revisa los errores de lint", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "opencode", "project": "web"}, "contains": {"task": ["lint"]}}}
+{"id": "run-es-018", "lang": "es", "text": "necesito que codex escriba pruebas para el módulo de descargas en web", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "codex", "project": "web"}, "contains": {"task": ["prueba"]}}}
+{"id": "run-es-019", "lang": "es", "text": "abre claude en ezagent y actualiza el readme", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "ezagent"}, "contains": {"task": ["readme"]}}}
+{"id": "run-es-020", "lang": "es", "text": "lanza open code en el proyecto ezagent para que refactorice el parser", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "opencode", "project": "ezagent"}, "contains": {"task": ["parser"]}}}
+{"id": "run-es-021", "lang": "es", "text": "pídele a codex que arregle los tests en ezagent", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "codex", "project": "ezagent"}, "contains": {"task": ["test"]}}}
+{"id": "run-es-022", "lang": "es", "text": "ponle a claude code a trabajar en api: revisa los errores de lint", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "api"}, "contains": {"task": ["lint"]}}}
+{"id": "run-es-023", "lang": "es", "text": "con opencode en api, escribe pruebas para el módulo de descargas", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "opencode", "project": "api"}, "contains": {"task": ["prueba"]}}}
+{"id": "run-es-024", "lang": "es", "text": "necesito que codex actualice el readme en api", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "codex", "project": "api"}, "contains": {"task": ["readme"]}}}
+{"id": "runx-es-025", "lang": "es", "text": "abre claude en ezagent en esfuerzo alto y arregla los tests", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "ezagent", "effort": "high"}, "contains": {"task": ["test"]}}}
+{"id": "runx-es-026", "lang": "es", "text": "lanza opencode en api con deepseek y revisa el lint", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "opencode", "project": "api", "model": "deepseek"}, "contains": {"task": ["lint"]}}}
+{"id": "runx-es-027", "lang": "es", "text": "abre codex en web en esfuerzo bajo y actualiza el readme", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "codex", "project": "web", "effort": "low"}, "contains": {"task": ["readme"]}}}
+{"id": "runx-es-028", "lang": "es", "text": "lanza claude en ezagent para arreglar los tests y avísame cuando termine", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "ezagent", "notify": true}, "contains": {"task": ["test"]}}}
+{"id": "runx-es-029", "lang": "es", "text": "abre opencode en api en segundo plano y revisa el lint", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "opencode", "project": "api", "background": true}, "contains": {"task": ["lint"]}}}
+{"id": "runx-es-030", "lang": "es", "text": "abre claude en ezagent para planificar el parser y pásale su salida a opencode", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "ezagent", "after": "opencode"}, "contains": {"task": ["parser"]}}}
+{"id": "stt-es-031", "lang": "es", "text": "abre cloud code en easy agent y arregla los tests", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "ezagent"}, "contains": {"task": ["test"]}}}
+{"id": "stt-es-032", "lang": "es", "text": "lanza open cod en api y revisa el lint", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "opencode", "project": "api"}, "contains": {"task": ["lint"]}}}
+{"id": "stt-es-033", "lang": "es", "text": "pídele a códex que actualice el readme en web", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "codex", "project": "web"}, "contains": {"task": ["readme"]}}}
+{"id": "stt-es-034", "lang": "es", "text": "abre clod en ez agent y refactoriza el parser", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "ezagent"}, "contains": {"task": ["parser"]}}}
+{"id": "stt-es-035", "lang": "es", "text": "ponle a cloud code a escribir pruebas en easy agent", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "ezagent"}, "contains": {"task": ["prueba"]}}}
+{"id": "stat-es-036", "lang": "es", "text": "cómo va claude", "route": "action", "expect": {"tool": "agent_status", "args": {"agent": "claude"}}}
+{"id": "stat-es-037", "lang": "es", "text": "cómo va opencode", "route": "action", "expect": {"tool": "agent_status", "args": {"agent": "opencode"}}}
+{"id": "stat-es-038", "lang": "es", "text": "qué está haciendo codex", "route": "action", "expect": {"tool": "agent_status", "args": {"agent": "codex"}}}
+{"id": "stat-es-039", "lang": "es", "text": "qué agentes hay trabajando", "route": "action", "expect": {"tool": "agent_status"}}
+{"id": "stat-es-040", "lang": "es", "text": "resúmeme lo que hizo claude", "route": "action", "expect": {"tool": "agent_status", "args": {"agent": "claude", "summarize": true}}}
+{"id": "stat-es-041", "lang": "es", "text": "dime qué hizo opencode en api", "route": "action", "expect": {"tool": "agent_status", "args": {"summarize": true}}}
+{"id": "stat-es-042", "lang": "es", "text": "cómo va lo de ezagent", "route": "action", "expect": {"tool": "agent_status"}}
+{"id": "stat-es-043", "lang": "es", "text": "hay algún agente atascado", "route": "action", "expect": {"tool": "agent_status"}}
+{"id": "stat-es-044", "lang": "es", "text": "qué ha terminado ya", "route": "action", "expect": {"tool": "agent_status"}}
+{"id": "stat-es-045", "lang": "es", "text": "cómo va todo", "route": "action", "expect": {"tool": "agent_status"}}
+{"id": "send-es-046", "lang": "es", "text": "dile a claude que use pytest con el flag q", "route": "action", "expect": {"tool": "send_to_agent", "args": {"agent": "claude"}, "contains": {"message": ["pytest"]}}}
+{"id": "send-es-047", "lang": "es", "text": "respóndele a opencode que sí", "route": "action", "expect": {"tool": "send_to_agent", "args": {"agent": "opencode"}, "contains": {"message": ["sí"]}}}
+{"id": "send-es-048", "lang": "es", "text": "dile que también revise los imports", "route": "action", "expect": {"tool": "send_to_agent", "contains": {"message": ["import"]}}}
+{"id": "send-es-049", "lang": "es", "text": "avísale a codex que el archivo está en la carpeta docs", "route": "action", "expect": {"tool": "send_to_agent", "args": {"agent": "codex"}, "contains": {"message": ["docs"]}}}
+{"id": "send-es-050", "lang": "es", "text": "dile a claude que pare de tocar el parser y siga con los tests", "route": "action", "expect": {"tool": "send_to_agent", "args": {"agent": "claude"}, "contains": {"message": ["test"]}}}
+{"id": "send-es-051", "lang": "es", "text": "contéstale a opencode que adelante con el cambio", "route": "action", "expect": {"tool": "send_to_agent", "args": {"agent": "opencode"}, "contains": {"message": ["adelante"]}}}
+{"id": "send-es-052", "lang": "es", "text": "pásale a codex la ruta src barra ezagent", "route": "action", "expect": {"tool": "send_to_agent", "args": {"agent": "codex"}, "contains": {"message": ["src"]}}}
+{"id": "send-es-053", "lang": "es", "text": "dile que use la rama principal", "route": "action", "expect": {"tool": "send_to_agent", "contains": {"message": ["rama"]}}}
+{"id": "stop-es-054", "lang": "es", "text": "para claude", "route": "action", "expect": {"tool": "stop_agent", "args": {"agent": "claude"}}}
+{"id": "stop-es-055", "lang": "es", "text": "detén opencode en api", "route": "action", "expect": {"tool": "stop_agent", "args": {"agent": "opencode"}}}
+{"id": "stop-es-056", "lang": "es", "text": "cancela lo de codex", "route": "action", "expect": {"tool": "stop_agent", "args": {"agent": "codex"}}}
+{"id": "stop-es-057", "lang": "es", "text": "mata el agente de ezagent", "route": "action", "expect": {"tool": "stop_agent"}}
+{"id": "stop-es-058", "lang": "es", "text": "detén a claude", "route": "action", "expect": {"tool": "stop_agent", "args": {"agent": "claude"}}}
+{"id": "voice-es-059", "lang": "es", "text": "silencia el micrófono", "route": "command", "expect": {"tool": "voice_control", "args": {"action": "mute"}}}
+{"id": "voice-es-060", "lang": "es", "text": "silencio", "route": "command", "expect": {"tool": "voice_control", "args": {"action": "mute"}}}
+{"id": "voice-es-061", "lang": "es", "text": "reactiva el micro", "route": "command", "expect": {"tool": "voice_control", "args": {"action": "unmute"}}}
+{"id": "voice-es-062", "lang": "es", "text": "cuelga", "route": "command", "expect": {"tool": "voice_control", "args": {"action": "hang_up"}}}
+{"id": "voice-es-063", "lang": "es", "text": "cierra la escucha", "route": "command", "expect": {"tool": "voice_control", "args": {"action": "hang_up"}}}
+{"id": "voice-es-064", "lang": "es", "text": "repite lo último", "route": "command", "expect": {"tool": "voice_control", "args": {"action": "repeat"}}}
+{"id": "voice-es-065", "lang": "es", "text": "no te oí, repítelo", "route": "command", "expect": {"tool": "voice_control", "args": {"action": "repeat"}}}
+{"id": "voice-es-066", "lang": "es", "text": "avísame cuando termine claude", "route": "action", "expect": {"tool": "voice_control", "args": {"action": "watch", "agent": "claude"}}}
+{"id": "voice-es-067", "lang": "es", "text": "estate pendiente de opencode", "route": "action", "expect": {"tool": "voice_control", "args": {"action": "watch", "agent": "opencode"}}}
+{"id": "mem-es-068", "lang": "es", "text": "recuerda que mi proyecto principal es ezagent", "route": "action", "expect": {"tool": "remember", "args": {"kind": "profile"}}}
+{"id": "mem-es-069", "lang": "es", "text": "acuérdate de que prefiero respuestas cortas", "route": "action", "expect": {"tool": "remember", "args": {"kind": "profile"}}}
+{"id": "mem-es-070", "lang": "es", "text": "recuerda que easy agent es ezagent", "route": "action", "expect": {"tool": "remember", "args": {"kind": "project_alias"}}}
+{"id": "mem-es-071", "lang": "es", "text": "guarda que el proyecto api está en la carpeta de trabajo", "route": "action", "expect": {"tool": "remember", "args": {"kind": "project_alias"}}}
+{"id": "chat-es-072", "lang": "es", "text": "hola", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-es-073", "lang": "es", "text": "gracias, eso es todo", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-es-074", "lang": "es", "text": "¿quién eres?", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-es-075", "lang": "es", "text": "¿me escuchas?", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-es-076", "lang": "es", "text": "buenos días", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-es-077", "lang": "es", "text": "qué puedes hacer por mí", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-es-078", "lang": "es", "text": "cuéntame un chiste corto", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-es-079", "lang": "es", "text": "vale, perfecto", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-es-080", "lang": "es", "text": "no, déjalo", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-es-081", "lang": "es", "text": "¿qué hora es?", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-es-082", "lang": "es", "text": "espera un momento", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-es-083", "lang": "es", "text": "¿puedes hablar más despacio?", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-es-084", "lang": "es", "text": "ya está, gracias", "route": "chat", "expect": {"tool": null}}
+{"id": "run-en-085", "lang": "en", "text": "open claude on ezagent and fix the failing tests", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "ezagent"}, "contains": {"task": ["test"]}}}
+{"id": "run-en-086", "lang": "en", "text": "start opencode in the ezagent project to update the readme", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "opencode", "project": "ezagent"}, "contains": {"task": ["readme"]}}}
+{"id": "run-en-087", "lang": "en", "text": "ask codex to refactor the parser on api", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "codex", "project": "api"}, "contains": {"task": ["parser"]}}}
+{"id": "run-en-088", "lang": "en", "text": "open claude on api and add tests for the download module", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "api"}, "contains": {"task": ["test"]}}}
+{"id": "run-en-089", "lang": "en", "text": "start opencode in the web project to fix the failing tests", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "opencode", "project": "web"}, "contains": {"task": ["test"]}}}
+{"id": "run-en-090", "lang": "en", "text": "ask codex to update the readme on web", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "codex", "project": "web"}, "contains": {"task": ["readme"]}}}
+{"id": "run-en-091", "lang": "en", "text": "open claude on ezagent and refactor the parser", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "ezagent"}, "contains": {"task": ["parser"]}}}
+{"id": "run-en-092", "lang": "en", "text": "start opencode in the ezagent project to add tests for the download module", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "opencode", "project": "ezagent"}, "contains": {"task": ["test"]}}}
+{"id": "run-en-093", "lang": "en", "text": "ask codex to fix the failing tests on api", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "codex", "project": "api"}, "contains": {"task": ["test"]}}}
+{"id": "run-en-094", "lang": "en", "text": "open claude on api and update the readme", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "claude", "project": "api"}, "contains": {"task": ["readme"]}}}
+{"id": "run-en-095", "lang": "en", "text": "start opencode in the web project to refactor the parser", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "opencode", "project": "web"}, "contains": {"task": ["parser"]}}}
+{"id": "run-en-096", "lang": "en", "text": "ask codex to add tests for the download module on web", "route": "action", "expect": {"tool": "run_agent", "args": {"agent": "codex", "project": "web"}, "contains": {"task": ["test"]}}}
+{"id": "stat-en-097", "lang": "en", "text": "how is claude doing", "route": "action", "expect": {"tool": "agent_status", "args": {"agent": "claude"}}}
+{"id": "stat-en-098", "lang": "en", "text": "what agents are running", "route": "action", "expect": {"tool": "agent_status"}}
+{"id": "stat-en-099", "lang": "en", "text": "summarize what opencode did", "route": "action", "expect": {"tool": "agent_status", "args": {"agent": "opencode", "summarize": true}}}
+{"id": "stat-en-100", "lang": "en", "text": "is anything stuck", "route": "action", "expect": {"tool": "agent_status"}}
+{"id": "stat-en-101", "lang": "en", "text": "how is it going", "route": "action", "expect": {"tool": "agent_status"}}
+{"id": "send-en-102", "lang": "en", "text": "tell claude to use pytest", "route": "action", "expect": {"tool": "send_to_agent", "args": {"agent": "claude"}, "contains": {"message": ["pytest"]}}}
+{"id": "send-en-103", "lang": "en", "text": "answer yes to opencode", "route": "action", "expect": {"tool": "send_to_agent", "args": {"agent": "opencode"}, "contains": {"message": ["yes"]}}}
+{"id": "send-en-104", "lang": "en", "text": "tell codex the file is in the docs folder", "route": "action", "expect": {"tool": "send_to_agent", "args": {"agent": "codex"}, "contains": {"message": ["docs"]}}}
+{"id": "send-en-105", "lang": "en", "text": "tell it to also check the imports", "route": "action", "expect": {"tool": "send_to_agent", "contains": {"message": ["import"]}}}
+{"id": "stop-en-106", "lang": "en", "text": "stop claude", "route": "action", "expect": {"tool": "stop_agent", "args": {"agent": "claude"}}}
+{"id": "stop-en-107", "lang": "en", "text": "kill the opencode run", "route": "action", "expect": {"tool": "stop_agent", "args": {"agent": "opencode"}}}
+{"id": "stop-en-108", "lang": "en", "text": "cancel codex", "route": "action", "expect": {"tool": "stop_agent", "args": {"agent": "codex"}}}
+{"id": "voice-en-109", "lang": "en", "text": "mute the microphone", "route": "command", "expect": {"tool": "voice_control", "args": {"action": "mute"}}}
+{"id": "voice-en-110", "lang": "en", "text": "unmute", "route": "command", "expect": {"tool": "voice_control", "args": {"action": "unmute"}}}
+{"id": "voice-en-111", "lang": "en", "text": "hang up", "route": "command", "expect": {"tool": "voice_control", "args": {"action": "hang_up"}}}
+{"id": "voice-en-112", "lang": "en", "text": "repeat that", "route": "command", "expect": {"tool": "voice_control", "args": {"action": "repeat"}}}
+{"id": "mem-en-113", "lang": "en", "text": "remember that I prefer short answers", "route": "action", "expect": {"tool": "remember", "args": {"kind": "profile"}}}
+{"id": "mem-en-114", "lang": "en", "text": "remember that easy agent means ezagent", "route": "action", "expect": {"tool": "remember", "args": {"kind": "project_alias"}}}
+{"id": "chat-en-115", "lang": "en", "text": "hello", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-en-116", "lang": "en", "text": "thanks, that's all", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-en-117", "lang": "en", "text": "who are you", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-en-118", "lang": "en", "text": "can you hear me", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-en-119", "lang": "en", "text": "what time is it", "route": "chat", "expect": {"tool": null}}
+{"id": "chat-en-120", "lang": "en", "text": "never mind", "route": "chat", "expect": {"tool": null}}

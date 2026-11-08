@@ -16,7 +16,6 @@ audio no se incluye (la elimina E2). Documentado para no confundir la cifra.
 from __future__ import annotations
 
 import json
-import random
 import subprocess
 import time
 import wave
