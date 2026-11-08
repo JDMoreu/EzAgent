@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "format": "WAV mono, 16 bits, 16 kHz, nombre <id>.wav",
+  "phrases": [
+    {"id": "c01", "group": "comando", "text": "abre claude en ezagent y arregla los tests"},
+    {"id": "c02", "group": "comando", "text": "lanza opencode en el proyecto api y revisa los errores de lint"},
+    {"id": "c03", "group": "comando", "text": "pídele a codex que escriba pruebas para el módulo de descargas"},
+    {"id": "c04", "group": "comando", "text": "cómo va claude"},
+    {"id": "c05", "group": "comando", "text": "qué agentes hay trabajando"},
+    {"id": "c06", "group": "comando", "text": "avísame cuando termine opencode"},
+    {"id": "c07", "group": "comando", "text": "para claude"},
+    {"id": "c08", "group": "comando", "text": "silencia el micrófono"},
+    {"id": "p01", "group": "pausa", "text": "abre claude en ezagent... y arregla los tests que fallan", "note": "pausa de ~0,8 s tras «ezagent»"},
+    {"id": "p02", "group": "pausa", "text": "dile a opencode... que use pytest con el flag q", "note": "pausa de ~0,8 s tras «opencode»"},
+    {"id": "p03", "group": "pausa", "text": "lanza codex en la carpeta de documentos... y que ordene los archivos por fecha", "note": "pausa de ~0,9 s"},
+    {"id": "p04", "group": "pausa", "text": "resúmeme lo que hizo claude... pero solo lo importante", "note": "pausa de ~0,7 s"},
+    {"id": "p05", "group": "pausa", "text": "cuando termine claude... avísame y dime si pasaron los tests", "note": "pausa de ~0,8 s"},
+    {"id": "p06", "group": "pausa", "text": "necesito que... abras opencode y revises el readme", "note": "pausa de ~1,0 s tras «que»"},
+    {"id": "h01", "group": "charla", "text": "hola, ¿me escuchas?"},
+    {"id": "h02", "group": "charla", "text": "¿quién eres?"},
+    {"id": "h03", "group": "charla", "text": "gracias, eso es todo"},
+    {"id": "h04", "group": "charla", "text": "¿qué hora es?"},
+    {"id": "h05", "group": "charla", "text": "repite lo último que dijiste"},
+    {"id": "h06", "group": "charla", "text": "qué puedes hacer por mí"}
+  ]
+}

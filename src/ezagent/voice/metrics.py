@@ -7,9 +7,11 @@ de TTS; el objeto es de un solo turno y no necesita compartirse entre turnos.
 
 from __future__ import annotations
 
+import json
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass
@@ -45,14 +47,37 @@ class TurnTimings:
 class LatencyStats:
     """Acumula los turnos y publica media y P95 cada diez turnos."""
 
-    def __init__(self, maxlen: int = 50) -> None:
+    def __init__(self, maxlen: int = 50, jsonl_path: Path | None = None) -> None:
         self._turns: deque[dict[str, float]] = deque(maxlen=maxlen)
         self._total = 0
+        self._jsonl = jsonl_path
+
+    def _append_jsonl(self, record: dict[str, object]) -> None:
+        """Escribe una línea JSON por turno; un fallo de disco nunca rompe la voz."""
+        if self._jsonl is None:
+            return
+        try:
+            self._jsonl.parent.mkdir(parents=True, exist_ok=True)
+            with self._jsonl.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+
+    def record_command(self, name: str, handled_ms: float) -> None:
+        """Registra un comando local (sin LLM): tiempo hasta ejecutarlo."""
+        self._append_jsonl(
+            {"ts": time.time(), "kind": "command", "name": name,
+             "handled_ms": round(handled_ms, 1)}
+        )
 
     def record(self, timings: TurnTimings) -> dict[str, float]:
         report = timings.report()
         self._turns.append(report)
         self._total += 1
+        self._append_jsonl(
+            {"ts": time.time(), "kind": "turn",
+             **{key: round(value, 1) for key, value in report.items()}}
+        )
         print(
             "[ezagent-voice] Latencia: "
             + " ".join(f"{key}={value:.0f}" for key, value in report.items()),

@@ -289,7 +289,9 @@ class VoiceApp:
         self._turn_gen = 0
         self._turn_started = 0.0
         self._turn_timing: TurnTimings | None = None
-        self._latency = LatencyStats()
+        self._latency = LatencyStats(
+            jsonl_path=config_path().parent / "logs" / "latency.jsonl"
+        )
         self._notch_hidden = bool(cfg.notch_hidden)
         self._restarting = False
         self._shutdown_done = False
@@ -882,7 +884,11 @@ class VoiceApp:
             if self._turn_started:
                 log(f"STT: {(time.monotonic() - self._turn_started) * 1000:.0f} ms")
             log(f"Tú: {text}")
+            fast_t0 = time.monotonic()
             if self._fast_command(text):
+                self._latency.record_command(
+                    "fast_command", (time.monotonic() - fast_t0) * 1000
+                )
                 return
             self._set_state(THINKING)
             threading.Thread(
