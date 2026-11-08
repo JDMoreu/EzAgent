@@ -215,6 +215,7 @@ input[type=range]:active::-webkit-slider-thumb{transform:scale(1.25)}
         <button class="pill" id="tDock" type="button" aria-pressed="false">Acoplado arriba</button>
         <button class="pill" id="tMotion" type="button" aria-pressed="false">Movimiento reducido</button>
         <button class="pill" id="tSound" type="button" aria-pressed="false">Sonido</button>
+        <button class="pill" id="tSpeak" type="button">Habla: onda bajo los ojos</button>
       </div></div>
     </div>
     <p class="note">Tip: pulsa la flecha de la isla para abrir los ajustes, o el micrófono para silenciar. «Un agente termina» y «se bloquea» lanzan primero un agente si no hay ninguno. El sonido arranca solo tras tu primer clic en «Sonido».</p>
@@ -292,7 +293,7 @@ var STATES=[
  {id:'listen',name:'Escucha',sound:'—',desc:'Alto 14+nivel·8. Ataque de 45 ms y caída de 200 ms.'},
  {id:'heard',name:'Te oí',sound:'heard',desc:'Se comprimen a 8×8 y asienten 3 px.'},
  {id:'think',name:'Pensando',sound:'—',desc:'8×8 en ámbar con barrido horizontal de 1,2 s.'},
- {id:'speak',name:'Habla',sound:'—',desc:'Alto 10+nivel·3 y onda de cinco barras; la onda solo existe aquí.'},
+ {id:'speak',name:'Habla',sound:'—',desc:'La voz es una onda que viaja del centro hacia afuera, con sílabas y pausas reales. Tres formas posibles: pulsa «Habla» arriba para compararlas.'},
  {id:'dispatch',name:'Despacha',sound:'dispatch',desc:'Mirada +4 px hacia donde se envía, en violeta, con muelle launch.'},
  {id:'working',name:'Agente trabajando',sound:'—',desc:'Reposo más un punto violeta en órbita de 2,4 s; hasta tres agentes.'},
  {id:'done',name:'Agente terminó',sound:'done',desc:'Arcos ^ ^ con dos saltitos en lima.'},
@@ -307,7 +308,7 @@ function poseFor(s,x){
   case 'listen':P={w:8,h:14+lvl*8,gap:16,col:'signal'};break;
   case 'heard':P={w:8,h:8,gap:14,dy:3,col:'signal'};break;
   case 'think':P={w:8,h:8,gap:14,dx:Math.sin(t*Math.PI*2/1.2)*5,col:'attention'};break;
-  case 'speak':P={w:8,h:10+lvl*3,gap:16,wave:1,col:'signal'};break;
+  case 'speak':P=SPEAK==='mouth'?{w:7,h:9+lvl*2,gap:14,dy:-5.5,wave:1,col:'signal'}:SPEAK==='wave'?{w:7,h:11,gap:14,ea:0,wave:1,col:'signal'}:{w:8,h:9+lvl*5,gap:14,rot:4+lvl*4,dy:-.4*lvl,wave:1,col:'signal'};break;
   case 'dispatch':P={w:7,h:11,gap:14,dx:4,col:'agent',sp:'launch'};break;
   case 'working':P={w:7,h:11,gap:14,dx:Math.sin(t*Math.PI*2/7)*1.5,col:'signal-dim',orbit:Math.max(1,n)};break;
   case 'done':P={w:11,h:6,gap:14,arc:1,dy:ts<1.2?-Math.abs(Math.sin(ts*Math.PI*2/.6))*3:0,col:'signal',sp:'launch'};break;
@@ -316,7 +317,7 @@ function poseFor(s,x){
   case 'error':P={w:8,h:12,gap:14,rot:18,dx:Math.sin(ts*42)*3*Math.max(0,1-ts/.5),col:'fault',sp:'launch'};break;
   default:P={w:7,h:11,gap:14,dx:Math.sin(t*Math.PI*2/7)*1.5,col:'signal-dim',orbit:n};
   }
-  var base={dx:0,dy:0,rot:0,arc:0,wave:0,orbit:0,alpha:1,sp:'snappy'};
+  var base={dx:0,dy:0,rot:0,arc:0,wave:0,orbit:0,alpha:1,ea:1,sp:'snappy'};
   for(var k in P)base[k]=P[k];
   return base;
 }
@@ -327,19 +328,42 @@ function cap(ctx,cx,cy,w,h,r){
   ctx.lineTo(cx-w/2+rr,cy+h/2);ctx.arc(cx-w/2+rr,cy+h/2-rr,rr,Math.PI/2,Math.PI);
   ctx.lineTo(cx-w/2,cy-h/2+rr);ctx.arc(cx-w/2+rr,cy-h/2+rr,rr,Math.PI,Math.PI*1.5);ctx.closePath();
 }
-function drawEyes(ctx,W,H,p,col,t,lvl,blink){
+/* Voz silábica: palabras (puerta) × sílabas (~4,4 Hz) × énfasis lento. Sustituye al ruido aleatorio. */
+function speechEnv(t){
+  var g=Math.sin(t*2.3)+.6*Math.sin(t*1.07+1.2), gate=Math.max(0,Math.min(1,(g+1.1)*2.2));
+  var syl=Math.pow(.5+.5*Math.sin(t*Math.PI*2*3.8+Math.sin(t*1.3)*1.4),.9);
+  return Math.max(0,Math.min(1,gate*(.12+.88*syl)*(.7+.3*Math.sin(t*.8+2))));
+}
+/* Tres formas de dibujar la voz (se comparan con el botón «Habla»). */
+var SPEAK='mouth', SPEAK_LABEL={mouth:'onda bajo los ojos',eyes:'desde los ojos',wave:'solo onda'};
+function drawVoice(ctx,W,H,cy,p,col,lvl,envAt){
+  var e=function(d){return envAt?envAt(d):lvl}, cx=W/2+p.dx, i, k;
+  if(SPEAK==='eyes'){
+    for(i=0;i<3;i++){
+      var bh=2+e(.038*(i+1))*(13-i*2), off=p.gap/2+p.w+6+i*5.2;
+      ctx.fillStyle=rgb(col,p.wave*(.9-i*.2));
+      cap(ctx,cx-off,cy,2.6,bh,1.3);ctx.fill();cap(ctx,cx+off,cy,2.6,bh,1.3);ctx.fill();
+    }
+    return;
+  }
+  var wave=SPEAK==='wave', n=wave?11:9, sp=wave?4.2:4.6, amp=wave?15:8, min=wave?2.2:1.6, y=wave?H/2:H/2+8.5, half=(n-1)/2;
+  for(i=0;i<n;i++){
+    k=Math.abs(i-half);
+    var shape=1-Math.pow(k/(half+1.2),1.6), h2=min+e(.03*k)*amp*shape;
+    ctx.fillStyle=rgb(col,p.wave*(1-k*.06));
+    cap(ctx,cx+(i-half)*sp,y,2.4,h2,1.2);ctx.fill();
+  }
+}
+function drawEyes(ctx,W,H,p,col,t,lvl,blink,envAt){
   ctx.clearRect(0,0,W,H);
-  var cy=H/2+p.dy, gx=-p.wave*18.5+p.dx, h=p.h*(1-.88*blink), w=p.w;
+  var cy=H/2+p.dy, gx=p.dx, h=p.h*(1-.88*blink), w=p.w;
   ctx.globalAlpha=p.alpha;
   for(var s=-1;s<=1;s+=2){
     var cx=W/2+gx+s*(p.gap/2+w/2);
-    if(p.arc<.999){ctx.save();ctx.translate(cx,cy);ctx.rotate(s*p.rot*Math.PI/180);ctx.fillStyle=rgb(col,1-p.arc);cap(ctx,0,0,w,Math.max(h,2),w/2);ctx.fill();ctx.restore()}
-    if(p.arc>.001){ctx.save();ctx.translate(cx,cy);ctx.strokeStyle=rgb(col,p.arc);ctx.lineWidth=3;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();ctx.moveTo(-5.5,3);ctx.lineTo(0,-3);ctx.lineTo(5.5,3);ctx.stroke();ctx.restore()}
+    if(p.arc<.999){ctx.save();ctx.translate(cx,cy);ctx.rotate(s*p.rot*Math.PI/180);ctx.fillStyle=rgb(col,(1-p.arc)*p.ea);cap(ctx,0,0,w,Math.max(h,2),w/2);ctx.fill();ctx.restore()}
+    if(p.arc>.001){ctx.save();ctx.translate(cx,cy);ctx.strokeStyle=rgb(col,p.arc*p.ea);ctx.lineWidth=3;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();ctx.moveTo(-5.5,3);ctx.lineTo(0,-3);ctx.lineTo(5.5,3);ctx.stroke();ctx.restore()}
   }
-  if(p.wave>.01){
-    var start=W/2+gx+(p.gap/2+w)+w/2+10;
-    for(var i=0;i<5;i++){var bh=4+lvl*14*(.5+.5*Math.sin(t*9+i*1.3));ctx.fillStyle=rgb(col,p.wave);cap(ctx,start+i*6+1.5,cy,3,bh,1.5);ctx.fill()}
-  }
+  if(p.wave>.01)drawVoice(ctx,W,H,cy,p,col,lvl,envAt);
   if(p.orbit>0){
     var n=Math.min(3,p.orbit);
     for(var j=0;j<n;j++){var a=t*Math.PI*2/2.4+j*Math.PI*2/n;ctx.fillStyle=rgb(C.agent,.95);ctx.beginPath();ctx.arc(W/2+p.dx+Math.cos(a)*28,cy+Math.sin(a)*12,1.8,0,Math.PI*2);ctx.fill()}
@@ -351,7 +375,7 @@ function drawEyes(ctx,W,H,p,col,t,lvl,blink){
 var island=$('island'),eyes=$('eyes'),ectx=eyes.getContext('2d'),dpr=Math.min(2,window.devicePixelRatio||1);
 eyes.width=320*dpr;eyes.height=36*dpr;ectx.scale(dpr,dpr);
 var S={base:'idle',since:0,agents:0,muted:false,open:false,asking:false,docked:false,sound:false,saved:true,blocked:false};
-var P={w:new Sp(7),h:new Sp(11),gap:new Sp(14),dx:new Sp(0),dy:new Sp(0),rot:new Sp(0),arc:new Sp(0),wave:new Sp(0),orbit:new Sp(0),alpha:new Sp(1)};
+var P={w:new Sp(7),h:new Sp(11),gap:new Sp(14),dx:new Sp(0),dy:new Sp(0),rot:new Sp(0),arc:new Sp(0),wave:new Sp(0),orbit:new Sp(0),alpha:new Sp(1),ea:new Sp(1)};
 var W=new Sp(152,'panel'),Hh=new Sp(36,'panel');
 var curCol=C['signal-dim'].slice(),lvl=0,blink=0,nextBlink=4.5,blinkT=-1,T0=performance.now()/1000,last=T0;
 
@@ -361,7 +385,7 @@ function visual(){return S.muted&&['speak','think','dispatch','done','blocked','
 function frame(now){
   now/=1000;var dt=Math.min(1/30,now-last);last=now;var t=now-T0,ts=now-S.since;
   var v=visual();
-  var tgtLvl=(v==='listen'||v==='speak')?Math.max(0,Math.min(1,.45+.4*Math.sin(t*6.1)*Math.sin(t*1.9+1)+(Math.random()-.5)*.25)):0;
+  var tgtLvl=v==='speak'?speechEnv(t):v==='listen'?Math.max(0,Math.min(1,.45+.4*Math.sin(t*6.1)*Math.sin(t*1.9+1)+(Math.random()-.5)*.25)):0;
   lvl+=(tgtLvl-lvl)*(1-Math.exp(-dt/(tgtLvl>lvl?.045:.2)));
   $('lvlbar').style.width=((v==='listen'?lvl:S.muted?0:.04)*100)+'%';
   var eff=(v==='idle'&&S.agents>0)?'working':v;
@@ -376,7 +400,7 @@ function frame(now){
   var tc=C[pz.col],tau=reduced?.12:.06,kk=1-Math.exp(-dt/tau);
   for(var i=0;i<3;i++)curCol[i]+=(tc[i]-curCol[i])*kk;
   var pp={};for(var key in P)pp[key]=P[key].x;
-  drawEyes(ectx,320,36,pp,curCol,t,lvl,blink);
+  drawEyes(ectx,320,36,pp,curCol,t,lvl,blink,function(d){return v==='speak'?speechEnv(t-d):lvl});
   /* dimensiones */
   var base=S.docked?168:152;
   var wT=S.asking?300:S.open?320:base, hT=36;
@@ -474,6 +498,13 @@ $('tMotion').addEventListener('click',function(){reduced=!reduced;$('tMotion').s
 if(reduced)root.classList.add('reduced');
 $('tSound').addEventListener('click',function(){S.sound=!S.sound;$('tSound').setAttribute('aria-pressed',String(S.sound));$('tSound').textContent=S.sound?'Sonido activado':'Sonido';if(S.sound)earcon('dispatch')});
 
+var spk=['mouth','eyes','wave'];
+$('tSpeak').addEventListener('click',function(){
+  SPEAK=spk[(spk.indexOf(SPEAK)+1)%3];$('tSpeak').textContent='Habla: '+SPEAK_LABEL[SPEAK];
+  guard();closeAll();S.muted=false;syncUI();setBase('speak');
+  sleep(5000).then(function(){if(S.base==='speak')setBase('idle')});
+});
+
 /* ---- tarjetas de estado ---- */
 var tiles=$('tiles'),tcv=[];
 STATES.forEach(function(st){
@@ -488,11 +519,11 @@ STATES.forEach(function(st){
 function tileLoop(now){
   now/=1000;
   tcv.forEach(function(o){
-    var t=now,ts=(now%2.4),l=.5+.4*Math.sin(now*5)*Math.sin(now*1.7),eff=o.id==='working'?'idle':o.id;
+    var t=now,ts=(now%2.4),l=o.id==='speak'?speechEnv(now):.5+.4*Math.sin(now*5)*Math.sin(now*1.7),eff=o.id==='working'?'idle':o.id;
     var p=poseFor(eff,{t:t,lvl:l,ts:ts,agents:o.id==='working'?2:0});
     if(o.id==='done'||o.id==='error')p.dy=o.id==='done'?(ts<1.2?-Math.abs(Math.sin(ts*Math.PI*2/.6))*3:0):p.dy;
     if(reduced){p.dx=0;p.dy=0}
-    drawEyes(o.ctx,160,40,p,C[p.col],t,l,0);
+    drawEyes(o.ctx,160,40,p,C[p.col],t,l,0,o.id==='speak'?function(d){return speechEnv(now-d)}:null);
   });
   requestAnimationFrame(tileLoop);
 }

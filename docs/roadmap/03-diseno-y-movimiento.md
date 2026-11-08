@@ -102,7 +102,7 @@ menú solo se usan:
 | `listen` | Voz detectada | Cápsula 8×(14+nivel·8), gap 16 | `signal` | Sigue la voz (ataque 45 / caída 200 ms) | — |
 | `heard` | Fin de turno | Cápsulas comprimen a 8×8 en 90 ms | `signal` | Un «asentimiento» de 3 px hacia abajo | `heard` (opcional) |
 | `think` | Esperando STT/LLM | Cápsula 8×8 | `attention` | Barrido horizontal 1,2 s | — |
-| `speak` | TTS sonando | Cápsula 8×(10+nivel·3) + onda de 5 barras | `signal` | Sigue la voz | — |
+| `speak` | TTS sonando | Cápsula 8×(9+nivel·5), inclinación 4–8° y **la voz sale de los ojos**: 3 barras por lado (2,6 px, alto 2+nivel·(13−2i)) | `signal` | Cada barra repite el nivel con 38 ms más de retraso que la anterior (onda que viaja hacia afuera). Los ojos no se desplazan. El nivel es el de la salida real del TTS; en el prototipo, una envolvente silábica de ~3,5 Hz con pausas entre palabras | — |
 | `dispatch` | Tool-call de lanzamiento | Ojos miran a la derecha (+4 px) y vuelven | `agent` | Spring «lanzar» 380 ms | `dispatch` |
 | `agent_working` | ≥1 agente trabajando y EzAgent en reposo | Ojos `idle` + punto de 3 px orbitando | punto `agent` | Órbita 2,4 s; varios agentes = varios puntos (máx. 3) | — |
 | `agent_done` | Un agente terminó | Arcos ^ ^ | `signal` | Dos saltitos (spring) | `done` |
