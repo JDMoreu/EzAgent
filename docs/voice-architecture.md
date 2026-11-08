@@ -38,7 +38,7 @@ los dos: los usa por sus CLIs (`hc` y `herdr-app`).
 │                                      ├─ Watcher (polling)     │
 │                                      └─ Kokoro TTS ──► notch  │
 │                                                              │
-│  Notch Win32 layered (reutilizado de Dicta)                  │
+│  Notch Win32 layered (basado en Dicta, MIT)                  │
 └───────────────┬──────────────────────────────┬───────────────┘
                 │ `hc ...`                     │ `herdr-app do ...`
                 ▼                              ▼
@@ -185,7 +185,7 @@ Es deliberado:
 - El mensajero necesita un **hotkey global** (`Ctrl+Alt+Space`, `Ctrl+Alt+E`,
   `Ctrl+Alt+M`, `Ctrl+Alt+O`, `Ctrl+Alt+R`) y un **notch always-on-top** sobre
   cualquier app.
-- Por eso el notch es una ventana Win32 layered (la capa de Dicta) y el audio
+- Por eso el notch es una ventana Win32 layered (basada en Dicta, MIT) y el audio
   corre en un proceso Python externo.
 
 ## La isla como mando
@@ -280,7 +280,7 @@ El proceso del mensajero tiene varios hilos:
 | Hotkeys globales | `RegisterHotKey` → cola de eventos |
 | Captura de micrófono | Stream continuo, VAD, segmentación, barge-in |
 | STT | whisper.cpp HTTP |
-| LLM | OpenCode streaming + tool calling |
+| LLM | proveedor compatible con OpenAI + tool calling |
 | TTS | Kokoro + PyAudio, frase a frase |
 | Watcher | `hc ls --json` cada 1 s |
 | Notch | Render nativo Win32 a 60 fps |
@@ -297,9 +297,10 @@ se descartan. Eso evita que una respuesta antigua hable encima de una nueva.
 
 ### Eco y mute
 
-- El micrófono puede oír el TTS del propio asistente (TA82).
+- El micrófono puede oír el TTS del propio asistente (altavoces sin
+  cancelación de eco).
 - Se usa un umbral de barge-in por encima del eco, se resetea el VAD al acabar
-  cada TTS y se ignoran 0,5 s de cola.
+  cada TTS y se ignoran 0,25 s de cola.
 - `Ctrl+Alt+M` mutea el micrófono; el notch muestra un micrófono con barra roja
   y el audio de fondo no se transcribe.
 

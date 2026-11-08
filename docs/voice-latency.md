@@ -11,14 +11,14 @@ El objetivo es medir el turno completo y reducir la espera sin cambiar de modelo
 | `vad_end` | callback de utterance | el VAD cierra el turno y entrega el PCM |
 | `stt_ready` | worker de STT | whisper devuelve la transcripción |
 | `first_token` | streaming del LLM | primer delta de texto útil |
-| `first_audio` | worker de TTS | empieza la síntesis de la primera cláusula |
+| `first_sentence` | mensajero | cierra la primera cláusula y la manda al TTS |
 | `first_sound` | reproducción | primer bloque escrito al dispositivo de salida |
 | `turn_end` | `answer_done` | termina el turno |
 
 El mensajero Python imprime una línea por turno:
 
 ```
-[ezagent-voice] Latencia: vad_wait_ms=... stt_ready_ms=... first_token_ms=... first_sound_ms=... total_ms=...
+[ezagent-voice] Latencia: vad_wait_ms=... stt_ready_ms=... first_token_ms=... first_sentence_ms=... first_sound_ms=... turn_end_ms=... ttfa_ms=... total_ms=...
 ```
 
 Cada diez turnos añade media y P95. Solo se registran turnos que llegan a `answer_done`; los turnos cortados o superados por otra frase se cuentan aparte en el protocolo de validación.
@@ -36,8 +36,9 @@ Cada diez turnos añade media y P95. Solo se registran turnos que llegan a `answ
   instalado y `beam_size=1` puede ser más lento que el greedy actual; se
   medirá antes de cambiarlo.
 - **Audio:** el mensajero ya escribe bloques de 20 ms (480 frames) en la salida.
-- **Eco/barge-in:** se mantiene el umbral de barge-in y el reset del VAD al
-  terminar el TTS; no se añadió cancelación de eco por hardware.
+- **Eco/barge-in:** se mantiene el umbral de barge-in y, al terminar el TTS,
+  se ignoran 0,25 s de cola del micrófono; no se añadió cancelación de eco por
+  hardware.
 
 ## Protocolo de validación
 
@@ -50,9 +51,9 @@ Cada diez turnos añade media y P95. Solo se registran turnos que llegan a `answ
 5. Revertir un cambio aislado si empeora la transcripción o corta turnos,
    aunque mejore la latencia.
 
-Los tiempos de referencia que publica Sonnet son una estimación
-(0,8–1,2 s fin de voz→primer audio); no se presentan como medición de esta
-máquina hasta completar el protocolo.
+Los tiempos de referencia de un proveedor compatible con OpenAI son una
+estimación (0,8–1,2 s fin de voz→primer audio); no se presentan como medición
+de esta máquina hasta completar el protocolo.
 
 ## Pendiente / siguientes pasos
 

@@ -12,7 +12,7 @@
 AppId={{A7C4C7B8-0C7E-4E8B-9A93-6B7A5D1F2E11}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppPublisher=JDMoreu
+AppPublisher=EzAgent contributors
 DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes

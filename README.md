@@ -30,11 +30,17 @@ ya descargados.
 
 ## Arranque
 
-Requisitos: Windows 11, `uv`, `whisper-server` con Vulkan y un modelo
-`large-v3-turbo`, y una clave del proveedor LLM elegido.
+Requisitos: Windows 11, `uv`, `whisper-server` con Vulkan, el modelo
+`ggml-large-v3-turbo-q5_0.bin` y una clave del proveedor LLM elegido.
+
+Whisper se instala en `%LOCALAPPDATA%\EzAgent\whisper`: copia ahí
+`whisper-server.exe` (build de whisper.cpp con Vulkan) y el modelo en
+`models\ggml-large-v3-turbo-q5_0.bin`. Si lo tienes en otra ruta, indícala con
+`EZAGENT_WHISPER_HOME`.
 
 ```powershell
-cd C:\Users\JDMoreu\Documents\EzAgent
+git clone <url-del-repositorio> EzAgent
+cd EzAgent
 uv sync
 # Opcional: dependencias de las skills de Word/PDF/Excel
 uv sync --extra office
@@ -301,8 +307,16 @@ aunque el usuario haya dado la orden.
 ## Pruebas
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q
+uv run pytest -q
 ```
 
 Detalle del mensajero, límites y arquitectura de audio:
 [`src/ezagent/voice/README.md`](src/ezagent/voice/README.md).
+
+## Comunidad
+
+- Licencia: [Apache-2.0](LICENSE). Atribuciones de terceros en [NOTICE](NOTICE).
+- Cómo contribuir: [CONTRIBUTING.md](CONTRIBUTING.md) y el contrato para
+  agentes de código en [AGENTS.md](AGENTS.md).
+- Seguridad: cómo reportar un problema en [SECURITY.md](SECURITY.md).
+- Convivencia: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
