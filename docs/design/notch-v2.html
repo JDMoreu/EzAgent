@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EzAgent Notch v2</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: un escenario de escritorio con la isla real arriba y controles debajo; después las especificaciones vivas (estados, paleta, muelles, sonido, auditoría). */
+:root{
+  --font:'Geist','Segoe UI',system-ui,sans-serif; --mono:'Geist Mono','Cascadia Mono',Consolas,monospace;
+  --bg:#0C0B0A; --ink:#141210; --surface:#1E1B18; --surface-2:#282420; --track:#34302B;
+  --text:#F4EFE8; --text-2:#C2BAAE; --text-3:#9C9488; --line:rgb(244 239 232 / .09); --line-2:rgb(244 239 232 / .16);
+  --signal:#D4F25A; --signal-fill:#D4F25A; --signal-ink:#141210; --signal-dim:#7E8F3A;
+  --agent:#A8A1FF; --attention:#FFB23E; --fault:#FF5D52;
+  --wp-a:#1B2B2D; --wp-b:#0E1517; --wp-c:#2A2540; --term:rgb(10 9 8 / .72); --shadow:0 18px 50px rgb(0 0 0 / .45), 0 2px 8px rgb(0 0 0 / .3);
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --bg:#F3F0EB; --ink:#FAF8F5; --surface:#F1EDE7; --surface-2:#E8E3DB; --track:#D6D0C6;
+  --text:#1A1714; --text-2:#4E4840; --text-3:#6F675C; --line:rgb(26 23 20 / .1); --line-2:rgb(26 23 20 / .18);
+  --signal:#4D6B00; --signal-fill:#5C7F00; --signal-ink:#FFFFFF; --signal-dim:#6F8A1F;
+  --agent:#5B4FD6; --attention:#A35F00; --fault:#C8241A;
+  --wp-a:#C7D6CF; --wp-b:#E4ECE7; --wp-c:#D5D0EA; --term:rgb(250 248 245 / .8); --shadow:0 18px 40px rgb(30 25 15 / .22), 0 2px 8px rgb(30 25 15 / .14);
+  color-scheme:light}}
+:root[data-theme="light"]{
+  --bg:#F3F0EB; --ink:#FAF8F5; --surface:#F1EDE7; --surface-2:#E8E3DB; --track:#D6D0C6;
+  --text:#1A1714; --text-2:#4E4840; --text-3:#6F675C; --line:rgb(26 23 20 / .1); --line-2:rgb(26 23 20 / .18);
+  --signal:#4D6B00; --signal-fill:#5C7F00; --signal-ink:#FFFFFF; --signal-dim:#6F8A1F;
+  --agent:#5B4FD6; --attention:#A35F00; --fault:#C8241A;
+  --wp-a:#C7D6CF; --wp-b:#E4ECE7; --wp-c:#D5D0EA; --term:rgb(250 248 245 / .8); --shadow:0 18px 40px rgb(30 25 15 / .22), 0 2px 8px rgb(30 25 15 / .14);
+  color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:400 14px/1.5 var(--font);padding-block:28px 72px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:44px}
+h1{font:600 28px/1.1 var(--font);letter-spacing:-.03em;margin:0 0 8px;text-wrap:balance}
+h2{font:600 17px/1.2 var(--font);letter-spacing:-.012em;margin:0 0 4px}
+p{margin:0;color:var(--text-2);max-width:68ch}
+.eyebrow{font:500 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px}
+.sec{display:flex;flex-direction:column;gap:16px;min-width:0}
+:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+button{font:inherit;color:inherit;cursor:pointer}
+
+/* escenario */
+.stage{position:relative;height:430px;border-radius:14px;overflow:hidden;border:1px solid var(--line);
+  background:radial-gradient(900px 400px at 18% 110%,var(--wp-c),transparent 60%),radial-gradient(700px 360px at 85% -10%,var(--wp-a),transparent 62%),linear-gradient(160deg,var(--wp-b),var(--wp-a))}
+.term{position:absolute;left:18px;bottom:18px;width:min(460px,calc(100% - 36px));background:var(--term);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:400 12px/1.55 var(--mono);color:var(--text-2);min-height:150px;backdrop-filter:none}
+.term b{font-weight:500;color:var(--text)}
+.term .ok{color:var(--signal)} .term .ag{color:var(--agent)} .term .wr{color:var(--attention)} .term .er{color:var(--fault)}
+.term-h{display:flex;gap:6px;margin-bottom:6px;color:var(--text-3);font-size:11px;letter-spacing:.06em}
+.agents{position:absolute;right:18px;bottom:18px;display:flex;flex-direction:column;gap:6px;align-items:flex-end;max-width:calc(100% - 36px)}
+.chip{display:flex;align-items:center;gap:8px;background:var(--term);border:1px solid var(--line);border-radius:999px;padding:5px 12px 5px 9px;font:500 12px/1 var(--font);color:var(--text)}
+.chip i{width:7px;height:7px;border-radius:50%;background:var(--agent)}
+.chip[data-s="done"] i{background:var(--signal)} .chip[data-s="blocked"] i{background:var(--attention)}
+.chip small{font:400 11px var(--mono);color:var(--text-3)}
+.say{position:absolute;left:50%;top:150px;transform:translateX(-50%);max-width:min(420px,calc(100% - 40px));text-align:center;font:500 15px/1.4 var(--font);color:var(--text);opacity:0;transition:opacity .18s cubic-bezier(.2,.8,.2,1);pointer-events:none;text-shadow:0 1px 12px var(--bg)}
+.say.on{opacity:1}
+
+/* isla */
+.island{position:absolute;left:50%;top:14px;transform:translateX(-50%);width:152px;height:36px;background:var(--ink);border-radius:18px;overflow:hidden;box-shadow:var(--shadow),inset 0 0 0 1px var(--line);z-index:5}
+.island.docked{top:0;border-radius:0 0 18px 18px}
+.island canvas{position:absolute;left:50%;top:0;width:320px;height:36px;margin-left:-160px;pointer-events:none}
+.bar-btn{position:absolute;top:4px;width:28px;height:28px;border:0;background:none;border-radius:8px;display:grid;place-items:center;color:var(--text-2);padding:0}
+.bar-btn:hover{color:var(--text)}
+.bar-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.mic.muted{color:var(--fault)}
+.chev svg{transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.chev[aria-expanded="true"]{color:var(--signal)} .chev[aria-expanded="true"] svg{transform:rotate(180deg)}
+.panel{position:absolute;top:36px;left:50%;margin-left:-160px;width:320px;padding:4px 12px 12px;opacity:0;visibility:hidden}
+.panel.confirm{margin-left:-150px;width:300px;padding:8px 14px 14px}
+.island.open .panel.menu,.island.asking .panel.confirm{visibility:visible;opacity:1}
+.grp{margin-top:12px;opacity:0;transform:translateY(6px);transition:opacity .18s cubic-bezier(.2,.8,.2,1),transform .18s cubic-bezier(.2,.8,.2,1)}
+.island.open .grp{opacity:1;transform:none;transition-delay:calc(var(--i) * 35ms + 90ms)}
+.reduced .grp,.reduced .island.open .grp{transform:none;transition:opacity .12s linear;transition-delay:0s}
+.lbl{font:500 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);margin:0 0 6px 4px}
+.box{background:var(--surface);border-radius:12px;overflow:hidden}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:36px;padding:0 12px;font-size:13px;color:var(--text);width:100%;border:0;background:none;text-align:left;transition:background .12s}
+.row+.row{border-top:1px solid var(--line)}
+button.row:hover,label.row:hover{background:var(--surface-2)}
+.row .v{font:500 11px var(--mono);color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55%}
+.hd{display:flex;align-items:center;justify-content:space-between;height:28px;margin:2px 4px 0}
+.hd span{font:500 11px/1 var(--mono);letter-spacing:.1em;color:var(--text-3)}
+.hd button{border:0;background:none;color:var(--text-3);font-size:12px;padding:4px 8px;border-radius:8px}
+.hd button:hover{color:var(--text)}
+.sw{width:36px;height:20px;border-radius:999px;background:var(--track);position:relative;transition:background .18s;flex:none}
+.sw::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:var(--text-2);transition:transform .22s cubic-bezier(.34,1.56,.64,1),background .18s}
+[aria-checked="true"] .sw{background:var(--signal-fill)} [aria-checked="true"] .sw::after{transform:translateX(16px);background:var(--signal-ink)}
+.reduced .sw::after{transition:transform .12s linear}
+input[type=range]{-webkit-appearance:none;appearance:none;width:120px;height:20px;background:none;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(90deg,var(--signal-fill) var(--p,50%),var(--track) var(--p,50%))}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:var(--track)} input[type=range]::-moz-range-progress{height:4px;border-radius:2px;background:var(--signal-fill)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--text);margin-top:-5px;transition:transform .12s}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:var(--text)}
+input[type=range]:active::-webkit-slider-thumb{transform:scale(1.25)}
+.meter{position:relative;flex:1;height:6px;border-radius:3px;background:var(--track);overflow:hidden}
+.meter i{position:absolute;inset:0 auto 0 0;width:0;background:var(--signal-fill);border-radius:3px}
+.meter u{position:absolute;top:-2px;bottom:-2px;left:38%;width:2px;background:var(--text-2)}
+.adv{display:grid;grid-template-rows:0fr;transition:grid-template-rows .22s cubic-bezier(.2,.8,.2,1)}
+.adv.on{grid-template-rows:1fr} .adv>div{overflow:hidden}
+.reduced .adv{transition:none}
+.fold{display:flex;align-items:center;gap:6px;border:0;background:none;color:var(--text-3);font:500 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:4px;margin:12px 0 0 0}
+.fold:hover{color:var(--text)} .fold span{display:inline-block;transition:transform .22s}
+.fold[aria-expanded="true"] span{transform:rotate(90deg)}
+.foot{display:flex;align-items:center;justify-content:space-between;margin:14px 4px 0}
+.foot small{font:500 11px var(--mono);color:var(--text-3)} .foot small.dirty{color:var(--attention)}
+.btn{height:32px;padding:0 14px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);color:var(--text);font-weight:600;font-size:12px;transition:background .12s,transform .12s}
+.btn:hover{background:var(--surface-2)} .btn:active{transform:scale(.96)}
+.btn.pri{background:var(--signal-fill);color:var(--signal-ink);border-color:transparent}
+.btn.pri:hover{filter:brightness(1.08)}
+.ask{font:400 13px/1.45 var(--font);color:var(--text);margin:0 0 12px}
+.ask small{display:block;font:500 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--attention);margin-bottom:6px}
+.acts{display:flex;gap:8px;justify-content:flex-end}
+
+/* controles */
+.ctl{display:flex;flex-wrap:wrap;gap:20px 32px;align-items:flex-start}
+.grpc{display:flex;flex-direction:column;gap:8px;min-width:0}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.pill{height:30px;padding:0 12px;border-radius:999px;border:1px solid var(--line-2);background:transparent;color:var(--text-2);font-size:12px;font-weight:500;transition:background .12s,color .12s}
+.pill:hover{background:var(--surface);color:var(--text)}
+.pill[aria-pressed="true"]{background:var(--surface-2);color:var(--text);border-color:var(--line-2);box-shadow:inset 0 0 0 1px var(--signal)}
+
+/* especificaciones */
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(188px,1fr));gap:10px}
+.tile{background:var(--surface);border-radius:12px;padding:10px 12px 12px;text-align:left;border:0;display:flex;flex-direction:column;gap:6px;min-width:0;transition:background .12s}
+.tile:hover{background:var(--surface-2)}
+.tile canvas{width:100%;height:40px;display:block;background:var(--ink);border-radius:9px}
+.tile b{font:600 13px var(--font)} .tile span{font-size:12px;color:var(--text-3);line-height:1.4}
+.tile em{font:500 10px var(--mono);letter-spacing:.06em;color:var(--text-3);font-style:normal;text-transform:uppercase}
+.sw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.swc{background:var(--surface);border-radius:12px;overflow:hidden}
+.swc div{height:44px;border-bottom:1px solid var(--line)}
+.swc p{padding:8px 10px 10px;font-size:12px;color:var(--text-2);line-height:1.35}
+.swc code{display:block;font:500 11px var(--mono);color:var(--text);margin-bottom:2px}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line-2)}
+.tbl td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--text-2)}
+.tbl td:first-child{color:var(--text);font-weight:500}
+.scroll{overflow-x:auto}
+.ok-t{color:var(--signal)} .no-t{color:var(--fault)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media (max-width:760px){.cols{grid-template-columns:1fr}.stage{height:460px}}
+.curve{background:var(--surface);border-radius:12px;padding:12px}
+.curve canvas{width:100%;height:150px;display:block}
+.earc{display:flex;flex-wrap:wrap;gap:8px}
+.note{font-size:12px;color:var(--text-3);max-width:68ch}
+@media (prefers-reduced-motion: reduce){.chev svg,.sw::after,.adv{transition:none}}
+</style>
+
+<div class="wrap" id="root">
+  <header class="sec">
+    <div class="eyebrow">EzAgent · versión 2 · prototipo vivo</div>
+    <h1>La mirada que delega</h1>
+    <p>El notch deja de ser un indicador de micrófono y pasa a expresar la relación con tus agentes: te escucha, despacha, espera, avisa cuando uno termina y se entorna cuando uno se bloquea. Todo lo de abajo está calculado en vivo con los mismos valores que irán a <code style="font-family:var(--mono);font-size:12px">design/tokens.json</code>.</p>
+  </header>
+
+  <section class="sec" aria-label="Simulador">
+    <div class="stage" id="stage">
+      <div class="island" id="island">
+        <canvas id="eyes" aria-hidden="true"></canvas>
+        <button class="bar-btn mic" id="mic" aria-label="Silenciar micrófono" aria-pressed="false"><svg viewBox="0 0 24 24" id="micsvg"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path id="slash" d="M4 4l16 16" style="display:none"/></svg></button>
+        <button class="bar-btn chev" id="chev" aria-label="Abrir ajustes" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+
+        <div class="panel menu" id="menu" role="region" aria-label="Ajustes">
+          <div class="hd"><span>AJUSTES</span><button id="hide" type="button">Ocultar</button></div>
+          <div class="grp" style="--i:0"><div class="lbl">Voz</div><div class="box">
+            <button class="row cyc" type="button" data-o="Micrófono (TA82)|Auriculares BT|Micrófono integrado">Micrófono<span class="v">Micrófono (TA82)</span></button>
+            <div class="row">Entrada<div class="meter" aria-label="Nivel de entrada"><i id="lvlbar"></i><u></u></div></div>
+            <button class="row cyc" type="button" data-o="Lucía|Mateo|Valeria">Voz<span class="v">Lucía ▸</span></button>
+            <label class="row">Velocidad<input type="range" min="70" max="130" value="100" id="spd" aria-label="Velocidad de la voz"><span class="v" id="spdv">1,00×</span></label>
+          </div></div>
+          <div class="grp" style="--i:1"><div class="lbl">Modelo</div><div class="box">
+            <button class="row cyc" type="button" data-o="OpenCode Go|Groq|OpenRouter|Anthropic|Ollama local">Proveedor<span class="v">OpenCode Go</span></button>
+            <button class="row cyc" type="button" data-o="deepseek-v4.1-flash|minimax-m3.1-flash">Modelo<span class="v">deepseek-v4.1-flash</span></button>
+            <div class="row">Clave<span class="v">•••••••••• ✓</span></div>
+          </div></div>
+          <div class="grp" style="--i:2"><div class="lbl">Agentes</div><div class="box">
+            <button class="row cyc" type="button" data-o="OpenCode|Claude Code|Codex">Agente por defecto<span class="v">OpenCode</span></button>
+            <button class="row" type="button" role="switch" aria-checked="true" id="swSound">Avisos con sonido<span class="sw"></span></button>
+            <button class="row" type="button">Abrir agents.toml<span class="v">↗</span></button>
+          </div></div>
+          <div class="grp" style="--i:3">
+            <button class="fold" id="fold" type="button" aria-expanded="false"><span>▸</span> Avanzado</button>
+            <div class="adv" id="adv"><div><div class="box" style="margin-top:6px">
+              <label class="row">Silencio<input type="range" min="40" max="140" value="65" id="sil" aria-label="Silencio de cierre"><span class="v" id="silv">0,65 s</span></label>
+              <button class="row cyc" type="button" data-o="Automático|GPU · Vulkan|CPU">Motor de voz a texto<span class="v">GPU · Vulkan</span></button>
+              <button class="row cyc" type="button" data-o="Español|English">Idioma<span class="v">Español</span></button>
+              <button class="row" type="button">Atajos<span class="v">Ctrl+Alt+Espacio</span></button>
+            </div></div></div>
+          </div>
+          <div class="foot"><small id="savest">Todo guardado</small><button class="btn pri" id="save" type="button">Guardar</button></div>
+        </div>
+
+        <div class="panel confirm" id="confirm" role="alertdialog" aria-label="Confirmación">
+          <p class="ask"><small>Confirmación</small><span id="asktxt">¿Detengo Claude Code en ezagent?</span></p>
+          <div class="acts"><button class="btn" id="no" type="button">No</button><button class="btn pri" id="yes" type="button">Sí</button></div>
+        </div>
+      </div>
+
+      <div class="say" id="say" aria-live="polite"></div>
+      <div class="term" id="term" aria-label="Terminal simulada"><div class="term-h"><span>●</span><span>herdr · ezagent</span></div><div id="termlines"></div></div>
+      <div class="agents" id="agents" aria-label="Agentes activos"></div>
+    </div>
+
+    <div class="ctl">
+      <div class="grpc"><div class="eyebrow" style="margin:0">Escenarios</div><div class="pills">
+        <button class="pill" id="sDispatch" type="button">Despachar a Claude</button>
+        <button class="pill" id="sDone" type="button">Un agente termina</button>
+        <button class="pill" id="sBlock" type="button">Un agente se bloquea</button>
+        <button class="pill" id="sAsk" type="button">Pedir confirmación</button>
+        <button class="pill" id="sErr" type="button">Error</button>
+      </div></div>
+      <div class="grpc"><div class="eyebrow" style="margin:0">Estado directo</div><div class="pills" id="statePills"></div></div>
+      <div class="grpc"><div class="eyebrow" style="margin:0">Vista previa</div><div class="pills">
+        <button class="pill" id="tTheme" type="button">Tema: sistema</button>
+        <button class="pill" id="tDock" type="button" aria-pressed="false">Acoplado arriba</button>
+        <button class="pill" id="tMotion" type="button" aria-pressed="false">Movimiento reducido</button>
+        <button class="pill" id="tSound" type="button" aria-pressed="false">Sonido</button>
+      </div></div>
+    </div>
+    <p class="note">Tip: pulsa la flecha de la isla para abrir los ajustes, o el micrófono para silenciar. «Un agente termina» y «se bloquea» lanzan primero un agente si no hay ninguno. El sonido arranca solo tras tu primer clic en «Sonido».</p>
+  </section>
+
+  <section class="sec"><div><div class="eyebrow">Estados</div><h2>Once poses, una sola marca</h2><p>La isla no lleva texto: el estado se lee por forma, color y sonido, nunca solo por color. Pulsa una tarjeta para verla en la isla.</p></div>
+    <div class="tiles" id="tiles"></div></section>
+
+  <section class="sec"><div><div class="eyebrow">Qué cambia</div><h2>Auditoría de la UI actual → versión profesional</h2><p>Basada en la lectura del código y de <code style="font-family:var(--mono);font-size:12px">DESIGN.md</code>, no en capturas de la app en ejecución. Cada fila indica la etapa que lo construye.</p></div>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Hoy (MVP)</th><th>Problema</th><th>Versión 2</th><th>Etapa</th></tr></thead><tbody>
+      <tr><td>Ojos mint sobre gris frío</td><td>Se lee como «herramienta de IA genérica»; el símbolo no dice nada de agentes.</td><td>Tinta cálida, señal lima y un violeta que solo existe para agentes.</td><td>E7</td></tr>
+      <tr><td>7 estados de micrófono</td><td>No hay forma de saber que un agente trabaja, terminó o se atascó sin mirar la terminal.</td><td>Despacha, trabajando (órbita), terminó, bloqueado.</td><td>E7</td></tr>
+      <tr><td>36 ajustes en 9 grupos</td><td>Menú de 596 px con scroll; unas 20 filas son técnicas (RMS, pre-roll, pausas).</td><td>Tres grupos y «Avanzado» plegado; cabe sin scroll.</td><td>E4</td></tr>
+      <tr><td>Curva «spring» por bezier</td><td>El rebote es fijo y se resuelve por bisección en Python en cada llamada.</td><td>Cuatro muelles físicos con rigidez y amortiguación; sin rebote donde recortaría contenido.</td><td>E7</td></tr>
+      <tr><td>Sin sonido</td><td>Con el notch fuera de la vista, nada confirma que te oyó ni que un agente acabó.</td><td>Cinco earcons de 45–360 ms, activables uno a uno.</td><td>E2 · E7</td></tr>
+      <tr><td>Valores visuales en 5 sitios</td><td><code style="font-family:var(--mono);font-size:12px">tokens.py</code>, <code style="font-family:var(--mono);font-size:12px">menu.py</code>, <code style="font-family:var(--mono);font-size:12px">eyes.py</code>, DESIGN.md y HTML se contradicen (142×32 vs 169×36).</td><td>Un <code style="font-family:var(--mono);font-size:12px">tokens.json</code> que genera código, CSS y esta página.</td><td>E7</td></tr>
+      <tr><td>Render completo a 60 fps en el proceso de audio</td><td>Compite por el GIL con Kokoro y PyAudio; la caché de silueta falla al abrir el menú.</td><td>UI en proceso aparte; decisión Python optimizado o WebView2 con mediciones.</td><td>E5 · E6</td></tr>
+      <tr><td>Primera ejecución sin guía</td><td>Un usuario nuevo no sabe qué hacer: la isla no tiene texto.</td><td>Onboarding de tres pasos con texto; después, solo ojos.</td><td>E8</td></tr>
+    </tbody></table></div></section>
+
+  <section class="sec"><div><div class="eyebrow">Paleta «Tinta y señal»</div><h2>Una señal viva a la vez</h2><p>Los colores se leen del tema activo. Cambia el tema arriba y los contrastes se recalculan: texto ≥ 4,5:1, ojos e iconos ≥ 3:1.</p></div>
+    <div class="sw-grid" id="swatches"></div>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Par</th><th>Contraste</th><th>Mínimo</th><th>Resultado</th></tr></thead><tbody id="contrast"></tbody></table></div></section>
+
+  <section class="sec"><div class="cols">
+    <div class="sec"><div><div class="eyebrow">Movimiento</div><h2>Muelles físicos</h2><p>Respuesta a un escalón de 0 a 1. <b style="color:var(--text)">panel</b> está críticamente amortiguado: nunca rebasa, por eso mueve el alto del menú.</p></div>
+      <div class="curve"><canvas id="curves" aria-label="Curvas de respuesta de los muelles"></canvas></div>
+      <div class="scroll"><table class="tbl"><thead><tr><th>Muelle</th><th>k</th><th>c</th><th>Uso</th></tr></thead><tbody>
+        <tr><td>snappy</td><td>520</td><td>38</td><td>Poses de ojos, thumbs</td></tr>
+        <tr><td>launch</td><td>300</td><td>18</td><td>Despachar, saltitos</td></tr>
+        <tr><td>panel</td><td>360</td><td>38</td><td>Alto y ancho del menú</td></tr>
+        <tr><td>gentle</td><td>180</td><td>26</td><td>Deriva, cambios de radio</td></tr></tbody></table></div></div>
+    <div class="sec"><div><div class="eyebrow">Sonido</div><h2>Cinco earcons</h2><p>Senos con envolvente, −20 dBFS de pico. Suenan por el mismo canal que la voz y nunca la pisan.</p></div>
+      <div class="earc" id="earcons"></div>
+      <div class="scroll"><table class="tbl"><thead><tr><th>Sonido</th><th>Notas</th><th>Cuándo</th></tr></thead><tbody>
+        <tr><td>heard</td><td>E6 · 45 ms</td><td>Fin de tu turno (desactivado por defecto)</td></tr>
+        <tr><td>dispatch</td><td>A5 → E6</td><td>Se lanza un agente</td></tr>
+        <tr><td>done</td><td>C6 → E6 → G6</td><td>Un agente terminó</td></tr>
+        <tr><td>blocked</td><td>E5 → C5</td><td>Un agente necesita algo</td></tr>
+        <tr><td>error</td><td>A4 × 2</td><td>Fallo</td></tr></tbody></table></div></div>
+  </div></section>
+</div>
+
+<script>
+(function(){
+'use strict';
+var $=function(id){return document.getElementById(id)};
+var root=document.documentElement, body=document.body;
+var reduced=false;
+try{reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){}
+
+/* ---- tokens leídos del tema ---- */
+var probe=document.createElement('span'); probe.style.display='none'; body.appendChild(probe);
+function resolve(name){probe.style.color='var(--'+name+')'; var m=getComputedStyle(probe).color.match(/[\d.]+/g)||[0,0,0]; return [+m[0],+m[1],+m[2]]}
+var C={};
+function readTokens(){['signal','signal-dim','agent','attention','fault','text-3','text-2','text','ink','surface','track'].forEach(function(n){C[n]=resolve(n)})}
+readTokens();
+function rgb(c,a){return 'rgba('+Math.round(c[0])+','+Math.round(c[1])+','+Math.round(c[2])+','+(a==null?1:a)+')'}
+function lum(c){var f=c.map(function(v){v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)});return .2126*f[0]+.7152*f[1]+.0722*f[2]}
+function ratio(a,b){var l1=lum(a),l2=lum(b);if(l1<l2){var t=l1;l1=l2;l2=t}return (l1+.05)/(l2+.05)}
+
+/* ---- muelles ---- */
+var SPR={snappy:[520,38],launch:[300,18],panel:[360,38],gentle:[180,26]};
+function Sp(x,p){this.x=x;this.v=0;this.t=x;this.k=SPR[p||'snappy'][0];this.c=SPR[p||'snappy'][1]}
+Sp.prototype.to=function(t,p){this.t=t;if(p){this.k=SPR[p][0];this.c=SPR[p][1]}};
+Sp.prototype.step=function(dt){
+  if(reduced){this.x=this.t;this.v=0;return}
+  var n=Math.max(1,Math.ceil(dt*120)),h=dt/n;
+  for(var i=0;i<n;i++){this.v+=(-this.k*(this.x-this.t)-this.c*this.v)*h;this.x+=this.v*h}
+};
+
+/* ---- poses (doc 03 §5) ---- */
+var STATES=[
+ {id:'idle',name:'Espera',sound:'—',desc:'Cápsulas 7×11. Parpadeo cada 4,5–6,5 s y deriva de ±1,5 px.'},
+ {id:'listen',name:'Escucha',sound:'—',desc:'Alto 14+nivel·8. Ataque de 45 ms y caída de 200 ms.'},
+ {id:'heard',name:'Te oí',sound:'heard',desc:'Se comprimen a 8×8 y asienten 3 px.'},
+ {id:'think',name:'Pensando',sound:'—',desc:'8×8 en ámbar con barrido horizontal de 1,2 s.'},
+ {id:'speak',name:'Habla',sound:'—',desc:'Alto 10+nivel·3 y onda de cinco barras; la onda solo existe aquí.'},
+ {id:'dispatch',name:'Despacha',sound:'dispatch',desc:'Mirada +4 px hacia donde se envía, en violeta, con muelle launch.'},
+ {id:'working',name:'Agente trabajando',sound:'—',desc:'Reposo más un punto violeta en órbita de 2,4 s; hasta tres agentes.'},
+ {id:'done',name:'Agente terminó',sound:'done',desc:'Arcos ^ ^ con dos saltitos en lima.'},
+ {id:'blocked',name:'Agente bloqueado',sound:'blocked',desc:'Ojos entornados 8×5 en ámbar con pulso lento hasta que lo atiendes.'},
+ {id:'mute',name:'Silenciado',sound:'—',desc:'Raya 11×3 en gris. El rojo queda en el icono del micro.'},
+ {id:'error',name:'Error',sound:'error',desc:'Cápsula inclinada ±18° en rojo y una sacudida.'}
+];
+function follow(lvl,t){return lvl}
+function poseFor(s,x){
+  var t=x.t,lvl=x.lvl,ts=x.ts,n=x.agents,P;
+  switch(s){
+  case 'listen':P={w:8,h:14+lvl*8,gap:16,col:'signal'};break;
+  case 'heard':P={w:8,h:8,gap:14,dy:3,col:'signal'};break;
+  case 'think':P={w:8,h:8,gap:14,dx:Math.sin(t*Math.PI*2/1.2)*5,col:'attention'};break;
+  case 'speak':P={w:8,h:10+lvl*3,gap:16,wave:1,col:'signal'};break;
+  case 'dispatch':P={w:7,h:11,gap:14,dx:4,col:'agent',sp:'launch'};break;
+  case 'working':P={w:7,h:11,gap:14,dx:Math.sin(t*Math.PI*2/7)*1.5,col:'signal-dim',orbit:Math.max(1,n)};break;
+  case 'done':P={w:11,h:6,gap:14,arc:1,dy:ts<1.2?-Math.abs(Math.sin(ts*Math.PI*2/.6))*3:0,col:'signal',sp:'launch'};break;
+  case 'blocked':P={w:8,h:5,gap:14,col:'attention',alpha:.85+.15*Math.sin(t*Math.PI*2/1.6)};break;
+  case 'mute':P={w:11,h:3,gap:14,col:'text-3'};break;
+  case 'error':P={w:8,h:12,gap:14,rot:18,dx:Math.sin(ts*42)*3*Math.max(0,1-ts/.5),col:'fault',sp:'launch'};break;
+  default:P={w:7,h:11,gap:14,dx:Math.sin(t*Math.PI*2/7)*1.5,col:'signal-dim',orbit:n};
+  }
+  var base={dx:0,dy:0,rot:0,arc:0,wave:0,orbit:0,alpha:1,sp:'snappy'};
+  for(var k in P)base[k]=P[k];
+  return base;
+}
+function cap(ctx,cx,cy,w,h,r){
+  var rr=Math.min(r,w/2,h/2);ctx.beginPath();
+  ctx.moveTo(cx-w/2+rr,cy-h/2);ctx.lineTo(cx+w/2-rr,cy-h/2);ctx.arc(cx+w/2-rr,cy-h/2+rr,rr,-Math.PI/2,0);
+  ctx.lineTo(cx+w/2,cy+h/2-rr);ctx.arc(cx+w/2-rr,cy+h/2-rr,rr,0,Math.PI/2);
+  ctx.lineTo(cx-w/2+rr,cy+h/2);ctx.arc(cx-w/2+rr,cy+h/2-rr,rr,Math.PI/2,Math.PI);
+  ctx.lineTo(cx-w/2,cy-h/2+rr);ctx.arc(cx-w/2+rr,cy-h/2+rr,rr,Math.PI,Math.PI*1.5);ctx.closePath();
+}
+function drawEyes(ctx,W,H,p,col,t,lvl,blink){
+  ctx.clearRect(0,0,W,H);
+  var cy=H/2+p.dy, gx=-p.wave*18.5+p.dx, h=p.h*(1-.88*blink), w=p.w;
+  ctx.globalAlpha=p.alpha;
+  for(var s=-1;s<=1;s+=2){
+    var cx=W/2+gx+s*(p.gap/2+w/2);
+    if(p.arc<.999){ctx.save();ctx.translate(cx,cy);ctx.rotate(s*p.rot*Math.PI/180);ctx.fillStyle=rgb(col,1-p.arc);cap(ctx,0,0,w,Math.max(h,2),w/2);ctx.fill();ctx.restore()}
+    if(p.arc>.001){ctx.save();ctx.translate(cx,cy);ctx.strokeStyle=rgb(col,p.arc);ctx.lineWidth=3;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();ctx.moveTo(-5.5,3);ctx.lineTo(0,-3);ctx.lineTo(5.5,3);ctx.stroke();ctx.restore()}
+  }
+  if(p.wave>.01){
+    var start=W/2+gx+(p.gap/2+w)+w/2+10;
+    for(var i=0;i<5;i++){var bh=4+lvl*14*(.5+.5*Math.sin(t*9+i*1.3));ctx.fillStyle=rgb(col,p.wave);cap(ctx,start+i*6+1.5,cy,3,bh,1.5);ctx.fill()}
+  }
+  if(p.orbit>0){
+    var n=Math.min(3,p.orbit);
+    for(var j=0;j<n;j++){var a=t*Math.PI*2/2.4+j*Math.PI*2/n;ctx.fillStyle=rgb(C.agent,.95);ctx.beginPath();ctx.arc(W/2+p.dx+Math.cos(a)*28,cy+Math.sin(a)*12,1.8,0,Math.PI*2);ctx.fill()}
+  }
+  ctx.globalAlpha=1;
+}
+
+/* ---- isla ---- */
+var island=$('island'),eyes=$('eyes'),ectx=eyes.getContext('2d'),dpr=Math.min(2,window.devicePixelRatio||1);
+eyes.width=320*dpr;eyes.height=36*dpr;ectx.scale(dpr,dpr);
+var S={base:'idle',since:0,agents:0,muted:false,open:false,asking:false,docked:false,sound:false,saved:true,blocked:false};
+var P={w:new Sp(7),h:new Sp(11),gap:new Sp(14),dx:new Sp(0),dy:new Sp(0),rot:new Sp(0),arc:new Sp(0),wave:new Sp(0),orbit:new Sp(0),alpha:new Sp(1)};
+var W=new Sp(152,'panel'),Hh=new Sp(36,'panel');
+var curCol=C['signal-dim'].slice(),lvl=0,blink=0,nextBlink=4.5,blinkT=-1,T0=performance.now()/1000,last=T0;
+
+function setBase(s){S.base=s;S.since=performance.now()/1000;var st=STATES.filter(function(x){return x.id===s})[0];if(st&&st.sound!=='—')earcon(st.sound);syncPills()}
+function visual(){return S.muted&&['speak','think','dispatch','done','blocked','error'].indexOf(S.base)<0?'mute':S.base}
+
+function frame(now){
+  now/=1000;var dt=Math.min(1/30,now-last);last=now;var t=now-T0,ts=now-S.since;
+  var v=visual();
+  var tgtLvl=(v==='listen'||v==='speak')?Math.max(0,Math.min(1,.45+.4*Math.sin(t*6.1)*Math.sin(t*1.9+1)+(Math.random()-.5)*.25)):0;
+  lvl+=(tgtLvl-lvl)*(1-Math.exp(-dt/(tgtLvl>lvl?.045:.2)));
+  $('lvlbar').style.width=((v==='listen'?lvl:S.muted?0:.04)*100)+'%';
+  var eff=(v==='idle'&&S.agents>0)?'working':v;
+  var pz=poseFor(eff,{t:t,lvl:lvl,ts:ts,agents:S.agents});
+  if(reduced){pz.dx=0;pz.dy=0;if(eff==='working')pz.orbit=S.agents}
+  for(var k in P){P[k].to(pz[k],pz.sp);P[k].step(dt)}
+  /* parpadeo */
+  if(!reduced&&(eff==='idle'||eff==='working'||eff==='listen')){
+    if(blinkT<0&&t>nextBlink){blinkT=0}
+    if(blinkT>=0){blinkT+=dt;var q=blinkT/.14;blink=q<1?q:Math.max(0,2-q);if(q>=2){blinkT=-1;blink=0;nextBlink=t+4.5+Math.random()*2}}
+  }else{blink=0}
+  var tc=C[pz.col],tau=reduced?.12:.06,kk=1-Math.exp(-dt/tau);
+  for(var i=0;i<3;i++)curCol[i]+=(tc[i]-curCol[i])*kk;
+  var pp={};for(var key in P)pp[key]=P[key].x;
+  drawEyes(ectx,320,36,pp,curCol,t,lvl,blink);
+  /* dimensiones */
+  var base=S.docked?168:152;
+  var wT=S.asking?300:S.open?320:base, hT=36;
+  if(S.open){hT=36+$('menu').scrollHeight}else if(S.asking){hT=36+$('confirm').scrollHeight}
+  W.to(wT);Hh.to(hT);W.step(dt);Hh.step(dt);
+  island.style.width=W.x+'px';island.style.height=Hh.x+'px';
+  var f=Math.max(0,Math.min(1,(W.x-base)/(320-base)));
+  $('mic').style.left=((S.docked?19:12)+(19-(S.docked?19:12))*f)+'px';
+  $('chev').style.right=((S.docked?18:13)+(19-(S.docked?18:13))*f)+'px';
+  requestAnimationFrame(frame);
+}
+
+/* ---- sonido ---- */
+var ac=null;
+var EAR={heard:[[1319,.045]],dispatch:[[880,.07],[1319,.07]],done:[[1047,.08],[1319,.08],[1568,.08]],blocked:[[659,.12],[523,.12]],error:[[440,.09],[440,.09]]};
+function earcon(name){
+  if(!S.sound||!EAR[name])return;
+  try{
+    ac=ac||new (window.AudioContext||window.webkitAudioContext)();
+    var t0=ac.currentTime+.01;
+    EAR[name].forEach(function(n,i){
+      var o=ac.createOscillator(),g=ac.createGain(),d=n[1],st=t0+EAR[name].slice(0,i).reduce(function(a,b){return a+b[1]},0)+i*.02;
+      o.type='sine';o.frequency.value=n[0];
+      g.gain.setValueAtTime(0,st);g.gain.linearRampToValueAtTime(.1,st+.005);g.gain.setValueAtTime(.1,st+d*.7);g.gain.linearRampToValueAtTime(0,st+d);
+      o.connect(g);g.connect(ac.destination);o.start(st);o.stop(st+d+.02);
+    });
+  }catch(e){}
+}
+
+/* ---- terminal y agentes simulados ---- */
+var lines=[];
+function log(html){lines.push(html);if(lines.length>7)lines.shift();$('termlines').innerHTML=lines.map(function(l){return '<div>'+l+'</div>'}).join('')}
+var sayT=null;function say(t,ms){var el=$('say');el.textContent=t;el.classList.add('on');clearTimeout(sayT);sayT=setTimeout(function(){el.classList.remove('on')},ms||2200)}
+var AG={claude:{name:'Claude Code',proj:'ezagent',st:'working'}};var agList=[];
+function renderAgents(){$('agents').innerHTML=agList.map(function(a){var lab=a.st==='working'?'trabajando':a.st==='done'?'terminó':'necesita algo';return '<div class="chip" data-s="'+a.st+'"><i></i>'+a.name+' <small>'+a.proj+' · '+lab+'</small></div>'}).join('');S.agents=agList.filter(function(a){return a.st==='working'}).length}
+var seq=0;function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function guard(){var my=++seq;return function(){return my===seq}}
+function ensureAgent(){if(!agList.length){agList.push({name:'Claude Code',proj:'ezagent',st:'working'});renderAgents();log('<span class="ag">claude</span> › arregla los tests')}}
+function closeAll(){S.open=false;S.asking=false;syncUI()}
+
+async function sDispatch(){var ok=guard();closeAll();agList=[];renderAgents();
+  setBase('listen');log('<b>Tú:</b> «abre claude en ezagent y arregla los tests»');await sleep(1500);if(!ok())return;
+  setBase('heard');await sleep(260);if(!ok())return;
+  setBase('think');await sleep(850);if(!ok())return;
+  setBase('dispatch');agList=[{name:'Claude Code',proj:'ezagent',st:'working'}];renderAgents();log('<span class="ag">▶ claude</span> arrancó en <b>ezagent</b>');await sleep(750);if(!ok())return;
+  setBase('speak');say('Lancé Claude Code en ezagent. Te aviso al terminar.',2400);await sleep(2300);if(!ok())return;
+  setBase('idle');log('<span class="ag">claude</span> leyendo tests/…')}
+async function sDone(){var ok=guard();closeAll();ensureAgent();setBase('idle');await sleep(300);if(!ok())return;
+  agList.forEach(function(a){a.st='done'});renderAgents();log('<span class="ok">✔ 14 passed</span> · claude terminó');setBase('done');await sleep(1500);if(!ok())return;
+  setBase('speak');say('Claude Code terminó en ezagent: los tests pasan. ¿Te lo resumo?',2800);await sleep(2800);if(!ok())return;
+  agList=[];renderAgents();setBase('idle')}
+async function sBlock(){var ok=guard();closeAll();ensureAgent();setBase('idle');await sleep(300);if(!ok())return;
+  agList.forEach(function(a){a.st='blocked'});renderAgents();log('<span class="wr">? claude</span> pide permiso para instalar paquetes');S.blocked=true;setBase('blocked')}
+function resolveBlocked(){if(!S.blocked)return;S.blocked=false;var ok=guard();agList.forEach(function(a){a.st='working'});renderAgents();setBase('speak');say('Claude Code espera tu respuesta: quiere instalar paquetes.',2400);log('<b>Tú:</b> «sí, adelante»');sleep(2400).then(function(){if(ok())setBase('idle')})}
+async function sErr(){var ok=guard();closeAll();setBase('error');log('<span class="er">✖ no encuentro opencode en el PATH</span>');say('No pude lanzar OpenCode: no está instalado.',2400);await sleep(1700);if(!ok())return;setBase('idle')}
+function sAsk(){guard();ensureAgent();S.open=false;S.asking=true;$('chev').setAttribute('aria-expanded','false');setBase('think');syncUI()}
+function answer(yes){S.asking=false;syncUI();var ok=guard();
+  if(yes){agList=[];renderAgents();log('<span class="er">■ claude detenido</span>');setBase('speak');say('Detuve Claude Code.',1800);sleep(1800).then(function(){if(ok())setBase('idle')})}else{setBase('idle')}}
+
+/* ---- interfaz ---- */
+function syncUI(){
+  island.classList.toggle('open',S.open);island.classList.toggle('asking',S.asking);island.classList.toggle('docked',S.docked);
+  $('chev').setAttribute('aria-expanded',String(S.open));
+  $('mic').classList.toggle('muted',S.muted);$('mic').setAttribute('aria-pressed',String(S.muted));
+  $('slash').style.display=S.muted?'':'none';
+  $('mic').setAttribute('aria-label',S.muted?'Reactivar micrófono':'Silenciar micrófono');
+}
+function toggleMenu(){if(S.asking)return;S.open=!S.open;syncUI()}
+$('chev').addEventListener('click',toggleMenu);$('hide').addEventListener('click',toggleMenu);
+$('mic').addEventListener('click',function(){S.muted=!S.muted;if(S.muted&&['idle','listen'].indexOf(S.base)>=0)setBase('mute');else if(!S.muted&&S.base==='mute')setBase('idle');syncUI()});
+$('island').addEventListener('click',function(e){if(e.target.closest('button,input,label,.panel'))return;resolveBlocked()});
+$('yes').addEventListener('click',function(){answer(true)});$('no').addEventListener('click',function(){answer(false)});
+document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(S.open)toggleMenu();else if(S.asking)answer(false)}});
+document.querySelectorAll('.cyc').forEach(function(b){b.addEventListener('click',function(){var o=b.dataset.o.split('|'),v=b.querySelector('.v'),cur=v.textContent.replace(' ▸',''),i=(o.indexOf(cur)+1)%o.length;v.textContent=o[i]+(b.firstChild.textContent==='Voz'?' ▸':'');dirty()})});
+$('swSound').addEventListener('click',function(){var on=$('swSound').getAttribute('aria-checked')!=='true';$('swSound').setAttribute('aria-checked',String(on));dirty()});
+function dirty(){S.saved=false;$('savest').textContent='Cambios sin guardar';$('savest').className='dirty'}
+$('spd').addEventListener('input',function(e){var v=e.target.value;e.target.style.setProperty('--p',((v-70)/60*100)+'%');$('spdv').textContent=(v/100).toFixed(2).replace('.',',')+'×';dirty()});
+$('sil').addEventListener('input',function(e){var v=e.target.value;e.target.style.setProperty('--p',((v-40)/100*100)+'%');$('silv').textContent=(v/100).toFixed(2).replace('.',',')+' s';dirty()});
+$('spd').style.setProperty('--p','50%');$('sil').style.setProperty('--p','25%');
+$('save').addEventListener('click',function(){S.saved=true;$('savest').textContent='Todo guardado ✓';$('savest').className='';setTimeout(function(){if(S.saved)$('savest').textContent='Todo guardado'},800)});
+$('fold').addEventListener('click',function(){var on=$('fold').getAttribute('aria-expanded')!=='true';$('fold').setAttribute('aria-expanded',String(on));$('adv').classList.toggle('on',on)});
+
+$('sDispatch').addEventListener('click',sDispatch);$('sDone').addEventListener('click',sDone);$('sBlock').addEventListener('click',sBlock);$('sAsk').addEventListener('click',sAsk);$('sErr').addEventListener('click',sErr);
+
+var pills=$('statePills');
+['idle','listen','think','speak','mute'].forEach(function(id){var st=STATES.filter(function(x){return x.id===id})[0],b=document.createElement('button');b.className='pill';b.type='button';b.textContent=st.name;b.dataset.s=id;b.setAttribute('aria-pressed','false');b.addEventListener('click',function(){guard();closeAll();S.muted=(id==='mute');syncUI();setBase(id)});pills.appendChild(b)});
+function syncPills(){pills.querySelectorAll('.pill').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.s===S.base))})}
+
+var themes=['system','dark','light'],ti=0;
+$('tTheme').addEventListener('click',function(){ti=(ti+1)%3;var t=themes[ti];if(t==='system')root.removeAttribute('data-theme');else root.setAttribute('data-theme',t);$('tTheme').textContent='Tema: '+({system:'sistema',dark:'oscuro',light:'claro'})[t];readTokens();paintAll()});
+try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(){readTokens();paintAll()})}catch(e){}
+$('tDock').addEventListener('click',function(){S.docked=!S.docked;$('tDock').setAttribute('aria-pressed',String(S.docked));$('tDock').textContent=S.docked?'Flotante':'Acoplado arriba';syncUI()});
+$('tMotion').setAttribute('aria-pressed',String(reduced));
+$('tMotion').addEventListener('click',function(){reduced=!reduced;$('tMotion').setAttribute('aria-pressed',String(reduced));root.classList.toggle('reduced',reduced)});
+if(reduced)root.classList.add('reduced');
+$('tSound').addEventListener('click',function(){S.sound=!S.sound;$('tSound').setAttribute('aria-pressed',String(S.sound));$('tSound').textContent=S.sound?'Sonido activado':'Sonido';if(S.sound)earcon('dispatch')});
+
+/* ---- tarjetas de estado ---- */
+var tiles=$('tiles'),tcv=[];
+STATES.forEach(function(st){
+  var b=document.createElement('button');b.type='button';b.className='tile';
+  b.innerHTML='<canvas width="320" height="80" aria-hidden="true"></canvas><b>'+st.name+'</b><span>'+st.desc+'</span><em>'+(st.sound==='—'?'sin sonido':'sonido · '+st.sound)+'</em>';
+  b.addEventListener('click',function(){guard();closeAll();$('stage').scrollIntoView({block:'nearest',behavior:reduced?'auto':'smooth'});
+    var map={working:function(){agList=[{name:'Claude Code',proj:'ezagent',st:'working'},{name:'OpenCode',proj:'api',st:'working'}];renderAgents();setBase('idle')},done:function(){setBase('done');sleep(1500).then(function(){if(S.base==='done')setBase('idle')})},blocked:function(){S.blocked=true;setBase('blocked')},heard:function(){setBase('heard');sleep(700).then(function(){if(S.base==='heard')setBase('idle')})},error:function(){setBase('error');sleep(1500).then(function(){if(S.base==='error')setBase('idle')})},dispatch:function(){setBase('dispatch');sleep(1100).then(function(){if(S.base==='dispatch')setBase('idle')})}};
+    if(st.id!=='working'&&st.id!=='idle'&&!map[st.id]){S.muted=(st.id==='mute');syncUI();setBase(st.id)}
+    else if(map[st.id])map[st.id]();else{agList=[];renderAgents();setBase('idle')}});
+  tiles.appendChild(b);var cv=b.querySelector('canvas'),cx=cv.getContext('2d');cx.scale(2,2);tcv.push({id:st.id,ctx:cx});
+});
+function tileLoop(now){
+  now/=1000;
+  tcv.forEach(function(o){
+    var t=now,ts=(now%2.4),l=.5+.4*Math.sin(now*5)*Math.sin(now*1.7),eff=o.id==='working'?'idle':o.id;
+    var p=poseFor(eff,{t:t,lvl:l,ts:ts,agents:o.id==='working'?2:0});
+    if(o.id==='done'||o.id==='error')p.dy=o.id==='done'?(ts<1.2?-Math.abs(Math.sin(ts*Math.PI*2/.6))*3:0):p.dy;
+    if(reduced){p.dx=0;p.dy=0}
+    drawEyes(o.ctx,160,40,p,C[p.col],t,l,0);
+  });
+  requestAnimationFrame(tileLoop);
+}
+
+/* ---- paleta, contraste, curvas, earcons ---- */
+var TOK=[['ink','Cuerpo de la isla y del menú'],['surface','Grupos'],['track','Pistas y toggles apagados'],['text','Texto principal'],['text-3','Ayudas y etiquetas'],['signal','Escucha, habla, selección, acción'],['signal-dim','Ojos en reposo'],['agent','Solo mundo de agentes'],['attention','Pensando, bloqueado, sin guardar'],['fault','Error y micrófono silenciado']];
+function paintAll(){
+  $('swatches').innerHTML=TOK.map(function(t){var c=C[t[0]]||resolve(t[0]);var hex='#'+c.map(function(v){return Math.round(v).toString(16).padStart(2,'0')}).join('').toUpperCase();return '<div class="swc"><div style="background:var(--'+t[0]+')"></div><p><code>--'+t[0]+' · '+hex+'</code>'+t[1]+'</p></div>'}).join('');
+  var pairs=[['Texto sobre cuerpo','text','ink',4.5],['Ayuda sobre cuerpo','text-3','ink',4.5],['Ayuda sobre grupo','text-3','surface',4.5],['Ojos señal sobre cuerpo','signal','ink',3],['Ojos en reposo','signal-dim','ink',3],['Agentes (violeta)','agent','ink',3],['Atención (ámbar)','attention','ink',3],['Error (rojo)','fault','ink',3]];
+  $('contrast').innerHTML=pairs.map(function(p){var r=ratio(resolve(p[1]),resolve(p[2])),ok=r>=p[3];return '<tr><td>'+p[0]+'</td><td style="font-family:var(--mono)">'+r.toFixed(2)+' : 1</td><td style="font-family:var(--mono)">'+p[3]+' : 1</td><td class="'+(ok?'ok-t':'no-t')+'">'+(ok?'Cumple':'No cumple')+'</td></tr>'}).join('');
+  drawCurves();
+}
+function drawCurves(){
+  var cv=$('curves'),w=cv.clientWidth||400,h=150,d=Math.min(2,window.devicePixelRatio||1);cv.width=w*d;cv.height=h*d;var c=cv.getContext('2d');c.scale(d,d);c.clearRect(0,0,w,h);
+  var cols={snappy:C.signal,launch:C.agent,panel:C.attention,gentle:C['text-3']},T=.8,pl=8,pr=8,pt=12,pb=20,x0=pl,x1=w-pr,y1=h-pb,yu=(h-pt-pb)/1.25;
+  c.strokeStyle=rgb(C['text-3'],.35);c.lineWidth=1;c.setLineDash([3,3]);c.beginPath();var yy=y1-yu;c.moveTo(x0,yy);c.lineTo(x1,yy);c.stroke();c.setLineDash([]);
+  c.fillStyle=rgb(C['text-3']);c.font='11px '+getComputedStyle(body).getPropertyValue('--mono');c.fillText('objetivo',x0+2,yy-4);c.fillText('0',x0,h-5);c.fillText((T*1000)+' ms',x1-42,h-5);
+  Object.keys(SPR).forEach(function(k,i){
+    var s=new Sp(0,k);s.t=1;c.strokeStyle=rgb(cols[k]);c.lineWidth=2;c.beginPath();var steps=160;
+    for(var j=0;j<=steps;j++){var X=x0+(x1-x0)*j/steps,Y=y1-s.x*yu;if(j===0)c.moveTo(X,Y);else c.lineTo(X,Y);var dt=T/steps,n=4,hh=dt/n;for(var q=0;q<n;q++){s.v+=(-s.k*(s.x-s.t)-s.c*s.v)*hh;s.x+=s.v*hh}}
+    c.stroke();c.fillStyle=rgb(cols[k]);c.fillText(k,x0+70+i*66,pt);
+  });
+}
+var ea=$('earcons');Object.keys(EAR).forEach(function(k){var b=document.createElement('button');b.className='pill';b.type='button';b.textContent='▶ '+k;b.addEventListener('click',function(){var prev=S.sound;S.sound=true;earcon(k);S.sound=prev});ea.appendChild(b)});
+window.addEventListener('resize',drawCurves);
+
+syncUI();syncPills();paintAll();renderAgents();
+log('<span style="color:var(--text-3)">// terminal simulada: lo que hacen los agentes mientras EzAgent escucha</span>');
+requestAnimationFrame(frame);requestAnimationFrame(tileLoop);
+})();
+</script>
+</html>

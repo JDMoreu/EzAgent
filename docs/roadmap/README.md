@@ -29,6 +29,7 @@ autocontenido por etapa, pensado para delegarlo en agentes de código baratos
 | [`03-diseno-y-movimiento.md`](03-diseno-y-movimiento.md) | Sistema visual, estados, coreografía, springs, earcons |
 | [`04-estrategia-llm.md`](04-estrategia-llm.md) | Herramientas, prompt, router local, narración, evals, modelos |
 | [`05-skills-y-flujo.md`](05-skills-y-flujo.md) | Cómo delegar, qué skills usar y cómo revisar cada etapa |
+| [`06-auditoria-ui.md`](06-auditoria-ui.md) | Auditoría de la UI y enlace al prototipo vivo `docs/design/notch-v2.html` |
 | [`metricas.md`](metricas.md) | Línea base y resultados por etapa (se rellena desde E1) |
 | [`plantillas/brief-tarea.md`](plantillas/brief-tarea.md) | Plantilla para trocear una etapa en tareas |
 
