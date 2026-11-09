@@ -16,5 +16,5 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: uv sync --frozen
-      - run: uv run ruff check src tests bench evals
+      - run: uv run ruff check src tests
       - run: uv run pytest -q

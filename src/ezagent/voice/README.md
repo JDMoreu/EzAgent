@@ -99,7 +99,6 @@ estados). No hay panel Tk ni segunda ventana de ajustes.
   cláusula corta para que el primer audio llegue antes.
 - El log muestra `STT`, `Primer audio`, `Turno completo` y, por turno,
   `Latencia: vad_wait_ms ... total_ms`; cada diez turnos añade media y P95.
-  El detalle y el protocolo de 20 frases están en `docs/voice-latency.md`.
 
 ### Avisos de tarea, cierre y mute
 

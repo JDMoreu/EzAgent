@@ -401,8 +401,6 @@ Detalle del mensajero, límites y arquitectura de audio:
 
 ## Comunidad
 
-- Licencia: [Apache-2.0](LICENSE). Atribuciones de terceros en [NOTICE](NOTICE).
-- Cómo contribuir: [CONTRIBUTING.md](CONTRIBUTING.md) y el contrato para
-  agentes de código en [AGENTS.md](AGENTS.md).
-- Seguridad: cómo reportar un problema en [SECURITY.md](SECURITY.md).
-- Convivencia: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+- Licencia: [Apache-2.0](LICENSE).
+- Contrato para agentes de código que modifican el repositorio:
+  [AGENTS.md](AGENTS.md).

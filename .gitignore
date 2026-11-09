@@ -27,12 +27,5 @@ dist/
 *.tmp
 
 # Salidas de herramientas de diseño y automatización
-docs/design/*.png
-tools/__pycache__/
 .impeccable/
 .cua-work/
-
-# Banco y evals
-bench/latency/fixtures/*.wav
-bench/out/
-evals/out/
