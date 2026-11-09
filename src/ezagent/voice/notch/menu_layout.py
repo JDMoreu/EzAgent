@@ -7,7 +7,8 @@ ventana: y = 0 es el borde superior de la isla.
 Las claves de fila son las claves reales de `voice.json` (RG-3). El menú
 cubre audio, VAD, voz/TTS, Whisper/STT, LLM/API, conversación y atajos; el
 contenido que no cabe en el alto visible se desplaza con la rueda.
-`test_voice` y `llm_profile` son controles del menú, no claves persistidas.
+`test_voice`, `llm_profile` y `llm_model_pick` son controles del menú, no claves
+persistidas.
 """
 
 from __future__ import annotations
@@ -33,6 +34,8 @@ ROW_TEXT = 44
 # compacta como el resto de controles.
 ROW_METER = 44
 ROW_ACTION = 44
+# Vista de las paletas (Claro, Oscuro, Personalizado): tres muestras con nombre.
+ROW_PALETTE = 64
 ROW = {
     "select": ROW_SELECT,
     "slider": ROW_SLIDER,
@@ -40,16 +43,27 @@ ROW = {
     "text": ROW_TEXT,
     "meter": ROW_METER,
     "action": ROW_ACTION,
+    "palette": ROW_PALETTE,
 }
 
-# Orden y alturas de la tabla 7.3. La etiqueta de sección va fuera del grupo.
+# Orden por tarea: cómo se ve, cómo te escucha, cuándo cierra tu turno, cómo
+# conversa, cómo habla, cómo transcribe y con qué modelo piensa. La etiqueta de
+# sección va fuera del grupo.
 GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
         "appearance",
         (
             ("ui_layout", "select"),
-            ("theme", "select"),
             ("ui_motion", "select"),
+            ("theme", "select"),
+            ("theme_preview", "palette"),
+            # Solo con el tema «Personalizado» (el menú las oculta si no):
+            ("theme_base", "select"),
+            ("theme_preset", "select"),
+            ("theme_primary", "text"),
+            ("theme_secondary", "text"),
+            ("theme_accent", "text"),
+            ("theme_background", "text"),
         ),
     ),
     (
@@ -66,37 +80,45 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("input_device_index", "select"),
             ("input_meter", "meter"),
             ("noise_multiplier", "slider"),
-            ("silence_secs", "slider"),
         ),
     ),
     (
-        "engine",
+        # Cuándo se da por terminada tu frase.
+        "vad",
         (
-            ("stt_engine", "select"),
-            ("tts_model_variant", "select"),
+            ("silence_secs", "slider"),
+            ("smart_turn", "toggle"),
+            ("turn_threshold", "slider"),
+            ("pre_roll_secs", "slider"),
+            ("min_speech_secs", "slider"),
+            ("max_utterance_secs", "slider"),
+        ),
+    ),
+    (
+        "conversation",
+        (
+            ("barge_in", "toggle"),
+            ("barge_in_rms", "slider"),
+            ("confirm_actions", "toggle"),
+            ("test_voice", "action"),
+            ("repeat_last", "action"),
+            ("new_conversation", "action"),
         ),
     ),
     (
         "tts",
         (
             ("voice", "select"),
+            ("tts_model_variant", "select"),
             ("speed", "slider"),
             ("tts_sentence_pause", "slider"),
             ("tts_clause_pause", "slider"),
         ),
     ),
     (
-        "vad",
-        (
-            ("pre_roll_secs", "slider"),
-            ("min_speech_secs", "slider"),
-            ("max_utterance_secs", "slider"),
-            ("barge_in_rms", "slider"),
-        ),
-    ),
-    (
         "stt",
         (
+            ("stt_engine", "select"),
             ("stt_model", "select"),
             ("stt_prompt", "text"),
             ("stt_timeout_secs", "slider"),
@@ -106,24 +128,17 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
         "llm",
         (
+            # Proveedor -> cómo se conecta -> qué modelo -> cómo responde.
             ("llm_profile", "select"),
             ("llm_provider", "text"),
-            ("llm_model", "select"),
+            ("llm_api_style", "select"),
             ("llm_base_url", "text"),
             ("api_key", "text"),
+            ("llm_model", "text"),
+            ("llm_model_pick", "select"),
             ("llm_temperature", "slider"),
             ("llm_max_tokens", "slider"),
             ("llm_reasoning_effort", "select"),
-        ),
-    ),
-    (
-        "conversation",
-        (
-            ("barge_in", "toggle"),
-            ("confirm_actions", "toggle"),
-            ("test_voice", "action"),
-            ("repeat_last", "action"),
-            ("new_conversation", "action"),
         ),
     ),
     (
@@ -145,16 +160,55 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ),
 )
 
+# Filas que solo se ven con el tema personalizado.
+CUSTOM_THEME_ROWS = frozenset(
+    {
+        "theme_base",
+        "theme_preset",
+        "theme_primary",
+        "theme_secondary",
+        "theme_accent",
+        "theme_background",
+    }
+)
+
+# Orden de la barra lateral de la ventana de ajustes.
+SIDEBAR_ORDER = (
+    "appearance",
+    "listening",
+    "audio",
+    "vad",
+    "conversation",
+    "tts",
+    "stt",
+    "llm",
+    "agent",
+    "hotkeys",
+)
+
+# Títulos de la barra lateral de la ventana de ajustes.
+SECTION_TITLES = {
+    "appearance": "Apariencia",
+    "listening": "Escucha",
+    "audio": "Micrófono",
+    "vad": "Fin de turno",
+    "conversation": "Conversación",
+    "tts": "Voz",
+    "stt": "Transcripción",
+    "llm": "Modelo e IA",
+    "agent": "Agente",
+    "hotkeys": "Atajos",
+}
+
 GROUP_LABELS = {
     "appearance": "APARIENCIA",
     "listening": "ESCUCHA",
-    "audio": "AUDIO",
-    "engine": "MOTOR",
-    "tts": "TTS",
-    "vad": "VAD",
-    "stt": "WHISPER · STT",
-    "llm": "LLM · API",
+    "audio": "MICRÓFONO",
+    "vad": "FIN DE TURNO",
     "conversation": "CONVERSACIÓN",
+    "tts": "VOZ · KOKORO",
+    "stt": "TRANSCRIPCIÓN · WHISPER",
+    "llm": "LLM · API",
     "agent": "AGENTE",
     "hotkeys": "ATAJOS",
 }
@@ -186,6 +240,7 @@ class Rect:
 def layout_menu(
     extra: dict[str, float] | None = None,
     viewport_h: float | None = None,
+    groups: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] | None = None,
 ) -> dict[str, Rect]:
     """Devuelve el layout de la tabla 7.3.
 
@@ -206,7 +261,7 @@ def layout_menu(
     add("header", y, y + HEADER)
     y += HEADER + GAP_HEADER
 
-    for group_name, rows in GROUPS:
+    for group_name, rows in groups or GROUPS:
         add("label_" + group_name, y, y + LABEL)
         y += LABEL
         group_top = y
@@ -220,8 +275,9 @@ def layout_menu(
     footer_top = y
     footer_bottom = y + FOOTER
     if viewport_h is not None:
-        visible_bottom = float(viewport_h) - PAD_BOTTOM
-        footer_bottom = min(footer_bottom, visible_bottom)
+        # El pie va siempre al fondo de lo visible: sube si el contenido no
+        # cabe y baja si sobra sitio (la ventana de ajustes tiene alto fijo).
+        footer_bottom = float(viewport_h) - PAD_BOTTOM
         footer_top = footer_bottom - FOOTER
     add("footer", footer_top, footer_bottom)
     y = footer_bottom + PAD_BOTTOM

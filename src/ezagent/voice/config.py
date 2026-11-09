@@ -341,6 +341,12 @@ class VoiceConfig:
     # Segundos de voz por encima de barge_in_rms para interrumpir al asistente: un
     # clic o un golpe de teclado no llegan; una frase sí.
     barge_in_secs: float = 0.25
+    # Fin de turno con Smart Turn: tras turn_quick_secs de silencio, si el
+    # modelo ve la frase completa, el turno se cierra ya; si no, se espera
+    # silence_secs como siempre. No toca la interrupción (barge-in).
+    smart_turn: bool = True
+    turn_quick_secs: float = 0.35
+    turn_threshold: float = 0.5
     # Versión de los valores por defecto del VAD. La 2 baja el suelo de
     # arranque para voces flojas y acepta frases cortas.
     vad_defaults_version: int = 2
@@ -350,6 +356,9 @@ class VoiceConfig:
     llm_model: str = "deepseek-v4.1-flash"
     llm_base_url: str = OPENCODE_BASE_URL
     api_key: str = ""
+    # Formato de la API: «openai» (Chat Completions) o «anthropic» (Messages).
+    # Vacío = el del perfil guardado o el del preset.
+    llm_api_style: str = ""
     llm_temperature: float = 0.3
     llm_max_tokens: int = 320
     llm_reasoning_effort: str = "none"
@@ -391,9 +400,16 @@ class VoiceConfig:
     voice_wake: bool = True
     wake_phrase: str = "EzAgent, escúchame"
 
-    # Tema del notch: auto (sigue a Windows), dark o light. Se guarda al
+    # Tema del notch: auto (sigue a Windows), dark, light o custom. Se guarda al
     # instante y no cuenta para «cambios sin guardar».
     theme: str = "auto"
+    # Tema personalizado: los cuatro colores del gradiente (Marea por defecto)
+    # y si la interfaz (ventana, botones) es clara u oscura.
+    theme_base: str = "dark"
+    theme_primary: str = "#1FAE9F"
+    theme_secondary: str = "#8FE3C0"
+    theme_accent: str = "#FF8A65"
+    theme_background: str = "#0E6F7C"
 
     @classmethod
     def load(cls, path: Path | None = None) -> "VoiceConfig":
@@ -445,6 +461,7 @@ class VoiceConfig:
                     model=self.llm_model,
                     base_url=self.llm_base_url,
                     api_key=self.api_key or None,
+                    api_style=self.llm_api_style or None,
                 )
             except ValueError:
                 resolved = None
@@ -453,6 +470,7 @@ class VoiceConfig:
                 self.llm_model = resolved.model
                 self.llm_base_url = resolved.base_url
                 self.api_key = resolved.api_key
+                self.llm_api_style = resolved.api_style
         else:
             resolved = resolve_llm()
             # .env y llm.json mandan sobre los valores antiguos de voice.json.
@@ -461,8 +479,11 @@ class VoiceConfig:
                 self.llm_model = resolved.model
                 self.llm_base_url = resolved.base_url
                 self.api_key = resolved.api_key
+                self.llm_api_style = resolved.api_style
             elif not self.api_key:
                 self.api_key = resolved.api_key
+            if not self.llm_api_style:
+                self.llm_api_style = resolved.api_style
         self.whisper_url = os.getenv("WHISPER_URL") or self.whisper_url
         self.stt_engine = os.getenv("WHISPER_ENGINE") or self.stt_engine
         if self.output_device_index is None:

@@ -29,10 +29,6 @@ from ezagent.agent.orchestration import (
 from ezagent.agent.registry import ToolInfo, ToolResult, ToolSpec
 from ezagent.voice.herdr import Herdr, HerdrError
 
-# Prefijo obligatorio (sección 10.2 del documento) para todo lo que se envía a
-# un agente ya lanzado: deja claro en el terminal que la orden viene por voz.
-TASK_PREFIX = "Tarea del usuario (por voz): "
-
 _DELEGATE_ACTIONS = (
     "list",
     "get",
@@ -805,11 +801,9 @@ def _handle_delegate(
         if action == "send":
             address = _required_text(args, "address", action)
             task = _required_text(args, "task", action)
-            return _wrapped(
-                herdr.send_agent(
-                    address, TASK_PREFIX + task, confirmed=True
-                )
-            )
+            # DECISION: la tarea llega tal cual al agente, sin preámbulo («Tarea
+            # del usuario (por voz): …»); el usuario lo pidió así.
+            return _wrapped(herdr.send_agent(address, task, confirmed=True))
 
         if action == "run":
             return _handle_run(herdr, callbacks, state, args)

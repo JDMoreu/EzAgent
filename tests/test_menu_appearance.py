@@ -152,7 +152,7 @@ def test_el_menu_usa_los_colores_de_la_barra():
     assert pal["BODY"] == BT.card_overrides("light")["BODY"]
     assert pal["MINT_BTN"] == BT.card_overrides("light")["MINT_BTN"]
     menu.set_theme("dark")
-    assert menu._palette()["BODY"] == (17, 22, 38)  # azul noche, no el marrón antiguo
+    assert menu._palette()["BODY"] == (13, 22, 26)  # noche verde azulada de Marea
     buf = np.zeros((round(ML.ISLAND_H + menu.viewport_height) + 4, 320, 4), np.float32)
     menu.draw(buf, 11.0)  # dibuja sin fallar con la paleta nueva
 
@@ -173,7 +173,7 @@ def test_cuerpo_de_la_tarjeta_fresco_con_degradado_suave():
     body = D.render_card_body(60, 400, 1.0, "light", fresh=True)
     top, bottom = body[10, 30, :3] * 255, body[390, 30, :3] * 255
     assert np.allclose(bottom, BT.card_overrides("light")["BODY"], atol=1.5)
-    assert top[2] >= top[0] + 10  # arriba, un toque de cielo
+    assert top[1] >= top[0] + 8  # arriba, un toque de menta (Marea)
     assert np.abs(top - bottom).max() < 14  # degradado muy suave
     old = D.render_card_body(60, 40, 1.0, "light")
     assert not np.allclose(old[20, 30, :3] * 255, bottom, atol=1.5)  # sin fresh: tokens antiguos
@@ -271,12 +271,14 @@ def test_reset_history_conserva_el_sistema():
     assert m.messages == [{"role": "system", "content": "s"}] and m._last_user_text == ""
 
 
-def test_icono_orbe_de_cielo_con_nubes():
+def test_icono_orbe_de_marea():
     from ezagent.voice.brand import SVG, mark_image
 
     im = np.asarray(mark_image(64)).astype(int)
     assert im[0, 0, 3] == 0  # esquinas transparentes: es un orbe
-    top, bottom = im[14, 32], im[50, 32]
-    assert top[2] > top[0] + 60  # arriba, cielo azul
-    assert bottom[:3].min() > 200  # abajo, nubes blancas
+    orb = im[16:48, 16:48, :3].reshape(-1, 3)
+    r, g, b = orb.mean(axis=0)
+    assert g > r + 60 and b > r + 40  # verde azulado: la identidad de Marea
+    assert orb.std(axis=0).mean() > 8  # un gradiente, no un color plano
+    assert "#0E6F7C" in SVG  # el SVG usa la misma paleta
     assert "#D4F25A" not in SVG  # sin la lima antigua

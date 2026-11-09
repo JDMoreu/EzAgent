@@ -33,9 +33,12 @@ from ezagent.agent.handoff import answer_or_tail, compose_handoff
 from ezagent.agent.handoff_packet import Packet, build_packet, packet_text
 from ezagent.agent.orchestration import chain_spec
 from ezagent.llm_providers import (
+    fetch_models,
     load_provider_catalog,
+    match_model,
     normalize_provider,
     provider_models,
+    provider_spec,
     save_provider_profile,
 )
 
@@ -44,9 +47,10 @@ from .condenser import Condenser
 from .config import VoiceConfig, config_path
 from .herdr import Herdr
 from .hotkeys import GlobalHotkey, parse_hotkey
-from .llm import Messenger
-from .metrics import LatencyStats, TurnTimings
+from .llm import Messenger, friendly_llm_error
+from .metrics import LatencyStats, TurnTimings, format_stt
 from .notch.drop import create_ui
+from .speech_queue import SpeechQueue
 from .stt import (
     STTError,
     available_whisper_models,
@@ -55,6 +59,7 @@ from .stt import (
 )
 from .tasks import TaskRegistry
 from .tts import Speaker
+from .turn import SmartTurn
 from .wake import DEFAULT_WAKE_PHRASE, is_wake_phrase, worth_transcribing
 from .watcher import Watcher
 
@@ -76,6 +81,11 @@ HOTKEY_KEYS = (
 INSTANT_SETTINGS = (
     "ui_layout",
     "theme",
+    "theme_base",
+    "theme_primary",
+    "theme_secondary",
+    "theme_accent",
+    "theme_background",
     "ui_motion",
     "close_action",
     "voice_wake",
@@ -155,8 +165,48 @@ class _Sentences:
         return [text] if text else []
 
 
+# Ventana tras cerrar un turno en la que, si el usuario vuelve a hablar
+# mientras el modelo piensa, se une la frase nueva con la anterior.
+RESUME_SECS = 3.0
+
+# Cortesías que se quitan al principio antes de buscar un atajo local:
+# «Ok, gracias. Mutéate» debe silenciar igual que «mutéate».
+_COURTESY_WORDS = frozenset(
+    {"ok", "okay", "oki", "bueno", "listo", "perfecto", "dale", "genial",
+     "gracias", "muchas", "mil", "eh", "este", "pues", "va"}
+)
+
+
+def _strip_courtesy(key: str) -> str:
+    """Quita cortesías iniciales; si no queda nada, devuelve ``key`` tal cual."""
+    words = key.split()
+    while words and words[0] in _COURTESY_WORDS:
+        words.pop(0)
+    return " ".join(words) or key
+
+
 def log(message: str) -> None:
     print(f"[ezagent-voice] {message}", flush=True)
+
+
+def _timed_stream(stream, timing: TurnTimings | None):
+    """Entrega los trozos del LLM sumando solo el tiempo que se espera por ellos.
+
+    Mientras el consumidor habla una frase el generador queda en pausa, así que
+    ese tiempo de voz no cuenta como tiempo del LLM.
+    """
+    iterator = iter(stream)
+    while True:
+        started = time.monotonic()
+        try:
+            item = next(iterator)
+        except StopIteration:
+            if timing is not None:
+                timing.add_span("llm", time.monotonic() - started)
+            return
+        if timing is not None:
+            timing.add_span("llm", time.monotonic() - started)
+        yield item
 
 
 def _resource_root() -> Path:
@@ -274,6 +324,11 @@ class VoiceApp:
         )
         self._user_speaking = False
         self._ignore_utterance = False
+        # Unión de frases (hilo de audio): si el turno se cerró en una pausa y
+        # el usuario sigue hablando mientras el modelo piensa, la frase nueva
+        # se transcribe junto con la anterior en vez de perder la primera.
+        self._last_turn_audio: tuple[bytes, int, float] | None = None
+        self._resume_pcm: tuple[bytes, int] | None = None
         self.last_summary = ""
         self.mute_until = 0.0
         self.watched: set[str] = set()
@@ -317,7 +372,12 @@ class VoiceApp:
             cfg.llm_model,
             cfg.llm_base_url,
             cfg.api_key,
+            cfg.llm_api_style,
         )
+        # Lista real de modelos por proveedor (GET /models), pedida en un hilo.
+        self._llm_models_cache: dict[str, tuple[str, ...]] = {}
+        self._llm_models_lock = threading.Lock()
+        self._llm_models_tried: set[tuple[str, str, str]] = set()
         self._saved_stt_model = cfg.stt_model
         self._saved_stt_engine = cfg.stt_engine
 
@@ -361,8 +421,13 @@ class VoiceApp:
             f"Micrófono: {self.mic.device_name} (índice {self.mic.device_index}, "
             f"{self.mic.rate} Hz)"
         )
+        self.turn_detector = self._create_turn_detector(cfg)
+        turn = (
+            f"fin de turno a {cfg.turn_quick_secs}s si la frase está completa"
+            if self.turn_detector is not None else "sin Smart Turn"
+        )
         log(
-            f"VAD: silencio={cfg.silence_secs}s, min_rms={cfg.min_rms}, "
+            f"VAD: silencio={cfg.silence_secs}s, {turn}, min_rms={cfg.min_rms}, "
             f"pre_roll={cfg.pre_roll_secs}s, barge_in={cfg.barge_in}"
         )
         self.herdr = Herdr(cfg)
@@ -376,6 +441,15 @@ class VoiceApp:
             request_close=self._request_close,
             mic_mute=self._llm_mic_mute,
             runtime=self.agent,
+        )
+        # Lista real de modelos del proveedor activo: llena el menú y corrige
+        # un id guardado sin prefijo antes del primer turno.
+        self._fetch_llm_models(
+            self.cfg.llm_provider,
+            self.cfg.llm_base_url,
+            self.cfg.api_key,
+            self.cfg.llm_api_style,
+            force=False,
         )
         self.watcher = Watcher(
             cfg,
@@ -396,6 +470,8 @@ class VoiceApp:
         self.notch.on_test_voice = self._notch_test_voice
         self.notch.on_hide = self._notch_hide
         try:
+            self._push_custom_colors()
+            self.notch.set_custom_base(self.cfg.theme_base)
             self.notch.set_theme(self.cfg.theme)
         except Exception:
             pass
@@ -449,6 +525,31 @@ class VoiceApp:
         except Exception as exc:  # noqa: BLE001
             log(f"Núcleo agéntico no disponible: {exc}")
             return None
+
+    def _apply_turn_settings(self) -> None:
+        """Enciende, apaga o ajusta Smart Turn sin reiniciar la llamada."""
+        detector = getattr(self, "turn_detector", None)
+        if not self.cfg.smart_turn:
+            self.mic.turn_detector = None
+            return
+        if detector is None:
+            self.turn_detector = self._create_turn_detector(self.cfg)
+            return
+        detector.threshold = float(self.cfg.turn_threshold)
+        self.mic.turn_detector = detector
+
+    def _create_turn_detector(self, cfg: VoiceConfig) -> SmartTurn | None:
+        """Smart Turn en segundo plano; si falla, el VAD sigue solo con silencio."""
+        if not getattr(cfg, "smart_turn", True):
+            return None
+        try:
+            detector = SmartTurn(threshold=float(cfg.turn_threshold))
+        except Exception as exc:  # noqa: BLE001
+            log(f"Smart Turn no disponible: {exc}")
+            return None
+        self.mic.turn_detector = detector
+        self.mic.turn_quick_secs = float(cfg.turn_quick_secs)
+        return detector
 
     # ------------------------------------------------------------- bandeja
     def _create_tray(self):
@@ -821,6 +922,9 @@ class VoiceApp:
             self.mic.close()
         except Exception:
             pass
+        detector = getattr(self, "turn_detector", None)
+        if detector is not None:
+            detector.close()
         tray = getattr(self, "tray", None)
         if tray is not None:
             try:
@@ -907,14 +1011,14 @@ class VoiceApp:
             if not text:
                 self._set_state(LISTENING)
                 return
-            if self._turn_started:
-                log(f"STT: {(time.monotonic() - self._turn_started) * 1000:.0f} ms")
+            if self._turn_timing is not None:
+                log(f"Tiempos: {format_stt(self._turn_timing.report())}")
             log(f"Tú: {text}")
             fast_t0 = time.monotonic()
             if self._fast_command(text):
-                self._latency.record_command(
-                    "fast_command", (time.monotonic() - fast_t0) * 1000
-                )
+                handled_ms = (time.monotonic() - fast_t0) * 1000
+                self._latency.record_command("fast_command", handled_ms)
+                log(f"Comando local: {handled_ms:.0f} ms")
                 return
             self._set_state(THINKING)
             threading.Thread(
@@ -923,21 +1027,11 @@ class VoiceApp:
         elif kind == "speaking":
             gen = event[1]
             if gen == self._turn_gen:
-                if self._turn_started:
-                    log(
-                        "Primer audio: "
-                        f"{(time.monotonic() - self._turn_started) * 1000:.0f} ms"
-                    )
                 self._set_state(SPEAKING)
         elif kind == "answer_done":
             gen = event[1]
             if gen != self._turn_gen:
                 return
-            if self._turn_started:
-                log(
-                    "Turno completo: "
-                    f"{(time.monotonic() - self._turn_started) * 1000:.0f} ms"
-                )
             timing = self._turn_timing
             if timing is not None:
                 timing.mark("turn_end")
@@ -1000,6 +1094,8 @@ class VoiceApp:
             else:
                 self._set_idle()
             self._drain_pending()
+        elif kind == "llm_models_ready":
+            self._fix_model_name(str(event[1]), tuple(event[2]))
         elif kind == "error":
             message = str(event[1])[:320]
             log(f"Error: {message}")
@@ -1193,9 +1289,18 @@ class VoiceApp:
             self._post_tts_ignore = True
             return
         self._user_speaking = True
+        # Un arranque anterior que no llegó a frase (ruido corto) no debe
+        # pegar audio viejo a esta.
+        self._resume_pcm = None
         if self.state == THINKING:
             # No hay eco: el usuario puede corregir o repetir mientras el
             # modelo piensa. La respuesta pendiente se descarta.
+            last = getattr(self, "_last_turn_audio", None)
+            if last is not None and time.monotonic() - last[2] <= RESUME_SECS:
+                # Seguramente el turno se cerró en una pausa: se une la frase
+                # anterior con la que viene para no perder la primera parte.
+                self._resume_pcm = (last[0], last[1])
+                log("Sigues hablando: uno esta frase con la anterior.")
             self._turn_gen += 1
             self._signal_tts_stop()
             self._set_state(LISTENING)
@@ -1233,7 +1338,12 @@ class VoiceApp:
                 return
         if not self.in_call or not pcm:
             return
+        resume = getattr(self, "_resume_pcm", None)
+        self._resume_pcm = None
+        if resume is not None and resume[1] == rate:
+            pcm = resume[0] + pcm
         now = time.monotonic()
+        self._last_turn_audio = (pcm, rate, now)
         self._turn_started = now
         speech_end = getattr(self.mic, "last_speech_end", None) or now
         timing = TurnTimings(speech_end=speech_end, vad_end=now)
@@ -1389,24 +1499,22 @@ class VoiceApp:
         timing = self._turn_timing if gen == self._turn_gen else None
         first_token = False
         first_audio = False
+        speech = self._speech_queue(stop_event, timing)
+        finished = False
 
         def speak_sentence(sentence: str) -> None:
             nonlocal first_audio
             if timing is not None and not first_audio:
                 timing.mark("first_sentence")
                 first_audio = True
-            self.speaker.speak(
-                sentence,
-                stop_event,
-                on_level=lambda level: self.notch.draw(level, SPEAKING),
-                on_start=(
-                    (lambda: timing.mark("first_sound"))
-                    if timing is not None else None
-                ),
-            )
+            # Sintetiza aquí y encola: suena en el hilo de la cola mientras
+            # este hilo sigue leyendo el LLM y sintetizando la frase siguiente.
+            speech.say(sentence)
 
         try:
-            for delta in self.messenger.ask_stream(text):
+            if timing is not None:
+                timing.mark("llm_start")
+            for delta in _timed_stream(self.messenger.ask_stream(text), timing):
                 if gen != self._turn_gen or stop_event.is_set():
                     return
                 if timing is not None and not first_token and delta.strip():
@@ -1439,10 +1547,56 @@ class VoiceApp:
             if answer:
                 self.last_summary = answer
                 log(f"Mensajero: {answer}")
+            rounds = list(getattr(self.messenger, "last_rounds", []) or [])
+            if len(rounds) > 1:
+                # Con herramientas, «1.er token» suma varias llamadas al LLM.
+                log("LLM por llamada: " + " | ".join(rounds))
+            try:
+                # answer_done sale cuando termina de sonar, como antes.
+                speech.finish()
+                finished = True
+            except Exception as exc:  # noqa: BLE001
+                self.events.put(("error", f"Kokoro: {exc}"))
         except Exception as exc:  # noqa: BLE001
-            self.events.put(("error", f"OpenCode: {exc}"))
+            log(f"LLM ({self.cfg.llm_provider}): {type(exc).__name__}: {exc}")
+            self.events.put(
+                ("error", friendly_llm_error(exc, self._llm_label(), self.cfg.llm_model))
+            )
         finally:
+            if not finished:
+                speech.abort()
             self.events.put(("answer_done", gen))
+
+    def _speech_queue(
+        self, stop_event: threading.Event, timing: TurnTimings | None
+    ) -> SpeechQueue:
+        """Cola de voz del turno: sintetiza en el hilo del LLM y suena aparte."""
+
+        def first_sound() -> None:
+            # Solo el primer sonido del turno cuenta como «primer audio».
+            if timing is not None and "first_sound" not in timing.marks:
+                timing.mark("first_sound")
+
+        return SpeechQueue(
+            self.speaker.synthesize,
+            lambda samples, rate, on_start: self.speaker.play(
+                samples,
+                rate,
+                stop_event,
+                on_level=lambda level: self.notch.draw(level, SPEAKING),
+                on_start=on_start,
+            ),
+            stop_event,
+            on_sound=first_sound,
+            on_synth=(
+                (lambda secs: timing.add_span("tts_synth", secs))
+                if timing is not None else None
+            ),
+            on_play=(
+                (lambda secs: timing.add_span("tts_play", secs))
+                if timing is not None else None
+            ),
+        )
 
     def _tts_worker(
         self, text: str, stop_event: threading.Event, generation: int
@@ -1681,7 +1835,13 @@ class VoiceApp:
 
     def _fast_command(self, text: str) -> bool:
         """Órdenes de control que no necesitan pasar por el LLM."""
-        key = re.sub(r"\s+", " ", self._normalize(text))
+        raw_key = re.sub(r"\s+", " ", self._normalize(text))
+        key = _strip_courtesy(raw_key)
+        words = raw_key.split()
+        if "gracias" in words and all(word in _COURTESY_WORDS for word in words):
+            log("Atajo local: agradecimiento.")
+            self._speak("De nada.", "answer")
+            return True
         # DECISION: «silencio» / «silencia» / «mute» sueltos ya no silencian: Whisper
         # los alucina con ruido y se dicen al hablar con otras personas. Solo una
         # orden explícita que nombre el micrófono silencia por voz.
@@ -1876,14 +2036,26 @@ class VoiceApp:
         profile["model"] = self.cfg.llm_model or profile.get("model", "")
         if self.cfg.api_key:
             profile["api_key"] = self.cfg.api_key
+        profile["api_style"] = self.cfg.llm_api_style or profile.get(
+            "api_style", "openai"
+        )
 
         try:
             stt_models = available_whisper_models(self.cfg.stt_model)
         except Exception:
             stt_models = ()
+        with self._llm_models_lock:
+            cached = dict(self._llm_models_cache)
         llm_models = {
-            name: provider_models(name) for name in providers
+            name: cached.get(name) or provider_models(name) for name in providers
         }
+        self._fetch_llm_models(
+            current,
+            self.cfg.llm_base_url,
+            self.cfg.api_key,
+            self.cfg.llm_api_style,
+            force=False,
+        )
         settings = MenuSettings.from_app(
             values,
             devices,
@@ -1912,7 +2084,41 @@ class VoiceApp:
     def _notch_test_voice(self, values: dict) -> None:
         self.menu_events.put(("test", dict(values)))
 
-    def _apply_instant_setting(self, key: str, value) -> None:
+    def _push_custom_colors(self) -> None:
+        """Pasa a la barra los cuatro colores del tema personalizado."""
+        setter = getattr(self.notch, "set_custom_colors", None)
+        if callable(setter):
+            setter(
+                self.cfg.theme_primary,
+                self.cfg.theme_secondary,
+                self.cfg.theme_accent,
+                self.cfg.theme_background,
+            )
+
+    def _apply_custom_theme(self, key: str, value) -> None:
+        """Un color o una paleta base: se guardan y el tema pasa a «Personalizado»."""
+        from .notch.flow import PRESETS
+
+        if key == "theme_preset":
+            preset = PRESETS.get(str(value))
+            if preset is None:
+                return
+            background, primary, secondary, accent = preset
+            updates = {
+                "theme_background": background,
+                "theme_primary": primary,
+                "theme_secondary": secondary,
+                "theme_accent": accent,
+            }
+        else:
+            updates = {key: value}
+        for name, color in updates.items():
+            self._apply_instant_setting(name, color, push=False)
+        self._push_custom_colors()
+        if self.cfg.theme != "custom":
+            self._apply_instant_setting("theme", "custom")
+
+    def _apply_instant_setting(self, key: str, value, push: bool = True) -> None:
         """Apariencia y escucha: se aplican a la barra y se guardan ya."""
         try:
             from .notch.settings import normalize_setting
@@ -1929,6 +2135,7 @@ class VoiceApp:
         setter = {
             "ui_layout": "set_layout",
             "theme": "set_theme",
+            "theme_base": "set_custom_base",
             "ui_motion": "set_motion",
         }.get(key)
         method = getattr(self.notch, setter, None) if setter else None
@@ -1937,6 +2144,10 @@ class VoiceApp:
                 method(value)
             except Exception as exc:  # noqa: BLE001
                 log(f"No pude aplicar {key} a la barra: {exc}")
+        if push and key.startswith("theme_") and key != "theme_base":
+            self._push_custom_colors()
+            if self.cfg.theme != "custom":
+                self._apply_instant_setting("theme", "custom")
         log(f"Ajuste {key} = {'(frase)' if key == 'wake_phrase' else value}")
 
     def _notch_hide(self) -> None:
@@ -1956,6 +2167,9 @@ class VoiceApp:
 
     def _apply_live_setting(self, key: str, value) -> None:
         """Aplica un control del menú en vivo, sin persistir todavía."""
+        if key == "theme_preset":
+            self._apply_custom_theme(key, value)
+            return
         if key in INSTANT_SETTINGS:
             self._apply_instant_setting(key, value)
             return
@@ -1977,7 +2191,14 @@ class VoiceApp:
                     self.cfg.llm_model = profile.get("model", "")
                     self.cfg.llm_base_url = profile.get("base_url", "")
                     self.cfg.api_key = profile.get("api_key", "")
+                    self.cfg.llm_api_style = profile.get("api_style", "openai")
                     self.messenger.reload_llm()
+                    self._fetch_llm_models(
+                        self.cfg.llm_provider,
+                        self.cfg.llm_base_url,
+                        self.cfg.api_key,
+                        self.cfg.llm_api_style,
+                    )
                 return
             if key == "min_rms":
                 self.cfg.min_rms = float(value)
@@ -2029,8 +2250,11 @@ class VoiceApp:
                 self.cfg.auto_start_whisper = bool(value)
             elif key == "llm_provider":
                 self.cfg.llm_provider = normalize_provider(str(value))
-            elif key == "llm_model":
-                self.cfg.llm_model = str(value)
+            elif key in ("llm_model", "llm_model_pick"):
+                if str(value or "").strip():
+                    self.cfg.llm_model = str(value).strip()
+            elif key == "llm_api_style":
+                self.cfg.llm_api_style = str(value)
             elif key == "llm_base_url":
                 self.cfg.llm_base_url = str(value)
             elif key == "api_key":
@@ -2041,6 +2265,12 @@ class VoiceApp:
                 self.cfg.llm_max_tokens = int(round(float(value)))
             elif key == "llm_reasoning_effort":
                 self.cfg.llm_reasoning_effort = str(value)
+            elif key in ("smart_turn", "turn_threshold"):
+                if key == "smart_turn":
+                    self.cfg.smart_turn = bool(value)
+                else:
+                    self.cfg.turn_threshold = float(value)
+                self._apply_turn_settings()
             elif key == "barge_in":
                 self.cfg.barge_in = bool(value)
             elif key == "confirm_actions":
@@ -2147,6 +2377,81 @@ class VoiceApp:
         if was_in_call and restart:
             self.root.after(250, self._start_call)
 
+    def _fix_model_name(self, provider: str, models: tuple[str, ...]) -> None:
+        """Completa el id del modelo activo con el de la lista real y lo guarda."""
+        if provider != self.cfg.llm_provider:
+            return
+        fixed = match_model(self.cfg.llm_model, models)
+        if fixed == self.cfg.llm_model:
+            return
+        log(f"Modelo «{self.cfg.llm_model}» corregido a «{fixed}» según {self._llm_label()}.")
+        self.cfg.llm_model = fixed
+        try:
+            save_provider_profile(
+                self.cfg.llm_provider,
+                model=fixed,
+                base_url=self.cfg.llm_base_url,
+                api_key=self.cfg.api_key,
+                api_style=self.cfg.llm_api_style,
+            )
+            self.cfg.save()
+        except Exception as exc:  # noqa: BLE001
+            log(f"No pude guardar el modelo corregido: {exc}")
+        self._saved_llm = (
+            self.cfg.llm_provider,
+            self.cfg.llm_model,
+            self.cfg.llm_base_url,
+            self.cfg.api_key,
+            self.cfg.llm_api_style,
+        )
+        self.messenger.reload_llm()
+
+    def _llm_label(self) -> str:
+        """Nombre del proveedor activo para los mensajes de error."""
+        spec = provider_spec(self.cfg.llm_provider)
+        return spec.label if spec is not None else str(self.cfg.llm_provider or "LLM")
+
+    def _fetch_llm_models(
+        self,
+        provider: str,
+        base_url: str,
+        api_key: str,
+        api_style: str,
+        *,
+        force: bool = True,
+    ) -> None:
+        """Pide en un hilo la lista real de modelos y la pasa al menú.
+
+        Sin ``force`` (al abrir el menú) solo se pide una vez por endpoint.
+        """
+        if not str(base_url or "").strip():
+            return
+        attempt = (provider, str(base_url), str(api_style))
+        with self._llm_models_lock:
+            if not force and attempt in self._llm_models_tried:
+                return
+            self._llm_models_tried.add(attempt)
+
+        def worker() -> None:
+            try:
+                models = tuple(fetch_models(base_url, api_key, api_style))
+            except Exception as exc:  # noqa: BLE001 - sin lista, quedan sugerencias
+                log(f"Lista de modelos de {provider}: {exc}")
+                return
+            if not models:
+                return
+            with self._llm_models_lock:
+                self._llm_models_cache[provider] = models
+            # Si el modelo guardado viene sin prefijo («qwen3-32b» en vez de
+            # «qwen/qwen3-32b»), el hilo principal lo corrige y lo guarda.
+            self.events.put(("llm_models_ready", provider, models))
+            try:
+                self.notch.update_llm_models(provider, models)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, name="ezagent-models", daemon=True).start()
+
     def _apply_settings(self, values: dict) -> bool:
         """Aplica y guarda los valores del panel; True si reinició la llamada."""
         old_device = self.mic.device_index
@@ -2239,6 +2544,9 @@ class VoiceApp:
             values.get("llm_base_url", self.cfg.llm_base_url)
         ).strip()
         self.cfg.api_key = str(values.get("api_key", self.cfg.api_key)).strip()
+        self.cfg.llm_api_style = str(
+            values.get("llm_api_style", self.cfg.llm_api_style) or "openai"
+        )
         self.cfg.llm_temperature = number(
             "llm_temperature", self.cfg.llm_temperature
         )
@@ -2251,6 +2559,9 @@ class VoiceApp:
             )
         )
         self.cfg.barge_in = bool(values.get("barge_in", self.cfg.barge_in))
+        self.cfg.smart_turn = bool(values.get("smart_turn", self.cfg.smart_turn))
+        self.cfg.turn_threshold = number("turn_threshold", self.cfg.turn_threshold)
+        self._apply_turn_settings()
         self.cfg.confirm_actions = bool(
             values.get("confirm_actions", self.cfg.confirm_actions)
         )
@@ -2260,7 +2571,21 @@ class VoiceApp:
             self.cfg.llm_model,
             self.cfg.llm_base_url,
             self.cfg.api_key,
+            self.cfg.llm_api_style,
         )
+        with self._llm_models_lock:
+            known = self._llm_models_cache.get(self.cfg.llm_provider, ())
+        fixed = match_model(self.cfg.llm_model, known)
+        if fixed != self.cfg.llm_model:
+            log(f"Modelo «{self.cfg.llm_model}» completado como «{fixed}».")
+            self.cfg.llm_model = fixed
+            new_llm = (
+                self.cfg.llm_provider,
+                self.cfg.llm_model,
+                self.cfg.llm_base_url,
+                self.cfg.api_key,
+                self.cfg.llm_api_style,
+            )
         if new_llm != old_llm:
             if not self.cfg.llm_base_url:
                 raise ValueError("El proveedor LLM necesita un endpoint (URL).")
@@ -2271,8 +2596,16 @@ class VoiceApp:
                 model=self.cfg.llm_model,
                 base_url=self.cfg.llm_base_url,
                 api_key=self.cfg.api_key,
+                api_style=self.cfg.llm_api_style,
             )
             self.cfg.llm_pinned = True
+            # Con URL o clave nuevas, la lista de modelos puede ser otra.
+            self._fetch_llm_models(
+                self.cfg.llm_provider,
+                self.cfg.llm_base_url,
+                self.cfg.api_key,
+                self.cfg.llm_api_style,
+            )
 
         new_device = values.get("input_device_index")
         if new_device is not None and int(new_device) != old_device:

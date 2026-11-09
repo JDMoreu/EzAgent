@@ -7,29 +7,44 @@ bloquea. No es un asistente general: el trabajo real lo hacen los agentes
 delegados.
 
 La interfaz es una **barra flotante** sin texto: una cápsula (o un círculo) con
-cielo y nubes que se mueven con el aire de tu voz y de la del asistente, y una
-tarjeta de ajustes que se despliega desde ☰. No hay app de escritorio, dashboard
+un gradiente vivo, **Marea**, que fluye con tu voz y con la del asistente, y
+una ventana de ajustes centrada que se abre desde ☰. No hay app de escritorio, dashboard
 ni panel de llamada.
 
 ```
-Micrófono 16 kHz
+Micrófono
    │
    ▼
-VAD por energía ──► whisper.cpp (es) ──► LLM compatible con OpenAI
-   │                                      (OpenCode, OpenAI, Groq, Claude, Gemini…)
-   ▼
-Kokoro (ONNX local, español)
-   │
-   ▼
-Altavoz
+VAD por energía ──► Smart Turn (¿terminaste la frase?) ──► whisper.cpp (es)
+                                                                │
+                         atajos locales (mute, cierra, gracias) ◄┤
+                                                                ▼
+              LLM en streaming + herramientas (OpenAI o Anthropic)
+              ├─ acuse inmediato: «Va, lo reviso.»
+              ├─ archivos · web · memoria · skills
+              └─ Herdr: OpenCode · Claude Code · Codex · mcode
+                                                                │
+                                                                ▼
+            Kokoro: sintetiza la frase siguiente mientras suena la actual
+                                                                │
+                                                                ▼
+                                                             Altavoz
 ```
 
 | Capa | Motor | Dónde corre |
 |---|---|---|
-| VAD / segmentación | `Segmenter` local con pre-roll e histéresis | Local |
+| VAD / segmentación | `Segmenter` con pre-roll e histéresis | Local |
+| Fin de turno | Smart Turn v3.2 (ONNX, 8 MB) | Local, CPU |
 | STT | whisper.cpp + `large-v3-turbo` | Local, GPU AMD vía Vulkan |
-| LLM | Proveedor compatible con OpenAI, configurable | Nube |
-| TTS | Kokoro v1.0, voces españolas | Local, CPU (ONNX) |
+| LLM | Proveedor configurable, compatible con OpenAI o con Anthropic | Nube |
+| TTS | Kokoro v1.0, voces españolas, en cola | Local, CPU (ONNX) |
+
+Recorrido completo de un turno, hilos y archivos:
+[`docs/architecture.md`](docs/architecture.md).
+
+**Latencia típica** (medida con OpenCode Go): fin de turno en ~0,4 s cuando la
+frase está completa (antes, 1,3 s fijos), transcripción en ~0,2 s y primer
+audio a los ~3,6 s de media; el resto es la espera del primer token del LLM.
 
 **Pipecat no se usa.** El pipeline es propio (VAD, whisper.cpp, Kokoro y el
 LLM); la carpeta `~/.cache/pipecat/kokoro-onnx` es una caché antigua que solo
@@ -40,7 +55,7 @@ se lee para migrar los modelos Kokoro, que se copian una vez a
 
 Requisitos: Windows 11, `uv` y una clave del proveedor LLM elegido. Los modelos
 y binarios se descargan una sola vez, con verificación SHA256, a
-`%LOCALAPPDATA%\EzAgent` (whisper.cpp, modelo Whisper, Kokoro y Silero VAD):
+`%LOCALAPPDATA%\EzAgent` (whisper.cpp, modelo Whisper, Kokoro y Smart Turn):
 
 ```powershell
 uv run python -m ezagent.core.downloads --list   # qué falta
@@ -74,21 +89,29 @@ arranca escuchando; `Ctrl+Alt+Space` cuelga o retoma.
 
 ## La barra (interfaz por defecto)
 
-Desde la versión 0.2 la interfaz es **una barra sin texto**: una cápsula (o un
-círculo) con cielo despejado arriba y un banco de nubes en la mitad inferior,
-anclada abajo al centro, sobre la barra de tareas. **El contorno es fijo y
-nítido; lo que se mueve es el interior**: las nubes tienen inercia. Cuando
-hablas entra aire por abajo que las levanta, las separa, las hincha y deja un
-brillo; al callar se asientan despacio con un vaivén. Cuando habla EzAgent una
-ola recorre el banco al ritmo de su voz, y mientras piensa las nubes giran. Un
-techo suave impide que suban más allá de la mitad. Los colores siguen al estado (espera, escucha, piensa, habla,
-pregunta, error y pausa) y al tema, claro u oscuro.
+La interfaz es **una barra sin texto**: una cápsula (o un círculo) anclada abajo
+al centro, sobre la barra de tareas. **El contorno es fijo y nítido; lo que se
+mueve es el interior**: **Marea**, la identidad visual de EzAgent, un gradiente
+orgánico como tintas que se mezclan en el agua (verde azulado, aguamarina y
+menta, con filamentos melocotón). No es un orbe de nubes ni un brillo en el
+borde: la marca es el propio líquido en movimiento.
+
+| Estado | Cómo se mueve |
+|---|---|
+| En espera | Fluye y se pliega despacio |
+| Te escucha | Tu voz lo acelera y lo empuja hacia arriba; entra una luz desde abajo |
+| Habla EzAgent | Lo recorren pulsos de luz al ritmo de su voz |
+| Piensa | Gira despacio, como un remolino (tonos índigo y cian) |
+| Pregunta · error · pausa | Ámbar · rojo · gris lento |
+
+Los colores siguen al estado y al tema, claro u oscuro; con movimiento reducido
+el fluido queda quieto. El código vive en `src/ezagent/voice/notch/flow.py`.
 
 Los botones solo aparecen al acercar el puntero: la forma crece un poco y ☰,
 🎤 y ✕ nacen desde detrás de ella, escalonados y con un rebote suave. La barra
 pinta a 60 fps fijos mientras algo se mueve. **✕ es dinámico:** con la llamada
 en marcha cuelga; al colgar, el micrófono se pliega y ✕ se convierte en el botón
-azul de **llamar** (ondas de voz), que vuelve a abrir la conversación.
+verde azulado de **llamar** (ondas de voz), que vuelve a abrir la conversación.
 Una confirmación oculta ☰, convierte 🎤 en ✓ y deja ✕ como «no» (la pregunta se
 dice por voz). Se arrastra por la forma y recuerda su posición.
 
@@ -109,8 +132,9 @@ descarta sin llegar al modelo ni al log. Si apagas «Reactivar por voz», la pau
 es un silencio total y solo el botón la quita. El modelo ya no puede silenciar el
 micrófono: si lo pide, la escucha queda en pausa (siempre reversible).
 
-**Ajustes ☰:** la tarjeta se despliega desde ☰ con colores frescos (blanco con un
-toque de cielo en claro, azul noche en oscuro). «–» cierra solo la tarjeta; la
+**Ajustes ☰:** se abre una **ventana centrada** con las secciones a la izquierda
+y la sección elegida a la derecha (blanco con un toque de menta en claro, noche
+verde azulada en oscuro). «–» la oculta; la
 barra sigue a la vista. Arriba están **Apariencia** (forma, tema y movimiento) y
 **Escucha** (qué hace «cierra», reactivar por voz y la frase); se aplican y se
 guardan al instante. En **Conversación** están «Repetir lo último» y «Nueva
@@ -136,7 +160,8 @@ Se configura en `voice.json`:
 | Clave | Valores | Por defecto |
 |---|---|---|
 | `ui_layout` | `pill` (cápsula) · `circle` (círculo sobre la fila de botones) | `pill` |
-| `theme` | `auto` (sigue a Windows) · `light` · `dark` | `auto` |
+| `theme` | `auto` (sigue a Windows) · `light` · `dark` · `custom` (tus colores) | `auto` |
+| `theme_primary` · `theme_secondary` · `theme_accent` · `theme_background` | colores `#RRGGBB` del tema personalizado | paleta Marea |
 | `ui_motion` | `system` (sigue a Windows) · `full` · `reduced` (solo fundidos de 120 ms) | `system` |
 | `close_action` | `pause` (pausa la escucha) · `hangup` (cuelga) | `pause` |
 | `voice_wake` | `true` · `false` (la pausa es silencio total) | `true` |
@@ -151,7 +176,7 @@ sílabas). Un clic, un golpe de teclado o un soplido duran menos y no lo cortan.
 Si aun así el ruido de fondo es sostenido (un ventilador, música), sube el umbral
 o la duración; si te cuesta interrumpir, bájalos.
 
-El icono (app y bandeja) es un orbe de cielo con nubes; se regenera con
+El icono (app y bandeja) es un orbe de Marea; se regenera con
 `uv run python scripts/make_icons.py`.
 
 ## Bandeja del sistema
@@ -172,40 +197,49 @@ silenciado.
 
 ## El menú es Ajustes
 
-La tarjeta de ajustes (☰, o `Ctrl+Alt+O`) contiene todos los ajustes del
-mensajero. Si hay más filas de las que caben, la rueda desplaza el contenido entre
-la cabecera y el pie; el pulgar de scroll queda visible a la derecha. Los campos
-de texto se editan en línea: al pulsarlos, la tarjeta pide el teclado y lo
+La ventana de ajustes (☰, o `Ctrl+Alt+O`) se abre **en el centro de la
+pantalla**. A la izquierda están las secciones; a la derecha, los controles de
+la sección elegida, con todo el alto de la ventana, así casi nunca hace falta
+desplazarse. «–» la oculta y la barra sigue a la vista. Si una sección no cabe,
+la rueda desplaza su contenido entre la cabecera y el pie. Los campos de texto
+se editan en línea: al pulsarlos, la ventana pide el teclado y lo
 devuelve al confirmar con `Enter`, cancelar con `Esc` o pulsar fuera. `Ctrl+V`
 pega desde el portapapeles.
 
-- **APARIENCIA:** forma (píldora o círculo), tema (automático, claro u oscuro) y
-  movimiento (según el sistema, completo o reducido). Se aplica y se guarda al
-  instante.
+- **APARIENCIA:** forma (píldora o círculo), tema (automático, claro, oscuro o
+  **personalizado**) y movimiento (según el sistema, completo o reducido). Se
+  aplica y se guarda al instante.
+- **COLORES:** las paletas de Claro, Oscuro y Personalizado lado a lado (un clic
+  en una la elige), **Partir de** (paletas base: Marea, Atardecer, Bosque, Lavanda
+  y Medianoche) y los cuatro colores del gradiente con su muestra: **principal,
+  secundario, acento y fondo** (`#RRGGBB`). Cambiar un color activa el tema
+  personalizado; las superficies siguen a Windows (claro u oscuro) y los avisos
+  conservan su color (ámbar al preguntar, rojo en error).
 - **ESCUCHA:** qué hace «cierra» (pausa o cuelga), reactivar por voz y la frase de
   reactivación. También se aplica y se guarda al instante.
-- **AUDIO:** micrófono y **medidor de entrada con nivel en vivo y umbral
-  arrastrable**; umbral de ruido y silencio de cierre.
-- **MOTOR:** motor de Whisper (`Automático`, `GPU · Vulkan` o `CPU`) y variante
-  de Kokoro (`int8`/`fp32`). El puerto local de Whisper se elige libre y se
-  configura solo al arrancar. VAD y TTS corren en local.
-- **TTS:** voz de Kokoro, velocidad y pausas de frase/cláusula. Las rutas de
-  modelo/voces quedan como configuración avanzada.
-- **VAD:** antelación de escucha, duración mínima, frase máxima y umbral de
-  interrupción.
-- **WHISPER · STT:** modelo en una **lista de los modelos instalados**, indicación,
-  tiempo máximo y arranque automático. La dirección del servidor ya no se pide:
-  EzAgent usa un puerto local libre.
-- **LLM · API:** perfil guardado, proveedor, **modelo en lista**, dirección,
-  clave, temperatura, máximo de tokens y **nivel de razonamiento**.
-- **CONVERSACIÓN:** interrupción activa, confirmación opcional, prueba de voz,
-  «Repetir lo último» y «Nueva conversación» (pide un segundo clic).
+- **MICRÓFONO:** dispositivo, **medidor de entrada con nivel en vivo y umbral
+  arrastrable** y umbral de ruido.
+- **FIN DE TURNO:** silencio máximo, **cierre inteligente** (Smart Turn) y
+  **certeza para cerrar** (súbela si te corta antes de tiempo), antelación de
+  escucha, duración mínima y frase máxima.
+- **CONVERSACIÓN:** interrupción activa y su umbral, confirmación opcional,
+  prueba de voz, «Repetir lo último» y «Nueva conversación» (pide un segundo
+  clic).
+- **VOZ · KOKORO:** voz, variante (`int8`/`fp32`), velocidad y pausas de
+  frase y cláusula. Las rutas de modelo y voces quedan como configuración
+  avanzada.
+- **TRANSCRIPCIÓN · WHISPER:** motor (`Automático`, `GPU · Vulkan` o `CPU`),
+  modelo en una **lista de los modelos instalados**, indicación, tiempo máximo y
+  arranque automático. El puerto local se elige libre al arrancar.
+- **LLM · API:** proveedor, nombre del perfil, **compatibilidad** (OpenAI o
+  Anthropic), dirección, clave, **modelo escrito a mano**, **modelos de la API**
+  (la lista real del proveedor), temperatura, máximo de tokens y razonamiento.
 - **AGENTE:** abre `system.md` o `voice.json` con el editor predeterminado para
   cambiar el comportamiento o los perfiles de modelo/esfuerzo de cada agente.
 - **ATAJOS:** los cinco atajos globales editables en línea (llamada, colgar,
   repetir, silencio y ajustes). Se validan al guardar, no pueden repetirse y se
   re-registran sin reiniciar; si otra app usa el mismo atajo, queda en el log.
-- Guardar, cambios sin guardar y cerrar la tarjeta («–»; la barra sigue a la vista).
+- Guardar y «cambios sin guardar» quedan siempre al pie de la ventana.
 
 Los ajustes de audio, voz, TTS, VAD, Whisper y conversación se guardan en
 `%APPDATA%\EzAgent\voice.json`; los perfiles de proveedor, en
@@ -356,22 +390,27 @@ Ejemplo por voz:
 
 ## Proveedor y modelo LLM
 
-Se pueden cambiar desde el grupo **LLM · API** del menú o con variables de
-entorno y `llm.json`. Los proveedores integrados son OpenCode, OpenAI, Groq,
-Claude (Anthropic), Gemini, OpenRouter y cualquier endpoint compatible con
-OpenAI. Ejemplo por entorno:
+Se cambian desde el grupo **LLM · API** del menú o con variables de entorno y
+`llm.json`. Presets: **OpenCode Go, OpenAI (GPT, Codex), Claude (Anthropic),
+Gemini, Groq, Cerebras, DeepSeek y OpenRouter**, más **Personalizado** para
+cualquier servicio compatible con la API de OpenAI o con la de Anthropic (con
+el nombre de perfil que elijas). El modelo se escribe a mano; «Modelos de la
+API» trae la lista real del proveedor y, si escribes un id sin prefijo
+(`qwen3-32b` en lugar de `qwen/qwen3-32b`), EzAgent lo completa. Ejemplo por
+entorno:
 
 ```dotenv
 LLM_PROVIDER=groq
 GROQ_API_KEY=...
 # Opcionales; si faltan, se usan los del proveedor:
-# LLM_MODEL=llama-3.3-70b-versatile
+# LLM_MODEL=openai/gpt-oss-120b
 # LLM_BASE_URL=https://api.groq.com/openai/v1
 ```
 
-Proveedores integrados: OpenCode, OpenAI, Groq, Claude (Anthropic), Gemini,
-OpenRouter y cualquier endpoint compatible con OpenAI. También puedes usar
-`%APPDATA%\EzAgent\llm.json` o `EZ_LLM_CONFIG` con perfiles por proveedor.
+Las suscripciones de Claude Code o Codex (inicio de sesión con la cuenta) no
+son claves de API: para usar Claude o GPT aquí hace falta una clave de API.
+Los planes gratuitos con pocos tokens por minuto (Groq gratis: 7.000–8.000) no
+alcanzan, porque cada petición con herramientas ronda los 7.000 tokens.
 Guía completa: [`docs/llm-providers.md`](docs/llm-providers.md).
 
 ## Atajos
@@ -381,7 +420,7 @@ Guía completa: [`docs/llm-providers.md`](docs/llm-providers.md).
 | `Ctrl+Alt+Space` | Iniciar / colgar la llamada |
 | `Ctrl+Alt+E` | Colgar (`Ctrl+Alt+C` sigue como alias) |
 | `Ctrl+Alt+M` | Pausar / reactivar la escucha |
-| `Ctrl+Alt+O` | Abrir / cerrar la tarjeta de ajustes |
+| `Ctrl+Alt+O` | Abrir / ocultar la ventana de ajustes |
 | `Ctrl+Alt+R` | Repetir el último resumen |
 
 El micrófono no se cierra entre turnos durante una llamada. Las acciones
@@ -392,11 +431,12 @@ aunque el usuario haya dado la orden.
 ## Pruebas
 
 ```powershell
-uv run pytest -q                # 758 pruebas
+uv run pytest -q                # 840 pruebas
 uv run ruff check src tests     # lint
 ```
 
-Detalle del mensajero, límites y arquitectura de audio:
+Arquitectura del flujo completo: [`docs/architecture.md`](docs/architecture.md).
+Detalle del mensajero, latencia y límites:
 [`src/ezagent/voice/README.md`](src/ezagent/voice/README.md).
 
 ## Comunidad

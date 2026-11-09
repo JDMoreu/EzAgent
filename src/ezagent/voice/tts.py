@@ -40,7 +40,10 @@ class Speaker:
         self.kokoro = Kokoro(str(model), str(voices))
         self.style = _voice_style(self.kokoro, cfg.voice)
         self.pa = pyaudio.PyAudio()
-        self._lock = threading.Lock()
+        # Kokoro no es seguro con dos síntesis a la vez; la reproducción va
+        # aparte para poder sintetizar la frase siguiente mientras suena otra.
+        self._synth_lock = threading.Lock()
+        self._play_lock = threading.Lock()
 
     def set_voice(self, voice: str) -> None:
         self.style = _voice_style(self.kokoro, voice)
@@ -63,14 +66,15 @@ class Speaker:
 
     def synthesize(self, text: str) -> tuple[np.ndarray, int]:
         normalized = asyncio.run(normalize_for_kokoro(text))
-        return self.kokoro.create(
-            normalized,
-            voice=self.style,
-            lang="es",
-            speed=self.cfg.speed,
-            sentence_pause=self.cfg.tts_sentence_pause,
-            clause_pause=self.cfg.tts_clause_pause,
-        )
+        with self._synth_lock:
+            return self.kokoro.create(
+                normalized,
+                voice=self.style,
+                lang="es",
+                speed=self.cfg.speed,
+                sentence_pause=self.cfg.tts_sentence_pause,
+                clause_pause=self.cfg.tts_clause_pause,
+            )
 
     def play(
         self,
@@ -81,6 +85,17 @@ class Speaker:
         on_start: Callable[[], None] | None = None,
     ) -> bool:
         """Reproduce; devuelve False si se interrumpió."""
+        with self._play_lock:
+            return self._play(samples, sample_rate, stop_event, on_level, on_start)
+
+    def _play(
+        self,
+        samples: np.ndarray,
+        sample_rate: int,
+        stop_event: threading.Event,
+        on_level: Callable[[float], None] | None,
+        on_start: Callable[[], None] | None,
+    ) -> bool:
         pcm = (np.clip(samples, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
         stream = self.pa.open(
             format=pyaudio.paInt16,
@@ -118,7 +133,5 @@ class Speaker:
         on_level: Callable[[float], None] | None = None,
         on_start: Callable[[], None] | None = None,
     ) -> bool:
-        # Kokoro no es seguro con dos síntesis a la vez; una frase a la vez.
-        with self._lock:
-            samples, rate = self.synthesize(text)
-            return self.play(samples, rate, stop_event, on_level, on_start)
+        samples, rate = self.synthesize(text)
+        return self.play(samples, rate, stop_event, on_level, on_start)

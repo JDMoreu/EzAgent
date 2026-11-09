@@ -6,7 +6,8 @@ para pintarse. La escritura atómica de ``voice.json`` pertenece a la capa de
 aplicación; aquí únicamente se prepara el diccionario de ``snapshot()``.
 
 Claves editables: audio/VAD, voz/TTS, Whisper/STT, LLM/API y conversación.
-``llm_profile`` es un selector de perfiles guardados que no se persiste;
+``llm_profile`` (proveedor) y ``llm_model_pick`` (lista de modelos de la API)
+son selectores de conveniencia que no se persisten: rellenan los campos reales.
 ``test_voice`` es una acción del menú, no una clave.
 
 Los flotantes se redondean siempre al paso del slider y se normalizan para
@@ -16,6 +17,7 @@ guardada con los valores actuales después de ese redondeo.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from typing import Any, Final, Iterable, Mapping, Sequence
 
@@ -29,6 +31,8 @@ EDITABLE_KEYS: Final[tuple[str, ...]] = (
     "min_rms",
     "noise_multiplier",
     "silence_secs",
+    "smart_turn",
+    "turn_threshold",
     "pre_roll_secs",
     "min_speech_secs",
     "max_utterance_secs",
@@ -50,6 +54,7 @@ EDITABLE_KEYS: Final[tuple[str, ...]] = (
     "auto_start_whisper",
     # LLM y API.
     "llm_provider",
+    "llm_api_style",
     "llm_model",
     "llm_base_url",
     "api_key",
@@ -70,12 +75,19 @@ EDITABLE_KEYS: Final[tuple[str, ...]] = (
 # ``llm_profile`` es un selector de conveniencia: elige un perfil guardado y
 # copia proveedor, modelo, endpoint y clave en los campos reales. No se
 # persiste como ajuste propio.
-UI_KEYS: Final[tuple[str, ...]] = ("llm_profile",)
+# ``llm_model_pick`` copia en ``llm_model`` un modelo de la lista de la API;
+# ``theme_preset`` copia una paleta base en los cuatro colores personalizados.
+UI_KEYS: Final[tuple[str, ...]] = ("llm_profile", "llm_model_pick", "theme_preset")
 # Apariencia y escucha: se aplican y se guardan al instante (como el tema), sin
 # pasar por «Guardar» ni contar como cambios pendientes.
 INSTANT_KEYS: Final[tuple[str, ...]] = (
     "ui_layout",
     "theme",
+    "theme_base",
+    "theme_primary",
+    "theme_secondary",
+    "theme_accent",
+    "theme_background",
     "ui_motion",
     "close_action",
     "voice_wake",
@@ -87,6 +99,7 @@ SLIDER_KEYS: Final[tuple[str, ...]] = (
     "min_rms",
     "noise_multiplier",
     "silence_secs",
+    "turn_threshold",
     "pre_roll_secs",
     "min_speech_secs",
     "max_utterance_secs",
@@ -104,8 +117,11 @@ SELECT_KEYS: Final[tuple[str, ...]] = (
     "tts_model_variant",
     "stt_model",
     "stt_engine",
-    "llm_model",
     "llm_profile",
+    "llm_api_style",
+    "llm_model_pick",
+    "theme_preset",
+    "theme_base",
     "llm_reasoning_effort",
     "ui_layout",
     "theme",
@@ -113,6 +129,7 @@ SELECT_KEYS: Final[tuple[str, ...]] = (
     "close_action",
 )
 TOGGLE_KEYS: Final[tuple[str, ...]] = (
+    "smart_turn",
     "barge_in",
     "confirm_actions",
     "auto_start_whisper",
@@ -120,6 +137,7 @@ TOGGLE_KEYS: Final[tuple[str, ...]] = (
 )
 TEXT_KEYS: Final[tuple[str, ...]] = (
     "llm_provider",
+    "llm_model",
     "llm_base_url",
     "api_key",
     "whisper_url",
@@ -132,12 +150,30 @@ TEXT_KEYS: Final[tuple[str, ...]] = (
     "mute_hotkey",
     "menu_hotkey",
     "wake_phrase",
+    "theme_primary",
+    "theme_secondary",
+    "theme_accent",
+    "theme_background",
+)
+# Colores del tema personalizado (``#RRGGBB``); la fila muestra una muestra.
+COLOR_KEYS: Final[tuple[str, ...]] = (
+    "theme_primary",
+    "theme_secondary",
+    "theme_accent",
+    "theme_background",
 )
 SECRET_KEYS: Final[tuple[str, ...]] = ("api_key",)
 
 LABELS: Final[dict[str, str]] = {
     "ui_layout": "Forma",
     "theme": "Tema",
+    "theme_preview": "Paletas",
+    "theme_base": "Interfaz",
+    "theme_preset": "Partir de",
+    "theme_primary": "Color principal",
+    "theme_secondary": "Color secundario",
+    "theme_accent": "Acento (terciario)",
+    "theme_background": "Fondo del gradiente",
     "ui_motion": "Movimiento",
     "close_action": "Al decir «cierra»",
     "voice_wake": "Reactivar por voz",
@@ -147,7 +183,9 @@ LABELS: Final[dict[str, str]] = {
     "input_device_index": "Micrófono",
     "min_rms": "Umbral de voz",
     "noise_multiplier": "Umbral de ruido",
-    "silence_secs": "Silencio de cierre",
+    "silence_secs": "Silencio máximo",
+    "smart_turn": "Cierre inteligente",
+    "turn_threshold": "Certeza para cerrar",
     "pre_roll_secs": "Antelación de escucha",
     "min_speech_secs": "Duración mínima",
     "max_utterance_secs": "Frase máxima",
@@ -166,9 +204,11 @@ LABELS: Final[dict[str, str]] = {
     "stt_prompt": "Indicación para Whisper",
     "stt_timeout_secs": "Tiempo máximo",
     "auto_start_whisper": "Arrancar Whisper",
-    "llm_profile": "Perfil guardado",
-    "llm_provider": "Proveedor",
+    "llm_profile": "Proveedor",
+    "llm_provider": "Nombre del perfil",
+    "llm_api_style": "Compatibilidad",
     "llm_model": "Modelo",
+    "llm_model_pick": "Modelos de la API",
     "llm_base_url": "Dirección de la API",
     "api_key": "Clave API",
     "llm_temperature": "Temperatura",
@@ -199,6 +239,8 @@ DEFAULT_VALUES: Final[dict[str, Any]] = {
     "min_rms": 0.0006,
     "noise_multiplier": 1.3,
     "silence_secs": 1.3,
+    "smart_turn": True,
+    "turn_threshold": 0.5,
     "pre_roll_secs": 0.6,
     "min_speech_secs": 0.2,
     "max_utterance_secs": 30.0,
@@ -217,7 +259,9 @@ DEFAULT_VALUES: Final[dict[str, Any]] = {
     "auto_start_whisper": True,
     "llm_profile": "opencode",
     "llm_provider": "opencode",
+    "llm_api_style": "openai",
     "llm_model": "deepseek-v4.1-flash",
+    "llm_model_pick": "",
     "llm_base_url": "https://opencode.ai/inference/go/openai/v1",
     "api_key": "",
     "llm_temperature": 0.3,
@@ -233,6 +277,12 @@ DEFAULT_VALUES: Final[dict[str, Any]] = {
     "menu_hotkey": "ctrl+alt+o",
     "ui_layout": "pill",
     "theme": "auto",
+    "theme_preset": "",
+    "theme_base": "dark",
+    "theme_primary": "#1FAE9F",
+    "theme_secondary": "#8FE3C0",
+    "theme_accent": "#FF8A65",
+    "theme_background": "#0E6F7C",
     "ui_motion": "system",
     "close_action": "pause",
     "voice_wake": True,
@@ -255,6 +305,7 @@ SLIDERS: Final[dict[str, SliderSpec]] = {
     "min_rms": SliderSpec(0.0003, 0.008, 0.0001, 4),
     "noise_multiplier": SliderSpec(1.0, 2.5, 0.1, 1, "×"),
     "silence_secs": SliderSpec(0.8, 3.5, 0.1, 1, " s"),
+    "turn_threshold": SliderSpec(0.3, 0.95, 0.05, 2),
     "pre_roll_secs": SliderSpec(0.2, 1.5, 0.1, 1, " s"),
     "min_speech_secs": SliderSpec(0.1, 1.0, 0.05, 2, " s"),
     "max_utterance_secs": SliderSpec(5.0, 120.0, 5.0, 0, " s"),
@@ -298,6 +349,7 @@ FIXED_OPTIONS: Final[dict[str, tuple[SelectOption, ...]]] = {
         SelectOption("auto", "Automático"),
         SelectOption("light", "Claro"),
         SelectOption("dark", "Oscuro"),
+        SelectOption("custom", "Personalizado"),
     ),
     "ui_motion": (
         SelectOption("system", "Según el sistema"),
@@ -308,10 +360,48 @@ FIXED_OPTIONS: Final[dict[str, tuple[SelectOption, ...]]] = {
         SelectOption("pause", "Pausa"),
         SelectOption("hangup", "Cuelga"),
     ),
+    # Tema personalizado: ventana y botones claros u oscuros.
+    "theme_base": (
+        SelectOption("light", "Clara"),
+        SelectOption("dark", "Oscura"),
+    ),
+    # Formato de la API del proveedor (para «Personalizado» lo elige el usuario).
+    "llm_api_style": (
+        SelectOption("openai", "OpenAI"),
+        SelectOption("anthropic", "Anthropic"),
+    ),
 }
 
 
 _MISSING: Final[object] = object()
+
+# Paletas base del tema personalizado (mismo orden que ``flow.PRESETS``:
+# fondo, principal, secundario, acento). Se copian aquí para que este módulo
+# siga sin depender de numpy ni del motor de dibujo.
+_PRESETS: Final[dict[str, tuple[str, str, str, str]]] = {
+    "marea": ("#0E6F7C", "#1FAE9F", "#8FE3C0", "#FF8A65"),
+    "atardecer": ("#5B1A3A", "#E0564F", "#FFB36B", "#FFE08A"),
+    "bosque": ("#13361F", "#2E7D4F", "#A8D672", "#F2C94C"),
+    "lavanda": ("#2E2A6B", "#7A6FF0", "#C9B8FF", "#FF9EC4"),
+    "medianoche": ("#0B1026", "#2D3A8C", "#5FA8FF", "#9BF2FF"),
+}
+_PRESET_LABELS: Final[dict[str, str]] = {
+    "marea": "Marea",
+    "atardecer": "Atardecer",
+    "bosque": "Bosque",
+    "lavanda": "Lavanda",
+    "medianoche": "Medianoche",
+}
+
+
+def _hex_or(value: Any, default: str) -> str:
+    """``#RRGGBB`` en mayúsculas; acepta ``RRGGBB`` y ``#RGB``. Si no vale, ``default``."""
+    text = str(value or "").strip().lstrip("#").upper()
+    if len(text) == 3:
+        text = "".join(ch * 2 for ch in text)
+    if len(text) == 6 and all(ch in "0123456789ABCDEF" for ch in text):
+        return "#" + text
+    return default
 
 
 # --------------------------------------------------------------------------
@@ -466,7 +556,7 @@ def _normalize_names(
 def _normalize_providers(
     providers: Mapping[str, Any] | Iterable[Any] | None,
 ) -> dict[str, dict[str, str]]:
-    """Normaliza perfiles ``nombre -> {label, base_url, model, api_key}``."""
+    """Normaliza perfiles ``nombre -> {label, base_url, model, api_key, api_style}``."""
     out: dict[str, dict[str, str]] = {}
     if not providers:
         return out
@@ -491,6 +581,7 @@ def _normalize_providers(
             model = str(raw.get("model") or raw.get("default_model") or "")
             api_key = str(raw.get("api_key") or "")
             provider = str(raw.get("provider") or name)
+            api_style = str(raw.get("api_style") or "openai")
         else:
             label = str(getattr(raw, "label", name))
             base_url = str(getattr(raw, "base_url", ""))
@@ -499,12 +590,14 @@ def _normalize_providers(
             )
             api_key = str(getattr(raw, "api_key", ""))
             provider = str(getattr(raw, "provider", name) or name)
+            api_style = str(getattr(raw, "api_style", "openai") or "openai")
         out[name] = {
             "label": label or name,
             "base_url": base_url,
             "model": model,
             "api_key": api_key,
             "provider": provider or name,
+            "api_style": api_style if api_style in ("openai", "anthropic") else "openai",
         }
     return out
 
@@ -551,6 +644,8 @@ class MenuSettings:
             stt_models, str(_read(values, "stt_model", "") or "")
         )
         self._llm_models: dict[str, tuple[SelectOption, ...]] = {}
+        # La lista real de modelos llega desde un hilo de red (set_llm_models).
+        self._models_lock = threading.Lock()
         if isinstance(llm_models, Mapping):
             for provider, options in llm_models.items():
                 self._llm_models[str(provider)] = _normalize_names(options)
@@ -640,8 +735,10 @@ class MenuSettings:
             return text if text in valid else str(DEFAULT_VALUES[key])
         if key == "wake_phrase":
             return str(value or "").strip() or str(DEFAULT_VALUES[key])
-        if key == "llm_profile":
+        if key in ("llm_profile", "llm_model_pick", "theme_preset"):
             return str(value or "").strip()
+        if key in COLOR_KEYS:
+            return _hex_or(value, str(DEFAULT_VALUES[key]))
         if key in ("stt_model", "llm_model"):
             return str(value if value is not None else "")
         if key in TEXT_KEYS:
@@ -679,11 +776,48 @@ class MenuSettings:
     def set(self, key: str, value: Any) -> Any:
         """Cambia un valor, lo valida y lo normaliza. Devuelve el nuevo valor."""
         self._require(key)
+        if key in COLOR_KEYS and not _hex_or(value, ""):
+            return self._values[key]  # un color mal escrito no borra el anterior
         new = self._normalize_value(key, value)
         self._values[key] = new
         if key == "llm_profile":
             self._apply_profile(new)
+        elif key == "llm_model_pick" and new:
+            self._values["llm_model"] = new
+        elif key == "theme_preset" and new in _PRESETS:
+            background, primary, secondary, accent = _PRESETS[new]
+            for name, color in (
+                ("theme_background", background),
+                ("theme_primary", primary),
+                ("theme_secondary", secondary),
+                ("theme_accent", accent),
+            ):
+                self._values[name] = color
+            self._values["theme"] = "custom"
+        elif key in COLOR_KEYS:
+            self._values["theme"] = "custom"
         return new
+
+    def custom_colors(self) -> tuple[str, str, str, str]:
+        """(principal, secundario, acento, fondo) del tema personalizado."""
+        return tuple(str(self._values[key]) for key in COLOR_KEYS)  # type: ignore[return-value]
+
+    def set_llm_models(self, provider: str, models: Iterable[Any]) -> None:
+        """Sustituye la lista de modelos de un proveedor (hilo de red)."""
+        options = _normalize_names(models)
+        with self._models_lock:
+            updated = dict(self._llm_models)
+            updated[str(provider)] = options
+            self._llm_models = updated
+
+    def _model_options(self) -> tuple[SelectOption, ...]:
+        provider = str(self._values.get("llm_provider") or "")
+        with self._models_lock:
+            options = self._llm_models.get(provider, ())
+        current = str(self._values.get("llm_model") or "")
+        if current and all(option.value != current for option in options):
+            options = (SelectOption(current, current),) + options
+        return options
 
     def _apply_profile(self, name: str) -> None:
         """Copia un perfil guardado en los campos editables de LLM."""
@@ -693,6 +827,7 @@ class MenuSettings:
         provider = profile.get("provider") or str(name)
         values = {
             "llm_provider": provider,
+            "llm_api_style": profile.get("api_style", "openai"),
             "llm_model": profile.get("model", ""),
             "llm_base_url": profile.get("base_url", ""),
             "api_key": profile.get("api_key", ""),
@@ -827,10 +962,12 @@ class MenuSettings:
                     return option.label
             return str(value or "Sin modelo")
         if key == "llm_model":
-            for option in self.select_options("llm_model"):
-                if option.value == value:
-                    return option.label
             return str(value or "Sin modelo")
+        if key == "llm_model_pick":
+            count = len(self._model_options())
+            return f"{count} disponibles" if count else "Sin lista"
+        if key == "theme_preset":
+            return _PRESET_LABELS.get(str(value), "Elegir paleta")
         if key == "llm_profile":
             profile = self._providers.get(str(value))
             return (
@@ -898,13 +1035,10 @@ class MenuSettings:
             return LLM_REASONING_OPTIONS
         if key in FIXED_OPTIONS:
             return FIXED_OPTIONS[key]
-        if key == "llm_model":
-            provider = str(self._values.get("llm_provider") or "")
-            options = self._llm_models.get(provider, ())
-            current = str(self._values.get("llm_model") or "")
-            if current and all(option.value != current for option in options):
-                options = options + (SelectOption(current, current),)
-            return options
+        if key == "llm_model_pick":
+            return self._model_options()
+        if key == "theme_preset":
+            return tuple(SelectOption(k, label) for k, label in _PRESET_LABELS.items())
         if key == "llm_profile":
             return tuple(
                 SelectOption(name, values.get("label", name))
@@ -926,8 +1060,10 @@ class MenuSettings:
             return True
         if key == "llm_reasoning_effort" or key in FIXED_OPTIONS:
             return True
-        if key == "llm_model":
-            return bool(self.select_options("llm_model"))
+        if key == "llm_model_pick":
+            return bool(self._model_options())
+        if key == "theme_preset":
+            return True
         if key == "llm_profile":
             return bool(self._providers)
         return False

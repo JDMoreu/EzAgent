@@ -1,10 +1,9 @@
 """Colours shared by the bar and its settings card: one light and one dark theme.
 
-The card used the old island palette (warm off-white, warm brown and a lime
-accent). It now takes fresh, airy surfaces that match the bar: a white with a
-hint of sky in light, a night blue in dark, and a sky-blue accent in both. The
-card body carries a very soft vertical gradient (a little more sky at the top)
-so it feels less flat.
+The surfaces follow the «Marea» identity of the bar: a white with a hint of
+mint in light, a deep teal night in dark, and a teal accent in both (deep teal
+on light, bright aqua on dark). The card body carries a very soft vertical
+gradient (a little more mint at the top) so it feels less flat.
 
 Contrast targets (WCAG): text and accent text >= 4.5:1 on the card surfaces,
 accent buttons with their ink >= 4.5:1. ``tests/test_menu_appearance.py``
@@ -20,36 +19,36 @@ CARD_RADIUS = 22  # rounder than the old 18 px card: softer, more organic
 
 _FRESH: dict[str, dict[str, Color]] = {
     "light": {
-        "BODY": (250, 252, 255),
-        "GROUP": (238, 244, 253),
-        "GROUP_HOVER": (227, 236, 251),
-        "TRACK": (205, 218, 240),
-        "TEXT": (22, 30, 52),
-        "TEXT_2": (66, 78, 108),
-        "TEXT_3": (98, 110, 140),
-        "LINE": (22, 30, 52, 20),
-        "MINT": (37, 90, 210),
-        "MINT_BTN": (47, 95, 208),
+        "BODY": (250, 253, 252),
+        "GROUP": (237, 246, 244),
+        "GROUP_HOVER": (224, 239, 236),
+        "TRACK": (199, 224, 219),
+        "TEXT": (16, 34, 38),
+        "TEXT_2": (56, 82, 86),
+        "TEXT_3": (78, 102, 106),
+        "LINE": (16, 34, 38, 20),
+        "MINT": (12, 112, 117),
+        "MINT_BTN": (12, 112, 117),
         "MINT_INK": (255, 255, 255),
-        "WORD_MINT": (37, 90, 210),
+        "WORD_MINT": (12, 112, 117),
     },
     "dark": {
-        "BODY": (17, 22, 38),
-        "GROUP": (26, 33, 54),
-        "GROUP_HOVER": (35, 44, 70),
-        "TRACK": (52, 64, 98),
-        "TEXT": (232, 238, 250),
-        "TEXT_2": (176, 188, 214),
-        "TEXT_3": (140, 153, 184),
-        "LINE": (232, 238, 250, 24),
-        "MINT": (141, 180, 255),
-        "MINT_BTN": (141, 180, 255),
-        "MINT_INK": (14, 22, 44),
-        "WORD_MINT": (141, 180, 255),
+        "BODY": (13, 22, 26),
+        "GROUP": (20, 33, 38),
+        "GROUP_HOVER": (28, 45, 51),
+        "TRACK": (44, 70, 76),
+        "TEXT": (228, 242, 240),
+        "TEXT_2": (172, 196, 194),
+        "TEXT_3": (138, 164, 163),
+        "LINE": (228, 242, 240, 24),
+        "MINT": (94, 226, 196),
+        "MINT_BTN": (94, 226, 196),
+        "MINT_INK": (6, 34, 30),
+        "WORD_MINT": (94, 226, 196),
     },
 }
 # Top of the card body gradient (the bottom is BODY).
-BODY_TOP: dict[str, Color] = {"light": (241, 246, 255), "dark": (22, 29, 50)}
+BODY_TOP: dict[str, Color] = {"light": (238, 249, 246), "dark": (17, 30, 34)}
 
 
 def _theme(theme: str) -> str:

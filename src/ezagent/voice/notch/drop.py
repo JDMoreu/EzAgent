@@ -1,13 +1,14 @@
-"""La barra de EzAgent: una forma fija con cielo y nubes dentro (sin texto).
+"""La barra de EzAgent: una forma fija con un gradiente vivo dentro (sin texto).
 
 Dos disposiciones (``ui_layout`` en ``voice.json``):
 
 * ``pill``: ☰ a la izquierda de la cápsula de color; 🎤 y ✕ a la derecha;
 * ``circle``: un círculo de color sobre una fila corta con los mismos botones.
 
-**El contorno no se deforma nunca**: es fijo y nítido. Dentro hay un cielo con
-nubes que tienen inercia (``clouds.py``): cuando hablas entra aire por abajo,
-las empuja y las hincha; al callar vuelven despacio con un vaivén. Los colores
+**El contorno no se deforma nunca**: es fijo y nítido. Dentro fluye «Marea»
+(``flow.py``), un gradiente orgánico con la paleta de EzAgent: cuando hablas el
+fluido se acelera y sube desde abajo; cuando habla EzAgent lo recorren pulsos de
+luz; mientras piensa gira despacio. Los colores
 cambian con el estado (espera, escucha, piensa, habla, pregunta, error, pausa)
 y con el tema (claro u oscuro). Los botones solo aparecen al acercar el
 puntero: la forma crece un 4 % y nacen desde detrás de ella (``bar_motion.py``).
@@ -32,16 +33,16 @@ import time
 from functools import lru_cache
 
 import numpy as np
+from loguru import logger
 from PIL import Image, ImageDraw, ImageFilter
 
 from . import layered as _shell
 from .anim import animations_enabled
 from .bar_motion import Choreo, Spring, emerge
 from .bar_theme import CARD_RADIUS, body_top, card_overrides, card_palette
-from .clouds import CloudField, colors_for
+from .flow import CUSTOM_POSES, FlowField, colors_for, custom_palette
 from .state import UiState
 from .tokens import FLARE, H_ISLAND, R_MENU
-from .tokens import W as MENU_W
 from .tokens import palette as token_palette
 
 # ----------------------------------------------------------------- geometría
@@ -125,22 +126,23 @@ POSE_OF = {
 }
 BRIGHT = {"mute": .9, "sleep": .97}
 
-# Botones por tema: superficies frescas (blanco / azul noche) como la tarjeta.
+# Botones por tema: las mismas superficies de Marea que la ventana de ajustes
+# (blanco / noche verde azulada).
 UI = {
-    "light": {"disc": (255, 255, 255, 245), "hover": (255, 255, 255, 255), "icon": (30, 36, 56),
-              "fault": (214, 51, 61), "hang": (24, 30, 48, 255), "hang_icon": (255, 255, 255),
-              "call": (47, 95, 208, 255), "call_icon": (255, 255, 255),
-              "ring": (255, 255, 255, 56), "shadow": (30, 50, 110, 64)},
-    "dark": {"disc": (24, 30, 46, 245), "hover": (34, 42, 62, 255), "icon": (232, 238, 250),
-             "fault": (255, 120, 118), "hang": (232, 238, 250, 255), "hang_icon": (18, 22, 34),
-             "call": (141, 180, 255, 255), "call_icon": (14, 22, 44),
+    "light": {"disc": (255, 255, 255, 245), "hover": (255, 255, 255, 255), "icon": (16, 34, 38),
+              "fault": (214, 51, 61), "hang": (16, 34, 38, 255), "hang_icon": (255, 255, 255),
+              "call": (12, 112, 117, 255), "call_icon": (255, 255, 255),
+              "ring": (255, 255, 255, 56), "shadow": (12, 60, 66, 64)},
+    "dark": {"disc": (20, 33, 38, 245), "hover": (28, 45, 51, 255), "icon": (228, 242, 240),
+             "fault": (255, 120, 118), "hang": (228, 242, 240, 255), "hang_icon": (13, 22, 26),
+             "call": (94, 226, 196, 255), "call_icon": (6, 34, 30),
              "ring": (232, 238, 250, 30), "shadow": (0, 0, 0, 120)},
 }
 # Color de «activo» (☰ con el menú abierto, ✓).
-SIGNAL = {"light": (47, 95, 208), "dark": (141, 180, 255)}
+SIGNAL = {"light": (12, 112, 117), "dark": (94, 226, 196)}
 
 
-# ------------------------------------------------------------ nubes y aire
+# ------------------------------------------------------------ fluido (Marea)
 _GRIDS: dict[str, tuple[np.ndarray, np.ndarray]] = {}
 
 
@@ -163,7 +165,7 @@ def _fluid_grid(layout: str) -> tuple[np.ndarray, np.ndarray]:
 
 
 def render_fluid(model: DropModel, now: float = 0.0) -> np.ndarray:
-    """Interior de la forma (cielo y nubes): RGB uint8 en la cuadrícula gruesa."""
+    """Interior de la forma (el fluido): RGB uint8 en la cuadrícula gruesa."""
     gx, gy = _fluid_grid(model.layout)
     img = model.field.render(gx, gy, model.theme, model.cols)
     return np.clip(img * model.bright, 0, 255).astype(np.uint8)
@@ -203,15 +205,15 @@ def form_mask(layout: str, scale: float) -> Image.Image:
 class DropModel:
     """Animación pura de la barra: sin Win32, sin Pillow, probable en aislamiento.
 
-    El contorno es fijo. Dentro hay un cielo con nubes (``clouds.CloudField``)
-    que el aire de la voz empuja; fuera, el leve crecimiento al acercar el
+    El contorno es fijo. Dentro fluye el gradiente (``flow.FlowField``) que la
+    voz acelera; fuera, el leve crecimiento al acercar el
     puntero y la coreografía de los botones. Sin llamada, el micrófono se
     pliega y ✕ se convierte en el botón de llamar.
     """
 
     def __init__(self, layout: str = "pill") -> None:
         self.layout = layout if layout in LAYOUTS else "pill"
-        self.field = CloudField(self.layout)
+        self.field = FlowField(self.layout)
         self.theme = "light"
         self.cols = colors_for("light", "idle").copy()
         self._colored = False
@@ -232,7 +234,7 @@ class DropModel:
 
     @property
     def flow(self) -> float:
-        """Tiempo interno de las nubes (no avanza con movimiento reducido)."""
+        """Tiempo interno del fluido (no avanza con movimiento reducido)."""
         return self.field.t
 
     # ------------------------------------------------------------ entrada
@@ -240,7 +242,7 @@ class DropModel:
         self, now: float, dt: float, pose: str, rms: float, theme: str,
         hover: bool, asking: bool, menu_open: bool, reduced: bool, buttons: str = "hover",
         *, muted: bool = False, hover_item: str | None = None, pressed: str | None = None,
-        in_call: bool = True,
+        in_call: bool = True, custom: np.ndarray | None = None,
     ) -> None:
         self.reduced = reduced
         self.asking = asking
@@ -249,7 +251,8 @@ class DropModel:
             self.pose_since = now
         self.ts = now - self.pose_since
         if self.field.layout != self.layout:
-            self.field = CloudField(self.layout)
+            self.field = FlowField(self.layout)
+        self.custom = custom
         self._update_air(dt, pose, rms, theme, reduced)
 
         show = hover or asking or menu_open or buttons == "always"
@@ -290,7 +293,9 @@ class DropModel:
         # El primer fotograma ya sale con el color correcto (sin fundido desde el claro).
         kc = 1.0 if not self._colored else 1.0 - math.exp(-dt / (.12 if reduced else .25))
         self._colored = True
-        self.cols += (colors_for(self.theme, pose) - self.cols) * kc
+        custom = getattr(self, "custom", None)
+        target = custom if custom is not None and pose in CUSTOM_POSES else colors_for(self.theme, pose)
+        self.cols += (target - self.cols) * kc
 
     def animating(self, now: float) -> bool:
         """¿Hay botones, crecimiento o iconos a medio camino? (pide 60 fps)."""
@@ -698,6 +703,10 @@ class DropUI:
         self._hover_item: str | None = None
         self._theme_setting = "auto"
         self._theme_cache = ("dark", 0.0)
+        # Tema personalizado: paleta del gradiente (las superficies siguen a Windows).
+        self._custom_lock = threading.Lock()
+        self._custom_palette: np.ndarray | None = None
+        self._custom_base = "dark"  # interfaz clara u oscura del tema personalizado
         self._last = time.monotonic()
         self._reduced = self._motion_reduced()
         self._reduced_at = 0.0
@@ -705,6 +714,10 @@ class DropUI:
         self._menu = None
         self._card: CardWindow | None = None
         self._card_above = True
+        # Ventana de ajustes: sección visible y barra lateral (``settings_window``).
+        self._section = "appearance"
+        self._sidebar = None
+        self._sidebar_hover: str | None = None
         self._card_lock = threading.RLock()
         self._pending_save: bool | None = None
         # Callbacks de la app.
@@ -795,8 +808,29 @@ class DropUI:
     def notice(self) -> None:
         self._ui.notice(time.monotonic())
 
+    def set_custom_colors(self, primary: str, secondary: str, accent: str, background: str) -> None:
+        """Colores del tema personalizado (hex). Se leen en el hilo de la barra."""
+        palette = custom_palette(primary, secondary, accent, background)
+        with self._custom_lock:
+            self._custom_palette = palette
+
+    def _custom_for_frame(self) -> np.ndarray | None:
+        if self._theme_setting != "custom":
+            return None
+        with self._custom_lock:
+            return self._custom_palette
+
+    def set_custom_base(self, base: str) -> None:
+        """Interfaz clara u oscura del tema personalizado."""
+        self._custom_base = "light" if base == "light" else "dark"
+        if self._theme_setting == "custom" and self._menu is not None:
+            try:
+                self._menu.set_theme(self._theme_name())
+            except Exception:
+                pass
+
     def set_theme(self, theme: str) -> None:
-        self._theme_setting = theme if theme in ("auto", "dark", "light") else "auto"
+        self._theme_setting = theme if theme in ("auto", "dark", "light", "custom") else "auto"
         self._theme_cache = ("dark", 0.0)
         menu = self._menu
         if menu is not None:
@@ -834,6 +868,8 @@ class DropUI:
     def _theme_name(self) -> str:
         if self._theme_setting in ("dark", "light"):
             return self._theme_setting
+        if self._theme_setting == "custom":
+            return self._custom_base
         value, at = self._theme_cache
         now = time.monotonic()
         if now - at > 3.0:
@@ -879,7 +915,7 @@ class DropUI:
         self.model.update(now, dt, pose, self._rms, self._theme_name(), hover, self._asking,
                           self._menu_open, self._reduced, self.buttons, muted=self._muted,
                           hover_item=self._hover_item, pressed=self._pressed,
-                          in_call=self._in_call)
+                          in_call=self._in_call, custom=self._custom_for_frame())
         if self._win is not None:
             self._win._interval = 1.0 / self.target_fps(pose, hover, now)
         w, h = self._size()
@@ -1018,10 +1054,15 @@ class DropUI:
             return
         now = time.monotonic()
         try:
+            from .settings_window import CONTENT_MAX_H, CONTENT_W, section_groups
+
+            menu.set_width(CONTENT_W)
             menu.set_theme(self._theme_name())
             menu.set_scale(self.s)
             menu.set_reduced_motion(self._reduced)
-            menu.set_available_height(self._card_geometry()[2])
+            menu.set_max_height(CONTENT_MAX_H)
+            menu.set_available_height(self._settings_room())
+            menu.set_groups(section_groups(self._section), "", now)
             menu.open(now)
         except Exception:
             return
@@ -1072,38 +1113,27 @@ class DropUI:
             top, bottom = h / 2 - half, h / 2 + half
         return (win.x + w / 2 * self.s, win.y + top * self.s, win.y + bottom * self.s)
 
-    def _card_geometry(self) -> tuple[bool, int, float]:
-        """(abre hacia arriba, x del borde izquierdo de ☰, alto disponible lógico)."""
-        _, top, bottom = self._bar_box()
-        gear_x, _ = slots(self.layout)["gear"]
-        anchor = self._win.x + (gear_x - BTN / 2) * self.s
+    def _settings_room(self) -> float:
+        """Alto lógico disponible para la ventana de ajustes (con margen)."""
         wa = _shell.work_area()
-        gap = 10 * self.s
-        above_space = (top - gap) - wa[1]
-        below_space = wa[3] - (bottom + gap)
-        above = above_space >= below_space
-        space = above_space if above else below_space
-        return above, int(anchor), max(160.0, space / self.s - 12)
+        return max(240.0, (wa[3] - wa[1]) / self.s - 48.0)
 
     def _place_card(self, create: bool = False) -> None:
+        """La ventana de ajustes se abre centrada en el área de trabajo."""
+        from .settings_window import centered, window_size
+
         menu, win = self._menu, self._win
         if menu is None or win is None:
             return
-        above, gx, avail = self._card_geometry()
-        self._card_above = above
+        self._card_above = False
         try:
-            menu.set_available_height(avail)
+            menu.set_available_height(self._settings_room())
             vh = float(menu.viewport_height)
         except Exception:
-            vh = 400.0
-        w = round(MENU_W * self.s)
-        h = round((vh + 4) * self.s)
-        wa = _shell.work_area()
-        # La tarjeta se despliega desde ☰: su cuerpo arranca alineado con el botón.
-        x = max(wa[0] + round(8 * self.s), min(gx - round(FLARE * self.s), wa[2] - w - round(8 * self.s)))
-        _, top, bottom = self._bar_box()
-        gap = 10 * self.s
-        y = int(top - gap - h) if above else int(bottom + gap)
+            vh = 480.0
+        lw, lh = window_size(vh)
+        w, h = round(lw * self.s), round(lh * self.s)
+        x, y = centered(_shell.work_area(), w, h)
         with self._card_lock:
             if self._card is None:
                 if not create:
@@ -1114,6 +1144,19 @@ class DropUI:
                 self._card.resize(w, h)
                 self._card.set_pos(x, y)
             self._card.show()
+
+    def select_section(self, name: str) -> None:
+        """Cambia la sección visible de la ventana de ajustes."""
+        from .settings_window import section_groups
+
+        menu = self._menu
+        if menu is None or name == self._section:
+            return
+        self._section = name
+        try:
+            menu.set_groups(section_groups(name), "", time.monotonic())
+        except Exception:
+            pass
 
     def _close_card_now(self) -> None:
         menu = self._menu
@@ -1183,6 +1226,16 @@ class DropUI:
     def set_save_result(self, ok: bool) -> None:
         self._pending_save = bool(ok)
 
+    def update_llm_models(self, provider: str, models) -> None:
+        """Lista real de modelos de la API para el menú abierto (hilo de red)."""
+        menu = self._menu
+        if menu is None:
+            return
+        try:
+            menu.settings.set_llm_models(provider, models)
+        except Exception:
+            pass
+
     def refresh_menu_settings(self) -> None:
         if self._menu is None:
             return
@@ -1194,12 +1247,14 @@ class DropUI:
             pass
 
     def render_card(self) -> np.ndarray:
+        """Cuadro de la ventana de ajustes: cuerpo, barra lateral y la sección."""
+        from .settings_window import SIDEBAR_W, Sidebar, composite_over, fade
+
         card, menu = self._card, self._menu
         if card is None or menu is None:
             return np.zeros((1, 1, 4), np.uint8)
         s = self.s
         w, h = card.w, card.h
-        out = np.zeros((h, w, 4), np.uint8)
         now = time.monotonic()
         pending, self._pending_save = self._pending_save, None
         if pending is not None:
@@ -1212,26 +1267,31 @@ class DropUI:
                                  active=(self._in_call and self._state == "listening"))
             menu.update(now)
             mh = float(menu.height(now))
+            vh = float(menu.viewport_height)
         except Exception:
-            return out
+            return np.zeros((h, w, 4), np.uint8)
         if self._card is None:           # se cerró durante update()
-            return out
-        bh = min(h, round(mh * s))
-        if bh < 3:
-            return out
-        y0 = round(H_ISLAND * s)
-        buf = np.zeros((max(y0 + bh, round((H_ISLAND + menu.viewport_height) * s) + 4), w, 4), np.float32)
-        buf[y0:y0 + bh] = render_card_body(w, bh, s, self._theme_name(), fresh=True)
+            return np.zeros((h, w, 4), np.uint8)
+        theme = self._theme_name()
+        frame = np.array(render_card_body(w, h, s, theme, fresh=True), dtype=np.float32)
+        if self._sidebar is None:
+            self._sidebar = Sidebar()
         try:
-            menu.draw(buf, now)
+            self._sidebar.draw(frame, s, card_palette(theme), theme, self._section,
+                               self._sidebar_hover, now, self._reduced)
         except Exception:
-            return out
-        crop = np.clip(buf[y0:y0 + bh], 0.0, 1.0)
-        arr = (crop * 255.0 + 0.5).astype(np.uint8)[..., [2, 1, 0, 3]]
-        if self._card_above:
-            out[h - bh:h] = arr
-        else:
-            out[0:bh] = arr
+            pass
+        cw = round(menu.width * s)
+        y0 = round(H_ISLAND * s)
+        content = np.zeros((y0 + round((vh + 4) * s), cw, 4), np.float32)
+        try:
+            menu.draw(content, now)
+        except Exception:
+            return np.zeros((h, w, 4), np.uint8)
+        composite_over(frame, np.clip(content[y0:y0 + h], 0.0, 1.0), round(SIDEBAR_W * s), 0)
+        # Al abrir y cerrar, la ventana entera aparece o se desvanece con el menú.
+        fade(frame, mh / max(1.0, vh))
+        out = (np.clip(frame, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)[..., [2, 1, 0, 3]]
         try:
             card._interval = 1.0 / (60.0 if menu.is_animating(now) else 30.0)
         except Exception:
@@ -1239,21 +1299,34 @@ class DropUI:
         return out
 
     def _card_point(self, x: float, y: float) -> tuple[float, float, bool]:
+        """Punto de la ventana en coordenadas del menú (a la derecha de la barra lateral)."""
+        from .settings_window import SIDEBAR_W
+
         s = self.s
         card = self._card
         menu = self._menu
         if card is None or menu is None:
             return (0.0, 0.0, False)
-        mh = float(menu.height(time.monotonic()))
         lx, ly = x / s, y / s
-        top = (card.h / s - mh) if self._card_above else 0.0
-        ry = ly - top
-        return (lx, ry + H_ISLAND, 0.0 <= ry <= mh)
+        mx = lx - SIDEBAR_W
+        inside = mx >= 0.0 and 0.0 <= ly <= float(menu.height(time.monotonic()))
+        return (mx, ly + H_ISLAND, inside)
+
+    def _sidebar_item(self, x: int, y: int) -> str | None:
+        from .settings_window import item_at
+
+        return item_at(x / self.s, y / self.s)
 
     def card_pointer(self, kind: str, x: int, y: int) -> bool:
         menu = self._menu
         if menu is None:
             return False
+        section = self._sidebar_item(x, y)
+        if kind == "move":
+            self._sidebar_hover = section
+        if kind == "down" and section is not None:
+            self.select_section(section)
+            return True
         mx, my, inside = self._card_point(x, y)
         now = time.monotonic()
         try:
@@ -1265,8 +1338,10 @@ class DropUI:
                 menu.pointer_move(mx, my, now)
             else:
                 menu.pointer_up(mx, my, now)
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            # Un fallo aquí dejaba el menú sin responder en silencio: que conste.
+            if kind != "move":
+                logger.warning("Ajustes: el clic falló ({}: {})", type(exc).__name__, exc)
         return True
 
     def card_wheel(self, x: int, y: int, delta: int) -> bool:
@@ -1285,6 +1360,8 @@ class DropUI:
         menu = self._menu
         if menu is None:
             return False
+        if self._sidebar_item(x, y) is not None:
+            return True
         mx, my, inside = self._card_point(x, y)
         if not inside:
             return False

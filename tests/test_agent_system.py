@@ -32,6 +32,7 @@ from ezagent.agent.system_prompt import (
     SAFETY_PREAMBLE_TEXT,
     SKILLS_HINT,
     SYSTEM_MD_ERROR_MESSAGE,
+    VOICE_FLOW_HINT,
     SystemPromptBuilder,
 )
 from ezagent.agent.tools_d import clean_environment, load_tools_d
@@ -703,3 +704,36 @@ def test_tools_d_carpeta_inexistente_no_falla(tmp_path: Path) -> None:
     config.tools_d_dir = tmp_path / "tools-d-inexistente"
     assert not config.tools_d_dir.exists()
     assert load_tools_d(config) == []
+
+
+def test_hora_va_al_final_para_no_romper_la_cache(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    write_system_md(
+        config,
+        "# Identidad\nSoy EzAgent.\n\n"
+        "# Contexto\nHoy es {{fecha}}, son las {{hora}} y uso {{os}}.\n\n"
+        "# Preferencias\nCarpeta de trabajo.\n",
+    )
+    builder = make_builder(config, memory_block=lambda: "BLOQUE_DE_MEMORIA")
+
+    first = builder.build(datetime(2026, 11, 6, 15, 30))
+    second = builder.build(datetime(2026, 11, 6, 15, 31))
+
+    tail = first[first.index("# Momento actual") :]
+    assert "son las 15:30" in tail
+    assert first.index("BLOQUE_DE_MEMORIA") < first.index("15:30")
+    assert first.index("# Preferencias") < first.index("15:30")
+    # Todo lo anterior a la hora es idéntico de un minuto a otro.
+    prefix = first[: first.index("# Momento actual")]
+    assert second.startswith(prefix)
+    # El encabezado que se quedó vacío desaparece.
+    assert "# Contexto" not in first
+
+
+def test_guia_de_acuse_siempre_presente(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    write_system_md(config, "# Sistema propio\nContenido del usuario.\n")
+    prompt = make_builder(config).build(datetime(2026, 11, 6, 10, 0))
+    assert VOICE_FLOW_HINT in prompt
+    assert prompt.index("# Sistema propio") < prompt.index(VOICE_FLOW_HINT)
+    assert "# Momento actual" not in prompt

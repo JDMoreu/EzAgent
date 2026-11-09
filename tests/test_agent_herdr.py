@@ -14,7 +14,6 @@ pytest.importorskip("ezagent.agent.registry")
 
 from ezagent.agent.registry import ToolResult  # noqa: E402
 from ezagent.agent.tools_herdr import (  # noqa: E402
-    TASK_PREFIX,
     HerdrCallbacks,
     build_herdr_tools,
 )
@@ -387,10 +386,6 @@ def test_voice_summaries_are_generated_from_arguments(env: tuple) -> None:
 
 
 # --------------------------------------------------------------- delegate
-def test_task_prefix_is_exact() -> None:
-    assert TASK_PREFIX == "Tarea del usuario (por voz): "
-
-
 def test_list_returns_agents_and_calls_herdr(env: tuple) -> None:
     herdr, callbacks, tools = env
     result = _call(tools["delegate_to_agent"], {"action": "list"})
@@ -455,7 +450,8 @@ def test_send_adds_voice_prefix_and_confirms(env: tuple) -> None:
     assert result.ok is True
     name, args, kwargs = herdr.calls[-1]
     assert name == "send_agent"
-    assert args == ("t1", "Tarea del usuario (por voz): arregla el bug")
+    # La tarea llega tal cual, sin preámbulo.
+    assert args == ("t1", "arregla el bug")
     assert kwargs == {"confirmed": True}
 
 

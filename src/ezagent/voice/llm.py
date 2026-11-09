@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
 from collections.abc import Callable, Iterator
 from typing import Any
@@ -11,8 +12,61 @@ from typing import Any
 from loguru import logger
 from openai import OpenAI
 
+from .anthropic_client import AnthropicChatClient
 from .config import VoiceConfig
 from .herdr import Herdr
+
+# Acuse que dice el código si el modelo pide una herramienta sin haber dicho
+# nada en el turno: así no queda un silencio mientras trabaja.
+ACK_FILLERS: tuple[str, ...] = (
+    "Un momento, lo reviso.",
+    "Dale, ya lo veo.",
+    "Va, dame un segundo.",
+    "Listo, déjame ver.",
+)
+# Herramientas instantáneas que no merecen acuse (silenciar, cerrar…).
+_NO_ACK_TOOLS = frozenset({"voice_control"})
+
+
+def _status_of(exc: BaseException) -> int | None:
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int):
+        return status
+    text = str(exc)
+    for code in (401, 403, 404, 413, 429):
+        if f" {code}" in text or f"{code}:" in text:
+            return code
+    return None
+
+
+def friendly_llm_error(exc: BaseException, label: str, model: str) -> str:
+    """Frase corta para decir por voz cuando falla el proveedor del LLM."""
+    status = _status_of(exc)
+    if status == 429:
+        retry = ""
+        response = getattr(exc, "response", None)
+        after = response.headers.get("retry-after") if response is not None else None
+        if after and str(after).isdigit():
+            retry = f" Espera unos {int(after)} segundos o"
+        else:
+            retry = " Espera un momento o"
+        return (
+            f"{label} me limitó por demasiadas peticiones o tokens por minuto."
+            f"{retry} elige otro modelo o proveedor en ajustes."
+        )
+    if status == 413:
+        return (
+            f"La petición es más grande de lo que permite tu plan de {label} por "
+            "minuto. Usa otro proveedor o un plan con más tokens."
+        )
+    if status == 404:
+        return f"{label} no reconoce el modelo {model}. Revisa el nombre en ajustes."
+    if status in (401, 403):
+        return f"La clave de {label} no es válida o no tiene acceso. Revísala en ajustes."
+    name = type(exc).__name__
+    if "Connection" in name or "Timeout" in name or "ConnectError" in name:
+        return f"No pude conectar con {label}. Revisa la conexión o la dirección de la API."
+    return f"{label}: {exc}"
 
 
 class Messenger:
@@ -42,6 +96,14 @@ class Messenger:
         ]
         self._last_user_text = ""
         self._last_agent_address: str | None = None
+        self._filler_index = 0
+        # Desglose del último turno: una entrada por llamada al LLM.
+        self.last_rounds: list[str] = []
+
+    def _next_filler(self) -> str:
+        filler = ACK_FILLERS[self._filler_index % len(ACK_FILLERS)]
+        self._filler_index += 1
+        return filler
 
     def _configure_client(self) -> None:
         headers = {"User-Agent": "EzAgent-Voice/0.1"}
@@ -51,11 +113,24 @@ class Messenger:
             workspace = os.getenv("ANTHROPIC_WORKSPACE_ID")
             if workspace:
                 headers["anthropic-workspace-id"] = workspace
+        if self._anthropic_style():
+            self.client = AnthropicChatClient(
+                api_key=self.cfg.api_key or "sin-clave",
+                base_url=self.cfg.llm_base_url,
+                default_headers=headers,
+            )
+            return
+        # DECISION: sin reintentos automáticos. Ante un 429 el SDK espera el
+        # retry-after (hasta 60 s) en silencio; por voz es mejor avisar ya.
         self.client = OpenAI(
             api_key=self.cfg.api_key or "sin-clave",
             base_url=self.cfg.llm_base_url or None,
             default_headers=headers,
+            max_retries=0,
         )
+
+    def _anthropic_style(self) -> bool:
+        return str(getattr(self.cfg, "llm_api_style", "") or "") == "anthropic"
 
     def reload_llm(self) -> None:
         """Recrea el cliente tras cambiar proveedor, modelo, URL o clave."""
@@ -179,6 +254,8 @@ class Messenger:
                 runtime = None
         self.messages.append({"role": "user", "content": text})
         self._trim_history()
+        self.last_rounds = []
+        spoke = False
         for _ in range(4):
             tools: list[dict[str, Any]] = []
             if runtime is not None:
@@ -190,7 +267,11 @@ class Messenger:
                 "model": self.cfg.llm_model,
                 "messages": self.messages,
                 "temperature": (
-                    1.0 if self.cfg.llm_provider == "anthropic"
+                    # El endpoint OpenAI de Anthropic exige 1.0; la API
+                    # Messages nativa acepta la temperatura configurada.
+                    1.0
+                    if self.cfg.llm_provider == "anthropic"
+                    and not self._anthropic_style()
                     else self.cfg.llm_temperature
                 ),
                 "max_tokens": self.cfg.llm_max_tokens,
@@ -214,6 +295,8 @@ class Messenger:
                 # Groq, OpenRouter y endpoints compatibles suelen aceptar el
                 # parámetro; Anthropic/Gemini se dejan sin él.
                 request["extra_body"] = {"reasoning_effort": effort}
+            began = time.monotonic()
+            first_chunk: float | None = None
             stream = self.client.chat.completions.create(**request)
             tool_calls: dict[int, dict[str, Any]] = {}
             content_parts: list[str] = []
@@ -222,10 +305,17 @@ class Messenger:
                     if not chunk.choices:
                         continue
                     delta = chunk.choices[0].delta
+                    if first_chunk is None and (delta.content or delta.tool_calls):
+                        first_chunk = time.monotonic() - began
                     if delta.content:
                         content_parts.append(delta.content)
+                        spoke = spoke or bool(delta.content.strip())
                         yield delta.content
                     for call in delta.tool_calls or []:
+                        name = call.function.name if call.function else ""
+                        if not spoke and name and name not in _NO_ACK_TOOLS:
+                            spoke = True
+                            yield self._next_filler() + " "
                         index = int(call.index or 0)
                         item = tool_calls.setdefault(
                             index,
@@ -248,7 +338,13 @@ class Messenger:
                 except Exception:
                     pass
 
+            round_note = f"llamada {len(self.last_rounds) + 1}: " + (
+                f"{first_chunk * 1000:.0f} ms al 1.er fragmento"
+                if first_chunk is not None else "sin fragmentos"
+            )
             if tool_calls:
+                if content_parts:
+                    yield " "  # separa el acuse del modelo de lo que siga
                 ordered = [tool_calls[i] for i in sorted(tool_calls)]
                 self.messages.append(
                     {
@@ -259,6 +355,7 @@ class Messenger:
                 )
                 for call in ordered:
                     name = call["function"]["name"]
+                    tool_began = time.monotonic()
                     try:
                         if runtime is None:
                             raise RuntimeError("el núcleo agéntico no está disponible")
@@ -289,7 +386,12 @@ class Messenger:
                             "content": content,
                         }
                     )
+                    round_note += (
+                        f", {name} {(time.monotonic() - tool_began) * 1000:.0f} ms"
+                    )
+                self.last_rounds.append(round_note)
                 continue
+            self.last_rounds.append(round_note)
 
             content = "".join(content_parts).strip()
             self.messages.append({"role": "assistant", "content": content})

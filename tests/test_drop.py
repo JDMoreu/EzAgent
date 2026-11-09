@@ -103,7 +103,7 @@ def test_mascara_nitida_y_estable() -> None:
     assert 0 < borde.sum() < 600                               # borde definido, ~1–2 px
 
 
-# --------------------------------------------------------- nubes y aire (interior)
+# ------------------------------------------------- fluido «Marea» (interior)
 def test_el_interior_se_mueve_con_el_tiempo() -> None:
     m = D.DropModel("pill")
     t = _run(m, "idle", 1.0)
@@ -113,48 +113,38 @@ def test_el_interior_se_mueve_con_el_tiempo() -> None:
     assert np.abs(a - b).mean() > 1.0
 
 
-def test_al_hablar_entra_aire_que_empuja_las_nubes_y_al_callar_se_asientan() -> None:
+def test_al_hablar_el_fluido_se_acelera_y_sube_y_al_callar_se_calma() -> None:
     m = D.DropModel()
     t = _run(m, "listen", 1.5, rms=0.0)
-    calma = m.field.pos.copy()
+    flow0, lift0 = m.field.t, m.field.lift
     t = _run(m, "listen", 1.0, rms=0.12, t0=t)
     assert m.field.pressure > 0.8 and m.lvl > 0.8
-    empuje = np.abs(m.field.pos - calma).max()
-    assert empuje > 0.3                                    # el aire mueve las nubes
-    assert m.field.pos[:, 1].mean() < calma[:, 1].mean()   # y las eleva (y crece hacia abajo)
+    assert m.field.lift - lift0 > 0.3                      # tu voz empuja el fluido hacia arriba
+    rapido = m.field.t - flow0
     t = _run(m, "listen", 0.3, rms=0.0, t0=t)
-    assert m.field.pressure > 0.4                          # inercia: el aire no se corta en seco
-    _run(m, "listen", 4.0, rms=0.0, t0=t)
+    assert m.field.pressure > 0.4                          # inercia: no se corta en seco
+    t = _run(m, "listen", 4.0, rms=0.0, t0=t)
     assert m.field.pressure < 0.05 and m.lvl < 0.05
-    assert np.abs(m.field.vel).max() < 0.2                 # se asientan
+    flow1 = m.field.t
+    _run(m, "listen", 1.0, rms=0.0, t0=t)
+    assert m.field.t - flow1 < rapido / 2                  # en calma fluye más despacio
 
 
-def test_en_calma_las_nubes_estan_en_la_mitad_inferior() -> None:
-    from ezagent.voice.notch.clouds import BANK_Y, CloudField
-
-    for layout in ("pill", "circle"):
-        f = CloudField(layout)
-        assert (f.home[:, 1] >= BANK_Y[0]).all()              # y crece hacia abajo
-    m = D.DropModel("pill")
-    _run(m, "idle", 2.0, palette="light")
-    rgb = D.render_fluid(m, 1.0).astype(int)
-    top = rgb[: rgb.shape[0] // 4]
-    assert (top[..., 0] < 200).mean() > 0.95                  # arriba, cielo sin nubes
+def test_cuando_habla_ezagent_lo_recorren_pulsos_de_luz() -> None:
+    quiet, loud = D.DropModel("pill"), D.DropModel("pill")
+    _run(quiet, "speak", 1.0, rms=0.0)
+    _run(loud, "speak", 1.0, rms=0.12)
+    a = D.render_fluid(quiet, 1.0).astype(float)
+    b = D.render_fluid(loud, 1.0).astype(float)
+    assert b.mean() > a.mean() + 3                         # la voz ilumina el fluido
 
 
-def test_cuando_habla_ezagent_el_banco_ondula() -> None:
-    m = D.DropModel("pill")
-    t = _run(m, "speak", 1.0, rms=0.0)
-    calma = m.field.pos[:, 1].copy()
-    ys = []
-    for _ in range(6):
-        t = _run(m, "speak", 0.25, rms=0.1, t0=t)
-        ys.append(m.field.pos[:, 1].copy())
-    mov = np.abs(np.asarray(ys) - calma).max()
-    assert mov > 0.2                                          # se nota el movimiento
-    sube_y_baja = np.ptp(np.asarray(ys), axis=0)
-    assert (sube_y_baja > 0.05).sum() >= 3                    # ola: varias nubes suben y bajan
-    assert m.field.pos[:, 1].min() > -0.6                     # el techo suave las contiene
+def test_al_pensar_gira() -> None:
+    m = D.DropModel("circle")
+    _run(m, "think", 2.0)
+    assert m.field.angle > 0.3
+    _run(m, "idle", 4.0, t0=2.0)
+    assert m.field.spin_rate < 0.05                        # deja de girar al terminar
 
 
 def test_el_fluido_devuelve_rgb_uint8() -> None:
@@ -166,26 +156,27 @@ def test_el_fluido_devuelve_rgb_uint8() -> None:
         assert rgb.shape[:2] == D._fluid_grid(layout)[0].shape
 
 
-def test_cielo_arriba_y_nubes_claras() -> None:
+def test_identidad_verde_azulado_y_gradiente_vivo() -> None:
     m = D.DropModel("pill")
     _run(m, "idle", 1.0, palette="light")
     rgb = D.render_fluid(m, 1.0).astype(int)
-    assert rgb[0].mean() < rgb.max()                       # arriba, cielo azul
-    assert rgb.max() >= 240                                # hay nubes casi blancas
+    r, g, b = (rgb[..., i].mean() for i in range(3))
+    assert g > r + 30 and b > r + 20                       # familia verde azulada, no cielo azul
+    assert rgb.reshape(-1, 3).std(axis=0).mean() > 12      # un gradiente, no un color plano
 
 
 def test_ruido_determinista_y_acotado() -> None:
-    from ezagent.voice.notch import clouds as C
+    from ezagent.voice.notch import flow as F
 
     x = np.linspace(0, 40, 200, dtype=np.float32)
     xx, yy = np.meshgrid(x, x)
-    n = C._fbm(xx, yy)
+    n = F._fbm(xx, yy)
     assert 0.0 <= n.min() and n.max() <= 1.0001
-    assert np.array_equal(n, C._fbm(xx, yy))
+    assert np.array_equal(n, F._fbm(xx, yy))
 
 
 def test_colores_siguen_al_estado_y_al_tema() -> None:
-    from ezagent.voice.notch.clouds import colors_for
+    from ezagent.voice.notch.flow import colors_for
 
     m = D.DropModel()
     t = _run(m, "think", 3.0, palette="light")
@@ -197,13 +188,13 @@ def test_colores_siguen_al_estado_y_al_tema() -> None:
 
 
 def test_temas_completos_y_distintos() -> None:
-    from ezagent.voice.notch import clouds as C
+    from ezagent.voice.notch import flow as F
 
-    for theme in C.THEMES:
-        assert set(C.COLORS[theme]) >= set(C.POSES)
-        assert len({C.COLORS[theme][p].tobytes() for p in C.POSES}) == len(C.POSES)
-        assert all(c.shape == (5, 3) for c in C.COLORS[theme].values())
-    assert not np.array_equal(C.COLORS["light"]["idle"], C.COLORS["dark"]["idle"])
+    for theme in F.THEMES:
+        assert set(F.COLORS[theme]) >= set(F.POSES)
+        assert len({F.COLORS[theme][p].tobytes() for p in F.POSES}) == len(F.POSES)
+        assert all(c.shape == (5, 3) for c in F.COLORS[theme].values())
+    assert not np.array_equal(F.COLORS["light"]["idle"], F.COLORS["dark"]["idle"])
 
 
 def test_ganancia_automatica_usa_todo_el_rango() -> None:
@@ -215,9 +206,8 @@ def test_ganancia_automatica_usa_todo_el_rango() -> None:
 
 def test_movimiento_reducido_no_anima_el_flujo() -> None:
     m = D.DropModel()
-    home = m.field.pos.copy()
-    _run(m, "speak", 1.0, rms=0.1, reduced=True)
-    assert m.flow == 0.0 and np.array_equal(m.field.pos, home)
+    _run(m, "listen", 1.0, rms=0.1, reduced=True)
+    assert m.flow == 0.0 and m.field.lift == 0.0 and m.field.angle == 0.0
 
 
 # ------------------------------------------------------------------- botones

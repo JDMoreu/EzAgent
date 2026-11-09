@@ -132,6 +132,24 @@ class RuntimeCallbacks:
     on_warn: Callable[[str], None] | None = None
 
 
+def _spoken_names(text: str) -> set[str]:
+    """Palabras de la frase normalizadas, más pares y tríos unidos.
+
+    Whisper escribe «M Code», «open code» o «Cloud Code»: unir palabras
+    seguidas permite reconocer «mcode» y «opencode», y comparar palabras
+    completas evita que un nombre corto («pi») coincida dentro de otra.
+    """
+    from ezagent.voice.config import normalize_agent_name
+
+    words = [normalize_agent_name(w) for w in str(text or "").split()]
+    words = [w for w in words if w]
+    out = set(words)
+    for size in (2, 3):
+        for i in range(len(words) - size + 1):
+            out.add("".join(words[i : i + size]))
+    return out
+
+
 class AgentRuntime:
     """Fachada del núcleo agéntico para el mensajero de voz."""
 
@@ -289,6 +307,46 @@ class AgentRuntime:
         provider = getattr(self.herdr, "catalog_text", None)
         return str(provider()) if callable(provider) else ""
 
+    def _user_named_target(self, name: str, args: dict[str, Any]) -> bool:
+        """¿El usuario nombró en su frase el agente al que va este run/send?"""
+        if name != "delegate_to_agent":
+            return False
+        action = str(args.get("action") or "").lower()
+        if action not in ("run", "send"):
+            return False
+        spoken = _spoken_names(self._get_last_user_text())
+        if not spoken:
+            return False
+        return any(candidate in spoken for candidate in self._target_names(action, args))
+
+    def _target_names(self, action: str, args: dict[str, Any]) -> set[str]:
+        """Nombres normalizados (clave y alias) del agente destino."""
+        from ezagent.voice.config import normalize_agent_name, resolve_agent_key
+
+        agents = dict(getattr(self.voice_config, "agents", {}) or {})
+        profiles = dict(getattr(self.voice_config, "agent_profiles", {}) or {})
+        raw = str(args.get("agent") or "")
+        if action == "send":
+            raw = self._agent_at(str(args.get("address") or "")) or raw
+        key = resolve_agent_key(raw, agents, profiles) or raw
+        names = {key, raw}
+        profile = profiles.get(key)
+        if isinstance(profile, dict) and isinstance(profile.get("aliases"), list):
+            names.update(str(alias) for alias in profile["aliases"])
+        return {normalize_agent_name(n) for n in names if normalize_agent_name(n)}
+
+    def _agent_at(self, address: str) -> str:
+        """Agente que corre en una dirección de Herdr (vacío si no se sabe)."""
+        if not address:
+            return ""
+        try:
+            for item in self.herdr.list_agents() or []:
+                if str(item.get("address") or "") == address:
+                    return str(item.get("agent") or "")
+        except Exception:
+            return ""
+        return ""
+
     def _get_last_user_text(self) -> str:
         value = self.callbacks.get_last_user_text()
         if value:
@@ -410,9 +468,15 @@ class AgentRuntime:
             info = spec.describe(args)
         except Exception as exc:  # noqa: BLE001
             return ToolResult(ok=False, error=f"Argumentos inválidos: {exc}")
+        # DECISION: leer la salida de un agente marca el turno como no confiable
+        # y desde ahí todo pedía permiso, también lanzar el agente que el
+        # usuario acababa de nombrar («pásaselo a mcode»). Si el agente destino
+        # de run/send está nombrado en la frase del usuario, la orden es suya;
+        # el resto de acciones siguen confirmando con contenido no confiable.
+        tainted = self.tainted and not self._user_named_target(name, args)
         decision = decide(
             info.level,
-            self.tainted,
+            tainted,
             info.bulk,
             info.always_confirm,
             self.confirm_nondestructive,

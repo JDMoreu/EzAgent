@@ -319,9 +319,9 @@ def build_herdr_tools(herdr: Herdr, callbacks: HerdrCallbacks) -> list[ToolSpec]
 
 Expone `delegate_to_agent` (una sola herramienta con `action`) y
 `voice_control`. Niveles: list/get/read/focus/watch = 0; send/run/open_terminal
-= 1; kill = 2. `read` marca `untrusted_output=True`. El texto enviado lleva el
-prefijo «Tarea del usuario (por voz): ». Reutiliza los métodos de `Herdr`; no
-los reescribas.
+= 1; kill = 2. `read` marca `untrusted_output=True`. El texto enviado llega al
+agente tal cual, sin preámbulo. Reutiliza los métodos de `Herdr`; no los
+reescribas.
 
 ## Pruebas
 
