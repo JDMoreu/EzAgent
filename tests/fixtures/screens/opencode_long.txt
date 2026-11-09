@@ -1,0 +1,11 @@
+• Colores primarios sin explica • Océano más grande del mundo +
+<hc from="t1">Responde esta pregunta de cultura general de forma breve y clara: ¿Cuál es el océano más
+grande del mundo?</hc>
++ Thought · 1.5s
+El océano Pacífico. Cubre aproximadamente un tercio de la superficie terrestre (~165 millones de km²), más que
+todos los continentes juntos, y es también el más profundo (fosa de las Marianas, ~11.000 m).
+No requería herramientas; sin verificación externa porque es un dato estable.
+Build · DeepSeek V4.1 Flash · 3.1s · 54.7 tok/s
+Build · DeepSeek V4.1 Flash OpenCode Go · low
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+~/Documents/EzAgent:main 27.8K (3%) ctrl+p commands

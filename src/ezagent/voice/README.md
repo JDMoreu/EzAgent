@@ -65,34 +65,8 @@ guardar; si otro programa ya usa uno, queda anotado en el log.
 Al abrir el mensajero, entra en modo escucha automáticamente a los 600 ms: no hace
 falta pulsar nada. `Ctrl+Alt+Space` sirve para colgar o volver a llamar. En
 modo llamada el micrófono **no se cierra entre turnos**: hablas, el asistente
-responde y vuelve a escuchar solo. La isla queda visible durante toda la
+responde y vuelve a escuchar solo. La barra queda visible durante toda la
 llamada.
-
-## Controles de la isla
-
-La isla no es solo un indicador: también es el mando del mensajero.
-
-| Zona | Acción |
-|---|---|
-| Micrófono | Silenciar / reactivar: tachado y en rojo cuando está muteado |
-| Cuerpo de la pestaña | Arrastrar la isla por la pantalla |
-| Flecha derecha | Abre o cierra el menú completo; es un chevrón sin fondo |
-
-La isla cerrada mide **169×36** en la muesca superior o **151×36** como píldora
-flotante: el espacio justo para los tres controles, sin el vacío que dejaba la
-antigua palabra de estado. Queda como **control compacto en reposo**; la llamada
-se inicia o termina con `Ctrl+Alt+Space`, no desde la isla. Al arrastrar su
-cuerpo se convierte en una **píldora flotante** que se queda donde la sueltas;
-solo si la sueltas a menos de 2 px del borde superior se acopla como muesca con
-el cuello arriba. El borde inferior y los laterales no acoplan nada. La flecha
-derecha despliega el **menú completo dentro de la misma ventana** hacia el lado
-con más espacio. La píldora se ensancha junto con el menú hasta 320 px, de modo
-que barra y panel son una sola pieza continua, sin costura, sin tooltips y sin
-ventanas secundarias. El menú se cierra con la flecha o con
-`Ctrl+Alt+O`; el botón `–` oculta la isla hasta la próxima llamada o atajo. El
-menú no roba el foco al abrirse ni al desplazarse: solo pide el teclado mientras
-se edita una fila de texto y lo devuelve al confirmar con `Enter`, cancelar con
-`Esc` o pulsar fuera. `Ctrl+V` pega desde el portapapeles.
 
 El menú tiene siete grupos: **AUDIO**, **MOTOR**, **TTS**, **VAD**,
 **WHISPER · STT**, **LLM · API** y **CONVERSACIÓN**. Incluye micrófono, un
@@ -106,24 +80,13 @@ y los umbrales del VAD se aplican en vivo; cambiar de micrófono reabre la
 captura; los cambios de LLM se aplican al guardar y los de modelo TTS recargan
 Kokoro. El pie muestra `TODO GUARDADO` o
 `● CAMBIOS SIN GUARDAR`; Guardar es ámbar cuando hay cambios y confirma con un
-check. El estado de los ojos sigue a la voz: **ESPERA**, **ESCUCHO**,
-**PIENSO**, **HABLO**, **AVISO**, **PAUSA** y **ERROR**. **La isla no tiene
-texto**: no hay palabra de estado, pistas ni tooltips; los botones son iconos y
-el estado se lee en la forma y el color de los ojos. El menú solo usa texto para
-las etiquetas de ajustes y el pie.
+check. El menú solo usa texto para las etiquetas de ajustes y el pie.
 
-El menú usa los tokens de `DESIGN.md`: cuerpo grafito `#0E0F13`, grupos
-`#1C1C1F`, un solo mint `#5EEAC4`, ámbar `#FFC24A` y rojo `#FF453A`. Los ojos
-de dos cápsulas son la única marca; la onda de cinco cápsulas solo existe en
-**HABLO**. La tipografía es **Geist / Geist Mono**, empaquetada en
-`src/ezagent/voice/assets/fonts`, y los iconos se dibujan como vectores. El tema
-sigue a Windows (`auto`) o se fija como `dark`/`light` en `voice.json`.
-
-El código está separado en `notch/tokens.py` (tokens), `anim.py` (curvas y
-tween), `eyes.py` (poses), `silhouette.py` (cuerpo con hombros), `menu.py`
-(menú y componentes), `settings.py` (modelo de ajustes), `state.py` (máquina de
-estados) e `island.py` (ventana y composición). No hay panel Tk ni segunda
-ventana de ajustes.
+El código de la interfaz vive en `notch/`: `tokens.py` (tokens), `anim.py`
+(curvas y tween), `bar_motion.py` y `bar_theme.py` (movimiento y tema de la
+barra), `clouds.py` (cielo), `drop.py` (ventana y composición), `menu.py`
+(menú y componentes), `settings.py` (modelo de ajustes) y `state.py` (máquina de
+estados). No hay panel Tk ni segunda ventana de ajustes.
 
 ### Latencia
 
@@ -290,7 +253,6 @@ EzAgent no usa Pipecat; el pipeline es propio.
 | `llm_max_tokens` | `320` | Tope de la respuesta |
 | `llm_reasoning_effort` | `none` | `none`, `low`, `medium` o `high` |
 | `confirm_actions` | `false` | Confirmar también las operaciones de nivel 2 no destructivas; las destructivas siempre confirman |
-| `notch_x` / `notch_y` | `null` | Última posición física de la isla; se guarda al arrastrar |
 | `hc_path` | `hc` | CLI de Herdr |
 | `herdr_app_path` | `herdr-app` | CLI de la ventana de Herdr (pestañas visibles) |
 | `default_cwd` | cwd actual | Carpeta por defecto para lanzar agentes |
@@ -305,7 +267,7 @@ EzAgent no usa Pipecat; el pipeline es propio.
 - Sin icono de bandeja: se ejecuta en segundo plano; se para con
   `scripts\stop-voice.ps1`.
 - Sin wake word: el mensajero arranca en modo escucha (`Ctrl+Alt+Space` cuelga o
-  retoma); la isla solo mutea, abre el menú y se arrastra.
+  retoma); la barra solo mutea, abre el menú y se arrastra.
 - El watcher solo anuncia los agentes pedidos (`announce_all=false`).
 - Con altavoces, el TTS puede colarse por el micrófono y disparar el barge-in.
   Usa auriculares o pon `barge_in: false`.

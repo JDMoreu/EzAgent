@@ -35,7 +35,7 @@ class _FolderBulk(int):
     """Cantidad real de elementos de una carpeta que siempre exige confirmación fuerte.
 
     # DECISION: ToolInfo no tiene un campo «strong»; policy.decide solo mira
-    # ``bulk > umbral`` y loop.run_turn usa el mismo ``bulk`` como número que
+    # ``bulk > umbral`` y AgentRuntime.execute usa el mismo ``bulk`` como número que
     # debe decir el usuario. Este entero conserva la cantidad real para el
     # resumen, la igualdad y la serialización, pero se considera mayor que
     # cualquier umbral distinto de cero. Así una carpeta pequeña exige

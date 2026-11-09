@@ -160,7 +160,6 @@ GROUP_LABELS = {
 }
 
 MENU_HEIGHT = H_MENU
-WINDOW_HEIGHT = ISLAND_H + MENU_HEIGHT
 
 
 @dataclass(frozen=True)
@@ -182,8 +181,6 @@ class Rect:
     def center_y(self) -> float:
         return (self.y0 + self.y1) / 2.0
 
-    def contains(self, x: float, y: float) -> bool:
-        return self.x0 <= x <= self.x1 and self.y0 <= y <= self.y1
 
 
 def layout_menu(
@@ -236,22 +233,3 @@ def visible_menu_height(screen_h: float) -> float:
     """Alto visible del menú: min(560, 0,7 · alto de pantalla − 36)."""
     return min(float(MENU_HEIGHT), max(0.0, 0.7 * float(screen_h) - ISLAND_H))
 
-
-def scrolled_layout(layout: dict[str, Rect], scroll: float) -> dict[str, Rect]:
-    """Desplaza solo el contenido entre cabecera y pie; cabecera y pie fijos."""
-    header = layout["header"]
-    footer = layout["footer"]
-    content_top = header.y1 + GAP_HEADER
-    content_bottom = footer.y0
-    out: dict[str, Rect] = {}
-    for key, rect in layout.items():
-        if key in ("header", "footer", "total"):
-            out[key] = rect
-            continue
-        if rect.y1 <= content_top or rect.y0 >= content_bottom:
-            # Fuera de la ventana visible: se conserva para el hit-test, pero
-            # el renderer lo recorta.
-            out[key] = Rect(rect.x0, rect.y0 - scroll, rect.x1, rect.y1 - scroll)
-            continue
-        out[key] = Rect(rect.x0, rect.y0 - scroll, rect.x1, rect.y1 - scroll)
-    return out

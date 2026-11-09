@@ -311,20 +311,15 @@ def test_formatos_y_rangos_reales():
     assert settings.format("speed") == "0,95×"
     assert settings.value_label("voice") == "Álex · masculina"
     assert settings.value_label("input_device_index").startswith("0: ")
-    assert settings.slider_bounds("min_rms") == pytest.approx(
-        (0.0003, 0.008, 0.0001)
-    )
-    assert settings.slider_bounds("speed") == pytest.approx(
-        (0.75, 1.25, 0.05)
-    )
-    assert settings.slider_bounds("noise_multiplier") == pytest.approx(
-        (1.0, 2.5, 0.1)
-    )
-    assert settings.slider_bounds("silence_secs") == pytest.approx(
-        (0.8, 3.5, 0.1)
-    )
-    with pytest.raises(KeyError):
-        settings.slider_bounds("barge_in")
+    for key, bounds in {
+        "min_rms": (0.0003, 0.008, 0.0001),
+        "speed": (0.75, 1.25, 0.05),
+        "noise_multiplier": (1.0, 2.5, 0.1),
+        "silence_secs": (0.8, 3.5, 0.1),
+    }.items():
+        spec = S.SLIDERS[key]
+        assert (spec.minimum, spec.maximum, spec.step) == pytest.approx(bounds)
+    assert "barge_in" not in S.SLIDERS
 
     # Los valores se recortan y redondean al paso.
     settings.set("speed", 9.0)
@@ -396,7 +391,6 @@ def test_snapshot_solo_claves_editables_y_no_escribe_nada(monkeypatch):
     other.mark_saved()
     assert not other.dirty()
     other.value_label("input_device_index")
-    other.slider_bounds("speed")
     other.format("silence_secs")
     other.snapshot()
     other.select_options("input_device_index")
@@ -864,11 +858,14 @@ def test_boton_ocultar_cierra_y_notifica():
 
 
 def _buffer(menu: M.Menu, theme: str = "dark", scale: float = 1.0) -> np.ndarray:
-    from ezagent.voice.notch.silhouette import render_silhouette
-
-    height = T.H_ISLAND + menu.height(menu._now)
-    surf = render_silhouette(height, theme, scale)
-    return surf[..., [2, 1, 0, 3]].astype(np.float32) / 255.0
+    # Fondo opaco y premultiplicado sobre el que dibuja el menú.
+    height = round((T.H_ISLAND + menu.height(menu._now)) * scale)
+    width = round(T.W * scale)
+    buf = np.zeros((height, width, 4), dtype=np.float32)
+    shade = 0.08 if theme == "dark" else 0.95
+    buf[..., :3] = shade
+    buf[..., 3] = 1.0
+    return buf
 
 
 def test_draw_oscuro_claro_selector_y_prueba():

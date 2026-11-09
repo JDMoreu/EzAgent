@@ -28,7 +28,6 @@ from ezagent.agent.config import (
     ToolsDConfig,
     WebConfig,
 )
-from ezagent.agent.loop import AssistantReply, ToolCall, run_turn
 from ezagent.agent.paths import PathDenied, resolve_safe
 from ezagent.agent.policy import Decision, decide
 from ezagent.agent.registry import (
@@ -114,40 +113,6 @@ def make_tool(
     )
 
 
-class SequenceLLM:
-    def __init__(self, replies: list[AssistantReply]) -> None:
-        self.replies = list(replies)
-        self.calls = 0
-
-    def chat(
-        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
-    ) -> AssistantReply:
-        reply = self.replies[min(self.calls, len(self.replies) - 1)]
-        self.calls += 1
-        return reply
-
-
-class RepeatingLLM:
-    def __init__(self, tool_name: str = "ping") -> None:
-        self.tool_name = tool_name
-        self.calls = 0
-
-    def chat(
-        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
-    ) -> AssistantReply:
-        self.calls += 1
-        return AssistantReply(
-            text="",
-            tool_calls=[
-                ToolCall(
-                    id=f"call-{self.calls}",
-                    name=self.tool_name,
-                    arguments={},
-                )
-            ],
-        )
-
-
 class FakeConfirm:
     def __init__(self, answer: bool = True) -> None:
         self.answer = answer
@@ -198,13 +163,13 @@ def test_load_creates_default_template(tmp_path: Path, monkeypatch: pytest.Monke
     assert data["general"]["confirm_timeout_s"] == 15
     assert data["general"]["bulk_threshold"] == 5
     assert data["general"]["max_file_mb"] == 10
-    assert data["paths"]["read_roots"][0] == "~/Documents"
+    assert data["paths"]["read_roots"][0] == "~"
     assert data["web"]["block_private_ips"] is True
     assert data["skills"]["allow_scripts"] is False
     assert data["tools_d"]["allowed_executables"] == ["code"]
     assert config.general.max_tool_calls_per_turn == 4
     assert config.general.confirm_timeout_s == 15.0
-    assert config.paths.read_roots[0] == "~/Documents"
+    assert config.paths.read_roots[0] == "~"
     assert config.confirm.accept[0] == "sí"
     assert config.skills.allow_scripts is False
     assert config.skills.trusted == []
@@ -231,12 +196,8 @@ def test_load_invalid_toml_falls_back(
     with caplog.at_level(logging.WARNING):
         config = AgentConfig.load(path)
     assert config.general.max_tool_calls_per_turn == 4
-    assert config.paths.read_roots == [
-        "~/Documents",
-        "~/Desktop",
-        "~/Downloads",
-        "~/EzAgentWorkspace",
-    ]
+    assert config.paths.read_roots == ["~"]
+    assert config.paths.write_roots == ["~"]
     assert "valores por defecto" in caplog.text
     assert path.read_text(encoding="utf-8") == "esto no es toml ["
 
@@ -265,7 +226,7 @@ block_private_ips = "sí"
     with caplog.at_level(logging.WARNING):
         config = AgentConfig.load(path)
     assert config.general.max_tool_calls_per_turn == 4
-    assert config.paths.read_roots[0] == "~/Documents"
+    assert config.paths.read_roots[0] == "~"
     assert config.web.block_private_ips is True
     assert "max_tool_calls_per_turn" in caplog.text
     assert "destructive_always_confirm" in caplog.text
@@ -322,17 +283,6 @@ allowed_executables = ['notepad']
     assert config.skills.allow_scripts is True
     assert config.skills.trusted == ["skill-x"]
     assert config.tools_d.allowed_executables == ["notepad"]
-
-
-def test_reload_picks_up_changes(tmp_path: Path):
-    path = tmp_path / "permissions.toml"
-    path.write_text("[general]\nmax_tool_calls_per_turn = 3\n", encoding="utf-8")
-    config = AgentConfig.load(path)
-    assert config.general.max_tool_calls_per_turn == 3
-    path.write_text("[general]\nmax_tool_calls_per_turn = 6\n", encoding="utf-8")
-    reloaded = config.reload()
-    assert reloaded.general.max_tool_calls_per_turn == 6
-    assert reloaded.permissions_path == path
 
 
 def test_ensure_dirs_creates_layout(tmp_path: Path):
@@ -820,319 +770,6 @@ def test_registry_get_and_duplicate_warning(caplog: pytest.LogCaptureFixture):
         registry.register(second)
     assert registry.get("dup") is second
     assert "duplicada" in caplog.text
-
-
-# ---------------------------------------------------------------------------
-# loop.py — ST-23, taint y confirmaciones
-# ---------------------------------------------------------------------------
-
-
-def test_loop_returns_text_without_tools(tmp_path: Path):
-    audit = AuditLog(tmp_path / "audit.jsonl")
-    messages: list[dict[str, Any]] = []
-    llm = SequenceLLM([AssistantReply(text="Hola.", tool_calls=[])])
-    result = run_turn(
-        llm,
-        messages,
-        ToolRegistry(),
-        confirm=None,
-        audit=audit,
-        turn_id="turno",
-    )
-    assert result == "Hola."
-    assert messages == []
-    assert llm.calls == 1
-
-
-def test_st23_loop_stops_after_four_calls(tmp_path: Path):
-    registry = ToolRegistry()
-    registry.register(make_tool("ping"))
-    llm = RepeatingLLM()
-    audit = AuditLog(tmp_path / "audit.jsonl")
-    result = run_turn(
-        llm,
-        [],
-        registry,
-        confirm=None,
-        audit=audit,
-        turn_id="turno",
-        max_steps=4,
-    )
-    assert result == "Llegué al límite de pasos. ¿Seguimos?"
-    assert llm.calls == 4
-    assert len(audit_records(audit)) == 4
-
-    llm_big = RepeatingLLM()
-    audit_big = AuditLog(tmp_path / "audit_big.jsonl")
-    result_big = run_turn(
-        llm_big,
-        [],
-        registry,
-        confirm=None,
-        audit=audit_big,
-        turn_id="turno",
-        max_steps=10,
-    )
-    assert result_big == "Llegué al límite de pasos. ¿Seguimos?"
-    assert llm_big.calls == 4
-
-
-def test_loop_taint_persists_and_forces_confirmation(tmp_path: Path):
-    executed: list[str] = []
-
-    def read_web(args: dict[str, Any]) -> ToolResult:
-        executed.append("read")
-        return ToolResult(ok=True, data="contenido web")
-
-    def write_note(args: dict[str, Any]) -> ToolResult:
-        executed.append("write")
-        return ToolResult(ok=True, data="nota")
-
-    registry = ToolRegistry()
-    registry.register(make_tool("read_web", handler=read_web, level=1, untrusted_output=True))
-    registry.register(make_tool("write_note", handler=write_note, level=1))
-    llm = SequenceLLM(
-        [
-            AssistantReply(
-                text="",
-                tool_calls=[ToolCall(id="1", name="read_web", arguments={})],
-            ),
-            AssistantReply(
-                text="",
-                tool_calls=[ToolCall(id="2", name="write_note", arguments={})],
-            ),
-            AssistantReply(text="Hecho.", tool_calls=[]),
-        ]
-    )
-    confirm = FakeConfirm(answer=True)
-    audit = AuditLog(tmp_path / "audit.jsonl")
-    result = run_turn(
-        llm,
-        [],
-        registry,
-        confirm=confirm,
-        audit=audit,
-        turn_id="turno",
-    )
-    assert result == "Hecho."
-    assert executed == ["read", "write"]
-    assert len(confirm.asks) == 1
-    summary, strong, require_number = confirm.asks[0]
-    assert "write_note" in summary
-    assert strong is False
-    assert require_number is None
-    records = audit_records(audit)
-    assert len(records) == 2
-    assert records[0]["tool"] == "read_web"
-    assert records[0]["decision"] == "allow"
-    assert records[0]["taint"] is True
-    assert records[1]["tool"] == "write_note"
-    assert records[1]["decision"] == "confirm_yes"
-    assert records[1]["taint"] is True
-    assert records[1]["result_ok"] is True
-
-
-def test_loop_cancelled_confirmation_does_not_execute(tmp_path: Path):
-    executed: list[str] = []
-
-    def destructive(args: dict[str, Any]) -> ToolResult:
-        executed.append("destructive")
-        return ToolResult(ok=True)
-
-    registry = ToolRegistry()
-    registry.register(
-        make_tool(
-            "destructiva",
-            handler=destructive,
-            level=2,
-            describe_fn=lambda args: ToolInfo(
-                level=2, summary="Voy a sobrescribir un archivo. ¿Confirmas?"
-            ),
-        )
-    )
-    llm = SequenceLLM(
-        [
-            AssistantReply(
-                text="",
-                tool_calls=[ToolCall(id="1", name="destructiva", arguments={})],
-            ),
-            AssistantReply(text="Vale, no lo hago.", tool_calls=[]),
-        ]
-    )
-    confirm = FakeConfirm(answer=False)
-    audit = AuditLog(tmp_path / "audit.jsonl")
-    result = run_turn(
-        llm,
-        [],
-        registry,
-        confirm=confirm,
-        audit=audit,
-        turn_id="turno",
-        confirm_nondestructive=True,
-    )
-    assert result == "Vale, no lo hago."
-    assert executed == []
-    assert len(confirm.asks) == 1
-    records = audit_records(audit)
-    assert records[0]["decision"] == "confirm_no"
-    assert records[0]["result_ok"] is False
-
-
-def test_loop_strong_confirmation_passes_bulk_number(tmp_path: Path):
-    executed: list[str] = []
-
-    def borrar(args: dict[str, Any]) -> ToolResult:
-        executed.append("borrar")
-        return ToolResult(ok=True, data="borrado")
-
-    summary = "Voy a borrar 6 elementos. ¿Confirmas?"
-    registry = ToolRegistry()
-    registry.register(
-        make_tool(
-            "borrar",
-            handler=borrar,
-            level=2,
-            describe_fn=lambda args: ToolInfo(
-                level=2, bulk=6, always_confirm=True, summary=summary
-            ),
-        )
-    )
-    llm = SequenceLLM(
-        [
-            AssistantReply(
-                text="",
-                tool_calls=[ToolCall(id="1", name="borrar", arguments={})],
-            ),
-            AssistantReply(text="Listo.", tool_calls=[]),
-        ]
-    )
-    confirm = FakeConfirm(answer=True)
-    audit = AuditLog(tmp_path / "audit.jsonl")
-    result = run_turn(
-        llm,
-        [],
-        registry,
-        confirm=confirm,
-        audit=audit,
-        turn_id="turno",
-        confirm_nondestructive=False,
-        bulk_threshold=5,
-    )
-    assert result == "Listo."
-    assert executed == ["borrar"]
-    assert confirm.asks == [(summary, True, 6)]
-    records = audit_records(audit)
-    assert records[0]["decision"] == "confirm_yes"
-
-
-def test_loop_level3_is_denied_without_execution(tmp_path: Path):
-    executed: list[str] = []
-
-    def prohibida(args: dict[str, Any]) -> ToolResult:
-        executed.append("prohibida")
-        return ToolResult(ok=True)
-
-    registry = ToolRegistry()
-    registry.register(
-        make_tool(
-            "prohibida",
-            handler=prohibida,
-            level=0,
-            describe_fn=lambda args: ToolInfo(level=3, summary="prohibida"),
-        )
-    )
-    llm = SequenceLLM(
-        [
-            AssistantReply(
-                text="",
-                tool_calls=[ToolCall(id="1", name="prohibida", arguments={})],
-            ),
-            AssistantReply(text="No puedo hacer eso.", tool_calls=[]),
-        ]
-    )
-    confirm = FakeConfirm(answer=True)
-    audit = AuditLog(tmp_path / "audit.jsonl")
-    result = run_turn(
-        llm,
-        [],
-        registry,
-        confirm=confirm,
-        audit=audit,
-        turn_id="turno",
-    )
-    assert result == "No puedo hacer eso."
-    assert executed == []
-    assert confirm.asks == []
-    records = audit_records(audit)
-    assert records[0]["decision"] == "deny"
-    assert records[0]["result_ok"] is False
-
-
-def test_loop_without_confirm_manager_denies(tmp_path: Path):
-    executed: list[str] = []
-
-    def peligrosa(args: dict[str, Any]) -> ToolResult:
-        executed.append("peligrosa")
-        return ToolResult(ok=True)
-
-    registry = ToolRegistry()
-    registry.register(make_tool("peligrosa", handler=peligrosa, level=2))
-    llm = SequenceLLM(
-        [
-            AssistantReply(
-                text="",
-                tool_calls=[ToolCall(id="1", name="peligrosa", arguments={})],
-            ),
-            AssistantReply(text="No hay confirmación disponible.", tool_calls=[]),
-        ]
-    )
-    audit = AuditLog(tmp_path / "audit.jsonl")
-    result = run_turn(
-        llm,
-        [],
-        registry,
-        confirm=None,
-        audit=audit,
-        turn_id="turno",
-        confirm_nondestructive=True,
-    )
-    assert result == "No hay confirmación disponible."
-    assert executed == []
-    assert audit_records(audit)[0]["decision"] == "deny"
-
-
-def test_loop_truncates_tool_results_for_llm(tmp_path: Path):
-    registry = ToolRegistry()
-    registry.register(
-        make_tool(
-            "largo",
-            handler=lambda args: ToolResult(ok=True, data="x" * 5000),
-        )
-    )
-    messages: list[dict[str, Any]] = []
-    llm = SequenceLLM(
-        [
-            AssistantReply(
-                text="",
-                tool_calls=[ToolCall(id="1", name="largo", arguments={})],
-            ),
-            AssistantReply(text="Fin.", tool_calls=[]),
-        ]
-    )
-    audit = AuditLog(tmp_path / "audit.jsonl")
-    result = run_turn(
-        llm,
-        messages,
-        registry,
-        confirm=None,
-        audit=audit,
-        turn_id="turno",
-    )
-    assert result == "Fin."
-    tool_messages = [item for item in messages if item.get("role") == "tool"]
-    assert len(tool_messages) == 1
-    assert len(tool_messages[0]["content"]) <= 2000
-    assert messages[0]["tool_calls"][0]["type"] == "function"
 
 
 # ---------------------------------------------------------------------------

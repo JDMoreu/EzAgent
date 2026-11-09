@@ -58,29 +58,29 @@ def test_perfil_personalizado_en_voice_json(tmp_path):
         "high",
     ]
     # Los perfiles no editados siguen disponibles.
-    assert herdr.agent_argv("opencode", "deepseek", None) == [
-        "opencode",
-        "--model",
-        "deepseek",
-    ]
+    # opencode no acepta --model: el modelo va por OPENCODE_CONFIG_CONTENT.
+    launch = herdr.agent_launch("opencode", "deepseek", None)
+    assert launch.argv == ["opencode", "--standalone"]
+    assert (
+        launch.env["OPENCODE_CONFIG_CONTENT"]
+        == '{"model":"opencode-go/deepseek"}'
+    )
+    assert "XDG_STATE_HOME" in launch.env
+    assert launch.pending == {}
 
 
-def test_run_agent_pasa_modelo_y_effort_al_comando_visible():
-    cfg = VoiceConfig()
-    herdr = Herdr(cfg)
-    captured: list[list[str]] = []
-
-    def fake_app(args, timeout=20):
-        captured.append(args)
-        return {"terminal": "t1", "tab": "x", "space": "s"}
-
-    herdr._json_app = fake_app  # type: ignore[method-assign]
+def test_run_agent_escribe_el_comando_con_modelo_y_effort():
+    herdr = Herdr(VoiceConfig())
+    sent: list[str] = []
+    herdr._json_app = lambda args, timeout=20: {"terminal": "t1"}  # type: ignore[method-assign]
+    herdr.get_agent = lambda a: {"agent": "claude-code", "state": "idle"}  # type: ignore[method-assign]
+    herdr.send_agent = lambda a, t, confirmed=False: (  # type: ignore[method-assign]
+        sent.append(t) or {"ok": True}
+    )
     result = herdr.run_agent(
         "claude", "haz el plan", model="sonnet", effort="low"
     )
     assert result["ok"] is True
     assert result["model"] == "sonnet"
     assert result["effort"] == "low"
-    argv_json = captured[0][captured[0].index("--argv") + 1]
-    argv = json.loads(argv_json)
-    assert argv == ["claude", "--model", "sonnet", "--effort", "low"]
+    assert sent == ["claude --model sonnet --effort low", "haz el plan"]

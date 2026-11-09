@@ -199,56 +199,26 @@ SP_6: Final[int] = 16
 SP_7: Final[int] = 20
 SP_8: Final[int] = 24
 
-R_ISLAND: Final[int] = 14
 R_MENU: Final[int] = 18
 R_GROUP: Final[int] = 12
 FLARE: Final[int] = 7
 
 
-def capsule_radius(height: float) -> float:
-    """Radio de una cápsula: alto / 2."""
-    return height / 2.0
-
-
 # --------------------------------------------------------------------------
-# Geometría de la isla y del menú (spec 4.1 y 6.1)
+# Geometría del menú
 # --------------------------------------------------------------------------
 
 W: Final[int] = 320
-# Ancho de la muesca acoplada al borde superior. La píldora flotante es más
-# estrecha; al abrir el menú, cualquiera de las dos crece hasta W.
-W_COMPACT: Final[int] = 169
-W_FLOAT: Final[int] = 151
 H_ISLAND: Final[int] = 36
 BODY_X0: Final[float] = float(FLARE)
 BODY_X1: Final[float] = float(W - FLARE)
-BODY_WIDTH: Final[float] = BODY_X1 - BODY_X0
-BODY_MARGIN_MIN: Final[float] = float(SP_5)
-# Solo el borde superior acopla: a ≤2 px lógicos del monitor la isla se
-# convierte en muesca; en cualquier otro sitio flota como píldora.
-SNAP_TOP: Final[float] = 2.0
-R_FLOAT: Final[float] = 18.0
 
 # Alto de referencia del menú completo (spec 7.3). Se usa para interpolar el
 # radio inferior de la silueta abierta 14 -> 18.
 H_MENU: Final[int] = 560
-WINDOW_OPEN_H: Final[int] = H_ISLAND + H_MENU
-MENU_MAX_SCREEN_FRACTION: Final[float] = 0.70
 
 # La imagen se dibuja con una rampa anti-alias de 1 px lógico (spec 4.4).
 AA_RAMP: Final[float] = 1.0
-
-# Muesca superior: 169 px. Controles: margen 19, mic 28, hueco 8, ojos 63
-# (grupo máximo), hueco 8, flecha 24, margen 19. Los iconos van desnudos:
-# sin discos, cápsulas, bordes ni fondos.
-# Los ojos quedan en 86,5; el grupo máximo entre 55 y 118.
-EYES_CX_COMPACT: Final[float] = 86.5
-# Píldora flotante: 151 px. Mic 12–40, ojos en 75,5 (grupo máximo 44–107) y
-# flecha 115–139: quedan 4 px de hueco con el micro y 8 px con la flecha.
-EYES_CX_FLOAT: Final[float] = 75.5
-EYES_CX_WIDE: Final[float] = 160.0
-EYES_CY: Final[float] = 18.0
-EYES_GROUP_MAX_W: Final[float] = 63.0  # 8 + 10 + 27 + 10 + 8 (HABLO)
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,17 +252,6 @@ class Rect:
         )
 
 
-MIC_BUTTON_COMPACT: Final[Rect] = Rect(19, 4, 47, 32)
-ARROW_BUTTON_COMPACT: Final[Rect] = Rect(126, 6, 150, 30)
-MIC_BUTTON_FLOAT: Final[Rect] = Rect(12, 4, 40, 32)
-ARROW_BUTTON_FLOAT: Final[Rect] = Rect(115, 6, 139, 30)
-
-# Controles de la isla (6.2/6.3): iconos desnudos, sin discos ni cápsulas.
-ICON_MIC_SIZE: Final[float] = 18.0
-ICON_ARROW_SIZE: Final[float] = 14.0
-BUTTON_PRESSED_SCALE: Final[float] = 0.92
-
-
 # --------------------------------------------------------------------------
 # Movimiento (spec 3.5)
 # --------------------------------------------------------------------------
@@ -301,8 +260,6 @@ T_MICRO: Final[int] = 120
 T_FAST: Final[int] = 180
 T_BASE: Final[int] = 240
 T_SLOW: Final[int] = 320
-T_OPEN: Final[int] = 380
-T_CLOSE_EYES: Final[int] = 200
 T_CLOSE_RETRACT: Final[int] = 260
 
 VOICE_ATTACK: Final[float] = 45.0
@@ -319,33 +276,6 @@ BEZIER_SPRING: Final[tuple[float, float, float, float]] = (0.34, 1.56, 0.64, 1.0
 
 
 # --------------------------------------------------------------------------
-# Ojos y onda (spec 5.x). Son medidas visuales, por eso viven aquí.
-# --------------------------------------------------------------------------
-
-EYE_ARC_STROKE: Final[float] = 3.0
-EYE_ARC_POINTS: Final[tuple[tuple[float, float], ...]] = (
-    (-5.5, 2.5),
-    (0.0, -1.5),
-    (5.5, 2.5),
-)
-
-WAVE_BAR_COUNT: Final[int] = 5
-WAVE_BAR_W: Final[float] = 3.0
-WAVE_BAR_GAP: Final[float] = 3.0
-WAVE_PROFILE: Final[tuple[float, ...]] = (0.55, 0.85, 1.00, 0.80, 0.50)
-WAVE_HEIGHT_BASE: Final[float] = 3.0
-WAVE_HEIGHT_SPAN: Final[float] = 15.0
-WAVE_SIN_FREQ: Final[float] = 9.0
-WAVE_SIN_PHASE_STEP: Final[float] = 1.7
-WAVE_MOD_BASE: Final[float] = 0.75
-WAVE_MOD_AMP: Final[float] = 0.25
-WAVE_SLOT: Final[float] = WAVE_BAR_W + WAVE_BAR_GAP
-WAVE_W: Final[float] = (
-    WAVE_BAR_COUNT * WAVE_BAR_W + (WAVE_BAR_COUNT - 1) * WAVE_BAR_GAP
-)  # 27 px
-
-
-# --------------------------------------------------------------------------
 # Iconos (spec 6.3)
 # --------------------------------------------------------------------------
 
@@ -358,25 +288,14 @@ ICON_SSAA: Final[int] = 4  # supermuestreo interno del rasterizador vectorial
 
 __all__ = [
     "AA_RAMP",
-    "ARROW_BUTTON_COMPACT",
-    "ARROW_BUTTON_FLOAT",
     "BEZIER_IN",
     "BEZIER_INOUT",
     "BEZIER_OUT",
     "BEZIER_SPRING",
-    "BODY_MARGIN_MIN",
-    "BODY_WIDTH",
     "BODY_X0",
     "BODY_X1",
     "COLOR_KEYS",
     "DARK",
-    "EYES_CX_COMPACT",
-    "EYES_CX_FLOAT",
-    "EYES_CX_WIDE",
-    "EYES_CY",
-    "EYES_GROUP_MAX_W",
-    "EYE_ARC_POINTS",
-    "EYE_ARC_STROKE",
     "FLARE",
     "FONT_DIR",
     "FONT_FALLBACKS",
@@ -400,12 +319,7 @@ __all__ = [
     "ICON_STROKE",
     "ICON_STROKE_SMALL",
     "LIGHT",
-    "MENU_MAX_SCREEN_FRACTION",
-    "MIC_BUTTON_COMPACT",
-    "MIC_BUTTON_FLOAT",
-    "ICON_ARROW_SIZE",
     "R_GROUP",
-    "R_ISLAND",
     "R_MENU",
     "Rect",
     "SP_1",
@@ -417,31 +331,13 @@ __all__ = [
     "SP_7",
     "SP_8",
     "T_BASE",
-    "T_CLOSE_EYES",
     "T_CLOSE_RETRACT",
     "T_FAST",
     "T_MICRO",
-    "T_OPEN",
     "T_SLOW",
     "VOICE_ATTACK",
     "VOICE_RELEASE",
     "W",
-    "W_COMPACT",
-    "W_FLOAT",
-    "WAVE_BAR_COUNT",
-    "WAVE_BAR_GAP",
-    "WAVE_BAR_W",
-    "WAVE_HEIGHT_BASE",
-    "WAVE_HEIGHT_SPAN",
-    "WAVE_MOD_AMP",
-    "WAVE_MOD_BASE",
-    "WAVE_PROFILE",
-    "WAVE_SIN_FREQ",
-    "WAVE_SIN_PHASE_STEP",
-    "WAVE_SLOT",
-    "WAVE_W",
-    "WINDOW_OPEN_H",
-    "capsule_radius",
     "glow_max",
     "palette",
 ]

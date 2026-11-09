@@ -24,8 +24,7 @@ ffmpeg -i grabacion.m4a -ac 1 -ar 16000 -sample_fmt s16 c01.wav
 uv run python -m bench.latency --runs 3        # componentes reales
 uv run python -m bench.latency --stt fake --llm fake --tts null --synthetic   # prueba sin audio ni red
 ```
-El informe JSON queda en `bench/out/` y los números se copian a
-`docs/roadmap/metricas.md`.
+El informe JSON queda en `bench/out/`.
 
 ## Qué mide
 - `vad_wait_ms`: silencio que espera el VAD (tiempo de audio, determinista).

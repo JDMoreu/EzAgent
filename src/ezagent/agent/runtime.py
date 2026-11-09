@@ -123,6 +123,9 @@ class RuntimeCallbacks:
         lambda address, agent, task: None
     )
     enqueue_chain: Callable[[dict[str, Any]], None] = lambda spec: None
+    deliver_answer: Callable[[str], None] = lambda address: None
+    prewarm_chain: Callable[[dict[str, Any]], None] = lambda spec: None
+    async_launch: bool = False
     pending_tasks: Callable[[], str] = lambda: ""
     on_confirm_ask: Callable[[str, bool], None] | None = None
     on_confirm_done: Callable[[], None] | None = None
@@ -174,6 +177,7 @@ class AgentRuntime:
             self.config,
             memory_block=self._memory_and_tasks,
             skills_catalog=self.skills.catalog_text,
+            agents_catalog=self._agents_catalog,
             audit_warn=self._audit_warn,
             say_warn=self._warn,
         )
@@ -215,6 +219,10 @@ class AgentRuntime:
                     get_last_user_text=self._get_last_user_text,
                     remember_task=self.callbacks.remember_task,
                     enqueue_chain=self.callbacks.enqueue_chain,
+                    deliver_answer=self.callbacks.deliver_answer,
+                    prewarm_chain=self.callbacks.prewarm_chain,
+                    async_launch=self.callbacks.async_launch,
+                    launch_failed=self._launch_failed,
                 ),
             ),
             lambda: load_tools_d(self.config),
@@ -269,6 +277,18 @@ class AgentRuntime:
             pass
         return "\n\n".join(parts)
 
+    def _launch_failed(self, address: str, agent: str, error: str) -> None:
+        """Un lanzamiento asíncrono no llegó a buen puerto: se avisa al usuario."""
+        self._audit_warn(f"El lanzamiento de {agent} ({address}) falló: {error}")
+        self._warn(
+            f"No pude terminar de abrir {agent}. {error}".strip()
+        )
+
+    def _agents_catalog(self) -> str:
+        """Catálogo de agentes para el prompt; vacío si Herdr no lo ofrece."""
+        provider = getattr(self.herdr, "catalog_text", None)
+        return str(provider()) if callable(provider) else ""
+
     def _get_last_user_text(self) -> str:
         value = self.callbacks.get_last_user_text()
         if value:
@@ -290,6 +310,7 @@ class AgentRuntime:
                     self.config,
                     memory_block=self._memory_and_tasks,
                     skills_catalog=self.skills.catalog_text,
+                    agents_catalog=self._agents_catalog,
                     audit_warn=self._audit_warn,
                     say_warn=self._warn,
                 )

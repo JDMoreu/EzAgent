@@ -15,8 +15,6 @@ asistente general. El trabajo real lo hacen los agentes delegados.
 Pipeline: micrófono → VAD → whisper.cpp (local) → LLM compatible con OpenAI
 (barato y rápido) → Kokoro TTS (local) → altavoz. UI: un notch flotante.
 
-Hoja de ruta y briefs: [`docs/roadmap/README.md`](docs/roadmap/README.md).
-
 ## 2. Cómo trabajar
 
 1. **Una tarea por sesión.** Trabaja solo en el brief o la tarea que te han
@@ -96,7 +94,7 @@ Al terminar, responde con este formato:
 - ...
 ```
 
-## 7. Mapa del código (estado actual, antes de E5)
+## 7. Mapa del código
 
 | Ruta | Qué contiene |
 |---|---|
@@ -106,8 +104,8 @@ Al terminar, responde con este formato:
 | `src/ezagent/voice/tts.py` | `Speaker` (Kokoro ONNX + reproducción) |
 | `src/ezagent/voice/llm.py` | `Messenger`: bucle LLM + herramientas en streaming (el que se usa) |
 | `src/ezagent/voice/herdr.py`, `watcher.py`, `tasks.py` | Adaptador Herdr, vigilancia y tareas pendientes |
-| `src/ezagent/voice/notch/` | UI: ventana layered Win32 dibujada con numpy/Pillow |
-| `src/ezagent/agent/` | Núcleo agéntico: runtime, política, herramientas, memoria, skills |
+| `src/ezagent/voice/agent_driver.py`, `agent_session.py`, `agent_prelaunch.py`, `condenser.py` | Lanzamiento y lectura de agentes delegados, y condensación de su salida |
+| `src/ezagent/voice/notch/` | UI: la barra (`drop.py`), su menú y la ventana layered Win32 dibujada con numpy/Pillow |
+| `src/ezagent/agent/` | Núcleo agéntico: runtime, política, herramientas, memoria, skills, handoff y orquestación |
 | `src/ezagent/llm_providers.py` | Perfiles y presets de proveedores LLM |
-| `tests/` | pytest (442 funciones de prueba a 8 nov 2026) |
-| `docs/roadmap/` | Auditoría, arquitectura objetivo, diseño y briefs por etapa |
+| `tests/` | pytest (`uv run pytest -q`) |

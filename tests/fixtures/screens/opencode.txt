@@ -1,0 +1,9 @@
+• Colores primarios sin explica +
+<hc from="t1">Nombra los 3 colores primarios, uno por linea, sin explicaciones ni texto extra.</hc>
+Azul
+Amarillo
+Rojo
+Build · DeepSeek V4.1 Flash · 2.4s · 4.8 tok/s
+Build · DeepSeek V4.1 Flash OpenCode Go · low
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+~/Documents/EzAgent:main 27.6K (3%) ctrl+p commands

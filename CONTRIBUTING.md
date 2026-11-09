@@ -33,23 +33,20 @@ carpeta de whisper en la configuración.
 
 ## Flujo de trabajo
 
-1. Lee la hoja de ruta y el brief de la etapa que vas a tocar en
-   [`docs/roadmap/`](docs/roadmap/). Cada etapa tiene su propio archivo en
-   `docs/roadmap/etapas/`.
-2. Crea una rama por etapa, por ejemplo `stage/E0-higiene-oss`.
-3. Haz un commit por paso del brief. Pasos pequeños, diffs revisables.
-4. Deja las pruebas y el lint en verde antes de abrir el pull request:
+1. Crea una rama por tarea, por ejemplo `fix/nombre-corto`.
+2. Haz commits pequeños y revisables.
+3. Deja las pruebas y el lint en verde antes de abrir el pull request:
 
    ```powershell
    uv run ruff check src tests
    uv run pytest -q
    ```
 
-5. Abre el pull request contra la rama principal y describe qué etapa resuelve,
+4. Abre el pull request contra la rama principal y describe qué resuelve,
    qué archivos toca y cómo lo verificaste.
 
-No mezcles etapas en un mismo pull request. No borres pruebas salvo que el
-brief lo pida o que el código que prueban se elimine en ese mismo cambio.
+No mezcles tareas distintas en un mismo pull request. No borres pruebas salvo que el
+cambio lo pida o que el código que prueban se elimine en ese mismo cambio.
 
 ## Reportar problemas
 

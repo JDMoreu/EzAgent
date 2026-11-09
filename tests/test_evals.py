@@ -65,7 +65,7 @@ def test_charla_exige_ninguna_herramienta() -> None:
 
 def test_prompt_cabe_en_el_presupuesto() -> None:
     system = runner.build_system("es")
-    assert len(system) / 4 <= 1200  # ≈ tokens, presupuesto de docs/roadmap/04
+    assert len(system) / 4 <= 1200  # ≈ tokens, presupuesto de tokens del prompt
     assert "Known agents" in system and "{" not in system
 
 

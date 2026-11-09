@@ -13,33 +13,11 @@ import pytest
 from ezagent.voice import tray as tray_module
 from ezagent.voice.app import IDLE, VoiceApp
 from ezagent.voice.notch import layered
-from ezagent.voice.notch.island import Notch
-from ezagent.voice.notch.tokens import H_ISLAND, W_FLOAT
+from ezagent.voice.notch.drop import DropUI
 
 
-def _notch() -> Notch:
-    return Notch(None)
-
-
-def test_mic_apagado_muestra_icono_tachado_gris():
-    notch = _notch()
-    notch.set_in_call(False)
-    notch.set_muted(False)
-    assert notch.mic_appearance() == ("microphone-slash", "TEXT_3")
-
-
-def test_mic_activo_muestra_icono_normal():
-    notch = _notch()
-    notch.set_in_call(True)
-    notch.set_muted(False)
-    assert notch.mic_appearance() == ("microphone", "TEXT_2")
-
-
-def test_mic_silenciado_muestra_icono_rojo():
-    notch = _notch()
-    notch.set_in_call(True)
-    notch.set_muted(True)
-    assert notch.mic_appearance() == ("microphone-slash", "ERR")
+def _notch() -> DropUI:
+    return DropUI(root=None)
 
 
 def test_clic_en_mic_apagado_pide_reactivar_la_escucha():
@@ -58,30 +36,6 @@ def test_clic_en_mic_activo_pide_mute():
     notch.set_in_call(True)
     notch._activate("mic")
     assert actions == ["mute"]
-
-
-def test_la_pildora_puede_bajar_sobre_la_barra_de_tareas():
-    notch = Notch.__new__(Notch)
-    notch.s = 1.0
-    notch.W_COMPACT = 169
-    notch.W_FLOAT = W_FLOAT
-    notch.H_ISLAND = H_ISLAND
-    notch._attachment = "float"
-    notch._anchor_x = 960.0
-    notch._anchor_y = 0.0
-    notch._monitor_bottom = lambda x, y: ((0, 0, 1920, 1080), 1040)
-
-    assert notch.clamp_position(800, 1060) == (800, 1080 - H_ISLAND)
-    assert notch.clamp_position(800, 1080 - H_ISLAND) == (
-        800,
-        1080 - H_ISLAND,
-    )
-    assert notch._snap_compact("float", 800, 1060) == (
-        800,
-        1080 - H_ISLAND,
-    )
-    x, y, attachment = notch._initial_geometry((800, 1080 - H_ISLAND))
-    assert (x, y, attachment) == (800, 1080 - H_ISLAND, "float")
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Win32")

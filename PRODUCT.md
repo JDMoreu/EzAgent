@@ -23,7 +23,7 @@ audio, voice and conversation behavior.
 
 ## Product Purpose
 
-> **Repositioned on 2026-11-08** (see `docs/roadmap/01-producto-y-marca.md`).
+> **Repositioned on 2026-11-08**.
 > Sections below describe the current build until stages E3–E4 land.
 
 EzAgent is the **local voice layer for your coding agents**: you speak, it

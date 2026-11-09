@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ventanas *layered* de 64 bits para la isla de EzAgent.
+"""Ventanas *layered* de 64 bits para la barra de EzAgent.
 
 Maquinaria Win32 de ventanas con transparencia real por píxel: la clase
 ``LayeredWindow`` (UpdateLayeredWindow + DIB propio) es la base sobre la que se
@@ -15,7 +15,7 @@ muesca). Aquí TODAS las funciones llevan prototipo, y la ventana *layered* es
 una clase reutilizable con gestión de DIB protegida por cerrojo (la carrera de
 liberación también provocaba AV en ``memmove``).
 
-Solo depende de ctypes y numpy: no importa la UI de la isla para no crear
+Solo depende de ctypes y numpy: no importa la UI de la barra para no crear
 ciclos.
 
 Basado en Dicta (MIT).
@@ -37,7 +37,7 @@ EDGE_MARGIN = 18               # separación al borde del área de trabajo
 _ACCENT_DARK = (91, 157, 255)      # #5B9DFF
 _ACCENT_LIGHT = (0, 102, 204)      # #0066CC
 
-# Degradado de la onda: teal -> azul -> violeta (igual que la isla).
+# Degradado de la onda: teal -> azul -> violeta (igual que la barra).
 
 _IS_WIN = os.name == "nt"
 
@@ -56,7 +56,6 @@ if _IS_WIN:
     WNDPROC = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, ctypes.c_void_p,
                                  ctypes.c_uint, ctypes.c_size_t,
                                  ctypes.c_ssize_t)
-    HGDIOBJ = ctypes.c_void_p
     HWND = ctypes.c_void_p
 
     class _WNDCLASSEXW(ctypes.Structure):
@@ -326,7 +325,7 @@ def work_area():
 def monitor_rect(x: int | None = None, y: int | None = None):
     """(left, top, right, bottom) del monitor activo, incluida la barra.
 
-    La spec 4.1 pide ``rcMonitor``, no ``rcWork``: la isla cuelga del borde
+    La spec 4.1 pide ``rcMonitor``, no ``rcWork``: la barra cuelga del borde
     físico superior. Se usa el monitor bajo el cursor al arrancar y
     ``MONITOR_DEFAULTTONEAREST`` como respaldo.
     """
@@ -663,8 +662,6 @@ class LayeredWindow:
             except Exception:
                 pass
 
-    def is_visible(self):
-        return bool(self._visible)
 
     def set_pos(self, x, y):
         self.x, self.y = int(x), int(y)
@@ -680,8 +677,6 @@ class LayeredWindow:
             except Exception:
                 pass
 
-    def get_pos(self):
-        return (self.x, self.y)
 
     def resize(self, w, h):
         """Cambia el tamaño (recrea el DIB dentro del hilo de dibujo)."""
@@ -691,8 +686,6 @@ class LayeredWindow:
         self._pending_resize = True
         self._dirty = True
 
-    def invalidate(self):
-        self._dirty = True
 
     # ---- a sobrescribir
     def render(self):                                  # pragma: no cover
@@ -718,7 +711,7 @@ class LayeredWindow:
         return None
 
     def on_global_wheel(self, x: int, y: int, delta: int) -> bool:
-        """Hook de rueda global; solo lo usa la isla con el menú abierto."""
+        """Hook de rueda global; solo lo usa la barra con el menú abierto."""
         return False
 
     def _install_mouse_hook(self) -> None:
@@ -794,7 +787,7 @@ class LayeredWindow:
                 if previous and previous != hwnd and _u32.IsWindow(previous):
                     # No devolver el foco dentro del WM_KEYDOWN: el WM_CHAR
                     # del Enter podría acabar en la app anterior. Se aplaza
-                    # unos milisegundos y solo si la isla sigue delante.
+                    # unos milisegundos y solo si la barra sigue delante.
                     self._restore_foreground_hwnd = previous
                     self._restore_foreground_at = time.monotonic() + 0.08
         except Exception:
@@ -863,7 +856,7 @@ class LayeredWindow:
     def on_dpi_changed(self, dpi: int) -> None:
         return None
 
-    # ---- arrastre de la ventana (la isla puede convertirse en pill)
+    # ---- arrastre de la ventana (la barra puede convertirse en pill)
     def clamp_position(self, x: int, y: int) -> tuple[int, int]:
         return clamp_pos(x, y, self.w)
 
@@ -1338,13 +1331,4 @@ class LayeredWindow:
     _pending_resize = False
 
 
-# --------------------------------------------------------------------- isla
-def prepare():
-    """Comprueba que el chrome puede crearse; devuelve un motivo si no."""
-    if not _IS_WIN:
-        return "solo Windows"
-    if not _PROTO_OK:
-        return "no se pudieron declarar los prototipos de Win32"
-    if not _ensure_class():
-        return "no se pudo registrar la clase de ventana"
-    return ""
+# --------------------------------------------------------------------- barra

@@ -1,8 +1,15 @@
 # EzAgent
 
-Mensajero de voz para Herdr con **notch** y **menú desplegable**. No hay app de
-escritorio, dashboard ni panel de llamada: la isla flotante y su menú son toda
-la interfaz.
+**Capa de voz local para agentes de código.** Hablas; EzAgent entiende la
+intención, delega la tarea en Claude Code, OpenCode, Codex u otro CLI (directamente
+o a través de Herdr), vigila el progreso y te avisa por voz cuando termina o se
+bloquea. No es un asistente general: el trabajo real lo hacen los agentes
+delegados.
+
+La interfaz es una **barra flotante** sin texto: una cápsula (o un círculo) con
+cielo y nubes que se mueven con el aire de tu voz y de la del asistente, y una
+tarjeta de ajustes que se despliega desde ☰. No hay app de escritorio, dashboard
+ni panel de llamada.
 
 ```
 Micrófono 16 kHz
@@ -58,14 +65,14 @@ copy .env.example .env
 # Terminal 1: STT
 powershell -ExecutionPolicy Bypass -File scripts\start-whisper.ps1
 
-# Terminal 2: mensajero + notch
+# Terminal 2: mensajero + barra
 powershell -ExecutionPolicy Bypass -File scripts\start-voice.ps1
 ```
 
 O doble clic en `EzAgent.bat` y elige **Iniciar mensajero de voz**. La app
 arranca escuchando; `Ctrl+Alt+Space` cuelga o retoma.
 
-## La gota (interfaz por defecto)
+## La barra (interfaz por defecto)
 
 Desde la versión 0.2 la interfaz es **una barra sin texto**: una cápsula (o un
 círculo) con cielo despejado arriba y un banco de nubes en la mitad inferior,
@@ -128,7 +135,6 @@ Se configura en `voice.json`:
 
 | Clave | Valores | Por defecto |
 |---|---|---|
-| `ui_style` | `drop` (la barra) · `notch` (la isla antigua) | `drop` |
 | `ui_layout` | `pill` (cápsula) · `circle` (círculo sobre la fila de botones) | `pill` |
 | `theme` | `auto` (sigue a Windows) · `light` · `dark` | `auto` |
 | `ui_motion` | `system` (sigue a Windows) · `full` · `reduced` (solo fundidos de 120 ms) | `system` |
@@ -148,31 +154,13 @@ o la duración; si te cuesta interrumpir, bájalos.
 El icono (app y bandeja) es un orbe de cielo con nubes; se regenera con
 `uv run python scripts/make_icons.py`.
 
-## El notch (interfaz anterior)
-
-La isla cerrada mide **169×36** acoplada al borde superior o **151×36**
-flotando, y se puede arrastrar por el cuerpo:
-
-- Lejos del borde superior es una **píldora flotante** que se queda donde la
-  sueltas; el borde inferior y los laterales no acoplan nada. Puede colocarse
-  en cualquier punto del monitor, **incluida la franja de la barra de tareas**,
-  y se mantiene por encima de ella.
-- A ≤2 px del borde superior se acopla como **muesca** con el cuello hacia
-  arriba.
-- Al desplegar el menú, la isla se ensancha con él hasta **320×596** y forma
-  una sola pieza continua.
-- El micrófono refleja el estado real: **normal** cuando la escucha está
-  activa, **tachado gris** cuando está apagada y **tachado rojo** cuando está
-  silenciado. Pulsar el micrófono tachado reactiva la escucha y quita el mute;
-  con la escucha activa, el mismo botón silencia o reactiva.
-- La flecha derecha abre y cierra el menú; `Ctrl+Alt+O` hace lo mismo.
-
 ## Bandeja del sistema
 
 Mientras EzAgent está abierto, aparece un icono en la bandeja de Windows con el
 menú contextual:
 
-- **Configurar:** muestra el notch si estaba oculto y abre Ajustes.
+- **Configurar:** muestra la barra si estaba oculta y abre Ajustes.
+- **Cambiar forma (círculo / píldora):** alterna la forma de la barra.
 - **Reiniciar EzAgent:** cierra esta instancia y lanza una nueva con la misma
   configuración y argumentos.
 - **Cerrar:** cierra la aplicación.
@@ -184,13 +172,18 @@ silenciado.
 
 ## El menú es Ajustes
 
-El menú desplegable contiene todos los ajustes del mensajero y vive en la misma
-ventana que el notch. Si hay más filas de las que caben, la rueda desplaza el
-contenido entre la cabecera y el pie; el pulgar de scroll queda visible a la
-derecha. Los campos de texto se editan en línea: al pulsarlos, el notch pide el
-teclado y lo devuelve al confirmar con `Enter`, cancelar con `Esc` o pulsar
-fuera. `Ctrl+V` pega desde el portapapeles.
+La tarjeta de ajustes (☰, o `Ctrl+Alt+O`) contiene todos los ajustes del
+mensajero. Si hay más filas de las que caben, la rueda desplaza el contenido entre
+la cabecera y el pie; el pulgar de scroll queda visible a la derecha. Los campos
+de texto se editan en línea: al pulsarlos, la tarjeta pide el teclado y lo
+devuelve al confirmar con `Enter`, cancelar con `Esc` o pulsar fuera. `Ctrl+V`
+pega desde el portapapeles.
 
+- **APARIENCIA:** forma (píldora o círculo), tema (automático, claro u oscuro) y
+  movimiento (según el sistema, completo o reducido). Se aplica y se guarda al
+  instante.
+- **ESCUCHA:** qué hace «cierra» (pausa o cuelga), reactivar por voz y la frase de
+  reactivación. También se aplica y se guarda al instante.
 - **AUDIO:** micrófono y **medidor de entrada con nivel en vivo y umbral
   arrastrable**; umbral de ruido y silencio de cierre.
 - **MOTOR:** motor de Whisper (`Automático`, `GPU · Vulkan` o `CPU`) y variante
@@ -205,19 +198,20 @@ fuera. `Ctrl+V` pega desde el portapapeles.
   EzAgent usa un puerto local libre.
 - **LLM · API:** perfil guardado, proveedor, **modelo en lista**, dirección,
   clave, temperatura, máximo de tokens y **nivel de razonamiento**.
-- **CONVERSACIÓN:** interrupción activa, confirmación opcional y prueba de voz.
+- **CONVERSACIÓN:** interrupción activa, confirmación opcional, prueba de voz,
+  «Repetir lo último» y «Nueva conversación» (pide un segundo clic).
 - **AGENTE:** abre `system.md` o `voice.json` con el editor predeterminado para
   cambiar el comportamiento o los perfiles de modelo/esfuerzo de cada agente.
 - **ATAJOS:** los cinco atajos globales editables en línea (llamada, colgar,
   repetir, silencio y ajustes). Se validan al guardar, no pueden repetirse y se
   re-registran sin reiniciar; si otra app usa el mismo atajo, queda en el log.
-- Guardar, cambios sin guardar, ocultar la isla y cerrar el menú.
+- Guardar, cambios sin guardar y cerrar la tarjeta («–»; la barra sigue a la vista).
 
 Los ajustes de audio, voz, TTS, VAD, Whisper y conversación se guardan en
 `%APPDATA%\EzAgent\voice.json`; los perfiles de proveedor, en
 `%APPDATA%\EzAgent\llm.json`. No hay una segunda ventana de configuración.
-La posición de la isla se guarda como `notch_x`/`notch_y` en `voice.json` y se
-restaura al abrir la app.
+La posición de la barra se guarda como `drop_x`/`drop_y` (con `drop_layout`) en
+`voice.json` y se restaura al abrir la app.
 
 ## Núcleo agéntico
 
@@ -229,7 +223,7 @@ pasa por una política de permisos y queda en una auditoría.
 
 ```
 %APPDATA%\EzAgent\
-  voice.json            ajustes del mensajero y posición del notch
+  voice.json            ajustes del mensajero y posición de la barra
   llm.json              perfiles de proveedor
   permissions.toml      política de rutas, niveles y confirmaciones
   system.md             comportamiento y estilo (editable a mano)
@@ -276,7 +270,7 @@ Se editan con un editor de texto; el agente nunca escribe `permissions.toml`.
 Las operaciones destructivas (borrar, sobrescribir, matar un agente) siempre
 piden confirmación. El toggle **CONVERSACIÓN · Confirmar acciones** solo añade
 confirmación a las operaciones de nivel 2 no destructivas. La pregunta se lee
-por voz y aparece como una fila bajo la isla con **Sí** y **No**; también se
+por voz y se muestra en la barra (🎤 pasa a ✓ y ✕ es «no»); también se
 puede responder «sí», «confirmo», «adelante» o «dale». Para operaciones
 masivas hay que decir «confirmo» y el número de elementos. Si no hay respuesta
 en 15 s, se cancela.
@@ -386,8 +380,8 @@ Guía completa: [`docs/llm-providers.md`](docs/llm-providers.md).
 |---|---|
 | `Ctrl+Alt+Space` | Iniciar / colgar la llamada |
 | `Ctrl+Alt+E` | Colgar (`Ctrl+Alt+C` sigue como alias) |
-| `Ctrl+Alt+M` | Silenciar / reactivar el micrófono |
-| `Ctrl+Alt+O` | Abrir / cerrar el menú del notch |
+| `Ctrl+Alt+M` | Pausar / reactivar la escucha |
+| `Ctrl+Alt+O` | Abrir / cerrar la tarjeta de ajustes |
 | `Ctrl+Alt+R` | Repetir el último resumen |
 
 El micrófono no se cierra entre turnos durante una llamada. Las acciones
@@ -398,7 +392,8 @@ aunque el usuario haya dado la orden.
 ## Pruebas
 
 ```powershell
-uv run pytest -q
+uv run pytest -q                # 758 pruebas
+uv run ruff check src tests     # lint
 ```
 
 Detalle del mensajero, límites y arquitectura de audio:

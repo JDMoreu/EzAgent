@@ -259,7 +259,7 @@ def test_st09_strong_number_matches_real_count(env: SimpleNamespace) -> None:
         info.level, False, info.bulk, info.always_confirm, False,
         env.config.general.bulk_threshold,
     )
-    # Misma lógica que loop.run_turn para exigir el número.
+    # Misma lógica que AgentRuntime.execute para exigir el número.
     require_number = (
         info.bulk
         if decision.action == "confirm_strong" and info.bulk > 0

@@ -24,8 +24,8 @@ bulk_threshold = 5
 max_file_mb = 10
 
 [paths]
-read_roots = ['~/Documents', '~/Desktop', '~/Downloads', '~/EzAgentWorkspace']
-write_roots = ['~/EzAgentWorkspace', '~/Downloads']
+read_roots = ['~']
+write_roots = ['~']
 deny = ['C:/Windows', 'C:/Program Files', 'C:/Program Files (x86)', '~/.ssh', '~/AppData', '%APPDATA%/EzAgent']
 deny_globs = ['**/.env', '**/.env.*', '**/*.pem', '**/*.key', '**/id_rsa*', '**/*.kdbx']
 
@@ -45,8 +45,10 @@ trusted = []
 allowed_executables = ['code']
 """
 
-_DEFAULT_READ_ROOTS = ["~/Documents", "~/Desktop", "~/Downloads", "~/EzAgentWorkspace"]
-_DEFAULT_WRITE_ROOTS = ["~/EzAgentWorkspace", "~/Downloads"]
+# DECISION: el agente debe poder operar en todo el perfil del usuario; los
+# secretos siguen protegidos por ``deny`` y ``deny_globs``.
+_DEFAULT_READ_ROOTS = ["~"]
+_DEFAULT_WRITE_ROOTS = ["~"]
 _DEFAULT_DENY = [
     "C:/Windows",
     "C:/Program Files",
@@ -227,9 +229,6 @@ class AgentConfig:
             self.tools_d_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
-
-    def reload(self) -> "AgentConfig":
-        return AgentConfig.load(self.permissions_path)
 
 
 def _default_app_dir() -> Path:

@@ -1,13 +1,13 @@
 """Menú desplegable del notch de EzAgent.
 
-El menú vive en la **misma ventana layered** que la isla y dibuja solo su
+El menú vive en la **misma ventana layered** que la barra y dibuja solo su
 contenido sobre el buffer float32 RGBA premultiplicado que ya trae la silueta.
 No crea ventanas, no toca Tk/Win32, no escribe archivos y no reproduce audio:
 las decisiones se notifican a la capa de aplicación mediante callbacks.
 
 Coordenadas y layout
 --------------------
-``y = 0`` es el borde superior de la isla; el cuerpo del menú empieza en
+``y = 0`` es el borde superior de la barra; el cuerpo del menú empieza en
 ``y = 36``. El layout vertical sale de :mod:`menu_layout`:
 
 - cabecera 44-72, AUDIO 100-268, VOZ 300-380, CONVERSACIÓN 412-528, TTS
@@ -41,7 +41,7 @@ on_hide, on_close, on_text_edit)``
     selectores, sliders, interruptores, botones, pie, scroll y degradados.
 
 ``height(now)``
-    Alto actual del **cuerpo del menú** (0..560), sin la isla.
+    Alto actual del **cuerpo del menú** (0..560), sin la barra.
 
 ``is_open()`` / ``is_animating(now)``
     ``is_open`` es la intención lógica (False en cuanto se pide cerrar).
@@ -57,7 +57,7 @@ on_hide, on_close, on_text_edit)``
 
 ``begin_text_edit(key)`` / ``text_input(char)`` / ``text_key(vk)`` /
 ``finish_text_edit(commit)``
-    Edición de las filas de texto. La isla pide el teclado temporalmente al
+    Edición de las filas de texto. La barra pide el teclado temporalmente al
     empezar y lo devuelve al confirmar con Enter, cancelar con Esc o pulsar
     fuera. ``on_text_edit(active)`` informa del cambio de foco.
 
@@ -97,18 +97,19 @@ from .menu_layout import (
     GROUP_LABELS,
     GROUPS,
     ROW,
-    Rect as LayoutRect,
     layout_menu,
     visible_menu_height,
 )
+from .menu_layout import (
+    Rect as LayoutRect,
+)
 from .settings import (
     ALL_KEYS,
-    EDITABLE_KEYS,
     LABELS,
     SECRET_KEYS,
     SELECT_KEYS,
-    SLIDERS,
     SLIDER_KEYS,
+    SLIDERS,
     TEXT_KEYS,
     TOGGLE_KEYS,
     MenuSettings,
@@ -128,10 +129,10 @@ from .tokens import (
     T_CLOSE_RETRACT,
     T_MICRO,
     T_SLOW,
-    W,
     Color,
     FontStyle,
     Rect,
+    W,
     palette,
 )
 
@@ -211,7 +212,6 @@ BUTTON_PAD_X: Final[float] = 14.0
 BUTTON_RADIUS: Final[float] = BUTTON_H / 2.0
 BUTTON_HOVER_MIX: Final[float] = 0.08
 BUTTON_PRESS_SCALE: Final[float] = 0.96
-BUTTON_HOVER_MS: Final[float] = 120.0
 BUTTON_PRESS_MS: Final[float] = 60.0
 BUTTON_RELEASE_MS: Final[float] = 120.0
 
@@ -226,7 +226,6 @@ BUTTON_VARIANTS: Final[dict[str, tuple[str, str]]] = {
 
 # C-08 · prueba de voz. Mini onda de 5 barras de 2 px con 2 px de hueco.
 TEST_BUTTON_X1: Final[float] = ROW_X1
-TEST_BUTTON_W: Final[float] = 72.0
 TEST_WAVE_BARS: Final[int] = 5
 TEST_WAVE_BAR_W: Final[float] = 2.0
 TEST_WAVE_GAP: Final[float] = 2.0
@@ -689,7 +688,7 @@ class Menu:
         self._armed: dict[str, float] = {}
 
         # Estado de apertura y contenido. La altura es la del cuerpo del menú,
-        # sin la isla (0 .. min(560, 0.7 * pantalla - 36)).
+        # sin la barra (0 .. min(560, 0.7 * pantalla - 36)).
         self._open = False
         self._closed_notified = True
         self._now = 0.0
@@ -826,14 +825,11 @@ class Menu:
         return max(1.0, height)
 
     def set_available_height(self, height: float | None) -> None:
-        """Limita el menú al espacio real arriba/abajo de la isla flotante."""
+        """Limita el menú al espacio real arriba/abajo de la barra flotante."""
         self._available_h = (
             None if height is None else max(1.0, float(height))
         )
 
-    def window_height(self, now: float) -> float:
-        """Alto total actual de la ventana (isla + menú)."""
-        return H_ISLAND + self.height(now)
 
     def is_open(self) -> bool:
         """Intención lógica: False en cuanto se pide cerrar."""
@@ -956,7 +952,7 @@ class Menu:
             self.open(now)
 
     def height(self, now: float) -> float:
-        """Alto actual del cuerpo del menú, sin la isla."""
+        """Alto actual del cuerpo del menú, sin la barra."""
         self._advance(float(now))
         return max(0.0, min(self.viewport_height, float(self._height.value)))
 
@@ -1147,16 +1143,6 @@ class Menu:
             raise ValueError("scale debe ser mayor que cero")
         self._scale = float(scale)
 
-    def set_screen_height(self, screen_h: float) -> None:
-        """Permite recalcular el alto visible tras un cambio de monitor."""
-        self._screen_h = max(1.0, float(screen_h))
-        if self._open:
-            self._height.to(
-                self.viewport_height,
-                self._now,
-                T_SLOW,
-                EASE_OUT,
-            )
 
     def set_reduced_motion(self, reduced: bool) -> None:
         self._reduced_motion = bool(reduced)

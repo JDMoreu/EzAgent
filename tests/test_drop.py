@@ -437,7 +437,7 @@ def test_posicion_por_defecto_abajo_y_centrada() -> None:
 # ------------------------------------------------------------------ configuración
 def test_config_por_defecto_y_validacion() -> None:
     cfg = VoiceConfig()
-    assert (cfg.ui_style, cfg.ui_layout) == ("drop", "pill")
+    assert cfg.ui_layout == "pill"
     assert not hasattr(cfg, "ui_palette") and not hasattr(cfg, "ui_buttons")
     cfg.ui_layout = "circle"
     ui = D.DropUI(root=None, cfg=cfg)
@@ -453,11 +453,8 @@ def test_un_voice_json_antiguo_con_paleta_sigue_cargando(tmp_path) -> None:
     assert VoiceConfig.load(path).ui_layout == "circle"
 
 
-def test_create_ui_respeta_ui_style() -> None:
-    cfg = VoiceConfig()
-    assert isinstance(D.create_ui(None, cfg), D.DropUI)
-    cfg.ui_style = "notch"
-    assert not isinstance(D.create_ui(None, cfg), D.DropUI)
+def test_create_ui_crea_la_barra() -> None:
+    assert isinstance(D.create_ui(None, VoiceConfig()), D.DropUI)
 
 
 def test_arrastrar_guarda_posicion_propia() -> None:

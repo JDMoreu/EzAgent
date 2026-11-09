@@ -19,7 +19,8 @@ convierte 🎤 en ✓ y deja ✕ como «no». Los ajustes se abren en una tarjet
 que se despliega desde ☰. El recorte de clics se calcula por geometría: todo lo
 que no es forma o botón deja pasar el ratón.
 
-Tiene el mismo contrato que ``Notch`` (``island.py``) para que ``app.py`` apenas
+Expone el contrato que ``app.py`` espera de la interfaz (``show``, ``hide``,
+``set_state``…) para que apenas
 cambie. La animación vive en ``DropModel`` (pura, sin Win32) para probarla.
 """
 
@@ -72,7 +73,6 @@ EMERGE_ORDER = {"pill": (("gear", "mic"), ("hang",)), "circle": (("mic",), ("gea
 LAYOUTS = ("pill", "circle")
 # DECISION: los botones solo aparecen al acercar el puntero; «always» queda para
 # las pruebas y no se ofrece en el menú.
-BUTTON_MODES = ("hover", "always")
 MOTION_MODES = ("system", "full", "reduced")
 
 
@@ -138,15 +138,6 @@ UI = {
 }
 # Color de «activo» (☰ con el menú abierto, ✓).
 SIGNAL = {"light": (47, 95, 208), "dark": (141, 180, 255)}
-
-
-def level_from_rms(rms: float) -> float:
-    """RMS lineal (0..~0.3) -> 0..1 perceptual."""
-    try:
-        value = max(0.0, float(rms or 0.0))
-    except (TypeError, ValueError):
-        return 0.0
-    return min(1.0, (value ** 0.6) * 3.2)
 
 
 # ------------------------------------------------------------ nubes y aire
@@ -716,7 +707,7 @@ class DropUI:
         self._card_above = True
         self._card_lock = threading.RLock()
         self._pending_save: bool | None = None
-        # Callbacks de la app (mismo contrato que Notch).
+        # Callbacks de la app.
         self.on_action = lambda action: None
         self.on_position_change = lambda x, y: None
         self.on_hide = lambda: None
@@ -1325,21 +1316,11 @@ class DropUI:
 
 
 def create_ui(root, cfg):
-    """Crea la interfaz elegida en ``cfg.ui_style`` («drop» o «notch»)."""
-    style = str(getattr(cfg, "ui_style", "drop") or "drop").lower()
-    if style == "drop":
-        x = getattr(cfg, "drop_x", None)
-        y = getattr(cfg, "drop_y", None)
-        layout = str(getattr(cfg, "ui_layout", "pill") or "pill").lower()
-        # La posición solo vale si se guardó con esta misma disposición (otro tamaño de ventana).
-        same = getattr(cfg, "drop_layout", "") == layout
-        pos = (int(x), int(y)) if same and isinstance(x, int) and isinstance(y, int) else None
-        try:
-            return DropUI(root, position=pos, cfg=cfg)
-        except Exception:
-            pass
-    from .island import Notch
-
-    nx = getattr(cfg, "notch_x", None)
-    ny = getattr(cfg, "notch_y", None)
-    return Notch(root, position=(nx, ny) if isinstance(nx, int) and isinstance(ny, int) else None)
+    """Crea la interfaz de la barra (``DropUI``) con la posición guardada, si vale."""
+    x = getattr(cfg, "drop_x", None)
+    y = getattr(cfg, "drop_y", None)
+    layout = str(getattr(cfg, "ui_layout", "pill") or "pill").lower()
+    # La posición solo vale si se guardó con esta misma disposición (otro tamaño de ventana).
+    same = getattr(cfg, "drop_layout", "") == layout
+    pos = (int(x), int(y)) if same and isinstance(x, int) and isinstance(y, int) else None
+    return DropUI(root, position=pos, cfg=cfg)

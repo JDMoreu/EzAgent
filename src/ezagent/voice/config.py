@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import copy
 import json
-import math
 import os
+import re
+import unicodedata
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -17,54 +18,263 @@ DEFAULT_AGENTS: dict[str, list[str]] = {
     "mcode": ["mcode"],
     "minimax": ["mcode"],
     "codex": ["codex"],
+    "pi": ["pi"],
+    "qwen": ["qwen"],
 }
 
+# Versión de los perfiles de fábrica. Al subirla, ``load`` refresca en
+# voice.json los campos de conocimiento del CLI (flags, esfuerzos, alias,
+# comandos de sesión) sin tocar lo que el usuario eligió (command, modelos).
+AGENT_PROFILES_VERSION = 8
+_PROFILE_KNOWLEDGE_KEYS = (
+    "label",
+    "aliases",
+    "models",
+    "efforts",
+    "model_efforts",
+    "prelaunch",
+    "discover",
+    "model_command",  # obsoleto: se elimina al migrar
+    "model_args",
+    "effort_args",
+    "model_prefix",
+    "env",
+    "env_args",
+    "task_args",  # obsoleto
+    "session_commands",
+    "notes",
+)
+
 # Perfiles de lanzamiento por agente. El usuario puede editarlos en
-# voice.json: command, model_args, effort_args, modelos y esfuerzos.
-# Los argumentos con {model}/{effort} se sustituyen solo si se piden; así
-# lanzar sin modelo/esfuerzo conserva el comando original.
+# voice.json. Un agente se abre como lo haría una persona: terminal, comando,
+# esperar a que arranque, modelo/esfuerzo y, al final, la tarea. Campos:
+# - command: argv que se escribe en la terminal.
+# - model_args / effort_args: flags con {model}/{effort} que se añaden al
+#   comando. Lista vacía = el CLI no los acepta como flag.
+# - model_prefix: se antepone al modelo si no trae «proveedor/».
+# - "{variant}" dentro de model_args pega el esfuerzo al modelo (modelo#nivel).
+# - env / env_args: variables de entorno (se fijan en la shell antes del
+#   comando) y flags extra, para CLIs cuyo TUI no acepta --model. Admiten
+#   {model_ref} (modelo con prefijo) y {variant} (#esfuerzo o vacío).
+# - session_commands: lo que se escribe DENTRO del agente ya abierto, línea a
+#   línea (Enter tras cada una), para fijar modelo/esfuerzo cuando no hay flag
+#   o para cambiarlos en caliente. Admite {model}, {model_search} (el modelo
+#   con espacios, para buscadores) y {effort}. Cada paso es un texto o un dict:
+#   {"send": texto} | {"keys": [teclas]} | {"cycle": {"keys", "until", "max"}}
+#   con "expect"/"fail" (regex que se buscan en la pantalla tras el paso),
+#   "message", "optional" (si falla se avisa y se sigue) y "soft" (solo avisa).
+# - aliases: cómo suena el nombre al dictarlo («open code», «cloud code»).
+# - notes: contexto del CLI que ve el LLM (nunca se ejecuta).
 DEFAULT_AGENT_PROFILES: dict[str, dict[str, object]] = {
     "claude": {
-        "models": ["sonnet", "opus", "haiku"],
-        "efforts": ["low", "medium", "high"],
+        "label": "Claude Code",
+        "aliases": ["claude code", "cloud code", "clod code", "clode"],
+        "models": ["fable", "opus", "sonnet", "haiku"],
+        "efforts": ["low", "medium", "high", "xhigh", "max"],
         "default_model": "",
         "default_effort": "",
         "model_args": ["--model", "{model}"],
         "effort_args": ["--effort", "{effort}"],
+        "session_commands": {
+            "model": [{"send": "/model {model}", "soft": True}],
+            "effort": [{"send": "/effort {effort}", "soft": True}],
+        },
+        "notes": (
+            "Modelos por alias (fable, opus, sonnet, haiku). Admite plan "
+            "mode y subagentes propios; bueno para planificar y auditar."
+        ),
     },
     "opencode": {
-        "models": ["deepseek-v4.1-flash", "claude-sonnet-5-5"],
-        "efforts": ["low", "medium", "high"],
+        "label": "OpenCode",
+        "aliases": ["open code", "open-code", "opencoder", "opencod"],
+        "models": [
+            "deepseek-v4.1-flash",
+            "deepseek-v4-pro",
+            "glm-5.3",
+            "kimi-k3",
+            "minimax-m3.1-flash",
+            "claude-haiku-5-5",
+        ],
+        "efforts": [],
+        # Variantes reales de cada modelo (GET /api/model de OpenCode). Una
+        # variante que el modelo no tiene OpenCode la descarta en silencio.
+        "model_efforts": {
+            "deepseek-v4.1-flash": ["low", "high", "max"],
+            "deepseek-v4-pro": ["high", "max"],
+            "glm-5.3": ["low", "high", "max"],
+            "kimi-k3": ["max"],
+            "minimax-m3.1-flash": ["low", "medium", "high", "xhigh", "max"],
+            "claude-haiku-5-5": ["none", "low", "medium", "high", "xhigh", "max"],
+        },
+        # OpenCode recuerda la última variante por modelo y esa gana a la
+        # configuración: se le da un estado propio con la variante ya escrita.
+        "prelaunch": "opencode_state",
         "default_model": "",
         "default_effort": "",
-        "model_args": ["--model", "{model}"],
-        "effort_args": ["--effort", "{effort}"],
+        # El TUI «opencode» rechaza --model y --effort: se fijan dentro, con
+        # /models (selector con buscador) y /effort (alias de /variants).
+        "model_args": [],
+        "effort_args": [],
+        "model_prefix": "opencode-go/",
+        # Lanzamiento directo: OPENCODE_CONFIG_CONTENT con «proveedor/modelo#nivel»
+        # (verificado con «opencode debug config --standalone»); el servidor
+        # privado --standalone es el que lee esa variable. Los comandos de
+        # sesión de abajo solo se usan para cambiar algo con el agente abierto.
+        "env": {"OPENCODE_CONFIG_CONTENT": '{"model":"{model_ref}{variant}"}'},
+        "env_args": ["--standalone"],
+        "session_commands": {
+            "model": [
+                {
+                    "send": "/models",
+                    "expect": "Select model",
+                    "message": "no se abrió el selector de modelos",
+                },
+                {
+                    "send": "{model_search}",
+                    "expect": "Switched model to",
+                    "message": "OpenCode no encontró el modelo {model}",
+                },
+            ],
+            "effort": [
+                {
+                    "send": "/effort",
+                    "expect": "Select variant",
+                    "fail": "No variants available|does not support any variants",
+                    "message": "el modelo actual de OpenCode no tiene niveles de esfuerzo",
+                    "optional": True,
+                },
+                {"keys": ["esc"]},
+                {
+                    "cycle": {
+                        "keys": ["ctrl+t"],
+                        "until": "Switched variant to {effort}",
+                        "max": 8,
+                    },
+                    "message": "OpenCode no tiene el nivel {effort} para este modelo",
+                    "optional": True,
+                },
+            ],
+        },
+        "notes": (
+            "Modelo y esfuerzo se fijan al lanzar (proveedor/modelo#nivel, "
+            "p. ej. opencode-go/deepseek-v4.1-flash#high); el nivel debe "
+            "existir en ese modelo. action=guide trae el manual."
+        ),
     },
     "mcode": {
+        "label": "MiniMax Code",
+        "aliases": ["m code", "minimax code", "mini max code", "emcode"],
         "models": [],
-        "efforts": ["low", "medium", "high"],
+        "efforts": ["default", "low", "medium", "high", "xhigh", "max"],
         "default_model": "",
         "default_effort": "",
         "model_args": ["--model", "{model}"],
-        "effort_args": ["--effort", "{effort}"],
+        "effort_args": [],
+        # El TUI de mcode no tiene flag de esfuerzo: lo lee de su config.yaml
+        # (defaultModelThinking.effort), que se fija antes de abrirlo. Los
+        # modelos se leen de ese mismo archivo (distingue mayúsculas).
+        "prelaunch": "mcode_effort",
+        "discover": "mcode",
+        "session_commands": {},
+        "notes": (
+            "Modelo como proveedor/modelo (se resuelve contra su config); el "
+            "esfuerzo se escribe en su config.yaml antes de abrir y queda como "
+            "su valor por defecto. action=guide trae el manual."
+        ),
     },
     "minimax": {
+        "label": "MiniMax (mcode)",
+        "aliases": ["mini max"],
         "models": [],
-        "efforts": ["low", "medium", "high"],
+        "efforts": ["default", "low", "medium", "high", "xhigh", "max"],
         "default_model": "",
         "default_effort": "",
         "model_args": ["--model", "{model}"],
-        "effort_args": ["--effort", "{effort}"],
+        "effort_args": [],
+        "prelaunch": "mcode_effort",
+        "discover": "mcode",
+        "session_commands": {},
+        "notes": "Alias de mcode.",
     },
     "codex": {
+        "label": "Codex",
+        "aliases": ["codex cli", "kodex", "codecs", "códex"],
         "models": [],
-        "efforts": ["low", "medium", "high"],
+        "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"],
         "default_model": "",
         "default_effort": "",
         "model_args": ["--model", "{model}"],
         "effort_args": ["-c", "model_reasoning_effort={effort}"],
+        # Modelos y niveles por modelo salen del catálogo que Codex descarga
+        # con la cuenta (~/.codex/models_cache.json).
+        "discover": "codex",
+        "session_commands": {},
+        "notes": (
+            "Modelo y esfuerzo se fijan al lanzar; dentro de la sesión /model "
+            "abre un selector que no se puede dictar."
+        ),
+    },
+    "qwen": {
+        "label": "Qwen Code",
+        "aliases": ["qwen code", "quen code", "qwen coder", "cuen"],
+        "models": ["qwen3-coder-plus"],
+        "efforts": [],
+        "default_model": "",
+        "default_effort": "",
+        "model_args": ["--model", "{model}"],
+        "effort_args": [],
+        "session_commands": {},
+        "notes": (
+            "El modelo se fija al lanzar con --model; no tiene flag de "
+            "esfuerzo. action=guide trae el manual."
+        ),
+    },
+    "pi": {
+        "label": "Pi",
+        "aliases": ["pi agent", "pi coding agent", "pie"],
+        "models": [],
+        "efforts": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+        "default_model": "",
+        "default_effort": "",
+        "model_args": ["--model", "{model}"],
+        "effort_args": ["--thinking", "{effort}"],
+        "session_commands": {},
+        "notes": (
+            "Modelo como proveedor/id (admite sufijo :nivel de razonamiento). "
+            "El esfuerzo es el nivel de thinking."
+        ),
     },
 }
+
+
+def normalize_agent_name(value: str) -> str:
+    """Forma comparable de un nombre dictado: sin acentos ni separadores."""
+    decomposed = unicodedata.normalize("NFKD", str(value or ""))
+    plain = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]", "", plain.lower())
+
+
+def resolve_agent_key(
+    name: str,
+    agents: dict[str, list[str]],
+    profiles: dict[str, dict[str, object]] | None = None,
+) -> str | None:
+    """Devuelve la clave canónica de un agente a partir de cómo se dictó."""
+    wanted = normalize_agent_name(name)
+    if not wanted:
+        return None
+    for key in agents:
+        if normalize_agent_name(key) == wanted:
+            return key
+    for key, profile in (profiles or {}).items():
+        if key not in agents or not isinstance(profile, dict):
+            continue
+        aliases = profile.get("aliases")
+        if not isinstance(aliases, list):
+            continue
+        if wanted in {normalize_agent_name(str(a)) for a in aliases}:
+            return key
+    return None
 
 
 def merge_agent_profiles(
@@ -157,18 +367,12 @@ class VoiceConfig:
     agent_profiles: dict[str, dict[str, object]] = field(
         default_factory=lambda: copy.deepcopy(DEFAULT_AGENT_PROFILES)
     )
+    agent_profiles_version: int = AGENT_PROFILES_VERSION
     announce_all: bool = False
     max_read_lines: int = 40
     notch_hidden: bool = False
-    # Última posición del notch en píxeles físicos de pantalla. Solo se
-    # persiste al terminar un arrastre; si falta una coordenada, ambas son
-    # None y la isla usa su posición por defecto.
-    notch_x: int | None = None
-    notch_y: int | None = None
 
-    # Interfaz: «drop» (la gota, por defecto) o «notch» (la isla antigua). La
-    # gota guarda su propia posición física al terminar un arrastre.
-    ui_style: str = "drop"
+    # La barra guarda su propia posición física al terminar un arrastre.
     drop_x: int | None = None
     drop_y: int | None = None
     drop_layout: str = ""      # disposición con la que se guardó drop_x/drop_y
@@ -207,16 +411,14 @@ class VoiceConfig:
             DEFAULT_AGENT_PROFILES,
             cfg.agent_profiles if isinstance(cfg.agent_profiles, dict) else None,
         )
-        # La posición del notch se guarda como dos enteros; un valor suelto,
-        # no numérico o no finito descarta la pareja entera.
-        notch_x = cls._pixel(data.get("notch_x"))
-        notch_y = cls._pixel(data.get("notch_y"))
-        if notch_x is None or notch_y is None:
-            cfg.notch_x = None
-            cfg.notch_y = None
-        else:
-            cfg.notch_x = notch_x
-            cfg.notch_y = notch_y
+        # DECISION: voice.json guarda `agents` entero; sin esto un agente
+        # añadido en una versión nueva (pi, qwen) nunca aparecería.
+        for name, command in DEFAULT_AGENTS.items():
+            if isinstance(cfg.agents, dict):
+                cfg.agents.setdefault(name, list(command))
+        if data and cls._int(data.get("agent_profiles_version"), 1) < AGENT_PROFILES_VERSION:
+            cfg._refresh_profile_knowledge()
+        cfg.agent_profiles_version = AGENT_PROFILES_VERSION
         try:
             vad_version = int(data.get("vad_defaults_version", 1))
         except (TypeError, ValueError):
@@ -274,17 +476,27 @@ class VoiceConfig:
             self.default_cwd = os.getcwd()
 
     @staticmethod
-    def _pixel(value) -> int | None:
-        """Normaliza una coordenada guardada; None si no es un número válido."""
-        if value is None or isinstance(value, bool):
-            return None
+    def _int(value, default: int) -> int:
         try:
-            number = float(value)
+            return int(value)
         except (TypeError, ValueError):
-            return None
-        if not math.isfinite(number):
-            return None
-        return int(number)
+            return default
+
+    def _refresh_profile_knowledge(self) -> None:
+        """Pone al día los campos de conocimiento de los perfiles guardados.
+
+        voice.json se guarda entero, así que un perfil viejo (por ejemplo, el de
+        OpenCode con --effort, que ese CLI rechaza) taparía los valores nuevos.
+        Solo se pisan los campos de ``_PROFILE_KNOWLEDGE_KEYS``.
+        """
+        for name, default in DEFAULT_AGENT_PROFILES.items():
+            profile = self.agent_profiles.setdefault(name, {})
+            for key in _PROFILE_KNOWLEDGE_KEYS:
+                if key in default:
+                    profile[key] = copy.deepcopy(default[key])
+                else:
+                    profile.pop(key, None)
+
 
     @staticmethod
     def _read_json(path: Path) -> dict:
@@ -332,24 +544,10 @@ class VoiceConfig:
     def save_key(self, key: str, value, path: Path | None = None) -> None:
         """Persiste una sola clave instantánea (notch_hidden o theme).
 
-        No vuelca el resto del dataclass: así ocultar la isla no guarda por
+        No vuelca el resto del dataclass: así ocultar la barra no guarda por
         accidente cambios del menú que aún no se han confirmado (spec 10.1).
         """
         path = path or config_path()
         data = self._read_json(path)
         data[key] = value
         self._write_json(path, data)
-
-    def save_position(self, x: int, y: int, path: Path | None = None) -> None:
-        """Persiste solo la posición del notch, sin volcar el dataclass.
-
-        Se conserva el resto de claves del archivo (incluidas las que esta
-        versión no conoce) y los ajustes en vivo que aún no se han confirmado.
-        """
-        path = path or config_path()
-        data = self._read_json(path)
-        data["notch_x"] = int(x)
-        data["notch_y"] = int(y)
-        self._write_json(path, data)
-        self.notch_x = int(x)
-        self.notch_y = int(y)

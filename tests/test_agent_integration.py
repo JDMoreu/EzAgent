@@ -142,6 +142,19 @@ def test_runtime_ejecuta_una_herramienta_y_audita(runtime):
     assert entry["result_ok"] is True
 
 
+def test_st23_el_runtime_limita_las_herramientas_por_turno(runtime):
+    runtime.begin_turn("hola")
+    runtime.config.general.max_tool_calls_per_turn = 2  # begin_turn recarga la config
+    assert runtime.execute("get_datetime", {}).ok
+    assert runtime.execute("get_datetime", {}).ok
+    blocked = runtime.execute("get_datetime", {})
+    assert not blocked.ok
+    assert "límite" in (blocked.error or "").lower()
+    runtime.begin_turn("otro turno")
+    runtime.config.general.max_tool_calls_per_turn = 2
+    assert runtime.execute("get_datetime", {}).ok
+
+
 def test_taint_obliga_a_confirmar_una_escritura(runtime, tmp_path):
     source = tmp_path / "nota.txt"
     source.write_text("hola", encoding="utf-8")

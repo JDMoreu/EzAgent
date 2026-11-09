@@ -22,16 +22,6 @@ NOTICE_TTS_GRACE = 1.500
 TRANSIENT_ERROR = 1.500
 
 BASE_STATES = ("idle", "listen", "think", "speak", "notice")
-DISPLAY_STATES = (
-    "off",
-    "error",
-    "speak",
-    "think",
-    "notice",
-    "mute",
-    "listen",
-    "idle",
-)
 
 STATE_WORD = {
     "idle": "ESPERA",
@@ -150,8 +140,6 @@ class UiState:
         now = self._now(now)
         self._push("muted", bool(muted), now)
 
-    def set_menu_open(self, open_: bool) -> None:
-        self._push("menu", bool(open_), self._now(None))
 
     def set_base(self, base: str, now: float | None = None) -> None:
         """Cambia el estado base. Respeta la permanencia mínima de 120 ms."""

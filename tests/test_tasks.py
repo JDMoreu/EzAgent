@@ -18,6 +18,12 @@ class _Herdr:
         self.state = state
         self.agent = agent
         self.calls: list[tuple] = []
+        self.sent: list[tuple[str, str]] = []
+        self.fail_prelaunch = False
+
+    def send_agent(self, address, text, confirmed=False):
+        self.sent.append((address, text))
+        return {"ok": True}
 
     def get_agent(self, address):
         state = "working" if address == "t9" else self.state
@@ -32,6 +38,8 @@ class _Herdr:
 
     def run_agent(self, agent, task, **kwargs):
         self.calls.append((agent, task, kwargs))
+        if self.fail_prelaunch and not task:
+            return {"ok": False, "error": "no abrió"}
         return {"ok": True, "address": "t9", "terminal": "t9"}
 
 
@@ -102,16 +110,65 @@ def test_cadena_lanza_el_destino_con_la_salida_y_modelo(tmp_path):
 
     app.herdr.state = "done"
     VoiceApp._check_task_now(app, "t1")
-    assert app.herdr.calls
+    # El destino se abrió por adelantado (sin tarea, ya con modelo y esfuerzo)...
     agent, task, kwargs = app.herdr.calls[0]
     assert agent == "opencode"
-    assert "salida reciente" in task
-    assert "haz el plan definitivo" in task
+    assert task == ""
     assert kwargs["model"] == "deepseek-v4.1-flash"
     assert kwargs["effort"] == "high"
     assert kwargs["confirmed"] is True
+    # ...y al terminar la fuente solo se le pega instrucción + respuesta.
+    assert len(app.herdr.sent) == 1
+    address, handoff = app.herdr.sent[0]
+    assert address == "t9"
+    assert "haz el plan definitivo" in handoff
+    assert "salida reciente" in handoff
+    assert "salida_agente" not in handoff
     assert app.tasks.get("t9")["task"] == "haz el plan definitivo"
     assert "t9" in app.watched
+
+
+def test_cadena_sin_destino_por_adelantado_lanza_normal(tmp_path):
+    app = VoiceApp.__new__(VoiceApp)
+    app.tasks = TaskRegistry(tmp_path / "tasks.json")
+    app.watched = set()
+    app.events = queue.Queue()
+    app.herdr = _Herdr("working", "claude")
+    app.herdr.fail_prelaunch = True
+    app.messenger = SimpleNamespace(_last_user_text="")
+    VoiceApp._enqueue_chain(
+        app,
+        {
+            "source": "t1",
+            "agent": "opencode",
+            "task": "responde: {output}",
+            "notify_on_done": True,
+        },
+    )
+    app.herdr.state = "done"
+    VoiceApp._check_task_now(app, "t1")
+    last_agent, last_task, _ = app.herdr.calls[-1]
+    assert last_agent == "opencode"
+    assert last_task == "responde: salida reciente"
+    assert app.herdr.sent == []
+    # En el aviso se muestra la tarea sin el marcador.
+    assert app.tasks.get("t9")["task"] == "responde"
+
+
+def test_respuesta_del_ultimo_agente_se_dice_sola(tmp_path):
+    app = VoiceApp.__new__(VoiceApp)
+    app.tasks = TaskRegistry(tmp_path / "tasks.json")
+    app.watched = {"t9"}
+    app.events = queue.Queue()
+    app.herdr = _Herdr("done")
+    app.messenger = SimpleNamespace(_last_user_text="dime la respuesta")
+    app.tasks.add("t9", "opencode", "responde la pregunta")
+    VoiceApp._deliver_answer(app, "t9")
+    VoiceApp._on_watcher_event(app, "t9", "opencode", "done", "done")
+    event = app.events.get_nowait()
+    assert event[0] == "done_answer"
+    assert event[1] == "t9"
+    assert event[3] == "salida reciente"
 
 
 def test_watch_guarda_la_tarea_y_avisa_al_terminar(tmp_path):
@@ -301,7 +358,7 @@ def test_delegate_usa_la_salida_si_la_fuente_ya_termino():
     assert result.ok
     agent, task, kwargs = herdr.calls[0]
     assert agent == "opencode"
-    assert "<salida_agente fuente='t1'>" in task
+    assert "salida_agente" not in task  # sin explicaciones del traspaso
     assert "haz el plan" in task
     assert kwargs["model"] == "deepseek"
     assert kwargs["effort"] == "high"

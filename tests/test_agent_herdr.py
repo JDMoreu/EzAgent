@@ -37,6 +37,9 @@ DELEGATE_KEYS = {
     "model",
     "effort",
     "input_from",
+    "then",
+    "keys",
+    "deliver_answer",
 }
 VOICE_KEYS = {"action", "address", "muted", "minutes"}
 
@@ -239,6 +242,10 @@ def test_delegate_schema_has_requested_parameters(env: tuple) -> None:
         "focus",
         "kill",
         "watch",
+        "agents",
+        "configure",
+        "keys",
+        "guide",
     }
     assert properties["lines"]["minimum"] == 10
     assert properties["lines"]["maximum"] == 120
@@ -272,6 +279,10 @@ def test_delegate_levels_match_contract(env: tuple) -> None:
         "send": 1,
         "run": 1,
         "open_terminal": 1,
+        "agents": 0,
+        "configure": 1,
+        "keys": 1,
+        "guide": 0,
         "kill": 2,
     }
     for action, level in expected.items():
@@ -640,7 +651,6 @@ def test_delegate_requires_action(env: tuple) -> None:
         ("read", {}),
         ("send", {"address": "t1"}),
         ("send", {"task": "hola"}),
-        ("run", {"agent": "claude"}),
         ("run", {"task": "hola"}),
         ("open_terminal", {}),
         ("focus", {}),

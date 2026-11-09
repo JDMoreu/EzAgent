@@ -663,9 +663,6 @@ class MenuSettings:
         """Perfiles disponibles, ya normalizados (copia defensiva)."""
         return {name: dict(values) for name, values in self._providers.items()}
 
-    def provider_profile(self, name: str) -> dict[str, str] | None:
-        profile = self._providers.get(str(name))
-        return dict(profile) if profile is not None else None
 
     def value(self, key: str) -> Any:
         self._require(key)
@@ -703,19 +700,8 @@ class MenuSettings:
         for key, value in values.items():
             self._values[key] = self._normalize_value(key, value)
 
-    def profile_for_current(self) -> dict[str, str] | None:
-        """Perfil que corresponde al proveedor actual, si está guardado."""
-        return self.provider_profile(str(self._values.get("llm_provider") or ""))
 
-    def set_devices(self, devices: Iterable[Any] | None) -> None:
-        """Sustituye la lista de micrófonos sin tocar los valores."""
-        self._devices = _normalize_devices(devices)
 
-    def set_voices(
-        self, voices: Iterable[Any] | Mapping[str, str] | None
-    ) -> None:
-        """Sustituye la lista de voces conservando la voz actual."""
-        self._voices = _normalize_voices(voices, str(self._values["voice"]))
 
     # ---- guardado ---------------------------------------------------------
     def dirty(self) -> bool:
@@ -802,13 +788,6 @@ class MenuSettings:
         return {key: self._values[key] for key in EDITABLE_KEYS}
 
     # ---- presentación -----------------------------------------------------
-    def slider_bounds(self, key: str) -> tuple[float, float, float]:
-        """``(mínimo, máximo, paso)`` de un slider."""
-        try:
-            spec = SLIDERS[key]
-        except KeyError as exc:
-            raise KeyError(f"{key!r} no es un slider") from exc
-        return (spec.minimum, spec.maximum, spec.step)
 
     def format(self, key: str, value: Any = _MISSING) -> str:
         """Texto de un valor con el formato cerrado de la especificación."""
@@ -953,17 +932,6 @@ class MenuSettings:
             return bool(self._providers)
         return False
 
-    def selected_option_index(self, key: str) -> int | None:
-        """Índice de la opción elegida, o None si el valor no está en la lista."""
-        try:
-            options = self.select_options(key)
-        except KeyError:
-            return None
-        current = self._values.get(key)
-        for index, option in enumerate(options):
-            if option.value == current:
-                return index
-        return None
 
 
 def normalize_setting(key: str, value: Any) -> Any:

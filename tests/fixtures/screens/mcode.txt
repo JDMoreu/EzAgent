@@ -1,0 +1,23 @@
+███ ███ ██ ███ ██ ██ ███ ███ █████ ██ ██ ██████ ██████ ██████ ███████
+████ ████ ██ ████ ██ ██ ████ ████ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██
+██ ████ ██ ██ ██ ██ ██ ██ ██ ████ ██ ███████ ███ ██ ██ ██ ██ ██ █████
+██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██
+██ ██ ██ ██ ████ ██ ██ ██ ██ ██ ██ ██ ██████ ██████ ██████ ███████
+v0.7.6
+Tips for getting started
+› Say what you want and how to verify it.
+› Use /context to check the current Session context budget.
+› Use /goal to keep long-running work focused on a finish line.
+What's new · /changelog for history
+› Fixed runcode not running when the model left out description.
+› Fixed the Runtime running out of memory when a long session that had been compacted many times was compact…
+› With several images attached, the agent can match each inline image to its file name and path, numbered in…
+› <hc from="t1">Nombra los 3 colores primarios, uno por linea, sin explicaciones ni texto extra.</hc>
+● Rojo
+Amarillo
+Azul
+Completed in 1s · ⚡ 367 tok/s
+Message · Enter send · Shift+Enter newline Tip: /goal keeps multi-step work focused on a finish line
+› Ask Mcode to do anything
+EzAgent ◇ Nombra los 3 colores primarios ⎇ main Full access ✦ M3.1-Flash · Effort low Context 96% left
+[hc] incomplete: older output may be missing

@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ezagent.agent.config import AgentConfig
+from ezagent.agent.orchestration import ORCHESTRATION_HINT
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +146,8 @@ class SystemPromptBuilder:
     Callbacks (todos opcionales):
     - ``memory_block``: texto o función que devuelve el bloque de memoria.
     - ``skills_catalog``: función que devuelve el catálogo de skills.
+    - ``agents_catalog``: catálogo de agentes delegables; si existe se añade
+      también la guía fija de orquestación.
     - ``audit_warn``: registra advertencias en la auditoría.
     - ``say_warn``: aviso para el usuario (por voz).  Los errores de
       ``system.md`` se avisan una sola vez por episodio inválido.
@@ -156,6 +159,7 @@ class SystemPromptBuilder:
         *,
         memory_block: Callable[[], str] | str | None = None,
         skills_catalog: Callable[[], str] | str | None = None,
+        agents_catalog: Callable[[], str] | str | None = None,
         audit_warn: Callable[[str], None] | None = None,
         say_warn: Callable[[str], None] | None = None,
     ) -> None:
@@ -163,6 +167,7 @@ class SystemPromptBuilder:
         self._path = Path(config.system_md_path)
         self._memory_block = memory_block
         self._skills_catalog = skills_catalog
+        self._agents_catalog = agents_catalog
         self._audit_warn = audit_warn or _noop
         self._say_warn = say_warn or _noop
 
@@ -197,6 +202,10 @@ class SystemPromptBuilder:
         memory = self._section(self._memory_block)
         if memory:
             parts.append(memory)
+        agents = self._section(self._agents_catalog)
+        if agents:
+            parts.append(ORCHESTRATION_HINT)
+            parts.append(agents)
         catalog = self._section(self._skills_catalog)
         if catalog:
             parts.append(catalog)

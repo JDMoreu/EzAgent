@@ -3,10 +3,22 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
+import threading
+import time
+import uuid
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
+from .agent_driver import (
+    DEFAULT_SHELL,
+    AgentDriver,
+    command_line,
+    valid_keys,
+)
 from .config import VoiceConfig
 
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
@@ -18,6 +30,12 @@ GUI_INSTRUCTION = (
     "escribe como lo haría una persona. Deja las ventanas a la vista para que "
     "el usuario vea todo el proceso. "
 )
+
+
+# `hc send` recibe el texto como argumento y Windows limita la línea de
+# comandos a ~32 000 caracteres (un plan detallado mide más). Por encima de
+# este umbral el mensaje se entrega como archivo (`hc put`).
+LONG_TEXT_CHARS = 12_000
 
 
 class HerdrError(RuntimeError):
@@ -36,17 +54,21 @@ def strip_ansi(text: str) -> str:
     return text.strip()
 
 
-class Herdr:
+class Herdr(AgentDriver):
     def __init__(self, cfg: VoiceConfig):
         self.cfg = cfg
 
     # ------------------------------------------------------------------ base
     def _run_command(
-        self, command: list[str], timeout: float
+        self,
+        command: list[str],
+        timeout: float,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess:
         try:
             return subprocess.run(
                 command,
+                env=env,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -61,13 +83,18 @@ class Herdr:
         except subprocess.TimeoutExpired as exc:
             raise HerdrError(f"`{command[0]}` tardó demasiado.") from exc
 
+    @staticmethod
+    def _anonymous_env() -> dict[str, str]:
+        """Entorno sin la identidad de la terminal que ejecuta EzAgent."""
+        return {
+            key: value
+            for key, value in os.environ.items()
+            if key.upper() != "HC_TERMINAL_ID"
+        }
+
     def _run(self, args: list[str], timeout: float = 20.0) -> subprocess.CompletedProcess:
         return self._run_command([self.cfg.hc_path, *args], timeout)
 
-    def _run_app(
-        self, args: list[str], timeout: float = 20.0
-    ) -> subprocess.CompletedProcess:
-        return self._run_command([self.cfg.herdr_app_path, *args], timeout)
 
     def _json_command(self, command: list[str], timeout: float) -> Any:
         result = self._run_command(command, timeout)
@@ -146,23 +173,117 @@ class Herdr:
             "labels": data.get("labels") or {},
         }
 
-    def read_agent(self, address: str, lines: int | None = None) -> str:
+    def read_agent(
+        self, address: str, lines: int | None = None, limit: int = 6000
+    ) -> str:
         lines = lines or self.cfg.max_read_lines
         result = self._run(["read", address, "--lines", str(lines)], timeout=20)
         text = strip_ansi(result.stdout or "")
         if not text:
             text = strip_ansi(result.stderr or "")
-        return text[-6000:]
+        return text[-limit:]
+
+    def read_full(self, address: str, lines: int = 1500) -> str:
+        """Pantalla + historial largo, para recortar la respuesta de un agente.
+
+        ``read_agent`` corta a 6000 caracteres (suficiente para resumir); un
+        plan detallado que pasa de un agente a otro necesita entero.
+        """
+        return self.read_agent(address, lines, limit=120_000)
 
     # --------------------------------------------------------------- acciones
     def send_agent(
         self, address: str, text: str, confirmed: bool = False
     ) -> dict[str, Any]:
-        result = self._run(["send", address, text, "--json"], timeout=40)
+        if len(text) > LONG_TEXT_CHARS:
+            staged = self._stage_long_text(address, text)
+            if staged is None:
+                return {
+                    "ok": False,
+                    "error": "El mensaje es demasiado largo y no pude guardarlo "
+                    "en un archivo para entregarlo.",
+                }
+            text = staged
+        # DECISION: `hc send` marca el mensaje con <hc from="tN"> cuando se
+        # invoca desde una terminal de Herdr (lo sabe por HC_TERMINAL_ID). Al
+        # agente le llegaría ese texto literal; sin la variable llega limpio.
+        result = self._run_command(
+            [self.cfg.hc_path, "send", address, text, "--json"],
+            timeout=40,
+            env=self._anonymous_env(),
+        )
         output = (result.stdout or "").strip()
         if result.returncode != 0:
             return {"ok": False, "error": (result.stderr or output)[:800]}
         return {"ok": True, "address": address, "message": "Mensaje enviado."}
+
+    @staticmethod
+    def _handoff_dir() -> Path:
+        base = os.environ.get("LOCALAPPDATA") or str(Path.home())
+        return Path(base) / "EzAgent" / "handoff"
+
+    def save_context(self, text: str) -> str | None:
+        """Guarda un contexto largo como .md y devuelve su ruta (o None).
+
+        Es la carpeta propia de EzAgent; los archivos de más de 7 días se
+        retiran de ella al guardar uno nuevo.
+        """
+        folder = self._handoff_dir()
+        path = folder / f"contexto-{uuid.uuid4().hex[:8]}.md"
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        except OSError:
+            return None
+        cutoff = time.time() - 7 * 86400
+        for old in folder.glob("*.md"):
+            try:
+                if (
+                    old.name.startswith(("contexto-", "mensaje-"))
+                    and old.stat().st_mtime < cutoff
+                ):
+                    old.unlink()
+            except OSError:
+                continue
+        return str(path)
+
+    def _stage_long_text(self, address: str, text: str) -> str | None:
+        """Guarda un mensaje largo, lo envía con `hc put` y devuelve la frase
+        corta que se pega al agente (con la ruta donde quedó el archivo)."""
+        folder = self._handoff_dir()
+        path = folder / f"mensaje-{uuid.uuid4().hex[:8]}.md"
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+            result = self._run_command(
+                [self.cfg.hc_path, "put", address, str(path), "--json"],
+                timeout=40,
+                env=self._anonymous_env(),
+            )
+        except (OSError, HerdrError):
+            return None
+        if result.returncode != 0:
+            return None
+        landed = str(path)
+        try:
+            landed = str(json.loads(result.stdout or "{}").get("path") or path)
+        except ValueError:
+            pass
+        return (
+            "El mensaje completo es demasiado largo para pegarlo aquí. "
+            f"Léelo entero en este archivo y haz lo que indica: {landed}"
+        )
+
+    def keys_agent(self, address: str, keys: list[str]) -> dict[str, Any]:
+        """Pulsa teclas nombradas (enter, esc, up, ctrl+t...) en un terminal."""
+        cleaned = valid_keys(keys)
+        if cleaned is None:
+            return {"ok": False, "error": "Teclas no válidas."}
+        result = self._run(["keys", address, *cleaned], timeout=15)
+        if result.returncode != 0:
+            message = (result.stderr or result.stdout or "").strip()
+            return {"ok": False, "error": message[:300]}
+        return {"ok": True, "address": address, "keys": cleaned}
 
     def open_terminal(
         self,
@@ -194,52 +315,10 @@ class Herdr:
             "visible": True,
         }
 
-    def agent_argv(
-        self,
-        agent: str,
-        model: str | None = None,
-        effort: str | None = None,
-    ) -> list[str] | None:
-        """Comando del agente con modelo/esfuerzo según su perfil."""
-        key = agent.strip().lower()
-        base = self.cfg.agents.get(key)
-        if not base:
-            return None
-        profiles = getattr(self.cfg, "agent_profiles", {}) or {}
-        profile = profiles.get(key)
-        if (model or effort) and not isinstance(profile, dict):
-            return None
-        profile = profile if isinstance(profile, dict) else {}
-        command = profile.get("command") or base
-        if not isinstance(command, list):
-            return None
-        argv = [str(part) for part in command]
-        selected_model = str(
-            model or profile.get("default_model") or ""
-        ).strip()
-        selected_effort = str(
-            effort or profile.get("default_effort") or ""
-        ).strip()
-        if selected_model:
-            args = profile.get("model_args", ["--model", "{model}"])
-            if not isinstance(args, list) or not args:
-                return None
-            argv += [
-                str(part).replace("{model}", selected_model) for part in args
-            ]
-        if selected_effort:
-            args = profile.get("effort_args", ["--effort", "{effort}"])
-            if not isinstance(args, list) or not args:
-                return None
-            argv += [
-                str(part).replace("{effort}", selected_effort) for part in args
-            ]
-        return argv
-
     def run_agent(
         self,
         agent: str,
-        task: str,
+        task: str = "",
         cwd: str | None = None,
         name: str | None = None,
         confirmed: bool = False,
@@ -248,83 +327,120 @@ class Herdr:
         space: str | None = None,
         model: str | None = None,
         effort: str | None = None,
+        on_ready: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
-        key = agent.strip().lower()
-        if key not in self.cfg.agents:
+        """Abre un agente como lo haría una persona y le pega la tarea.
+
+        Visible (por defecto): pestaña nueva con una shell donde se escribe el
+        comando del agente. Cuando el programa ha arrancado se fijan modelo y
+        esfuerzo con sus comandos internos y, al final, se pega la tarea.
+        """
+        launch = self.agent_launch(agent, model, effort)
+        key = self.resolve_agent(agent)
+        if launch.argv is None or key is None:
             return {
                 "ok": False,
-                "error": f"Agente desconocido: {agent!r}.",
+                "error": launch.error or f"Agente desconocido: {agent!r}.",
                 "available": sorted(self.cfg.agents),
             }
-        argv = self.agent_argv(key, model, effort)
-        if not argv:
-            return {
-                "ok": False,
-                "error": (
-                    f"El agente {key!r} no tiene perfil de modelo/esfuerzo. "
-                    "Configura agent_profiles en voice.json."
-                ),
-            }
+        argv = launch.argv
         folder = cwd or self.cfg.default_cwd
         label = name or f"{key} · voz"
-        task_text = (GUI_INSTRUCTION if gui else "") + task
+        task = (task or "").strip()
+        # DECISION: sin tarea se abre el agente listo y a la espera.
+        task_text = ((GUI_INSTRUCTION if gui else "") + task) if task else ""
 
         if background:
+            run_argv = (
+                ["powershell.exe", "-NoProfile", "-Command", command_line(argv, launch.env)]
+                if launch.env
+                else argv
+            )
             data = self._json(
                 [
                     "run", "--json", "--bg", "--no-parent",
                     "--cwd", folder,
                     "--name", label,
                     "--label", f"agent={key}",
-                    "--", *argv,
+                    "--", *run_argv,
                 ],
                 timeout=40,
             )
             address = data.get("address")
             if not address:
                 return {"ok": False, "error": f"hc run no devolvió dirección: {data}"}
-            sent = self.send_agent(address, task_text, confirmed=True)
-            return {
-                "ok": True,
-                "address": address,
-                "terminal": address,
-                "agent": key,
-                "model": model or "",
-                "effort": effort or "",
-                "cwd": folder,
-                "visible": False,
-                "background": True,
-                "task_sent": bool(sent.get("ok")),
-                "send": sent,
+            where: dict[str, Any] = {"visible": False, "background": True}
+        else:
+            args = [
+                "do", "tab.new",
+                "--name", label,
+                "--folder", folder,
+                "--argv", json.dumps([DEFAULT_SHELL]),
+            ]
+            if space:
+                args += ["--space", space]
+            data = self._json_app(args, timeout=45)
+            address = data.get("terminal") or data.get("address")
+            if not address:
+                return {"ok": False, "error": f"tab.new no devolvió terminal: {data}"}
+            self.wait_shell_prompt(address)  # sin pausa fija
+            typed = self.send_agent(
+                address, command_line(argv, launch.env), confirmed=True
+            )
+            if not typed.get("ok"):
+                return {
+                    "ok": False,
+                    "error": f"No pude escribir el comando en {address}: {typed.get('error')}",
+                }
+            where = {
+                "visible": True,
+                "background": False,
+                "tab": data.get("tab"),
+                "space": data.get("space"),
             }
 
-        # Por defecto: pestaña visible en Herdr, con la tarea como primer mensaje.
-        args = [
-            "do", "tab.new",
-            "--name", label,
-            "--folder", folder,
-            "--argv", json.dumps(argv),
-            "--task", task_text,
-        ]
-        if space:
-            args += ["--space", space]
-        data = self._json_app(args, timeout=45)
-        terminal = data.get("terminal") or data.get("address")
-        if not terminal:
-            return {"ok": False, "error": f"tab.new no devolvió terminal: {data}"}
-        return {
-            "ok": True,
-            "address": terminal,
-            "terminal": terminal,
-            "tab": data.get("tab"),
-            "space": data.get("space"),
+        base = {
+            "address": address,
+            "terminal": address,
             "agent": key,
             "model": model or "",
             "effort": effort or "",
             "cwd": folder,
-            "visible": True,
-            "background": False,
-            "task_sent": True,
+            "command": argv,
+            **where,
+        }
+
+        def finish() -> dict[str, Any]:
+            outcome = self.finish_launch(address, key, launch, task_text)
+            if not outcome.pop("ok"):
+                return {**outcome, "ok": False, "address": address, "agent": key}
+            return {"ok": True, **base, **outcome}
+
+        if on_ready is None:
+            return finish()
+
+        # Asíncrono: la terminal ya está abierta y con el comando escrito, así
+        # que se responde al instante y el arranque del programa (hasta ~14 s
+        # en Codex/OpenCode), modelo, esfuerzo y tarea se resuelven aparte.
+        def work() -> None:
+            try:
+                result = finish()
+            except Exception as exc:  # noqa: BLE001 - se informa, no se pierde
+                result = {
+                    "ok": False,
+                    "address": address,
+                    "agent": key,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            on_ready(result)
+
+        threading.Thread(target=work, daemon=True, name="ez-launch").start()
+        return {
+            "ok": True,
+            "launching": True,
+            **base,
+            "task_sent": False,
+            "warnings": launch.warnings,
         }
 
     def focus_agent(self, address: str) -> dict[str, Any]:
