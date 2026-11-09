@@ -40,7 +40,7 @@ flowchart TD
 | Voz | `voice/speech_queue.py` + `voice/tts.py` (Kokoro ONNX) | Hilo de respuesta (síntesis) y `ezagent-speech` (reproducción) |
 | Agentes delegados | `voice/herdr.py`, `agent_driver.py`, `agent_session.py` | Hilo de respuesta |
 | Avisos | `voice/watcher.py`, `voice/tasks.py` | Hilo del watcher |
-| Interfaz | `voice/notch/` (barra y tarjeta de ajustes, Win32 layered) | Hilo de la barra |
+| Interfaz | `voice/notch/`: barra con Marea (`flow.py`) y ventana de ajustes centrada (`settings_window.py`), Win32 layered | Hilo de la barra |
 
 ## Un turno, paso a paso
 

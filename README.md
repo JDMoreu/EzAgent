@@ -7,8 +7,8 @@ bloquea. No es un asistente general: el trabajo real lo hacen los agentes
 delegados.
 
 La interfaz es una **barra flotante** sin texto: una cápsula (o un círculo) con
-cielo y nubes que se mueven con el aire de tu voz y de la del asistente, y una
-tarjeta de ajustes que se despliega desde ☰. No hay app de escritorio, dashboard
+un gradiente vivo, **Marea**, que fluye con tu voz y con la del asistente, y
+una ventana de ajustes centrada que se abre desde ☰. No hay app de escritorio, dashboard
 ni panel de llamada.
 
 ```
@@ -89,21 +89,29 @@ arranca escuchando; `Ctrl+Alt+Space` cuelga o retoma.
 
 ## La barra (interfaz por defecto)
 
-Desde la versión 0.2 la interfaz es **una barra sin texto**: una cápsula (o un
-círculo) con cielo despejado arriba y un banco de nubes en la mitad inferior,
-anclada abajo al centro, sobre la barra de tareas. **El contorno es fijo y
-nítido; lo que se mueve es el interior**: las nubes tienen inercia. Cuando
-hablas entra aire por abajo que las levanta, las separa, las hincha y deja un
-brillo; al callar se asientan despacio con un vaivén. Cuando habla EzAgent una
-ola recorre el banco al ritmo de su voz, y mientras piensa las nubes giran. Un
-techo suave impide que suban más allá de la mitad. Los colores siguen al estado (espera, escucha, piensa, habla,
-pregunta, error y pausa) y al tema, claro u oscuro.
+La interfaz es **una barra sin texto**: una cápsula (o un círculo) anclada abajo
+al centro, sobre la barra de tareas. **El contorno es fijo y nítido; lo que se
+mueve es el interior**: **Marea**, la identidad visual de EzAgent, un gradiente
+orgánico como tintas que se mezclan en el agua (verde azulado, aguamarina y
+menta, con filamentos melocotón). No es un orbe de nubes ni un brillo en el
+borde: la marca es el propio líquido en movimiento.
+
+| Estado | Cómo se mueve |
+|---|---|
+| En espera | Fluye y se pliega despacio |
+| Te escucha | Tu voz lo acelera y lo empuja hacia arriba; entra una luz desde abajo |
+| Habla EzAgent | Lo recorren pulsos de luz al ritmo de su voz |
+| Piensa | Gira despacio, como un remolino (tonos índigo y cian) |
+| Pregunta · error · pausa | Ámbar · rojo · gris lento |
+
+Los colores siguen al estado y al tema, claro u oscuro; con movimiento reducido
+el fluido queda quieto. El código vive en `src/ezagent/voice/notch/flow.py`.
 
 Los botones solo aparecen al acercar el puntero: la forma crece un poco y ☰,
 🎤 y ✕ nacen desde detrás de ella, escalonados y con un rebote suave. La barra
 pinta a 60 fps fijos mientras algo se mueve. **✕ es dinámico:** con la llamada
 en marcha cuelga; al colgar, el micrófono se pliega y ✕ se convierte en el botón
-azul de **llamar** (ondas de voz), que vuelve a abrir la conversación.
+verde azulado de **llamar** (ondas de voz), que vuelve a abrir la conversación.
 Una confirmación oculta ☰, convierte 🎤 en ✓ y deja ✕ como «no» (la pregunta se
 dice por voz). Se arrastra por la forma y recuerda su posición.
 
@@ -124,8 +132,9 @@ descarta sin llegar al modelo ni al log. Si apagas «Reactivar por voz», la pau
 es un silencio total y solo el botón la quita. El modelo ya no puede silenciar el
 micrófono: si lo pide, la escucha queda en pausa (siempre reversible).
 
-**Ajustes ☰:** la tarjeta se despliega desde ☰ con colores frescos (blanco con un
-toque de cielo en claro, azul noche en oscuro). «–» cierra solo la tarjeta; la
+**Ajustes ☰:** se abre una **ventana centrada** con las secciones a la izquierda
+y la sección elegida a la derecha (blanco con un toque de menta en claro, noche
+verde azulada en oscuro). «–» la oculta; la
 barra sigue a la vista. Arriba están **Apariencia** (forma, tema y movimiento) y
 **Escucha** (qué hace «cierra», reactivar por voz y la frase); se aplican y se
 guardan al instante. En **Conversación** están «Repetir lo último» y «Nueva
@@ -151,7 +160,8 @@ Se configura en `voice.json`:
 | Clave | Valores | Por defecto |
 |---|---|---|
 | `ui_layout` | `pill` (cápsula) · `circle` (círculo sobre la fila de botones) | `pill` |
-| `theme` | `auto` (sigue a Windows) · `light` · `dark` | `auto` |
+| `theme` | `auto` (sigue a Windows) · `light` · `dark` · `custom` (tus colores) | `auto` |
+| `theme_primary` · `theme_secondary` · `theme_accent` · `theme_background` | colores `#RRGGBB` del tema personalizado | paleta Marea |
 | `ui_motion` | `system` (sigue a Windows) · `full` · `reduced` (solo fundidos de 120 ms) | `system` |
 | `close_action` | `pause` (pausa la escucha) · `hangup` (cuelga) | `pause` |
 | `voice_wake` | `true` · `false` (la pausa es silencio total) | `true` |
@@ -166,7 +176,7 @@ sílabas). Un clic, un golpe de teclado o un soplido duran menos y no lo cortan.
 Si aun así el ruido de fondo es sostenido (un ventilador, música), sube el umbral
 o la duración; si te cuesta interrumpir, bájalos.
 
-El icono (app y bandeja) es un orbe de cielo con nubes; se regenera con
+El icono (app y bandeja) es un orbe de Marea; se regenera con
 `uv run python scripts/make_icons.py`.
 
 ## Bandeja del sistema
@@ -187,16 +197,24 @@ silenciado.
 
 ## El menú es Ajustes
 
-La tarjeta de ajustes (☰, o `Ctrl+Alt+O`) contiene todos los ajustes del
-mensajero. Si hay más filas de las que caben, la rueda desplaza el contenido entre
-la cabecera y el pie; el pulgar de scroll queda visible a la derecha. Los campos
-de texto se editan en línea: al pulsarlos, la tarjeta pide el teclado y lo
+La ventana de ajustes (☰, o `Ctrl+Alt+O`) se abre **en el centro de la
+pantalla**. A la izquierda están las secciones; a la derecha, los controles de
+la sección elegida, con todo el alto de la ventana, así casi nunca hace falta
+desplazarse. «–» la oculta y la barra sigue a la vista. Si una sección no cabe,
+la rueda desplaza su contenido entre la cabecera y el pie. Los campos de texto
+se editan en línea: al pulsarlos, la ventana pide el teclado y lo
 devuelve al confirmar con `Enter`, cancelar con `Esc` o pulsar fuera. `Ctrl+V`
 pega desde el portapapeles.
 
-- **APARIENCIA:** forma (píldora o círculo), tema (automático, claro u oscuro) y
-  movimiento (según el sistema, completo o reducido). Se aplica y se guarda al
-  instante.
+- **APARIENCIA:** forma (píldora o círculo), tema (automático, claro, oscuro o
+  **personalizado**) y movimiento (según el sistema, completo o reducido). Se
+  aplica y se guarda al instante.
+- **COLORES:** las paletas de Claro, Oscuro y Personalizado lado a lado (un clic
+  en una la elige), **Partir de** (paletas base: Marea, Atardecer, Bosque, Lavanda
+  y Medianoche) y los cuatro colores del gradiente con su muestra: **principal,
+  secundario, acento y fondo** (`#RRGGBB`). Cambiar un color activa el tema
+  personalizado; las superficies siguen a Windows (claro u oscuro) y los avisos
+  conservan su color (ámbar al preguntar, rojo en error).
 - **ESCUCHA:** qué hace «cierra» (pausa o cuelga), reactivar por voz y la frase de
   reactivación. También se aplica y se guarda al instante.
 - **MICRÓFONO:** dispositivo, **medidor de entrada con nivel en vivo y umbral
@@ -221,7 +239,7 @@ pega desde el portapapeles.
 - **ATAJOS:** los cinco atajos globales editables en línea (llamada, colgar,
   repetir, silencio y ajustes). Se validan al guardar, no pueden repetirse y se
   re-registran sin reiniciar; si otra app usa el mismo atajo, queda en el log.
-- Guardar, cambios sin guardar y cerrar la tarjeta («–»; la barra sigue a la vista).
+- Guardar y «cambios sin guardar» quedan siempre al pie de la ventana.
 
 Los ajustes de audio, voz, TTS, VAD, Whisper y conversación se guardan en
 `%APPDATA%\EzAgent\voice.json`; los perfiles de proveedor, en
@@ -402,7 +420,7 @@ Guía completa: [`docs/llm-providers.md`](docs/llm-providers.md).
 | `Ctrl+Alt+Space` | Iniciar / colgar la llamada |
 | `Ctrl+Alt+E` | Colgar (`Ctrl+Alt+C` sigue como alias) |
 | `Ctrl+Alt+M` | Pausar / reactivar la escucha |
-| `Ctrl+Alt+O` | Abrir / cerrar la tarjeta de ajustes |
+| `Ctrl+Alt+O` | Abrir / ocultar la ventana de ajustes |
 | `Ctrl+Alt+R` | Repetir el último resumen |
 
 El micrófono no se cierra entre turnos durante una llamada. Las acciones

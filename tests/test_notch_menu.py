@@ -147,6 +147,13 @@ def at_audio(menu: M.Menu) -> float:
     return offset
 
 
+def scroll_to(menu: M.Menu, key: str) -> None:
+    """Desplaza el menú para que la fila ``key`` quede a la vista."""
+    target = min(menu.scroll_max, max(0.0, menu._nominal_layout()[key].y0 - 200.0))
+    menu._scroll.value = target
+    menu._scroll_target = target
+
+
 def opened(
     menu: M.Menu, now: float = 10.0, settle: float = 1.0
 ) -> float:
@@ -182,8 +189,9 @@ def test_layout_tabla_7_3_exacta():
         layout["group_hotkeys"].y0,
         layout["group_hotkeys"].y1,
     ) == (2136, 2356)
-    assert (layout["footer"].y0, layout["footer"].y1) == (2368, 2412)
-    assert layout["total"].y1 == 2424
+    assert (layout["group_colors"].y0, layout["group_colors"].y1) == (2388, 2664)
+    assert (layout["footer"].y0, layout["footer"].y1) == (2676, 2720)
+    assert layout["total"].y1 == 2732
     assert visible_menu_height(1080) == 560
     assert visible_menu_height(600) == pytest.approx(384)
 
@@ -194,7 +202,7 @@ def test_layout_bajo_el_pie_se_mueve_y_el_scroll_existe():
     layout = menu._layout()
     assert layout["footer"].y0 == pytest.approx(364)
     # El contenido completo supera con holgura el viewport recortado.
-    assert menu.scroll_max == pytest.approx(2004)
+    assert menu.scroll_max == pytest.approx(2312)
     assert menu.viewport_height == pytest.approx(384)
     assert menu.height(now) == pytest.approx(384)
 
@@ -451,8 +459,7 @@ def test_fila_de_texto_editable_confirma_con_enter():
     edits: list[bool] = []
     menu.on_text_edit = edits.append
 
-    menu._scroll.value = menu.scroll_max
-    menu._scroll_target = menu.scroll_max
+    scroll_to(menu, "hotkey")
     layout = menu._layout()
     scroll = menu.scroll_offset
     row = layout["hotkey"]
@@ -603,8 +610,7 @@ def test_accion_abrir_system_md():
     settings = make_settings()
     menu, calls = make_menu(settings)
     now = opened(menu)
-    menu._scroll.value = menu.scroll_max
-    menu._scroll_target = menu.scroll_max
+    scroll_to(menu, "open_system_md")
     layout = menu._layout()
     row = layout["open_system_md"]
     scroll = menu.scroll_offset

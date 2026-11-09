@@ -81,6 +81,11 @@ HOTKEY_KEYS = (
 INSTANT_SETTINGS = (
     "ui_layout",
     "theme",
+    "theme_base",
+    "theme_primary",
+    "theme_secondary",
+    "theme_accent",
+    "theme_background",
     "ui_motion",
     "close_action",
     "voice_wake",
@@ -465,6 +470,8 @@ class VoiceApp:
         self.notch.on_test_voice = self._notch_test_voice
         self.notch.on_hide = self._notch_hide
         try:
+            self._push_custom_colors()
+            self.notch.set_custom_base(self.cfg.theme_base)
             self.notch.set_theme(self.cfg.theme)
         except Exception:
             pass
@@ -2077,7 +2084,41 @@ class VoiceApp:
     def _notch_test_voice(self, values: dict) -> None:
         self.menu_events.put(("test", dict(values)))
 
-    def _apply_instant_setting(self, key: str, value) -> None:
+    def _push_custom_colors(self) -> None:
+        """Pasa a la barra los cuatro colores del tema personalizado."""
+        setter = getattr(self.notch, "set_custom_colors", None)
+        if callable(setter):
+            setter(
+                self.cfg.theme_primary,
+                self.cfg.theme_secondary,
+                self.cfg.theme_accent,
+                self.cfg.theme_background,
+            )
+
+    def _apply_custom_theme(self, key: str, value) -> None:
+        """Un color o una paleta base: se guardan y el tema pasa a «Personalizado»."""
+        from .notch.flow import PRESETS
+
+        if key == "theme_preset":
+            preset = PRESETS.get(str(value))
+            if preset is None:
+                return
+            background, primary, secondary, accent = preset
+            updates = {
+                "theme_background": background,
+                "theme_primary": primary,
+                "theme_secondary": secondary,
+                "theme_accent": accent,
+            }
+        else:
+            updates = {key: value}
+        for name, color in updates.items():
+            self._apply_instant_setting(name, color, push=False)
+        self._push_custom_colors()
+        if self.cfg.theme != "custom":
+            self._apply_instant_setting("theme", "custom")
+
+    def _apply_instant_setting(self, key: str, value, push: bool = True) -> None:
         """Apariencia y escucha: se aplican a la barra y se guardan ya."""
         try:
             from .notch.settings import normalize_setting
@@ -2094,6 +2135,7 @@ class VoiceApp:
         setter = {
             "ui_layout": "set_layout",
             "theme": "set_theme",
+            "theme_base": "set_custom_base",
             "ui_motion": "set_motion",
         }.get(key)
         method = getattr(self.notch, setter, None) if setter else None
@@ -2102,6 +2144,10 @@ class VoiceApp:
                 method(value)
             except Exception as exc:  # noqa: BLE001
                 log(f"No pude aplicar {key} a la barra: {exc}")
+        if push and key.startswith("theme_") and key != "theme_base":
+            self._push_custom_colors()
+            if self.cfg.theme != "custom":
+                self._apply_instant_setting("theme", "custom")
         log(f"Ajuste {key} = {'(frase)' if key == 'wake_phrase' else value}")
 
     def _notch_hide(self) -> None:
@@ -2121,6 +2167,9 @@ class VoiceApp:
 
     def _apply_live_setting(self, key: str, value) -> None:
         """Aplica un control del menú en vivo, sin persistir todavía."""
+        if key == "theme_preset":
+            self._apply_custom_theme(key, value)
+            return
         if key in INSTANT_SETTINGS:
             self._apply_instant_setting(key, value)
             return

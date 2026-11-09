@@ -86,7 +86,8 @@ check. El menú solo usa texto para las etiquetas de ajustes y el pie.
 
 El código de la interfaz vive en `notch/`: `tokens.py` (tokens), `anim.py`
 (curvas y tween), `bar_motion.py` y `bar_theme.py` (movimiento y tema de la
-barra), `clouds.py` (cielo), `drop.py` (ventana y composición), `menu.py`
+barra), `flow.py` (Marea, el gradiente vivo), `drop.py` (ventanas y composición),
+`settings_window.py` (ventana de ajustes centrada con secciones), `menu.py`
 (menú y componentes), `settings.py` (modelo de ajustes) y `state.py` (máquina de
 estados). No hay panel Tk ni segunda ventana de ajustes.
 

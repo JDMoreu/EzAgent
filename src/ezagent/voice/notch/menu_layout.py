@@ -34,6 +34,8 @@ ROW_TEXT = 44
 # compacta como el resto de controles.
 ROW_METER = 44
 ROW_ACTION = 44
+# Vista de las paletas (Claro, Oscuro, Personalizado): tres muestras con nombre.
+ROW_PALETTE = 64
 ROW = {
     "select": ROW_SELECT,
     "slider": ROW_SLIDER,
@@ -41,6 +43,7 @@ ROW = {
     "text": ROW_TEXT,
     "meter": ROW_METER,
     "action": ROW_ACTION,
+    "palette": ROW_PALETTE,
 }
 
 # Orden por tarea: cómo se ve, cómo te escucha, cuándo cierra tu turno, cómo
@@ -51,8 +54,16 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         "appearance",
         (
             ("ui_layout", "select"),
-            ("theme", "select"),
             ("ui_motion", "select"),
+            ("theme", "select"),
+            ("theme_preview", "palette"),
+            # Solo con el tema «Personalizado» (el menú las oculta si no):
+            ("theme_base", "select"),
+            ("theme_preset", "select"),
+            ("theme_primary", "text"),
+            ("theme_secondary", "text"),
+            ("theme_accent", "text"),
+            ("theme_background", "text"),
         ),
     ),
     (
@@ -149,6 +160,46 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ),
 )
 
+# Filas que solo se ven con el tema personalizado.
+CUSTOM_THEME_ROWS = frozenset(
+    {
+        "theme_base",
+        "theme_preset",
+        "theme_primary",
+        "theme_secondary",
+        "theme_accent",
+        "theme_background",
+    }
+)
+
+# Orden de la barra lateral de la ventana de ajustes.
+SIDEBAR_ORDER = (
+    "appearance",
+    "listening",
+    "audio",
+    "vad",
+    "conversation",
+    "tts",
+    "stt",
+    "llm",
+    "agent",
+    "hotkeys",
+)
+
+# Títulos de la barra lateral de la ventana de ajustes.
+SECTION_TITLES = {
+    "appearance": "Apariencia",
+    "listening": "Escucha",
+    "audio": "Micrófono",
+    "vad": "Fin de turno",
+    "conversation": "Conversación",
+    "tts": "Voz",
+    "stt": "Transcripción",
+    "llm": "Modelo e IA",
+    "agent": "Agente",
+    "hotkeys": "Atajos",
+}
+
 GROUP_LABELS = {
     "appearance": "APARIENCIA",
     "listening": "ESCUCHA",
@@ -189,6 +240,7 @@ class Rect:
 def layout_menu(
     extra: dict[str, float] | None = None,
     viewport_h: float | None = None,
+    groups: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] | None = None,
 ) -> dict[str, Rect]:
     """Devuelve el layout de la tabla 7.3.
 
@@ -209,7 +261,7 @@ def layout_menu(
     add("header", y, y + HEADER)
     y += HEADER + GAP_HEADER
 
-    for group_name, rows in GROUPS:
+    for group_name, rows in groups or GROUPS:
         add("label_" + group_name, y, y + LABEL)
         y += LABEL
         group_top = y
@@ -223,8 +275,9 @@ def layout_menu(
     footer_top = y
     footer_bottom = y + FOOTER
     if viewport_h is not None:
-        visible_bottom = float(viewport_h) - PAD_BOTTOM
-        footer_bottom = min(footer_bottom, visible_bottom)
+        # El pie va siempre al fondo de lo visible: sube si el contenido no
+        # cabe y baja si sobra sitio (la ventana de ajustes tiene alto fijo).
+        footer_bottom = float(viewport_h) - PAD_BOTTOM
         footer_top = footer_bottom - FOOTER
     add("footer", footer_top, footer_bottom)
     y = footer_bottom + PAD_BOTTOM

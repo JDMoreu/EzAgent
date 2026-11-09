@@ -93,6 +93,7 @@ import numpy as np
 from .anim import EASE_IN, EASE_OUT, EASE_SPRING, Tween, lerp_rgb
 from .icons import draw_icon
 from .menu_layout import (
+    CUSTOM_THEME_ROWS,
     GAP_HEADER,
     GROUP_LABELS,
     GROUPS,
@@ -105,6 +106,7 @@ from .menu_layout import (
 )
 from .settings import (
     ALL_KEYS,
+    COLOR_KEYS,
     LABELS,
     SECRET_KEYS,
     SELECT_KEYS,
@@ -507,6 +509,33 @@ def _fill_round_rect(
     )
 
 
+def _fill_round_gradient(
+    layer: np.ndarray,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    radius: float,
+    stops: np.ndarray,
+    scale: float,
+    alpha: float = 1.0,
+) -> None:
+    """Rectángulo redondeado con un degradado horizontal por ``stops`` (N, 3) 0..255."""
+    data = _round_mask(layer.shape[:2], x0, y0, x1, y1, radius, radius, scale, stroke=False)
+    if data is None:
+        return
+    py0, py1, px0, px1, coverage = data
+    xs = (np.arange(px0, px1, dtype=np.float32) + 0.5) / scale
+    t = np.clip((xs - x0) / max(1e-6, x1 - x0), 0.0, 1.0) * (len(stops) - 1)
+    i0 = np.minimum(np.floor(t).astype(np.int32), len(stops) - 2)
+    f = (t - i0)[:, None]
+    rgb = (stops[i0] * (1.0 - f) + stops[i0 + 1] * f) / 255.0
+    a = (coverage * alpha)[..., None]
+    region = layer[py0:py1, px0:px1]
+    region[..., :3] = rgb[None, :, :] * a + region[..., :3] * (1.0 - a)
+    region[..., 3:4] = a + region[..., 3:4] * (1.0 - a)
+
+
 def _stroke_round_rect(
     layer: np.ndarray,
     x0: float,
@@ -674,6 +703,15 @@ class Menu:
         self._theme = theme if theme in ("auto", "dark", "light") else "dark"
         self._screen_h = max(1.0, float(screen_h))
         self._available_h: float | None = None
+        # La ventana de ajustes muestra una sección cada vez, con su título y
+        # más alto que la tarjeta; sin ventana se ven todos los grupos.
+        # Ancho extra (px lógicos) a la derecha: la ventana de ajustes es más ancha
+        # que la tarjeta. Lo anclado a la izquierda no se mueve; los valores,
+        # interruptores, botones y bordes derechos se desplazan ``_dx``.
+        self._dx = 0.0
+        self._groups: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = GROUPS
+        self._title = "AJUSTES"
+        self._max_h: float | None = None
 
         self.on_live_change = on_live_change
         self.on_save = on_save
@@ -712,7 +750,7 @@ class Menu:
         # Hover, pulsación y arrastre.
         self._row_hover: dict[str, Tween] = {
             key: Tween(0.0)
-            for key in (*ALL_KEYS, "input_meter", *ACTION_KEYS)
+            for key in (*ALL_KEYS, "input_meter", "theme_preview", *ACTION_KEYS)
         }
         self._button_hover: dict[str, Tween] = {
             "hide": Tween(0.0),
@@ -819,10 +857,61 @@ class Menu:
     @property
     def viewport_height(self) -> float:
         """Alto visible objetivo del cuerpo del menú, en px lógicos."""
-        height = visible_menu_height(self._screen_h)
+        if self._max_h is not None:
+            height = min(self._max_h, max(160.0, 0.85 * self._screen_h - H_ISLAND))
+        else:
+            height = visible_menu_height(self._screen_h)
         if self._available_h is not None:
             height = min(height, max(1.0, self._available_h))
         return max(1.0, height)
+
+    def _shown_groups(self) -> tuple[tuple[str, tuple[tuple[str, str], ...]], ...]:
+        """Grupos visibles: las filas del tema personalizado solo con «Personalizado»."""
+        if self.settings.get("theme") == "custom":
+            return self._groups
+        return tuple(
+            (name, tuple(row for row in rows if row[0] not in CUSTOM_THEME_ROWS))
+            for name, rows in self._groups
+        )
+
+    def set_width(self, width: float | None) -> None:
+        """Ancho lógico del menú (``None`` o menos de 320 = el de la tarjeta)."""
+        self._dx = 0.0 if width is None else max(0.0, float(width) - float(W))
+
+    @property
+    def width(self) -> float:
+        return float(W) + self._dx
+
+    def set_max_height(self, height: float | None) -> None:
+        """Alto máximo propio (ventana de ajustes); None vuelve al de la tarjeta."""
+        self._max_h = None if height is None else max(160.0, float(height))
+
+    def set_groups(
+        self,
+        groups: tuple[tuple[str, tuple[tuple[str, str], ...]], ...],
+        title: str | None = None,
+        now: float | None = None,
+    ) -> None:
+        """Muestra solo ``groups`` (una sección de la ventana de ajustes).
+
+        ``title`` vacío deja la cabecera solo con «–» (la etiqueta del grupo
+        ya nombra la sección); ``None`` vuelve a «AJUSTES».
+        """
+        moment = self._now if now is None else float(now)
+        self._stop_text_edit()
+        self._groups = tuple(groups) or GROUPS
+        self._title = "AJUSTES" if title is None else str(title)
+        self._selector_key = None
+        self._selector_closing = False
+        self._selector_extra.to(0.0, moment, 0.0, EASE_OUT)
+        self._list_scroll = 0.0
+        self._list_scroll_target = 0.0
+        self._scroll.to(0.0, moment, 0.0, EASE_OUT)
+        self._scroll_target = 0.0
+
+    @property
+    def groups(self) -> tuple[str, ...]:
+        return tuple(name for name, _rows in self._groups)
 
     def set_available_height(self, height: float | None) -> None:
         """Limita el menú al espacio real arriba/abajo de la barra flotante."""
@@ -845,13 +934,16 @@ class Menu:
         return layout_menu(
             self._extra() if extra is None else extra,
             H_ISLAND + self.viewport_height,
+            groups=self._shown_groups(),
         )
 
     def _nominal_layout(
         self, extra: dict[str, float] | None = None
     ) -> dict[str, LayoutRect]:
         """Layout completo sin recortar; sirve para calcular el scroll máximo."""
-        return layout_menu(self._extra() if extra is None else extra, None)
+        return layout_menu(
+            self._extra() if extra is None else extra, None, groups=self._shown_groups()
+        )
 
     @property
     def scroll_max(self) -> float:
@@ -1339,15 +1431,15 @@ class Menu:
         header = layout["header"]
         cy = (header.y0 + header.y1) / 2.0
         radius = HIDE_SIZE / 2.0
-        return Rect(HIDE_CX - radius, cy - radius, HIDE_CX + radius, cy + radius)
+        return Rect((HIDE_CX + self._dx) - radius, cy - radius, (HIDE_CX + self._dx) + radius, cy + radius)
 
     def _save_rect(self, layout: dict[str, LayoutRect]) -> Rect:
         footer = layout["footer"]
         cy = (footer.y0 + footer.y1) / 2.0
         return Rect(
-            SAVE_BUTTON_X0,
+            (SAVE_BUTTON_X0 + self._dx),
             cy - BUTTON_H / 2.0,
-            SAVE_BUTTON_X1,
+            (SAVE_BUTTON_X1 + self._dx),
             cy + BUTTON_H / 2.0,
         )
 
@@ -1368,13 +1460,17 @@ class Menu:
         return BUTTON_MIN_W + (dynamic - BUTTON_MIN_W) * fraction
 
     def _test_rect(self, layout: dict[str, LayoutRect], scroll: float) -> Rect:
-        row = layout["test_voice"]
+        row = layout.get("test_voice")
+        if row is None:
+            # La ventana de ajustes muestra una sección cada vez: si «Prueba de
+            # voz» no está a la vista, su botón no existe (rect fuera de todo).
+            return Rect(-10.0, -10.0, -9.0, -9.0)
         cy = ((row.y0 + row.y1) / 2.0) - scroll
         width = self._test_width()
         return Rect(
-            TEST_BUTTON_X1 - width,
+            (TEST_BUTTON_X1 + self._dx) - width,
             cy - BUTTON_H / 2.0,
-            TEST_BUTTON_X1,
+            (TEST_BUTTON_X1 + self._dx),
             cy + BUTTON_H / 2.0,
         )
 
@@ -1384,9 +1480,9 @@ class Menu:
         row = layout[key]
         cy = ((row.y0 + row.y1) / 2.0) - scroll
         return Rect(
-            TEST_BUTTON_X1 - BUTTON_MIN_W,
+            (TEST_BUTTON_X1 + self._dx) - BUTTON_MIN_W,
             cy - BUTTON_H / 2.0,
-            TEST_BUTTON_X1,
+            (TEST_BUTTON_X1 + self._dx),
             cy + BUTTON_H / 2.0,
         )
 
@@ -1431,7 +1527,7 @@ class Menu:
                 if geometry is not None:
                     top, visible, options, list_scroll = geometry
                     if (
-                        GROUP_X0 <= x <= GROUP_X1
+                        GROUP_X0 <= x <= (GROUP_X1 + self._dx)
                         and top <= y <= top + visible
                     ):
                         for index, option in enumerate(options):
@@ -1446,14 +1542,14 @@ class Menu:
                                     Rect(
                                         GROUP_X0,
                                         item_y0,
-                                        GROUP_X1,
+                                        (GROUP_X1 + self._dx),
                                         item_y1,
                                     ),
                                     value=option.value,
                                     index=index,
                                 )
 
-            for _group_name, rows in GROUPS:
+            for _group_name, rows in self._shown_groups():
                 for key, kind in rows:
                     row = layout[key]
                     base_h = float(ROW[kind])
@@ -1465,12 +1561,12 @@ class Menu:
                     )
                     if disabled and not include_disabled:
                         continue
-                    rect = Rect(GROUP_X0, y0, GROUP_X1, y1)
+                    rect = Rect(GROUP_X0, y0, (GROUP_X1 + self._dx), y1)
                     if kind == "slider":
                         cy = row.y0 - scroll + SLIDER_LINE2_CY
                         half = SLIDER_TRACK_H / 2.0 + SLIDER_TRACK_PAD
                         if (
-                            SLIDER_TRACK_X0 <= x <= SLIDER_TRACK_X1
+                            SLIDER_TRACK_X0 <= x <= (SLIDER_TRACK_X1 + self._dx)
                             and cy - half <= y <= cy + half
                         ):
                             return MenuHit(
@@ -1493,11 +1589,15 @@ class Menu:
                     elif kind == "text":
                         if rect.x0 <= x <= rect.x1 and y0 <= y <= y1:
                             return MenuHit("text", key, rect)
+                    elif kind == "palette":
+                        for value, _label, pill in self._palette_pills(y0):
+                            if pill.x0 <= x <= pill.x1 and y0 <= y <= y1:
+                                return MenuHit("palette", "theme", pill, value=value)
                     elif kind == "meter":
                         track_cy = y0 + METER_TRACK_Y + METER_TRACK_H / 2.0
                         half = METER_TRACK_H / 2.0 + METER_TRACK_PAD
                         if (
-                            SLIDER_TRACK_X0 <= x <= SLIDER_TRACK_X1
+                            SLIDER_TRACK_X0 <= x <= (SLIDER_TRACK_X1 + self._dx)
                             and track_cy - half <= y <= track_cy + half
                         ):
                             return MenuHit("meter", "input_meter", rect)
@@ -1553,13 +1653,13 @@ class Menu:
         window_h = H_ISLAND + float(self._height.value)
         if not (content_top <= y <= min(footer_top, window_h)):
             return None
-        for _group_name, rows in GROUPS:
+        for _group_name, rows in self._shown_groups():
             for key, kind in rows:
                 row = layout[key]
                 base_h = float(ROW[kind])
                 y0 = row.y0 - scroll
                 y1 = y0 + base_h
-                if GROUP_X0 <= x <= GROUP_X1 and y0 <= y <= y1:
+                if GROUP_X0 <= x <= (GROUP_X1 + self._dx) and y0 <= y <= y1:
                     disabled = (
                         kind == "select"
                         and not self.settings.selector_enabled(key)
@@ -1606,7 +1706,7 @@ class Menu:
             if geometry is not None:
                 top, visible, options, list_scroll = geometry
                 if (
-                    GROUP_X0 <= x <= GROUP_X1
+                    GROUP_X0 <= x <= (GROUP_X1 + self._dx)
                     and top <= y <= top + visible
                 ):
                     for index in range(len(options)):
@@ -1787,6 +1887,9 @@ class Menu:
             self.settings.set(hit.key, hit.value)
             self._close_selector(now)
             self._notify(self.on_live_change, hit.key, hit.value)
+        elif hit.kind == "palette":
+            self.settings.set("theme", hit.value)
+            self._notify(self.on_live_change, "theme", hit.value)
         elif hit.kind == "toggle":
             value = not bool(self.settings.get(hit.key))
             self.settings.set(hit.key, value)
@@ -1809,7 +1912,7 @@ class Menu:
     # ------------------------------------------------------------------
     def _set_slider_from_x(self, key: str, x: float, now: float) -> None:
         spec = SLIDERS[key]
-        width = SLIDER_TRACK_X1 - SLIDER_TRACK_X0
+        width = (SLIDER_TRACK_X1 + self._dx) - SLIDER_TRACK_X0
         fraction = 0.0 if width <= 0 else (float(x) - SLIDER_TRACK_X0) / width
         fraction = max(0.0, min(1.0, fraction))
         value = spec.minimum + fraction * (spec.maximum - spec.minimum)
@@ -1824,7 +1927,7 @@ class Menu:
     def _set_meter_from_x(self, x: float, now: float) -> None:
         """Convierte la posición del puntero en el umbral de voz."""
         spec = SLIDERS["min_rms"]
-        width = SLIDER_TRACK_X1 - SLIDER_TRACK_X0
+        width = (SLIDER_TRACK_X1 + self._dx) - SLIDER_TRACK_X0
         fraction = 0.0 if width <= 0 else (float(x) - SLIDER_TRACK_X0) / width
         fraction = max(0.0, min(1.0, fraction))
         value = spec.minimum + fraction * (spec.maximum - spec.minimum)
@@ -1905,7 +2008,7 @@ class Menu:
                 top, visible, options, _list_scroll = geometry
                 if (
                     len(options) > LIST_MAX_VISIBLE
-                    and GROUP_X0 <= x <= GROUP_X1
+                    and GROUP_X0 <= x <= (GROUP_X1 + self._dx)
                     and top <= y <= top + visible
                 ):
                     maximum = len(options) * LIST_ITEM_H - LIST_VIEW_H
@@ -2339,7 +2442,7 @@ class Menu:
             for layer in self._layers:
                 layer.fill(0.0)
             self._draw_header(header_layer, layout, pal, now)
-            for group_name, rows in GROUPS:
+            for group_name, rows in self._shown_groups():
                 self._draw_group(
                     content_layer, group_name, rows, layout, pal, now, scroll
                 )
@@ -2356,7 +2459,7 @@ class Menu:
             min(content_top, window_h),
             self._scale,
             GROUP_X0,
-            GROUP_X1,
+            (GROUP_X1 + self._dx),
         )
         if content_top < footer_top:
             _composite_band(
@@ -2366,7 +2469,7 @@ class Menu:
                 min(footer_top, window_h),
                 self._scale,
                 GROUP_X0,
-                GROUP_X1,
+                (GROUP_X1 + self._dx),
             )
         if footer_top < window_h:
             _composite_band(
@@ -2376,7 +2479,7 @@ class Menu:
                 window_h,
                 self._scale,
                 GROUP_X0,
-                GROUP_X1,
+                (GROUP_X1 + self._dx),
             )
 
         self._draw_scroll(buf, layout, pal, now, scroll)
@@ -2421,7 +2524,7 @@ class Menu:
         header = layout["header"]
         cy = (header.y0 + header.y1) / 2.0 + dy
         self._text_at(
-            layer, "AJUSTES", FS_MICRO, pal["TEXT_3"], LABEL_X, cy, alpha
+            layer, self._title, FS_MICRO, pal["TEXT_3"], LABEL_X, cy, alpha
         )
         hover = max(0.0, min(1.0, float(self._button_hover["hide"].value)))
         press = max(0.0, min(1.0, float(self._press["hide"].value)))
@@ -2434,7 +2537,7 @@ class Menu:
                 overlay_alpha = HIDE_HOVER_DARK * hover + HIDE_PRESS_DARK * press
             _fill_circle(
                 layer,
-                HIDE_CX,
+                (HIDE_CX + self._dx),
                 cy,
                 HIDE_SIZE,
                 overlay,
@@ -2445,7 +2548,7 @@ class Menu:
         draw_icon(
             layer,
             "minus",
-            HIDE_CX,
+            (HIDE_CX + self._dx),
             cy,
             icon_size,
             pal["TEXT_2"],
@@ -2479,7 +2582,7 @@ class Menu:
         )
         group = layout["group_" + group_name]
         gx0 = GROUP_X0
-        gx1 = GROUP_X1
+        gx1 = (GROUP_X1 + self._dx)
         gy0 = group.y0 + y_offset
         gy1 = group.y1 + y_offset
         _fill_round_rect(
@@ -2518,7 +2621,7 @@ class Menu:
                     layer,
                     GROUP_X0,
                     row_y0,
-                    GROUP_X1,
+                    (GROUP_X1 + self._dx),
                     row_y1,
                     0.0,
                     fill,
@@ -2549,7 +2652,7 @@ class Menu:
                     layer,
                     ROW_X0,
                     boundary - HAIRLINE_PX / 2.0,
-                    ROW_X1,
+                    (ROW_X1 + self._dx),
                     boundary + HAIRLINE_PX / 2.0,
                     0.0,
                     pal["LINE_2"],
@@ -2599,10 +2702,72 @@ class Menu:
             self._draw_text_row(layer, key, row_y0, pal, alpha, now)
         elif kind == "meter":
             self._draw_meter_row(layer, key, row_y0, pal, alpha, now)
+        elif kind == "palette":
+            self._draw_palette_row(layer, row_y0, pal, alpha)
         elif kind == "action":
             self._draw_action_row(
                 layer, key, row_y0, center_y, layout, pal, now, scroll, alpha
             )
+
+    _PALETTES = (("light", "Claro"), ("dark", "Oscuro"), ("custom", "Personalizado"))
+
+    def _palette_pills(self, row_y0: float) -> list[tuple[str, str, Rect]]:
+        """Las tres muestras de la fila de paletas, en coordenadas del menú."""
+        x0, x1 = ROW_X0, ROW_X1 + self._dx
+        gap = 10.0
+        width = (x1 - x0 - gap * 2.0) / 3.0
+        out = []
+        for index, (value, label) in enumerate(self._PALETTES):
+            left = x0 + index * (width + gap)
+            out.append((value, label, Rect(left, row_y0 + 8.0, left + width, row_y0 + 32.0)))
+        return out
+
+    def _palette_stops(self, value: str) -> np.ndarray:
+        """Colores de cada tema: fondo, principal, secundario y acento."""
+        from .flow import COLORS, custom_palette
+
+        if value == "custom":
+            primary, secondary, accent, background = self.settings.custom_colors()
+            palette = custom_palette(primary, secondary, accent, background)
+            if palette is not None:
+                return palette[:4]
+            value = "light"
+        return COLORS["light" if value == "light" else "dark"]["idle"][:4]
+
+    def _draw_palette_row(
+        self, layer: np.ndarray, row_y0: float, pal: dict[str, Color], alpha: float
+    ) -> None:
+        active = str(self.settings.get("theme") or "")
+        for value, label, pill in self._palette_pills(row_y0):
+            _fill_round_gradient(
+                layer, pill.x0, pill.y0, pill.x1, pill.y1, 12.0,
+                self._palette_stops(value), self._scale, alpha,
+            )
+            if value == active:
+                for inset in (-3.0, -2.0):
+                    _stroke_round_rect(
+                        layer, pill.x0 + inset, pill.y0 + inset, pill.x1 - inset,
+                        pill.y1 - inset, 12.0 - inset, pal["MINT"], self._scale, alpha,
+                    )
+            color = pal["MINT"] if value == active else pal["TEXT_2"]
+            self._text_at(
+                layer, label, FS_SECONDARY, color, (pill.x0 + pill.x1) / 2.0,
+                row_y0 + 48.0, alpha, align="center",
+            )
+
+    def _draw_color_swatch(
+        self, layer: np.ndarray, key: str, row_y0: float, pal: dict[str, Color], alpha: float
+    ) -> None:
+        """Muestra redonda del color de la fila (lo que se escribe, si ya vale)."""
+        from .flow import parse_hex
+
+        raw = self._edit_buffer if self._editing_key == key else self.settings.get(key)
+        rgb = parse_hex(str(raw or "")) or parse_hex(str(self.settings.get(key) or ""))
+        if rgb is None:
+            return
+        cx, cy = ROW_X1 + self._dx - 11.0, row_y0 + 22.0
+        _fill_circle(layer, cx, cy, 24.0, pal["LINE"], self._scale, alpha)
+        _fill_circle(layer, cx, cy, 22.0, tuple(int(c) for c in rgb), self._scale, alpha)
 
     def _draw_select_row(
         self,
@@ -2632,14 +2797,14 @@ class Menu:
             value_color = pal["TEXT_2"]
             value_alpha = alpha * (DISABLED_OPACITY if disabled else 1.0)
         fitted = _fit_text(
-            value, FS_BODY, SELECT_VALUE_MAX_W, self._scale
+            value, FS_BODY, (SELECT_VALUE_MAX_W + self._dx), self._scale
         )
         self._text_at(
             layer,
             fitted,
             FS_BODY,
             value_color,
-            SELECT_VALUE_X1,
+            (SELECT_VALUE_X1 + self._dx),
             center_y,
             value_alpha,
             align="right",
@@ -2654,7 +2819,7 @@ class Menu:
             draw_icon(
                 layer,
                 "chevron-down",
-                CHEVRON_CX,
+                (CHEVRON_CX + self._dx),
                 center_y,
                 CHEVRON_SIZE,
                 pal["TEXT_3"],
@@ -2665,7 +2830,7 @@ class Menu:
             draw_icon(
                 layer,
                 "chevron-up",
-                CHEVRON_CX,
+                (CHEVRON_CX + self._dx),
                 center_y,
                 CHEVRON_SIZE,
                 pal["TEXT_3"],
@@ -2726,14 +2891,14 @@ class Menu:
             f"{threshold_db:.0f} dB",
             FS_VALUE,
             pal["TEXT_2"],
-            ROW_X1,
+            (ROW_X1 + self._dx),
             row_y0 + 14.0,
             alpha,
             align="right",
         )
 
         x0 = SLIDER_TRACK_X0
-        x1 = SLIDER_TRACK_X1
+        x1 = (SLIDER_TRACK_X1 + self._dx)
         cy = row_y0 + METER_TRACK_Y + METER_TRACK_H / 2.0
         _fill_round_rect(
             layer,
@@ -2823,14 +2988,14 @@ class Menu:
             else:
                 color = pal["TEXT_2"] if raw else pal["TEXT_3"]
 
-        max_w = ROW_X1 - ROW_X0
+        max_w = (ROW_X1 + self._dx) - ROW_X0
         if editing:
             # La fila se lee como un campo: fondo tenue y cursor visible.
             _fill_round_rect(
                 layer,
                 ROW_X0 - 6.0,
                 value_cy - 11.0,
-                ROW_X1 + 6.0,
+                (ROW_X1 + self._dx) + 6.0,
                 value_cy + 11.0,
                 6.0,
                 pal["TRACK"],
@@ -2847,6 +3012,8 @@ class Menu:
             value_cy,
             alpha,
         )
+        if key in COLOR_KEYS:
+            self._draw_color_swatch(layer, key, row_y0, pal, alpha)
         if editing and int((now - self._edit_t0) * 2.0) % 2 == 0:
             cursor = max(0, min(len(raw), self._edit_cursor))
             prefix = raw[:cursor]
@@ -2895,7 +3062,7 @@ class Menu:
             self.settings.format(key),
             FS_VALUE,
             value_color,
-            ROW_X1,
+            (ROW_X1 + self._dx),
             line_cy,
             alpha,
             align="right",
@@ -2906,7 +3073,7 @@ class Menu:
             layer,
             SLIDER_TRACK_X0,
             track_cy - SLIDER_TRACK_H / 2.0,
-            SLIDER_TRACK_X1,
+            (SLIDER_TRACK_X1 + self._dx),
             track_cy + SLIDER_TRACK_H / 2.0,
             SLIDER_TRACK_H / 2.0,
             pal["TRACK"],
@@ -2918,7 +3085,7 @@ class Menu:
         span = spec.maximum - spec.minimum
         fraction = 0.0 if span <= 0 else (value - spec.minimum) / span
         fraction = max(0.0, min(1.0, fraction))
-        width = SLIDER_TRACK_X1 - SLIDER_TRACK_X0
+        width = (SLIDER_TRACK_X1 + self._dx) - SLIDER_TRACK_X0
         thumb_cx = SLIDER_TRACK_X0 + fraction * width
         if thumb_cx > SLIDER_TRACK_X0 + 0.01:
             _fill_round_rect(
@@ -2981,9 +3148,9 @@ class Menu:
         track_y0 = center_y - TOGGLE_H / 2.0
         _fill_round_rect(
             layer,
-            TOGGLE_X0,
+            (TOGGLE_X0 + self._dx),
             track_y0,
-            TOGGLE_X0 + TOGGLE_W,
+            (TOGGLE_X0 + self._dx) + TOGGLE_W,
             track_y0 + TOGGLE_H,
             TOGGLE_H / 2.0,
             track_color,
@@ -2995,7 +3162,7 @@ class Menu:
         )
         travel = TOGGLE_W - TOGGLE_PAD * 2.0 - TOGGLE_THUMB
         thumb_cx = (
-            TOGGLE_X0
+            (TOGGLE_X0 + self._dx)
             + TOGGLE_PAD
             + TOGGLE_THUMB / 2.0
             + pos * travel
@@ -3039,9 +3206,9 @@ class Menu:
         testing = max(0.0, min(1.0, float(self._testing_t.value)))
         width = self._test_width()
         rect = Rect(
-            TEST_BUTTON_X1 - width,
+            (TEST_BUTTON_X1 + self._dx) - width,
             center_y - BUTTON_H / 2.0,
-            TEST_BUTTON_X1,
+            (TEST_BUTTON_X1 + self._dx),
             center_y + BUTTON_H / 2.0,
         )
         hover = max(
@@ -3147,9 +3314,9 @@ class Menu:
             alpha,
         )
         rect = Rect(
-            TEST_BUTTON_X1 - BUTTON_MIN_W,
+            (TEST_BUTTON_X1 + self._dx) - BUTTON_MIN_W,
             center_y - BUTTON_H / 2.0,
-            TEST_BUTTON_X1,
+            (TEST_BUTTON_X1 + self._dx),
             center_y + BUTTON_H / 2.0,
         )
         hover = max(
@@ -3244,7 +3411,7 @@ class Menu:
                     layer,
                     GROUP_X0,
                     item_y0,
-                    GROUP_X1,
+                    (GROUP_X1 + self._dx),
                     item_y1,
                     0.0,
                     pal["GROUP_HOVER"],
@@ -3252,7 +3419,7 @@ class Menu:
                     item_alpha,
                 )
             label = _fit_text(
-                option.label, FS_BODY, LIST_TEXT_MAX_W, self._scale
+                option.label, FS_BODY, (LIST_TEXT_MAX_W + self._dx), self._scale
             )
             self._text_at(
                 layer,
@@ -3267,7 +3434,7 @@ class Menu:
                 draw_icon(
                     layer,
                     "check",
-                    LIST_CHECK_CX,
+                    (LIST_CHECK_CX + self._dx),
                     center_y,
                     LIST_CHECK_SIZE,
                     pal["MINT_BTN"],
@@ -3473,7 +3640,7 @@ class Menu:
         content_top = self._content_top(layout)
         footer_top = self._footer_top(layout)
         # 1 px hacia dentro: el degradado no debe tapar la línea del borde.
-        x0, x1 = BODY_X0 + 1.0, BODY_X1 - 1.0
+        x0, x1 = BODY_X0 + 1.0, (BODY_X1 + self._dx) - 1.0
         if scroll > 0.5:
             _fill_vertical_gradient(
                 buf,
@@ -3518,9 +3685,9 @@ class Menu:
         y0 = content_top + travel * (scroll / max_scroll)
         _fill_round_rect(
             buf,
-            SCROLL_INDICATOR_X,
+            (SCROLL_INDICATOR_X + self._dx),
             y0,
-            SCROLL_INDICATOR_X + SCROLL_INDICATOR_W,
+            (SCROLL_INDICATOR_X + self._dx) + SCROLL_INDICATOR_W,
             y0 + indicator_h,
             SCROLL_INDICATOR_W / 2.0,
             pal["TEXT_3"],

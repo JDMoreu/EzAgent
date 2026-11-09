@@ -400,9 +400,16 @@ class VoiceConfig:
     voice_wake: bool = True
     wake_phrase: str = "EzAgent, escúchame"
 
-    # Tema del notch: auto (sigue a Windows), dark o light. Se guarda al
+    # Tema del notch: auto (sigue a Windows), dark, light o custom. Se guarda al
     # instante y no cuenta para «cambios sin guardar».
     theme: str = "auto"
+    # Tema personalizado: los cuatro colores del gradiente (Marea por defecto)
+    # y si la interfaz (ventana, botones) es clara u oscura.
+    theme_base: str = "dark"
+    theme_primary: str = "#1FAE9F"
+    theme_secondary: str = "#8FE3C0"
+    theme_accent: str = "#FF8A65"
+    theme_background: str = "#0E6F7C"
 
     @classmethod
     def load(cls, path: Path | None = None) -> "VoiceConfig":

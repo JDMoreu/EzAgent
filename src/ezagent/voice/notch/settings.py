@@ -75,13 +75,19 @@ EDITABLE_KEYS: Final[tuple[str, ...]] = (
 # ``llm_profile`` es un selector de conveniencia: elige un perfil guardado y
 # copia proveedor, modelo, endpoint y clave en los campos reales. No se
 # persiste como ajuste propio.
-# ``llm_model_pick`` copia en ``llm_model`` un modelo de la lista de la API.
-UI_KEYS: Final[tuple[str, ...]] = ("llm_profile", "llm_model_pick")
+# ``llm_model_pick`` copia en ``llm_model`` un modelo de la lista de la API;
+# ``theme_preset`` copia una paleta base en los cuatro colores personalizados.
+UI_KEYS: Final[tuple[str, ...]] = ("llm_profile", "llm_model_pick", "theme_preset")
 # Apariencia y escucha: se aplican y se guardan al instante (como el tema), sin
 # pasar por «Guardar» ni contar como cambios pendientes.
 INSTANT_KEYS: Final[tuple[str, ...]] = (
     "ui_layout",
     "theme",
+    "theme_base",
+    "theme_primary",
+    "theme_secondary",
+    "theme_accent",
+    "theme_background",
     "ui_motion",
     "close_action",
     "voice_wake",
@@ -114,6 +120,8 @@ SELECT_KEYS: Final[tuple[str, ...]] = (
     "llm_profile",
     "llm_api_style",
     "llm_model_pick",
+    "theme_preset",
+    "theme_base",
     "llm_reasoning_effort",
     "ui_layout",
     "theme",
@@ -142,12 +150,30 @@ TEXT_KEYS: Final[tuple[str, ...]] = (
     "mute_hotkey",
     "menu_hotkey",
     "wake_phrase",
+    "theme_primary",
+    "theme_secondary",
+    "theme_accent",
+    "theme_background",
+)
+# Colores del tema personalizado (``#RRGGBB``); la fila muestra una muestra.
+COLOR_KEYS: Final[tuple[str, ...]] = (
+    "theme_primary",
+    "theme_secondary",
+    "theme_accent",
+    "theme_background",
 )
 SECRET_KEYS: Final[tuple[str, ...]] = ("api_key",)
 
 LABELS: Final[dict[str, str]] = {
     "ui_layout": "Forma",
     "theme": "Tema",
+    "theme_preview": "Paletas",
+    "theme_base": "Interfaz",
+    "theme_preset": "Partir de",
+    "theme_primary": "Color principal",
+    "theme_secondary": "Color secundario",
+    "theme_accent": "Acento (terciario)",
+    "theme_background": "Fondo del gradiente",
     "ui_motion": "Movimiento",
     "close_action": "Al decir «cierra»",
     "voice_wake": "Reactivar por voz",
@@ -251,6 +277,12 @@ DEFAULT_VALUES: Final[dict[str, Any]] = {
     "menu_hotkey": "ctrl+alt+o",
     "ui_layout": "pill",
     "theme": "auto",
+    "theme_preset": "",
+    "theme_base": "dark",
+    "theme_primary": "#1FAE9F",
+    "theme_secondary": "#8FE3C0",
+    "theme_accent": "#FF8A65",
+    "theme_background": "#0E6F7C",
     "ui_motion": "system",
     "close_action": "pause",
     "voice_wake": True,
@@ -317,6 +349,7 @@ FIXED_OPTIONS: Final[dict[str, tuple[SelectOption, ...]]] = {
         SelectOption("auto", "Automático"),
         SelectOption("light", "Claro"),
         SelectOption("dark", "Oscuro"),
+        SelectOption("custom", "Personalizado"),
     ),
     "ui_motion": (
         SelectOption("system", "Según el sistema"),
@@ -327,6 +360,11 @@ FIXED_OPTIONS: Final[dict[str, tuple[SelectOption, ...]]] = {
         SelectOption("pause", "Pausa"),
         SelectOption("hangup", "Cuelga"),
     ),
+    # Tema personalizado: ventana y botones claros u oscuros.
+    "theme_base": (
+        SelectOption("light", "Clara"),
+        SelectOption("dark", "Oscura"),
+    ),
     # Formato de la API del proveedor (para «Personalizado» lo elige el usuario).
     "llm_api_style": (
         SelectOption("openai", "OpenAI"),
@@ -336,6 +374,34 @@ FIXED_OPTIONS: Final[dict[str, tuple[SelectOption, ...]]] = {
 
 
 _MISSING: Final[object] = object()
+
+# Paletas base del tema personalizado (mismo orden que ``flow.PRESETS``:
+# fondo, principal, secundario, acento). Se copian aquí para que este módulo
+# siga sin depender de numpy ni del motor de dibujo.
+_PRESETS: Final[dict[str, tuple[str, str, str, str]]] = {
+    "marea": ("#0E6F7C", "#1FAE9F", "#8FE3C0", "#FF8A65"),
+    "atardecer": ("#5B1A3A", "#E0564F", "#FFB36B", "#FFE08A"),
+    "bosque": ("#13361F", "#2E7D4F", "#A8D672", "#F2C94C"),
+    "lavanda": ("#2E2A6B", "#7A6FF0", "#C9B8FF", "#FF9EC4"),
+    "medianoche": ("#0B1026", "#2D3A8C", "#5FA8FF", "#9BF2FF"),
+}
+_PRESET_LABELS: Final[dict[str, str]] = {
+    "marea": "Marea",
+    "atardecer": "Atardecer",
+    "bosque": "Bosque",
+    "lavanda": "Lavanda",
+    "medianoche": "Medianoche",
+}
+
+
+def _hex_or(value: Any, default: str) -> str:
+    """``#RRGGBB`` en mayúsculas; acepta ``RRGGBB`` y ``#RGB``. Si no vale, ``default``."""
+    text = str(value or "").strip().lstrip("#").upper()
+    if len(text) == 3:
+        text = "".join(ch * 2 for ch in text)
+    if len(text) == 6 and all(ch in "0123456789ABCDEF" for ch in text):
+        return "#" + text
+    return default
 
 
 # --------------------------------------------------------------------------
@@ -669,8 +735,10 @@ class MenuSettings:
             return text if text in valid else str(DEFAULT_VALUES[key])
         if key == "wake_phrase":
             return str(value or "").strip() or str(DEFAULT_VALUES[key])
-        if key in ("llm_profile", "llm_model_pick"):
+        if key in ("llm_profile", "llm_model_pick", "theme_preset"):
             return str(value or "").strip()
+        if key in COLOR_KEYS:
+            return _hex_or(value, str(DEFAULT_VALUES[key]))
         if key in ("stt_model", "llm_model"):
             return str(value if value is not None else "")
         if key in TEXT_KEYS:
@@ -708,13 +776,31 @@ class MenuSettings:
     def set(self, key: str, value: Any) -> Any:
         """Cambia un valor, lo valida y lo normaliza. Devuelve el nuevo valor."""
         self._require(key)
+        if key in COLOR_KEYS and not _hex_or(value, ""):
+            return self._values[key]  # un color mal escrito no borra el anterior
         new = self._normalize_value(key, value)
         self._values[key] = new
         if key == "llm_profile":
             self._apply_profile(new)
         elif key == "llm_model_pick" and new:
             self._values["llm_model"] = new
+        elif key == "theme_preset" and new in _PRESETS:
+            background, primary, secondary, accent = _PRESETS[new]
+            for name, color in (
+                ("theme_background", background),
+                ("theme_primary", primary),
+                ("theme_secondary", secondary),
+                ("theme_accent", accent),
+            ):
+                self._values[name] = color
+            self._values["theme"] = "custom"
+        elif key in COLOR_KEYS:
+            self._values["theme"] = "custom"
         return new
+
+    def custom_colors(self) -> tuple[str, str, str, str]:
+        """(principal, secundario, acento, fondo) del tema personalizado."""
+        return tuple(str(self._values[key]) for key in COLOR_KEYS)  # type: ignore[return-value]
 
     def set_llm_models(self, provider: str, models: Iterable[Any]) -> None:
         """Sustituye la lista de modelos de un proveedor (hilo de red)."""
@@ -880,6 +966,8 @@ class MenuSettings:
         if key == "llm_model_pick":
             count = len(self._model_options())
             return f"{count} disponibles" if count else "Sin lista"
+        if key == "theme_preset":
+            return _PRESET_LABELS.get(str(value), "Elegir paleta")
         if key == "llm_profile":
             profile = self._providers.get(str(value))
             return (
@@ -949,6 +1037,8 @@ class MenuSettings:
             return FIXED_OPTIONS[key]
         if key == "llm_model_pick":
             return self._model_options()
+        if key == "theme_preset":
+            return tuple(SelectOption(k, label) for k, label in _PRESET_LABELS.items())
         if key == "llm_profile":
             return tuple(
                 SelectOption(name, values.get("label", name))
@@ -972,6 +1062,8 @@ class MenuSettings:
             return True
         if key == "llm_model_pick":
             return bool(self._model_options())
+        if key == "theme_preset":
+            return True
         if key == "llm_profile":
             return bool(self._providers)
         return False
