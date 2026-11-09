@@ -14,11 +14,17 @@ import time
 import wave
 from collections import deque
 from collections.abc import Callable
+from concurrent.futures import Future
 
 import numpy as np
 import pyaudio
 
 CHUNK_SECS = 0.03
+# Smart Turn mira como mucho los últimos 8 s.
+_PROBE_CHUNKS = int(8.0 / CHUNK_SECS) + 1
+
+# end_probe(pcm) -> Future[bool] (True = turno terminado) o None si no evalúa.
+EndProbe = Callable[[bytes], "Future[bool] | None"]
 
 _SKIP_NAMES = (
     "controlador primario",
@@ -159,6 +165,10 @@ class Segmenter:
     niveles en silencio), un umbral de arranque y otro de cierre más bajo
     (histéresis) y una espera de silencio larga. Así una sílaba floja o una
     pausa natural no cierran el turno.
+
+    Con ``end_probe`` (Smart Turn), tras ``quick_silence_secs`` de silencio se
+    pregunta si la frase terminó: si sí, el turno se cierra ya; si no, se
+    espera ``silence_secs`` como siempre.
     """
 
     def __init__(
@@ -170,8 +180,16 @@ class Segmenter:
         min_speech_secs: float = 0.2,
         max_utterance_secs: float = 30.0,
         noise_multiplier: float = 1.3,
+        end_probe: EndProbe | None = None,
+        quick_silence_secs: float = 0.35,
     ):
         self.min_rms = min_rms
+        self.end_probe = end_probe
+        self.quick_silence_secs = quick_silence_secs
+        self._pending: Future[bool] | None = None
+        self._probed = False
+        # Motivo del último cierre: «silence», «turn» o «max».
+        self.last_close_reason = ""
         self.silence_secs = silence_secs
         self.min_speech_secs = min_speech_secs
         self.max_utterance_secs = max_utterance_secs
@@ -261,11 +279,19 @@ class Segmenter:
         else:
             self._silence_run = 0.0
             self._speech_end_at = None
+            # Sigue hablando: la evaluación de esta pausa ya no vale.
+            self._pending = None
+            self._probed = False
 
-        if (
-            self._silence_run >= self.silence_secs
-            or self._speech_secs >= self.max_utterance_secs
-        ):
+        reason = ""
+        if self._silence_run >= self.silence_secs:
+            reason = "silence"
+        elif self._speech_secs >= self.max_utterance_secs:
+            reason = "max"
+        elif self._turn_finished():
+            reason = "turn"
+        if reason:
+            self.last_close_reason = reason
             pcm = b"".join(self._buf)
             speech_secs = self._speech_secs
             speech_end = self._speech_end_at or now
@@ -274,6 +300,26 @@ class Segmenter:
             if speech_secs >= self.min_speech_secs:
                 return pcm, False
         return None, False
+
+    def _turn_finished(self) -> bool:
+        """True si Smart Turn ya dijo que la frase terminó en esta pausa."""
+        if self.end_probe is None or self._silence_run < self.quick_silence_secs:
+            return False
+        if not self._probed:
+            self._probed = True
+            try:
+                self._pending = self.end_probe(b"".join(self._buf[-_PROBE_CHUNKS:]))
+            except Exception:  # noqa: BLE001 - sin modelo, manda el silencio
+                self._pending = None
+            return False
+        pending = self._pending
+        if pending is None or not pending.done():
+            return False
+        self._pending = None
+        try:
+            return bool(pending.result())
+        except Exception:  # noqa: BLE001
+            return False
 
     def thresholds(self) -> tuple[float, float]:
         start = max(self.min_rms, self.noise * self.noise_multiplier)
@@ -299,6 +345,8 @@ class Segmenter:
         self._silence_run = 0.0
         self._speech_secs = 0.0
         self._speech_end_at = None
+        self._pending = None
+        self._probed = False
         self._pre.clear()
 
 
@@ -380,6 +428,9 @@ class MicCapture:
         # Se leen en cada chunk: el menú los cambia en vivo, sin esperar otra llamada.
         self.barge_in_rms = barge_in_rms
         self.barge_in_secs = barge_in_secs
+        # Detector de fin de turno (Smart Turn); None = solo silencio.
+        self.turn_detector = None
+        self.turn_quick_secs = 0.35
         self.last_speech_end: float | None = None
         self.rate = 16000
         if self.device_index is not None:
@@ -397,6 +448,13 @@ class MicCapture:
             self._pa.terminate()
         except Exception:
             pass
+
+    def _end_probe(self, pcm: bytes) -> Future[bool] | None:
+        """Pide a Smart Turn (en su hilo) si la frase terminó."""
+        detector = getattr(self, "turn_detector", None)
+        if detector is None:
+            return None
+        return detector.submit(pcm, self.rate)
 
     def _emit(
         self,
@@ -419,8 +477,12 @@ class MicCapture:
                 on_speech_start(level)
         if pcm:
             self.last_speech_end = segmenter.last_speech_end
+            reason = {
+                "turn": " (fin de turno detectado)",
+                "max": " (duración máxima)",
+            }.get(segmenter.last_close_reason, "")
             print(
-                f"[ezagent-voice] VAD end: {len(pcm) / 2 / self.rate:.2f}s",
+                f"[ezagent-voice] VAD end: {len(pcm) / 2 / self.rate:.2f}s{reason}",
                 flush=True,
             )
             if on_utterance is not None:
@@ -456,6 +518,7 @@ class MicCapture:
             min_speech_secs=self.min_speech_secs,
             max_utterance_secs=self.max_utterance_secs,
             noise_multiplier=self.noise_multiplier,
+            end_probe=self._end_probe,
         )
         barge = BargeInDetector()
         try:
@@ -468,6 +531,7 @@ class MicCapture:
                 segmenter.noise_multiplier = self.noise_multiplier
                 segmenter.min_speech_secs = self.min_speech_secs
                 segmenter.max_utterance_secs = self.max_utterance_secs
+                segmenter.quick_silence_secs = getattr(self, "turn_quick_secs", 0.35)
                 segmenter.set_pre_roll(self.pre_roll_secs)
                 if reset_event is not None and reset_event.is_set():
                     # Fin del TTS: tira el eco acumulado antes de escuchar.

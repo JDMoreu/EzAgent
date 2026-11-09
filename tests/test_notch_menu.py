@@ -165,26 +165,25 @@ def test_layout_tabla_7_3_exacta():
     assert (layout["header"].y0, layout["header"].y1) == (44, 72)
     assert (layout["group_appearance"].y0, layout["group_appearance"].y1) == (100, 208)
     assert (layout["group_listening"].y0, layout["group_listening"].y1) == (240, 356)
-    assert (layout["group_audio"].y0, layout["group_audio"].y1) == (388, 556)
-    assert (layout["group_engine"].y0, layout["group_engine"].y1) == (588, 660)
-    assert (layout["group_tts"].y0, layout["group_tts"].y1) == (692, 860)
-    assert (layout["group_vad"].y0, layout["group_vad"].y1) == (892, 1068)
-    assert (layout["group_stt"].y0, layout["group_stt"].y1) == (1100, 1260)
-    assert (layout["group_llm"].y0, layout["group_llm"].y1) == (1292, 1620)
+    assert (layout["group_audio"].y0, layout["group_audio"].y1) == (388, 512)
+    assert (layout["group_vad"].y0, layout["group_vad"].y1) == (544, 800)
     assert (
         layout["group_conversation"].y0,
         layout["group_conversation"].y1,
-    ) == (1652, 1856)
+    ) == (832, 1080)
+    assert (layout["group_tts"].y0, layout["group_tts"].y1) == (1112, 1316)
+    assert (layout["group_stt"].y0, layout["group_stt"].y1) == (1348, 1544)
+    assert (layout["group_llm"].y0, layout["group_llm"].y1) == (1576, 1984)
     assert (
         layout["group_agent"].y0,
         layout["group_agent"].y1,
-    ) == (1888, 1976)
+    ) == (2016, 2104)
     assert (
         layout["group_hotkeys"].y0,
         layout["group_hotkeys"].y1,
-    ) == (2008, 2228)
-    assert (layout["footer"].y0, layout["footer"].y1) == (2240, 2284)
-    assert layout["total"].y1 == 2296
+    ) == (2136, 2356)
+    assert (layout["footer"].y0, layout["footer"].y1) == (2368, 2412)
+    assert layout["total"].y1 == 2424
     assert visible_menu_height(1080) == 560
     assert visible_menu_height(600) == pytest.approx(384)
 
@@ -195,7 +194,7 @@ def test_layout_bajo_el_pie_se_mueve_y_el_scroll_existe():
     layout = menu._layout()
     assert layout["footer"].y0 == pytest.approx(364)
     # El contenido completo supera con holgura el viewport recortado.
-    assert menu.scroll_max == pytest.approx(1876)
+    assert menu.scroll_max == pytest.approx(2004)
     assert menu.viewport_height == pytest.approx(384)
     assert menu.height(now) == pytest.approx(384)
 
@@ -497,9 +496,10 @@ def test_etiquetas_en_espanol_y_secciones():
     from ezagent.voice.notch.menu_layout import GROUP_LABELS
 
     labels = dict(GROUP_LABELS)
-    assert labels["tts"] == "TTS"
-    assert labels["vad"] == "VAD"
-    assert "STT" in labels["stt"]
+    assert labels["audio"] == "MICRÓFONO"
+    assert labels["vad"] == "FIN DE TURNO"
+    assert "KOKORO" in labels["tts"]
+    assert "WHISPER" in labels["stt"]
     assert "LLM" in labels["llm"]
     assert labels["hotkeys"] == "ATAJOS"
 
@@ -513,15 +513,31 @@ def test_filas_de_seleccion_para_modelos():
     assert settings.value_label("stt_model") == (
         "Whisper Large v3 Turbo · recomendada"
     )
-    assert [o.value for o in settings.select_options("llm_model")] == [
+    assert [o.value for o in settings.select_options("llm_model_pick")] == [
         "deepseek-v4.1-flash",
     ]
     settings.set("llm_provider", "groq")
-    assert [o.value for o in settings.select_options("llm_model")] == [
+    # El modelo actual va primero aunque no esté en la lista del proveedor.
+    assert [o.value for o in settings.select_options("llm_model_pick")] == [
+        "deepseek-v4.1-flash",
         "llama-3.3-70b-versatile",
         "llama-3.1-8b-instant",
-        "deepseek-v4.1-flash",
     ]
+    # Elegir de la lista rellena el campo de texto «Modelo».
+    settings.set("llm_model_pick", "llama-3.1-8b-instant")
+    assert settings.get("llm_model") == "llama-3.1-8b-instant"
+    # El modelo también se puede escribir a mano (uno nuevo o sin lista).
+    settings.set("llm_model", "llama-4-scout-nuevo")
+    assert settings.value_label("llm_model") == "llama-4-scout-nuevo"
+    assert "llm_model_pick" not in settings.snapshot()
+    # La lista real llega después desde la API.
+    settings.set_llm_models("groq", ["openai/gpt-oss-120b", "qwen/qwen3-32b"])
+    assert [o.value for o in settings.select_options("llm_model_pick")] == [
+        "llama-4-scout-nuevo",
+        "openai/gpt-oss-120b",
+        "qwen/qwen3-32b",
+    ]
+    assert settings.value_label("llm_model_pick") == "3 disponibles"
     settings.set("stt_model", "ggml-large-v3-turbo-q5_0")
     assert settings.get("stt_model") == "ggml-large-v3-turbo-q5_0"
 
@@ -558,11 +574,11 @@ def test_hit_de_cada_control():
         ((150.0, 118.0), "select", "input_device_index"),
         ((150.0, 166.0), "meter", "input_meter"),
         ((150.0, 212.0), "slider", "noise_multiplier"),
-        ((150.0, 256.0), "slider", "silence_secs"),
-        ((150.0, 318.0), "select", "stt_engine"),
-        ((150.0, 354.0), "select", "tts_model_variant"),
-        ((150.0, 422.0), "select", "voice"),
-        ((150.0, 472.0), "slider", "speed"),
+        ((150.0, 288.0), "slider", "silence_secs"),
+        ((150.0, 336.0), "toggle", "smart_turn"),
+        ((150.0, 368.0), "slider", "turn_threshold"),
+        ((150.0, 412.0), "slider", "pre_roll_secs"),
+        ((150.0, 500.0), "slider", "max_utterance_secs"),
         ((265.0, 562.0), "save", "save"),
     ]
     for (x, y), kind, key in cases:
@@ -628,10 +644,10 @@ def test_selector_abierto_desplaza_filas_y_limita_a_cinco():
     assert menu._selector_key == "input_device_index"
     assert menu._selector_extra.value == pytest.approx(160)
     assert menu.scroll_max > 160
-    # La fila de VOZ baja 160 px y sigue siendo visible.
-    engine = menu.hit(150, 328 + 160, now)
-    assert engine is not None and engine.kind == "select"
-    assert engine.key == "stt_engine"
+    # La primera fila de FIN DE TURNO baja 160 px y sigue siendo visible.
+    below = menu.hit(150, 288 + 160, now)
+    assert below is not None and below.kind == "slider"
+    assert below.key == "silence_secs"
     # El primer elemento de la lista empieza en y=136.
     first = menu.hit(150, 150, now)
     assert first is not None and first.kind == "option"
@@ -661,23 +677,24 @@ def test_clic_toggle_y_prueba_de_voz():
     settings = make_settings()
     menu, calls = make_menu(settings)
     now = opened(menu)
-    menu._scroll.value = 960.0 + at_audio(menu)
+    # CONVERSACIÓN va justo después de FIN DE TURNO.
+    menu._scroll.value = 200.0 + at_audio(menu)
     menu._scroll_target = menu._scroll.value
-    menu.pointer_down(270, 420, now)
-    menu.pointer_up(270, 420, now)
+    menu.pointer_down(270, 380, now)
+    menu.pointer_up(270, 380, now)
     assert settings.get("barge_in") is False
     assert calls["live"][-1] == ("barge_in", False)
 
     values_before = settings.snapshot()
-    menu.pointer_down(253, 498, now + 0.1)
-    menu.pointer_up(253, 498, now + 0.1)
+    menu.pointer_down(253, 482, now + 0.1)
+    menu.pointer_up(253, 482, now + 0.1)
     assert calls["tested"] and calls["tested"][-1] == values_before
     assert menu._testing_t.value == pytest.approx(0.0)  # aún no ha pasado 120 ms
     menu.update(now + 1.0)
     assert menu._testing_t.value == pytest.approx(1.0)
-    disabled = menu.hit(253, 498, now + 1.0, include_disabled=True)
+    disabled = menu.hit(253, 482, now + 1.0, include_disabled=True)
     assert disabled is not None and disabled.disabled
-    assert menu.hit(253, 498, now + 1.0) is None
+    assert menu.hit(253, 482, now + 1.0) is None
     menu.set_testing(False, now + 1.1)
     menu.update(now + 1.4)
     assert menu._testing_t.value == pytest.approx(0.0)
@@ -944,3 +961,29 @@ def test_motor_y_razonamiento_son_listas():
     settings.set("llm_reasoning_effort", "medium")
     assert settings.format("llm_reasoning_effort") == "Medio"
     assert settings.dirty()
+
+
+def test_elegir_proveedor_copia_el_formato_de_api():
+    providers = dict(PROVIDERS)
+    providers["minimax"] = {
+        "label": "Minimax",
+        "base_url": "https://api.minimax.io/anthropic",
+        "model": "MiniMax-M2",
+        "api_key": "mm-123456",
+        "api_style": "anthropic",
+    }
+    settings = S.MenuSettings.from_app(
+        {"llm_provider": "groq", "llm_model": "llama-3.3-70b-versatile"},
+        [],
+        VOICES,
+        providers,
+    )
+    assert settings.get("llm_api_style") == "openai"
+    settings.set("llm_profile", "minimax")
+    assert settings.get("llm_api_style") == "anthropic"
+    assert settings.value_label("llm_api_style") == "Anthropic"
+    assert settings.snapshot()["llm_api_style"] == "anthropic"
+    assert [o.value for o in settings.select_options("llm_api_style")] == ["openai", "anthropic"]
+    # Un valor raro cae a OpenAI.
+    settings.set("llm_api_style", "grpc")
+    assert settings.get("llm_api_style") == "openai"

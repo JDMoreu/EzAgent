@@ -7,7 +7,8 @@ ventana: y = 0 es el borde superior de la isla.
 Las claves de fila son las claves reales de `voice.json` (RG-3). El menú
 cubre audio, VAD, voz/TTS, Whisper/STT, LLM/API, conversación y atajos; el
 contenido que no cabe en el alto visible se desplaza con la rueda.
-`test_voice` y `llm_profile` son controles del menú, no claves persistidas.
+`test_voice`, `llm_profile` y `llm_model_pick` son controles del menú, no claves
+persistidas.
 """
 
 from __future__ import annotations
@@ -42,7 +43,9 @@ ROW = {
     "action": ROW_ACTION,
 }
 
-# Orden y alturas de la tabla 7.3. La etiqueta de sección va fuera del grupo.
+# Orden por tarea: cómo se ve, cómo te escucha, cuándo cierra tu turno, cómo
+# conversa, cómo habla, cómo transcribe y con qué modelo piensa. La etiqueta de
+# sección va fuera del grupo.
 GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
         "appearance",
@@ -66,37 +69,45 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("input_device_index", "select"),
             ("input_meter", "meter"),
             ("noise_multiplier", "slider"),
-            ("silence_secs", "slider"),
         ),
     ),
     (
-        "engine",
+        # Cuándo se da por terminada tu frase.
+        "vad",
         (
-            ("stt_engine", "select"),
-            ("tts_model_variant", "select"),
+            ("silence_secs", "slider"),
+            ("smart_turn", "toggle"),
+            ("turn_threshold", "slider"),
+            ("pre_roll_secs", "slider"),
+            ("min_speech_secs", "slider"),
+            ("max_utterance_secs", "slider"),
+        ),
+    ),
+    (
+        "conversation",
+        (
+            ("barge_in", "toggle"),
+            ("barge_in_rms", "slider"),
+            ("confirm_actions", "toggle"),
+            ("test_voice", "action"),
+            ("repeat_last", "action"),
+            ("new_conversation", "action"),
         ),
     ),
     (
         "tts",
         (
             ("voice", "select"),
+            ("tts_model_variant", "select"),
             ("speed", "slider"),
             ("tts_sentence_pause", "slider"),
             ("tts_clause_pause", "slider"),
         ),
     ),
     (
-        "vad",
-        (
-            ("pre_roll_secs", "slider"),
-            ("min_speech_secs", "slider"),
-            ("max_utterance_secs", "slider"),
-            ("barge_in_rms", "slider"),
-        ),
-    ),
-    (
         "stt",
         (
+            ("stt_engine", "select"),
             ("stt_model", "select"),
             ("stt_prompt", "text"),
             ("stt_timeout_secs", "slider"),
@@ -106,24 +117,17 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
         "llm",
         (
+            # Proveedor -> cómo se conecta -> qué modelo -> cómo responde.
             ("llm_profile", "select"),
             ("llm_provider", "text"),
-            ("llm_model", "select"),
+            ("llm_api_style", "select"),
             ("llm_base_url", "text"),
             ("api_key", "text"),
+            ("llm_model", "text"),
+            ("llm_model_pick", "select"),
             ("llm_temperature", "slider"),
             ("llm_max_tokens", "slider"),
             ("llm_reasoning_effort", "select"),
-        ),
-    ),
-    (
-        "conversation",
-        (
-            ("barge_in", "toggle"),
-            ("confirm_actions", "toggle"),
-            ("test_voice", "action"),
-            ("repeat_last", "action"),
-            ("new_conversation", "action"),
         ),
     ),
     (
@@ -148,13 +152,12 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
 GROUP_LABELS = {
     "appearance": "APARIENCIA",
     "listening": "ESCUCHA",
-    "audio": "AUDIO",
-    "engine": "MOTOR",
-    "tts": "TTS",
-    "vad": "VAD",
-    "stt": "WHISPER · STT",
-    "llm": "LLM · API",
+    "audio": "MICRÓFONO",
+    "vad": "FIN DE TURNO",
     "conversation": "CONVERSACIÓN",
+    "tts": "VOZ · KOKORO",
+    "stt": "TRANSCRIPCIÓN · WHISPER",
+    "llm": "LLM · API",
     "agent": "AGENTE",
     "hotkeys": "ATAJOS",
 }

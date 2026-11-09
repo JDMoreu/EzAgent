@@ -12,24 +12,39 @@ tarjeta de ajustes que se despliega desde ☰. No hay app de escritorio, dashboa
 ni panel de llamada.
 
 ```
-Micrófono 16 kHz
+Micrófono
    │
    ▼
-VAD por energía ──► whisper.cpp (es) ──► LLM compatible con OpenAI
-   │                                      (OpenCode, OpenAI, Groq, Claude, Gemini…)
-   ▼
-Kokoro (ONNX local, español)
-   │
-   ▼
-Altavoz
+VAD por energía ──► Smart Turn (¿terminaste la frase?) ──► whisper.cpp (es)
+                                                                │
+                         atajos locales (mute, cierra, gracias) ◄┤
+                                                                ▼
+              LLM en streaming + herramientas (OpenAI o Anthropic)
+              ├─ acuse inmediato: «Va, lo reviso.»
+              ├─ archivos · web · memoria · skills
+              └─ Herdr: OpenCode · Claude Code · Codex · mcode
+                                                                │
+                                                                ▼
+            Kokoro: sintetiza la frase siguiente mientras suena la actual
+                                                                │
+                                                                ▼
+                                                             Altavoz
 ```
 
 | Capa | Motor | Dónde corre |
 |---|---|---|
-| VAD / segmentación | `Segmenter` local con pre-roll e histéresis | Local |
+| VAD / segmentación | `Segmenter` con pre-roll e histéresis | Local |
+| Fin de turno | Smart Turn v3.2 (ONNX, 8 MB) | Local, CPU |
 | STT | whisper.cpp + `large-v3-turbo` | Local, GPU AMD vía Vulkan |
-| LLM | Proveedor compatible con OpenAI, configurable | Nube |
-| TTS | Kokoro v1.0, voces españolas | Local, CPU (ONNX) |
+| LLM | Proveedor configurable, compatible con OpenAI o con Anthropic | Nube |
+| TTS | Kokoro v1.0, voces españolas, en cola | Local, CPU (ONNX) |
+
+Recorrido completo de un turno, hilos y archivos:
+[`docs/architecture.md`](docs/architecture.md).
+
+**Latencia típica** (medida con OpenCode Go): fin de turno en ~0,4 s cuando la
+frase está completa (antes, 1,3 s fijos), transcripción en ~0,2 s y primer
+audio a los ~3,6 s de media; el resto es la espera del primer token del LLM.
 
 **Pipecat no se usa.** El pipeline es propio (VAD, whisper.cpp, Kokoro y el
 LLM); la carpeta `~/.cache/pipecat/kokoro-onnx` es una caché antigua que solo
@@ -40,7 +55,7 @@ se lee para migrar los modelos Kokoro, que se copian una vez a
 
 Requisitos: Windows 11, `uv` y una clave del proveedor LLM elegido. Los modelos
 y binarios se descargan una sola vez, con verificación SHA256, a
-`%LOCALAPPDATA%\EzAgent` (whisper.cpp, modelo Whisper, Kokoro y Silero VAD):
+`%LOCALAPPDATA%\EzAgent` (whisper.cpp, modelo Whisper, Kokoro y Smart Turn):
 
 ```powershell
 uv run python -m ezagent.core.downloads --list   # qué falta
@@ -184,22 +199,23 @@ pega desde el portapapeles.
   instante.
 - **ESCUCHA:** qué hace «cierra» (pausa o cuelga), reactivar por voz y la frase de
   reactivación. También se aplica y se guarda al instante.
-- **AUDIO:** micrófono y **medidor de entrada con nivel en vivo y umbral
-  arrastrable**; umbral de ruido y silencio de cierre.
-- **MOTOR:** motor de Whisper (`Automático`, `GPU · Vulkan` o `CPU`) y variante
-  de Kokoro (`int8`/`fp32`). El puerto local de Whisper se elige libre y se
-  configura solo al arrancar. VAD y TTS corren en local.
-- **TTS:** voz de Kokoro, velocidad y pausas de frase/cláusula. Las rutas de
-  modelo/voces quedan como configuración avanzada.
-- **VAD:** antelación de escucha, duración mínima, frase máxima y umbral de
-  interrupción.
-- **WHISPER · STT:** modelo en una **lista de los modelos instalados**, indicación,
-  tiempo máximo y arranque automático. La dirección del servidor ya no se pide:
-  EzAgent usa un puerto local libre.
-- **LLM · API:** perfil guardado, proveedor, **modelo en lista**, dirección,
-  clave, temperatura, máximo de tokens y **nivel de razonamiento**.
-- **CONVERSACIÓN:** interrupción activa, confirmación opcional, prueba de voz,
-  «Repetir lo último» y «Nueva conversación» (pide un segundo clic).
+- **MICRÓFONO:** dispositivo, **medidor de entrada con nivel en vivo y umbral
+  arrastrable** y umbral de ruido.
+- **FIN DE TURNO:** silencio máximo, **cierre inteligente** (Smart Turn) y
+  **certeza para cerrar** (súbela si te corta antes de tiempo), antelación de
+  escucha, duración mínima y frase máxima.
+- **CONVERSACIÓN:** interrupción activa y su umbral, confirmación opcional,
+  prueba de voz, «Repetir lo último» y «Nueva conversación» (pide un segundo
+  clic).
+- **VOZ · KOKORO:** voz, variante (`int8`/`fp32`), velocidad y pausas de
+  frase y cláusula. Las rutas de modelo y voces quedan como configuración
+  avanzada.
+- **TRANSCRIPCIÓN · WHISPER:** motor (`Automático`, `GPU · Vulkan` o `CPU`),
+  modelo en una **lista de los modelos instalados**, indicación, tiempo máximo y
+  arranque automático. El puerto local se elige libre al arrancar.
+- **LLM · API:** proveedor, nombre del perfil, **compatibilidad** (OpenAI o
+  Anthropic), dirección, clave, **modelo escrito a mano**, **modelos de la API**
+  (la lista real del proveedor), temperatura, máximo de tokens y razonamiento.
 - **AGENTE:** abre `system.md` o `voice.json` con el editor predeterminado para
   cambiar el comportamiento o los perfiles de modelo/esfuerzo de cada agente.
 - **ATAJOS:** los cinco atajos globales editables en línea (llamada, colgar,
@@ -356,22 +372,27 @@ Ejemplo por voz:
 
 ## Proveedor y modelo LLM
 
-Se pueden cambiar desde el grupo **LLM · API** del menú o con variables de
-entorno y `llm.json`. Los proveedores integrados son OpenCode, OpenAI, Groq,
-Claude (Anthropic), Gemini, OpenRouter y cualquier endpoint compatible con
-OpenAI. Ejemplo por entorno:
+Se cambian desde el grupo **LLM · API** del menú o con variables de entorno y
+`llm.json`. Presets: **OpenCode Go, OpenAI (GPT, Codex), Claude (Anthropic),
+Gemini, Groq, Cerebras, DeepSeek y OpenRouter**, más **Personalizado** para
+cualquier servicio compatible con la API de OpenAI o con la de Anthropic (con
+el nombre de perfil que elijas). El modelo se escribe a mano; «Modelos de la
+API» trae la lista real del proveedor y, si escribes un id sin prefijo
+(`qwen3-32b` en lugar de `qwen/qwen3-32b`), EzAgent lo completa. Ejemplo por
+entorno:
 
 ```dotenv
 LLM_PROVIDER=groq
 GROQ_API_KEY=...
 # Opcionales; si faltan, se usan los del proveedor:
-# LLM_MODEL=llama-3.3-70b-versatile
+# LLM_MODEL=openai/gpt-oss-120b
 # LLM_BASE_URL=https://api.groq.com/openai/v1
 ```
 
-Proveedores integrados: OpenCode, OpenAI, Groq, Claude (Anthropic), Gemini,
-OpenRouter y cualquier endpoint compatible con OpenAI. También puedes usar
-`%APPDATA%\EzAgent\llm.json` o `EZ_LLM_CONFIG` con perfiles por proveedor.
+Las suscripciones de Claude Code o Codex (inicio de sesión con la cuenta) no
+son claves de API: para usar Claude o GPT aquí hace falta una clave de API.
+Los planes gratuitos con pocos tokens por minuto (Groq gratis: 7.000–8.000) no
+alcanzan, porque cada petición con herramientas ronda los 7.000 tokens.
 Guía completa: [`docs/llm-providers.md`](docs/llm-providers.md).
 
 ## Atajos
@@ -392,11 +413,12 @@ aunque el usuario haya dado la orden.
 ## Pruebas
 
 ```powershell
-uv run pytest -q                # 758 pruebas
+uv run pytest -q                # 840 pruebas
 uv run ruff check src tests     # lint
 ```
 
-Detalle del mensajero, límites y arquitectura de audio:
+Arquitectura del flujo completo: [`docs/architecture.md`](docs/architecture.md).
+Detalle del mensajero, latencia y límites:
 [`src/ezagent/voice/README.md`](src/ezagent/voice/README.md).
 
 ## Comunidad

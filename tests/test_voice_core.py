@@ -213,6 +213,71 @@ def test_latency_summary_no_se_repite_tras_la_ventana(capsys):
     assert output.count("Latencia acumulada") == 1
 
 
+def test_latency_report_incluye_cada_etapa_y_se_formatea(capsys):
+    from ezagent.voice.metrics import LatencyStats, TurnTimings, format_stt, format_turn
+
+    timings = TurnTimings(speech_end=10.0, vad_end=10.4)
+    timings.marks.update(
+        {
+            "stt_ready": 10.7,
+            "llm_start": 10.75,
+            "first_token": 11.0,
+            "first_sentence": 11.2,
+            "first_sound": 11.3,
+            "turn_end": 13.0,
+        }
+    )
+    timings.add_span("llm", 0.9)
+    timings.add_span("tts_synth", 0.1)
+    timings.add_span("tts_synth", 0.2)
+    timings.add_span("tts_play", 1.7)
+    report = timings.report()
+    assert report["llm_ttft_ms"] == pytest.approx(250)
+    assert report["llm_ms"] == pytest.approx(900)
+    assert report["tts_synth_ms"] == pytest.approx(300)
+    assert report["tts_play_ms"] == pytest.approx(1700)
+    assert report["turn_total_ms"] == pytest.approx(3000)
+
+    assert format_stt(report) == "VAD 400 ms | STT 300 ms"
+    line = format_turn(report)
+    assert line == (
+        "VAD 400 ms | STT 300 ms | LLM 900 ms (1.er token 250 ms) | "
+        "TTS 300 ms síntesis | Voz 1700 ms | 1.er audio a los 1300 ms | "
+        "Turno 3000 ms"
+    )
+
+    LatencyStats().record(timings)
+    assert "Tiempos: " + line in capsys.readouterr().out
+
+
+def test_format_turn_omite_las_etapas_que_no_ocurrieron():
+    from ezagent.voice.metrics import TurnTimings, format_turn
+
+    timings = TurnTimings(speech_end=1.0, vad_end=1.5)
+    assert format_turn(timings.report()) == "VAD 500 ms"
+
+
+def test_timed_stream_solo_cuenta_la_espera_del_llm():
+    import time
+
+    from ezagent.voice.app import _timed_stream
+    from ezagent.voice.metrics import TurnTimings
+
+    def stream():
+        for chunk in ("a", "b"):
+            time.sleep(0.05)
+            yield chunk
+
+    timing = TurnTimings(speech_end=0.0, vad_end=0.0)
+    seen = []
+    for chunk in _timed_stream(stream(), timing):
+        seen.append(chunk)
+        time.sleep(0.2)  # la voz del consumidor no debe sumarse al LLM
+    assert seen == ["a", "b"]
+    assert 0.08 <= timing.spans["llm"] < 0.3
+    assert list(_timed_stream(iter(["x"]), None)) == ["x"]
+
+
 def test_segmenter_marca_el_fin_de_voz():
     segmenter = Segmenter(min_rms=0.0006, silence_secs=0.3)
     chunk = b"\x00\x00" * 480

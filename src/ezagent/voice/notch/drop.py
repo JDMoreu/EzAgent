@@ -1183,6 +1183,16 @@ class DropUI:
     def set_save_result(self, ok: bool) -> None:
         self._pending_save = bool(ok)
 
+    def update_llm_models(self, provider: str, models) -> None:
+        """Lista real de modelos de la API para el menú abierto (hilo de red)."""
+        menu = self._menu
+        if menu is None:
+            return
+        try:
+            menu.settings.set_llm_models(provider, models)
+        except Exception:
+            pass
+
     def refresh_menu_settings(self) -> None:
         if self._menu is None:
             return

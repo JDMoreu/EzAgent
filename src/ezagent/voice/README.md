@@ -3,7 +3,7 @@
 Capa de voz para Herdr. Pulsas un atajo, hablas, y el mensajero:
 
 - transcribe con **whisper.cpp**;
-- entiende la petición con el **LLM configurable** (OpenCode, OpenAI, Groq, Claude, Gemini o endpoint compatible);
+- entiende la petición con el **LLM configurable** (OpenCode Go, OpenAI, Claude, Gemini, Groq, Cerebras, DeepSeek, OpenRouter o uno personalizado compatible con OpenAI o con Anthropic);
 - consulta o delega en **Herdr** (`hc`);
 - te responde por voz con **Kokoro**;
 - te avisa cuando un agente termina o se bloquea.
@@ -68,17 +68,19 @@ modo llamada el micrófono **no se cierra entre turnos**: hablas, el asistente
 responde y vuelve a escuchar solo. La barra queda visible durante toda la
 llamada.
 
-El menú tiene siete grupos: **AUDIO**, **MOTOR**, **TTS**, **VAD**,
-**WHISPER · STT**, **LLM · API** y **CONVERSACIÓN**. Incluye micrófono, un
-medidor de entrada con nivel en vivo y umbral arrastrable, ruido, silencio,
-motor de Whisper y variante de Kokoro, voz/velocidad/pausas, parámetros del VAD,
-modelo de Whisper instalado, y proveedor/modelo/endpoint/clave/temperatura/
-razonamiento del LLM. Los modelos de Whisper y del proveedor LLM se eligen en
-listas; el puerto local de Whisper se elige libre. El contenido que no
-cabe se desplaza con rueda y un pulgar visible. La voz, el silencio, el barge-in
-y los umbrales del VAD se aplican en vivo; cambiar de micrófono reabre la
-captura; los cambios de LLM se aplican al guardar y los de modelo TTS recargan
-Kokoro. El pie muestra `TODO GUARDADO` o
+El menú se ordena por tarea: **APARIENCIA**, **ESCUCHA**, **MICRÓFONO**
+(dispositivo, medidor con umbral arrastrable y ruido), **FIN DE TURNO**
+(silencio máximo, cierre inteligente, certeza para cerrar, antelación,
+duración mínima y frase máxima), **CONVERSACIÓN** (interrupción y su umbral,
+confirmaciones, prueba de voz), **VOZ · KOKORO** (voz, variante, velocidad y
+pausas), **TRANSCRIPCIÓN · WHISPER** (motor, modelo instalado, indicación y
+tiempo máximo), **LLM · API** (proveedor, perfil, compatibilidad, dirección,
+clave, modelo escrito a mano, modelos de la API, temperatura, tokens y
+razonamiento), **AGENTE** y **ATAJOS**. El puerto local de Whisper se elige
+libre. El contenido que no cabe se desplaza con rueda y un pulgar visible. La
+voz, el silencio, el cierre inteligente, el barge-in y los umbrales del VAD se
+aplican en vivo; cambiar de micrófono reabre la captura; los cambios de LLM se
+aplican al guardar y los de modelo TTS recargan Kokoro. El pie muestra `TODO GUARDADO` o
 `● CAMBIOS SIN GUARDAR`; Guardar es ámbar cuando hay cambios y confirma con un
 check. El menú solo usa texto para las etiquetas de ajustes y el pie.
 
@@ -90,15 +92,37 @@ estados). No hay panel Tk ni segunda ventana de ajustes.
 
 ### Latencia
 
-- El silencio de cierre es de **1,3 s** (ajustable en el menú del notch). El VAD tiene
-  pre-roll e histéresis para no cortar a la primera pausa.
+- **Fin de turno con Smart Turn** (Pipecat, BSD-2, modelo ONNX de 8 MB que se
+  descarga solo): tras **0,35 s** de silencio el modelo mira si tu frase terminó.
+  Si la ve completa, el turno se cierra ya (`VAD end: … (fin de turno
+  detectado)`); si no, se espera el silencio de siempre (**1,3 s**, ajustable en
+  el menú). No cambia la interrupción (barge-in): esa usa su propio umbral.
+- Si el turno se cerró en una pausa y sigues hablando mientras el modelo piensa,
+  la frase nueva se transcribe **junto con la anterior** («Sigues hablando: uno
+  esta frase con la anterior»), en vez de perder la primera parte.
+- El VAD tiene pre-roll e histéresis para no cortar a la primera pausa.
 - Kokoro y whisper se **precalientan** al arrancar.
 - Mute, desmute, cerrar, repetir, saludar y listar agentes son **atajos
   locales**: no pasan por el LLM.
 - El LLM sigue en streaming; el primer trozo que se manda a Kokoro es una
   cláusula corta para que el primer audio llegue antes.
-- El log muestra `STT`, `Primer audio`, `Turno completo` y, por turno,
-  `Latencia: vad_wait_ms ... total_ms`; cada diez turnos añade media y P95.
+- **Cola de voz**: Kokoro sintetiza la frase siguiente mientras suena la actual,
+  así no quedan silencios entre frases.
+- **Acuse inmediato**: si hace falta una herramienta o un agente, el modelo
+  empieza con una frase corta («Va, lo reviso.») antes de trabajar. Si no lo
+  hace, el código dice una de una lista fija. Con varias llamadas al LLM, el log
+  añade `LLM por llamada: …` con el tiempo de cada llamada y herramienta.
+- La hora va al **final** del system prompt para no invalidar la caché por
+  prefijo del proveedor a cada minuto.
+- Al transcribir, el log muestra `Tiempos: VAD # ms | STT # ms`. Al terminar
+  el turno añade el desglose completo, por ejemplo
+  `Tiempos: VAD 650 ms | STT 420 ms | LLM 900 ms (1.er token 380 ms) |
+  TTS 210 ms síntesis | Voz 3200 ms | 1.er audio a los 1660 ms | Turno 4800 ms`.
+  `VAD` es el silencio que espera antes de cortar tu frase; `LLM` cuenta solo
+  la espera de tokens (incluye herramientas, no la voz); `TTS` es la síntesis y
+  `Voz`, la reproducción. Los comandos locales muestran `Comando local: # ms`.
+  Cada diez turnos añade media y P95 por etapa, y todo queda en
+  `%APPDATA%\EzAgent\logs\latency.jsonl`.
 
 ### Avisos de tarea, cierre y mute
 
@@ -207,6 +231,25 @@ Ejemplo:
 El mensajero abre las pestañas visibles y delega; el agente usa `cua-driver`
 para manejar Brave/YouTube.
 
+## Proveedor del LLM (menú → LLM · API)
+
+- **Proveedor**: OpenCode Go, OpenAI (GPT, Codex), Claude (Anthropic), Gemini,
+  Groq, Cerebras, DeepSeek, OpenRouter o **Personalizado**. Las claves se leen
+  de `.env` (`OPENCODE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+  `GEMINI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `DEEPSEEK_API_KEY`,
+  `OPENROUTER_API_KEY`) o se escriben en el menú.
+- **Personalizado**: elige «Personalizado», ponle un **Nombre del perfil**
+  (p. ej. `minimax`), elige **Compatibilidad** (OpenAI o Anthropic) y escribe
+  dirección, clave y modelo. Al guardar queda como un proveedor más en la lista.
+  Para Anthropic vale la raíz que da el servicio (`…/anthropic`) o una que
+  termine en `/v1`.
+- **Modelo** es texto libre: escribe el id exacto. **Modelos de la API** pide
+  la lista real al proveedor (`GET /models`) al abrir el menú, al cambiar de
+  proveedor y al guardar; elegir uno rellena el campo.
+- Las suscripciones de Claude Code o Codex (inicio de sesión con la cuenta) no
+  son claves de API: aquí hace falta una clave de API de Anthropic u OpenAI.
+- Los perfiles viven en `%APPDATA%\EzAgent\llm.json`.
+
 ## Configuración (`voice.json`)
 
 Los cinco atajos (`hotkey`, `cancel_hotkey`, `repeat_hotkey`, `mute_hotkey`,
@@ -236,6 +279,9 @@ EzAgent no usa Pipecat; el pipeline es propio.
 | `input_device_index` | `null` | Micrófono; `null` = automático |
 | `output_device_index` | `null` | Altavoz |
 | `silence_secs` | `1.3` | Silencio que cierra el turno (más alto = no te corta) |
+| `smart_turn` | `true` | Cierra antes si Smart Turn ve la frase completa |
+| `turn_quick_secs` | `0.35` | Silencio tras el que se consulta a Smart Turn |
+| `turn_threshold` | `0.5` | Probabilidad mínima de «frase completa» (más alto = más prudente) |
 | `min_rms` | `0.0006` | Umbral mínimo de voz (sensibilidad) |
 | `pre_roll_secs` | `0.6` | Audio previo que se conserva |
 | `min_speech_secs` | `0.2` | Duración mínima para enviar a STT |
@@ -244,8 +290,9 @@ EzAgent no usa Pipecat; el pipeline es propio.
 | `barge_in` | `true` | Interrumpir el TTS al hablar |
 | `barge_in_rms` | `0.008` | Nivel mínimo para barge-in |
 | `auto_start_whisper` | `true` | Arrancar whisper-server solo |
-| `llm_provider` | `opencode` | Proveedor activo (OpenAI-compatible) |
-| `llm_model` | `deepseek-v4.1-flash` | Modelo del mensajero |
+| `llm_provider` | `opencode` | Perfil activo: un preset o el nombre de uno personalizado |
+| `llm_api_style` | del perfil | `openai` (Chat Completions) o `anthropic` (Messages) |
+| `llm_model` | `deepseek-v4.1-flash` | Modelo del mensajero (se escribe tal cual) |
 | `llm_base_url` | endpoint del proveedor | URL base de la API |
 | `llm_pinned` | `false` | `true` si el proveedor se eligió en el menú |
 | `llm_temperature` | `0.3` | Creatividad del LLM |

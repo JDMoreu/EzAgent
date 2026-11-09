@@ -1,40 +1,66 @@
 {
-  "provider": "groq",
+  "provider": "opencode",
   "providers": {
     "opencode": {
       "base_url": "https://opencode.ai/inference/go/openai/v1",
       "api_key": "",
-      "model": "deepseek-v4.1-flash"
+      "model": "deepseek-v4.1-flash",
+      "api_style": "openai"
     },
     "openai": {
       "base_url": "https://api.openai.com/v1",
       "api_key": "",
-      "model": "gpt-4.1-mini"
-    },
-    "groq": {
-      "base_url": "https://api.groq.com/openai/v1",
-      "api_key": "",
-      "model": "llama-3.3-70b-versatile"
+      "model": "gpt-4.1-mini",
+      "api_style": "openai"
     },
     "anthropic": {
-      "base_url": "https://api.anthropic.com/v1/",
+      "base_url": "https://api.anthropic.com/v1",
       "api_key": "",
-      "model": "claude-sonnet-5-5"
+      "model": "claude-sonnet-5-5",
+      "api_style": "anthropic"
     },
     "gemini": {
       "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
       "api_key": "",
-      "model": "gemini-2.5-flash"
+      "model": "gemini-2.5-flash",
+      "api_style": "openai"
+    },
+    "groq": {
+      "base_url": "https://api.groq.com/openai/v1",
+      "api_key": "",
+      "model": "openai/gpt-oss-120b",
+      "api_style": "openai"
+    },
+    "cerebras": {
+      "base_url": "https://api.cerebras.ai/v1",
+      "api_key": "",
+      "model": "gpt-oss-120b",
+      "api_style": "openai"
+    },
+    "deepseek": {
+      "base_url": "https://api.deepseek.com/v1",
+      "api_key": "",
+      "model": "deepseek-chat",
+      "api_style": "openai"
     },
     "openrouter": {
       "base_url": "https://openrouter.ai/api/v1",
       "api_key": "",
-      "model": "openai/gpt-4.1-mini"
+      "model": "openai/gpt-4.1-mini",
+      "api_style": "openai"
     },
     "custom": {
       "base_url": "https://api.tu-proveedor.com/v1",
       "api_key": "",
-      "model": "tu-modelo"
+      "model": "tu-modelo",
+      "api_style": "openai"
+    },
+    "mi-anthropic": {
+      "label": "Mi servicio Anthropic",
+      "base_url": "https://api.tu-proveedor.com/anthropic",
+      "api_key": "",
+      "model": "tu-modelo",
+      "api_style": "anthropic"
     }
   }
 }

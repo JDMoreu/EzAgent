@@ -1,8 +1,11 @@
 """Ensamblado del system prompt y recarga en caliente de ``system.md``.
 
-El orden es fijo: preámbulo de seguridad inmutable -> ``system.md`` -> memoria
--> catálogo de skills.  El preámbulo vive en el código y nunca se puede
-sustituir desde un archivo editable.
+El orden es fijo: preámbulo de seguridad inmutable -> ``system.md`` -> guía de
+voz -> memoria -> catálogo de skills -> momento actual.  El preámbulo vive en
+el código y nunca se puede sustituir desde un archivo editable.
+
+Lo que cambia a cada minuto (la hora) va al final: los proveedores cachean el
+prompt por prefijo y una hora a mitad del texto invalida todo lo que sigue.
 """
 
 from __future__ import annotations
@@ -52,6 +55,20 @@ SKILLS_HINT = (
     "Si una tarea coincide con una skill, llama primero a `load_skill` y sigue "
     "sus pasos. No inventes skills ni las crees por tu cuenta."
 )
+
+# Guía fija de conversación por voz: acusar recibo antes de trabajar para que
+# no quede un silencio largo mientras corren las herramientas.
+VOICE_FLOW_HINT = (
+    "# Acuse inmediato\n"
+    "Si para responder necesitas una herramienta o un agente, empieza tu "
+    "respuesta con una frase muy corta de acuse (de 2 a 6 palabras, terminada "
+    "en punto) y solo después llama a la herramienta. Ejemplos: «Va, lo "
+    "reviso.», «Dale, ya le escribo.», «Un momento, lo busco.». No repitas el "
+    "acuse después. Si puedes responder sin herramientas, responde directo, "
+    "sin acuse."
+)
+
+_CLOCK_RE = re.compile(r"\{\{\s*hora\s*\}\}")
 
 # Plantilla por defecto de system.md (sección 6.1 + comportamiento actual del
 # mensajero con Herdr y la delegación).  El usuario puede editarla.
@@ -137,6 +154,29 @@ def _os_description() -> str:
     return f"{system} {release}".strip()
 
 
+def _split_clock_lines(text: str) -> tuple[str, str]:
+    """Separa las líneas con ``{{hora}}`` para llevarlas al final del prompt.
+
+    Si un encabezado se queda sin contenido, también se quita.
+    """
+    kept: list[str] = []
+    clock: list[str] = []
+    for line in text.splitlines():
+        (clock if _CLOCK_RE.search(line) else kept).append(line)
+    if not clock:
+        return text, ""
+    result: list[str] = []
+    for index, line in enumerate(kept):
+        if line.lstrip().startswith("#"):
+            following = next(
+                (rest for rest in kept[index + 1 :] if rest.strip()), None
+            )
+            if following is None or following.lstrip().startswith("#"):
+                continue
+        result.append(line)
+    return "\n".join(result).strip() + "\n", "\n".join(clock)
+
+
 class SystemPromptBuilder:
     """Construye el prompt de cada turno y vigila ``system.md``.
 
@@ -194,11 +234,12 @@ class SystemPromptBuilder:
         """Devuelve el prompt completo.  ``now`` permite fijar fecha y hora."""
         self.reload_if_changed()
         moment = now if now is not None else datetime.now()
-        system_text = self._render_system_md(
-            self._last_valid_text or DEFAULT_SYSTEM_MD, moment
+        stable, clock = _split_clock_lines(
+            self._last_valid_text or DEFAULT_SYSTEM_MD
         )
+        system_text = self._render_system_md(stable, moment)
 
-        parts: list[str] = [SAFETY_PREAMBLE_TEXT, system_text]
+        parts: list[str] = [SAFETY_PREAMBLE_TEXT, system_text, VOICE_FLOW_HINT]
         memory = self._section(self._memory_block)
         if memory:
             parts.append(memory)
@@ -210,6 +251,10 @@ class SystemPromptBuilder:
         if catalog:
             parts.append(catalog)
             parts.append(SKILLS_HINT)
+        if clock:
+            parts.append(
+                "# Momento actual\n" + self._render_system_md(clock, moment)
+            )
         return "\n\n".join(part.strip() for part in parts if part.strip())
 
     def reload_if_changed(self) -> bool:

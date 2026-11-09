@@ -16,7 +16,7 @@ from ezagent.agent.runtime import (
     RuntimeCallbacks,
 )
 from ezagent.voice.config import VoiceConfig
-from ezagent.voice.llm import Messenger
+from ezagent.voice.llm import ACK_FILLERS, Messenger
 
 
 class _FakeHerdr:
@@ -242,7 +242,9 @@ def test_mensajero_usa_el_runtime_y_conserva_el_streaming(runtime):
     )
     messenger.client = _FakeClient([first, second])
     answer = "".join(messenger.ask_stream("¿qué hora es?")).strip()
-    assert answer == "Son las diez."
+    # El modelo pidió la herramienta sin decir nada: el código acusa recibo.
+    assert answer.startswith(ACK_FILLERS[0])
+    assert answer.endswith("Son las diez.")
     assert len(messenger.client.chat.completions.requests) == 2
     first_request = messenger.client.chat.completions.requests[0]
     assert len(first_request["tools"]) <= 14
@@ -282,3 +284,76 @@ def test_mensajero_recorta_historial_por_grupos():
     assert messenger.messages[0] == system
     assert messenger.messages[1]["role"] == "user"
     assert len(messenger.messages) <= 14
+
+
+def _messenger(runtime) -> Messenger:
+    return Messenger(
+        VoiceConfig(llm_model="fake"),
+        _FakeHerdr(),
+        last_summary=lambda: "",
+        watch=lambda address: None,
+        mute=lambda minutes: None,
+        request_close=lambda: None,
+        mic_mute=lambda muted: None,
+        runtime=runtime,
+    )
+
+
+def test_sin_acuse_del_codigo_si_el_modelo_ya_lo_dijo(runtime):
+    first = [_chunk("Va, lo reviso."), _tool_chunk("get_datetime", {})]
+    second = [_chunk("Son las diez.")]
+    messenger = _messenger(runtime)
+    messenger.client = _FakeClient([first, second])
+    answer = "".join(messenger.ask_stream("¿qué hora es?"))
+    assert not any(filler in answer for filler in ACK_FILLERS)
+    # El acuse del modelo y la respuesta no quedan pegados.
+    assert "Va, lo reviso. Son las diez." in answer
+    assert len(messenger.last_rounds) == 2
+    assert "get_datetime" in messenger.last_rounds[0]
+
+
+def test_sin_acuse_para_controles_instantaneos(runtime):
+    first = [_tool_chunk("voice_control", {"action": "mute", "minutes": 5})]
+    second = [_chunk("Listo.")]
+    messenger = _messenger(runtime)
+    messenger.client = _FakeClient([first, second])
+    answer = "".join(messenger.ask_stream("silencia los avisos"))
+    assert not any(filler in answer for filler in ACK_FILLERS)
+
+
+def test_respuesta_directa_no_lleva_acuse(runtime):
+    messenger = _messenger(runtime)
+    messenger.client = _FakeClient([[_chunk("Porque orbita la Tierra.")]])
+    answer = "".join(messenger.ask_stream("¿por qué la luna es un satélite?"))
+    assert answer == "Porque orbita la Tierra."
+    assert len(messenger.last_rounds) == 1
+
+
+def test_errores_del_proveedor_se_dicen_claro():
+    import httpx
+    import openai
+
+    from ezagent.voice.llm import friendly_llm_error
+
+    request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    limited = openai.RateLimitError(
+        "Rate limit reached",
+        response=httpx.Response(429, headers={"retry-after": "50"}, request=request),
+        body=None,
+    )
+    assert "Espera unos 50 segundos" in friendly_llm_error(limited, "Groq", "m")
+    missing = openai.NotFoundError(
+        "model does not exist", response=httpx.Response(404, request=request), body=None
+    )
+    assert friendly_llm_error(missing, "Groq", "qwen3.8-27b") == (
+        "Groq no reconoce el modelo qwen3.8-27b. Revisa el nombre en ajustes."
+    )
+    # Errores del cliente Anthropic (RuntimeError con el código en el texto).
+    anthropic = RuntimeError("La API compatible con Anthropic respondió 401: {}")
+    assert "clave" in friendly_llm_error(anthropic, "Minimax", "m")
+    assert friendly_llm_error(ValueError("raro"), "Groq", "m") == "Groq: raro"
+    too_big = openai.APIStatusError(
+        "Request too large ... org_123", response=httpx.Response(413, request=request), body=None
+    )
+    spoken = friendly_llm_error(too_big, "Groq", "m")
+    assert "tu plan de Groq" in spoken and "org_" not in spoken

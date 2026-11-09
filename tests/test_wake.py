@@ -192,3 +192,28 @@ def test_on_wake_quita_la_pausa():
     app._speak = lambda text, kind="answer": calls.append(text)
     VoiceApp._on_wake(app)
     assert calls == [(False, "frase"), "Dime."]
+
+
+def test_cortesias_iniciales_no_impiden_el_atajo():
+    app = _app()
+    muted: list[bool] = []
+    app._set_mic_muted = lambda value, source="": muted.append(value)
+    app._pause_message = lambda: "Micrófono en pausa."
+    app._speak = lambda text, kind="answer": None
+    assert VoiceApp._fast_command(app, "Ok, gracias. Muteate.")
+    assert muted == [True]
+    app._close_mode = ""
+    assert VoiceApp._fast_command(app, "Bueno, cierra la escucha")
+    assert app._close_mode == "pause"
+
+
+def test_agradecimiento_se_responde_en_local():
+    app = _app()
+    spoken: list[str] = []
+    app._speak = lambda text, kind="answer": spoken.append(text)
+    for phrase in ("Gracias.", "Ok, gracias.", "Muchas gracias"):
+        assert VoiceApp._fast_command(app, phrase)
+    assert spoken == ["De nada."] * 3
+    # Una petición que empieza con «gracias» sigue yendo al modelo.
+    assert not VoiceApp._fast_command(app, "Gracias, ahora abre OpenCode")
+    assert not VoiceApp._fast_command(app, "Ok")

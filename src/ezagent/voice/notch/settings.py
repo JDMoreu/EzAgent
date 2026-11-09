@@ -6,7 +6,8 @@ para pintarse. La escritura atómica de ``voice.json`` pertenece a la capa de
 aplicación; aquí únicamente se prepara el diccionario de ``snapshot()``.
 
 Claves editables: audio/VAD, voz/TTS, Whisper/STT, LLM/API y conversación.
-``llm_profile`` es un selector de perfiles guardados que no se persiste;
+``llm_profile`` (proveedor) y ``llm_model_pick`` (lista de modelos de la API)
+son selectores de conveniencia que no se persisten: rellenan los campos reales.
 ``test_voice`` es una acción del menú, no una clave.
 
 Los flotantes se redondean siempre al paso del slider y se normalizan para
@@ -16,6 +17,7 @@ guardada con los valores actuales después de ese redondeo.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from typing import Any, Final, Iterable, Mapping, Sequence
 
@@ -29,6 +31,8 @@ EDITABLE_KEYS: Final[tuple[str, ...]] = (
     "min_rms",
     "noise_multiplier",
     "silence_secs",
+    "smart_turn",
+    "turn_threshold",
     "pre_roll_secs",
     "min_speech_secs",
     "max_utterance_secs",
@@ -50,6 +54,7 @@ EDITABLE_KEYS: Final[tuple[str, ...]] = (
     "auto_start_whisper",
     # LLM y API.
     "llm_provider",
+    "llm_api_style",
     "llm_model",
     "llm_base_url",
     "api_key",
@@ -70,7 +75,8 @@ EDITABLE_KEYS: Final[tuple[str, ...]] = (
 # ``llm_profile`` es un selector de conveniencia: elige un perfil guardado y
 # copia proveedor, modelo, endpoint y clave en los campos reales. No se
 # persiste como ajuste propio.
-UI_KEYS: Final[tuple[str, ...]] = ("llm_profile",)
+# ``llm_model_pick`` copia en ``llm_model`` un modelo de la lista de la API.
+UI_KEYS: Final[tuple[str, ...]] = ("llm_profile", "llm_model_pick")
 # Apariencia y escucha: se aplican y se guardan al instante (como el tema), sin
 # pasar por «Guardar» ni contar como cambios pendientes.
 INSTANT_KEYS: Final[tuple[str, ...]] = (
@@ -87,6 +93,7 @@ SLIDER_KEYS: Final[tuple[str, ...]] = (
     "min_rms",
     "noise_multiplier",
     "silence_secs",
+    "turn_threshold",
     "pre_roll_secs",
     "min_speech_secs",
     "max_utterance_secs",
@@ -104,8 +111,9 @@ SELECT_KEYS: Final[tuple[str, ...]] = (
     "tts_model_variant",
     "stt_model",
     "stt_engine",
-    "llm_model",
     "llm_profile",
+    "llm_api_style",
+    "llm_model_pick",
     "llm_reasoning_effort",
     "ui_layout",
     "theme",
@@ -113,6 +121,7 @@ SELECT_KEYS: Final[tuple[str, ...]] = (
     "close_action",
 )
 TOGGLE_KEYS: Final[tuple[str, ...]] = (
+    "smart_turn",
     "barge_in",
     "confirm_actions",
     "auto_start_whisper",
@@ -120,6 +129,7 @@ TOGGLE_KEYS: Final[tuple[str, ...]] = (
 )
 TEXT_KEYS: Final[tuple[str, ...]] = (
     "llm_provider",
+    "llm_model",
     "llm_base_url",
     "api_key",
     "whisper_url",
@@ -147,7 +157,9 @@ LABELS: Final[dict[str, str]] = {
     "input_device_index": "Micrófono",
     "min_rms": "Umbral de voz",
     "noise_multiplier": "Umbral de ruido",
-    "silence_secs": "Silencio de cierre",
+    "silence_secs": "Silencio máximo",
+    "smart_turn": "Cierre inteligente",
+    "turn_threshold": "Certeza para cerrar",
     "pre_roll_secs": "Antelación de escucha",
     "min_speech_secs": "Duración mínima",
     "max_utterance_secs": "Frase máxima",
@@ -166,9 +178,11 @@ LABELS: Final[dict[str, str]] = {
     "stt_prompt": "Indicación para Whisper",
     "stt_timeout_secs": "Tiempo máximo",
     "auto_start_whisper": "Arrancar Whisper",
-    "llm_profile": "Perfil guardado",
-    "llm_provider": "Proveedor",
+    "llm_profile": "Proveedor",
+    "llm_provider": "Nombre del perfil",
+    "llm_api_style": "Compatibilidad",
     "llm_model": "Modelo",
+    "llm_model_pick": "Modelos de la API",
     "llm_base_url": "Dirección de la API",
     "api_key": "Clave API",
     "llm_temperature": "Temperatura",
@@ -199,6 +213,8 @@ DEFAULT_VALUES: Final[dict[str, Any]] = {
     "min_rms": 0.0006,
     "noise_multiplier": 1.3,
     "silence_secs": 1.3,
+    "smart_turn": True,
+    "turn_threshold": 0.5,
     "pre_roll_secs": 0.6,
     "min_speech_secs": 0.2,
     "max_utterance_secs": 30.0,
@@ -217,7 +233,9 @@ DEFAULT_VALUES: Final[dict[str, Any]] = {
     "auto_start_whisper": True,
     "llm_profile": "opencode",
     "llm_provider": "opencode",
+    "llm_api_style": "openai",
     "llm_model": "deepseek-v4.1-flash",
+    "llm_model_pick": "",
     "llm_base_url": "https://opencode.ai/inference/go/openai/v1",
     "api_key": "",
     "llm_temperature": 0.3,
@@ -255,6 +273,7 @@ SLIDERS: Final[dict[str, SliderSpec]] = {
     "min_rms": SliderSpec(0.0003, 0.008, 0.0001, 4),
     "noise_multiplier": SliderSpec(1.0, 2.5, 0.1, 1, "×"),
     "silence_secs": SliderSpec(0.8, 3.5, 0.1, 1, " s"),
+    "turn_threshold": SliderSpec(0.3, 0.95, 0.05, 2),
     "pre_roll_secs": SliderSpec(0.2, 1.5, 0.1, 1, " s"),
     "min_speech_secs": SliderSpec(0.1, 1.0, 0.05, 2, " s"),
     "max_utterance_secs": SliderSpec(5.0, 120.0, 5.0, 0, " s"),
@@ -307,6 +326,11 @@ FIXED_OPTIONS: Final[dict[str, tuple[SelectOption, ...]]] = {
     "close_action": (
         SelectOption("pause", "Pausa"),
         SelectOption("hangup", "Cuelga"),
+    ),
+    # Formato de la API del proveedor (para «Personalizado» lo elige el usuario).
+    "llm_api_style": (
+        SelectOption("openai", "OpenAI"),
+        SelectOption("anthropic", "Anthropic"),
     ),
 }
 
@@ -466,7 +490,7 @@ def _normalize_names(
 def _normalize_providers(
     providers: Mapping[str, Any] | Iterable[Any] | None,
 ) -> dict[str, dict[str, str]]:
-    """Normaliza perfiles ``nombre -> {label, base_url, model, api_key}``."""
+    """Normaliza perfiles ``nombre -> {label, base_url, model, api_key, api_style}``."""
     out: dict[str, dict[str, str]] = {}
     if not providers:
         return out
@@ -491,6 +515,7 @@ def _normalize_providers(
             model = str(raw.get("model") or raw.get("default_model") or "")
             api_key = str(raw.get("api_key") or "")
             provider = str(raw.get("provider") or name)
+            api_style = str(raw.get("api_style") or "openai")
         else:
             label = str(getattr(raw, "label", name))
             base_url = str(getattr(raw, "base_url", ""))
@@ -499,12 +524,14 @@ def _normalize_providers(
             )
             api_key = str(getattr(raw, "api_key", ""))
             provider = str(getattr(raw, "provider", name) or name)
+            api_style = str(getattr(raw, "api_style", "openai") or "openai")
         out[name] = {
             "label": label or name,
             "base_url": base_url,
             "model": model,
             "api_key": api_key,
             "provider": provider or name,
+            "api_style": api_style if api_style in ("openai", "anthropic") else "openai",
         }
     return out
 
@@ -551,6 +578,8 @@ class MenuSettings:
             stt_models, str(_read(values, "stt_model", "") or "")
         )
         self._llm_models: dict[str, tuple[SelectOption, ...]] = {}
+        # La lista real de modelos llega desde un hilo de red (set_llm_models).
+        self._models_lock = threading.Lock()
         if isinstance(llm_models, Mapping):
             for provider, options in llm_models.items():
                 self._llm_models[str(provider)] = _normalize_names(options)
@@ -640,7 +669,7 @@ class MenuSettings:
             return text if text in valid else str(DEFAULT_VALUES[key])
         if key == "wake_phrase":
             return str(value or "").strip() or str(DEFAULT_VALUES[key])
-        if key == "llm_profile":
+        if key in ("llm_profile", "llm_model_pick"):
             return str(value or "").strip()
         if key in ("stt_model", "llm_model"):
             return str(value if value is not None else "")
@@ -683,7 +712,26 @@ class MenuSettings:
         self._values[key] = new
         if key == "llm_profile":
             self._apply_profile(new)
+        elif key == "llm_model_pick" and new:
+            self._values["llm_model"] = new
         return new
+
+    def set_llm_models(self, provider: str, models: Iterable[Any]) -> None:
+        """Sustituye la lista de modelos de un proveedor (hilo de red)."""
+        options = _normalize_names(models)
+        with self._models_lock:
+            updated = dict(self._llm_models)
+            updated[str(provider)] = options
+            self._llm_models = updated
+
+    def _model_options(self) -> tuple[SelectOption, ...]:
+        provider = str(self._values.get("llm_provider") or "")
+        with self._models_lock:
+            options = self._llm_models.get(provider, ())
+        current = str(self._values.get("llm_model") or "")
+        if current and all(option.value != current for option in options):
+            options = (SelectOption(current, current),) + options
+        return options
 
     def _apply_profile(self, name: str) -> None:
         """Copia un perfil guardado en los campos editables de LLM."""
@@ -693,6 +741,7 @@ class MenuSettings:
         provider = profile.get("provider") or str(name)
         values = {
             "llm_provider": provider,
+            "llm_api_style": profile.get("api_style", "openai"),
             "llm_model": profile.get("model", ""),
             "llm_base_url": profile.get("base_url", ""),
             "api_key": profile.get("api_key", ""),
@@ -827,10 +876,10 @@ class MenuSettings:
                     return option.label
             return str(value or "Sin modelo")
         if key == "llm_model":
-            for option in self.select_options("llm_model"):
-                if option.value == value:
-                    return option.label
             return str(value or "Sin modelo")
+        if key == "llm_model_pick":
+            count = len(self._model_options())
+            return f"{count} disponibles" if count else "Sin lista"
         if key == "llm_profile":
             profile = self._providers.get(str(value))
             return (
@@ -898,13 +947,8 @@ class MenuSettings:
             return LLM_REASONING_OPTIONS
         if key in FIXED_OPTIONS:
             return FIXED_OPTIONS[key]
-        if key == "llm_model":
-            provider = str(self._values.get("llm_provider") or "")
-            options = self._llm_models.get(provider, ())
-            current = str(self._values.get("llm_model") or "")
-            if current and all(option.value != current for option in options):
-                options = options + (SelectOption(current, current),)
-            return options
+        if key == "llm_model_pick":
+            return self._model_options()
         if key == "llm_profile":
             return tuple(
                 SelectOption(name, values.get("label", name))
@@ -926,8 +970,8 @@ class MenuSettings:
             return True
         if key == "llm_reasoning_effort" or key in FIXED_OPTIONS:
             return True
-        if key == "llm_model":
-            return bool(self.select_options("llm_model"))
+        if key == "llm_model_pick":
+            return bool(self._model_options())
         if key == "llm_profile":
             return bool(self._providers)
         return False
