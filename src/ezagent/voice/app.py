@@ -51,6 +51,7 @@ from .stt import (
 )
 from .tasks import TaskRegistry
 from .tts import Speaker
+from .wake import DEFAULT_WAKE_PHRASE, is_wake_phrase, worth_transcribing
 from .watcher import Watcher
 
 IDLE = "idle"
@@ -64,6 +65,17 @@ HOTKEY_KEYS = (
     "repeat_hotkey",
     "mute_hotkey",
     "menu_hotkey",
+)
+
+# Apariencia y escucha: el menú los aplica y guarda al instante (sin «Guardar»).
+# Debe coincidir con notch.settings.INSTANT_KEYS (lo comprueba una prueba).
+INSTANT_SETTINGS = (
+    "ui_layout",
+    "theme",
+    "ui_motion",
+    "close_action",
+    "voice_wake",
+    "wake_phrase",
 )
 
 
@@ -278,6 +290,8 @@ class VoiceApp:
         self.watched: set[str] = set()
         self._pending_prompts: list[tuple[str, str, str, str, str]] = []
         self._close_after_answer = False
+        self._close_mode = ""           # "", "pause" o "hangup" ("" = ajuste)
+        self._wake_lock = threading.Lock()
         self._reset_capture = threading.Event()
         self._post_tts_until = 0.0
         self._post_tts_ignore = False
@@ -349,6 +363,8 @@ class VoiceApp:
             min_speech_secs=cfg.min_speech_secs,
             max_utterance_secs=cfg.max_utterance_secs,
             noise_multiplier=cfg.noise_multiplier,
+            barge_in_rms=cfg.barge_in_rms,
+            barge_in_secs=cfg.barge_in_secs,
         )
         log(
             f"Micrófono: {self.mic.device_name} (índice {self.mic.device_index}, "
@@ -367,7 +383,7 @@ class VoiceApp:
             watch=self._watch,
             mute=self._mute,
             request_close=self._request_close,
-            mic_mute=lambda muted: self._set_mic_muted(muted, source="llm"),
+            mic_mute=self._llm_mic_mute,
             runtime=self.agent,
         )
         self.watcher = Watcher(
@@ -414,7 +430,7 @@ class VoiceApp:
             callbacks = RuntimeCallbacks(
                 watch=self._watch,
                 request_close=self._request_close,
-                mic_mute=lambda muted: self._set_mic_muted(muted, source="llm"),
+                mic_mute=self._llm_mic_mute,
                 last_summary=lambda: self.last_summary,
                 mute=self._mute,
                 get_last_user_text=lambda: getattr(
@@ -505,8 +521,24 @@ class VoiceApp:
             self._open_system_md()
         elif action == "open_voice_json":
             self._open_voice_json()
+        elif action == "repeat_last":
+            self._handle_hotkey("repeat")
+        elif action == "new_conversation":
+            self._new_conversation()
         else:
             log(f"Acción de menú desconocida: {action}")
+
+    def _new_conversation(self) -> None:
+        """Olvida la conversación (el menú ya pidió la confirmación)."""
+        self._turn_gen += 1
+        self._signal_tts_stop()
+        self._speaking_kind = None
+        messenger = getattr(self, "messenger", None)
+        if messenger is not None:
+            messenger.reset_history()
+        self.last_summary = ""
+        log("Conversación borrada desde el menú.")
+        self._speak("Listo, empezamos de cero.", "answer")
 
     def _open_system_md(self) -> None:
         """Abre system.md en el editor predeterminado; lo crea si falta."""
@@ -938,7 +970,8 @@ class VoiceApp:
             self._done_prompt_pending = False
             if self._close_after_answer:
                 self._close_after_answer = False
-                self._hang_up()
+                if self._close_listening():
+                    self._drain_pending()
                 return
             if self.in_call:
                 self._set_state(LISTENING)
@@ -971,7 +1004,7 @@ class VoiceApp:
             if self._close_after_answer:
                 self._close_after_answer = False
                 if self.in_call:
-                    self._hang_up()
+                    self._close_listening()
                 self._drain_pending()
                 return
             if self.in_call:
@@ -1028,6 +1061,11 @@ class VoiceApp:
                 self._speak(message, "answer")
         elif kind == "notch_error":
             log(f"Notch: {event[1]}")
+        elif kind == "close_request":
+            self._close_after_answer = True
+            self._close_mode = str(event[1])
+        elif kind == "wake":
+            self._on_wake()
 
     # ---------------------------------------------------------------- llamada
     def _start_call(self) -> None:
@@ -1047,15 +1085,10 @@ class VoiceApp:
         )
         self._call_thread.start()
 
-        def muted_prompt() -> None:
-            if self.in_call and self.muted:
-                self._speak(
-                    "El micrófono está silenciado. Actívalo para hablar.",
-                    "answer",
-                )
-
+        # DECISION: una llamada nueva siempre empieza escuchando; la pausa
+        # pertenece a la llamada anterior y no se arrastra.
         if self.muted:
-            self.root.after(150, muted_prompt)
+            self._set_mic_muted(False, source="llamada nueva")
 
     def _cut_off(self) -> None:
         """Botón stop del notch: corta también un aviso en curso."""
@@ -1105,7 +1138,6 @@ class VoiceApp:
                 on_utterance=self._on_utterance,
                 reset_event=self._reset_capture,
                 is_speaking=lambda: self.state == SPEAKING,
-                barge_in_rms=self.cfg.barge_in_rms,
                 on_barge_in=self._on_barge_in,
             )
         except Exception as exc:  # noqa: BLE001
@@ -1133,6 +1165,10 @@ class VoiceApp:
             self._ignore_utterance = False
             self._set_state(LISTENING)
             return
+        if self._close_after_answer:
+            # El usuario interrumpe el cierre: no cerramos.
+            self._close_after_answer = False
+            self._close_mode = ""
         log("Barge-in: te escucho.")
         self._turn_gen += 1
         self._signal_tts_stop()
@@ -1149,6 +1185,16 @@ class VoiceApp:
             return
         agent = getattr(self, "agent", None)
         if agent is not None and agent.confirm_pending:
+            if (
+                self.state == SPEAKING
+                and self.cfg.barge_in
+                and self.cfg.barge_in_rms > 0
+            ):
+                # La pregunta aún suena: un arranque de voz puede ser eco o un
+                # golpe. Corta BargeInDetector si es voz sostenida (_on_barge_in).
+                self._ignore_utterance = True
+                self._post_tts_ignore = False
+                return
             # El usuario está respondiendo a la confirmación: se corta el TTS
             # de la pregunta y se captura la frase sin abrir otro turno.
             self._user_speaking = True
@@ -1172,24 +1218,24 @@ class VoiceApp:
             self._set_state(LISTENING)
             return
         if self.state == SPEAKING:
-            if not self.cfg.barge_in or level < self.cfg.barge_in_rms:
-                # Probable eco del TTS: no lo tratamos como turno.
-                self._ignore_utterance = True
-                self._post_tts_ignore = False
+            # DECISION: este arranque de voz ya no interrumpe por sí solo. Si el
+            # asistente sigue hablando, es eco del TTS o un ruido corto: la
+            # interrupción real la confirma BargeInDetector (audio.py), que exige
+            # voz sostenida, y llega a _on_barge_in. Antes bastaba un pico de
+            # 90 ms por encima de barge_in_rms para cortar al modelo.
+            if self.cfg.barge_in and self.cfg.barge_in_rms <= 0:
+                # Sin umbral configurado no hay detector: se interrumpe al hablar.
+                self._on_barge_in(level)
                 return
-            if self._close_after_answer:
-                # El usuario interrumpe el cierre: no cerramos.
-                self._close_after_answer = False
-            log("Barge-in: te escucho.")
-            self._turn_gen += 1
-            self._signal_tts_stop()
-            self._set_state(LISTENING)
+            self._ignore_utterance = True
+            self._post_tts_ignore = False
 
     def _on_utterance(self, pcm: bytes, rate: int) -> None:
         self._user_speaking = False
         if self.muted:
             self._ignore_utterance = False
             self._post_tts_ignore = False
+            self._maybe_wake(pcm, rate)
             return
         if self._ignore_utterance:
             now = time.monotonic()
@@ -1553,10 +1599,14 @@ class VoiceApp:
             "desmute", "desmutea", "unmute", "activa el micro",
             "reactiva el micro", "activa el microfono",
         }
+        # «Cierra la escucha» sigue el ajuste close_action (pausa o colgar);
+        # despedirse o pedir colgar cuelga siempre.
         close_words = {
             "cierra", "cierrate", "cierra la escucha", "cierra el micro",
-            "deja de escuchar", "adios", "callate",
+            "deja de escuchar", "callate", "pausa", "pausa la escucha",
+            "pon pausa", "pausate",
         }
+        hangup_words = {"adios", "cuelga", "termina la llamada", "colgar"}
         repeat_words = {"repite", "repitelo", "otra vez"}
         greet_words = {"hola", "buenas", "hola ezagent", "buenas ezagent"}
         agent_words = {
@@ -1634,17 +1684,19 @@ class VoiceApp:
         if key in mute_words:
             log("Atajo local: mute.")
             self._set_mic_muted(True, source="voz")
-            self._speak("Micrófono silenciado.", "answer")
+            self._speak(self._pause_message(), "answer")
             return True
         if key in unmute_words:
             log("Atajo local: unmute.")
             self._set_mic_muted(False)
             self._speak("Micrófono activo.", "answer")
             return True
-        if key in close_words:
-            log("Atajo local: cerrar escucha.")
+        if key in close_words or key in hangup_words:
+            hangup = key in hangup_words or self._close_action() != "pause"
+            log(f"Atajo local: {'colgar' if hangup else 'pausar la escucha'}.")
             self._close_after_answer = True
-            self._speak("Vale, cierro.", "answer")
+            self._close_mode = "hangup" if hangup else "pause"
+            self._speak("Listo, cierro." if hangup else self._pause_message(), "answer")
             return True
         if key in repeat_words:
             log("Atajo local: repetir.")
@@ -1717,7 +1769,8 @@ class VoiceApp:
             threading.Thread(target=self._refresh_devices, daemon=True).start()
 
         values = {
-            key: getattr(self.cfg, key, None) for key in EDITABLE_KEYS
+            key: getattr(self.cfg, key, None)
+            for key in (*EDITABLE_KEYS, *INSTANT_SETTINGS)
         }
         values["input_device_index"] = self.mic.device_index
         values["llm_profile"] = self.cfg.llm_provider
@@ -1770,6 +1823,33 @@ class VoiceApp:
     def _notch_test_voice(self, values: dict) -> None:
         self.menu_events.put(("test", dict(values)))
 
+    def _apply_instant_setting(self, key: str, value) -> None:
+        """Apariencia y escucha: se aplican a la barra y se guardan ya."""
+        try:
+            from .notch.settings import normalize_setting
+
+            value = normalize_setting(key, value)
+        except Exception as exc:  # noqa: BLE001
+            log(f"Ajuste {key} no válido: {exc}")
+            return
+        setattr(self.cfg, key, value)
+        try:
+            self.cfg.save_key(key, value)
+        except Exception as exc:  # noqa: BLE001
+            log(f"No pude guardar {key}: {exc}")
+        setter = {
+            "ui_layout": "set_layout",
+            "theme": "set_theme",
+            "ui_motion": "set_motion",
+        }.get(key)
+        method = getattr(self.notch, setter, None) if setter else None
+        if callable(method):
+            try:
+                method(value)
+            except Exception as exc:  # noqa: BLE001
+                log(f"No pude aplicar {key} a la barra: {exc}")
+        log(f"Ajuste {key} = {'(frase)' if key == 'wake_phrase' else value}")
+
     def _notch_hide(self) -> None:
         self.menu_events.put(("hide",))
 
@@ -1787,6 +1867,9 @@ class VoiceApp:
 
     def _apply_live_setting(self, key: str, value) -> None:
         """Aplica un control del menú en vivo, sin persistir todavía."""
+        if key in INSTANT_SETTINGS:
+            self._apply_instant_setting(key, value)
+            return
         try:
             if key == "input_device_index":
                 if value is None or int(value) < 0:
@@ -1827,6 +1910,7 @@ class VoiceApp:
                 self.mic.max_utterance_secs = float(value)
             elif key == "barge_in_rms":
                 self.cfg.barge_in_rms = float(value)
+                self.mic.barge_in_rms = float(value)      # en vivo, sin colgar
             elif key == "voice":
                 self.cfg.voice = str(value)
                 self.speaker.set_voice(self.cfg.voice)
@@ -1959,6 +2043,8 @@ class VoiceApp:
                 min_speech_secs=self.cfg.min_speech_secs,
                 max_utterance_secs=self.cfg.max_utterance_secs,
                 noise_multiplier=self.cfg.noise_multiplier,
+                barge_in_rms=self.cfg.barge_in_rms,
+                barge_in_secs=self.cfg.barge_in_secs,
             )
         except Exception:
             raise
@@ -2110,6 +2196,8 @@ class VoiceApp:
             self.mic.pre_roll_secs = self.cfg.pre_roll_secs
             self.mic.min_speech_secs = self.cfg.min_speech_secs
             self.mic.max_utterance_secs = self.cfg.max_utterance_secs
+            self.mic.barge_in_rms = self.cfg.barge_in_rms
+            self.mic.barge_in_secs = self.cfg.barge_in_secs
         new_tts = (
             self.cfg.tts_model_variant,
             self.cfg.kokoro_model_path,
@@ -2187,6 +2275,84 @@ class VoiceApp:
 
     def _request_close(self) -> None:
         self._close_after_answer = True
+
+    # ------------------------------------------------- pausa y reactivación
+    def _close_action(self) -> str:
+        cfg = getattr(self, "cfg", None)
+        value = str(getattr(cfg, "close_action", "pause") or "pause").lower()
+        return value if value in ("pause", "hangup") else "pause"
+
+    def _pause_message(self) -> str:
+        """Texto de la pausa; lo genera el código, nunca el LLM."""
+        cfg = getattr(self, "cfg", None)
+        if not bool(getattr(cfg, "voice_wake", True)):
+            return "En pausa. Toca el micrófono para volver."
+        phrase = str(getattr(cfg, "wake_phrase", "") or DEFAULT_WAKE_PHRASE)
+        return f"En pausa. Di «{phrase}» cuando me necesites."
+
+    def _close_listening(self) -> bool:
+        """Cierra la escucha tras una respuesta; True si la llamada sigue (pausa)."""
+        mode = getattr(self, "_close_mode", "") or self._close_action()
+        self._close_mode = ""
+        if mode != "pause" or not self.in_call:
+            self._hang_up()
+            return False
+        self._set_mic_muted(True, source="cierre")
+        self._set_state(LISTENING)
+        return True
+
+    def _llm_mic_mute(self, muted: bool) -> None:
+        """Herramienta mic_mute del LLM (hilo de herramientas).
+
+        DECISION: el LLM ya no silencia de golpe. Pedir silencio deja la
+        escucha en pausa al terminar la respuesta (reversible con el botón o la
+        frase de reactivación); pedir quitarlo se ignora porque en pausa nada
+        llega al LLM.
+        """
+        if not muted:
+            log("El modelo pidió activar el micro; ya está activo.")
+            return
+        self.events.put(("close_request", "pause"))
+
+    def _wake_guard(self) -> threading.Lock:
+        lock = getattr(self, "_wake_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self._wake_lock = lock
+        return lock
+
+    def _maybe_wake(self, pcm: bytes, rate: int) -> None:
+        """En pausa: solo una frase corta se transcribe, para buscar la reactivación."""
+        cfg = getattr(self, "cfg", None)
+        if not self.in_call or not bool(getattr(cfg, "voice_wake", False)):
+            return
+        if not worth_transcribing(pcm, rate):
+            return
+        lock = self._wake_guard()
+        if not lock.acquire(blocking=False):
+            return                      # ya hay una comprobación en curso
+        threading.Thread(
+            target=self._wake_worker, args=(pcm, rate, lock), daemon=True
+        ).start()
+
+    def _wake_worker(self, pcm: bytes, rate: int, lock: threading.Lock) -> None:
+        try:
+            text = transcribe(self.cfg, pcm_to_wav(pcm, rate))
+        except Exception as exc:  # noqa: BLE001
+            log(f"Pausa: no pude comprobar la frase ({type(exc).__name__}).")
+            return
+        finally:
+            lock.release()
+        # En pausa no se registra lo transcrito: solo si era la frase.
+        if is_wake_phrase(text, str(getattr(self.cfg, "wake_phrase", "") or "")):
+            self.events.put(("wake",))
+
+    def _on_wake(self) -> None:
+        if not self.in_call or not self.muted:
+            return
+        log("Frase de reactivación: vuelvo a escuchar.")
+        self._set_mic_muted(False, source="frase")
+        self._speak("Dime.", "answer")
 
     def _set_mic_muted(self, muted: bool, source: str = "") -> None:
         self.muted = bool(muted)

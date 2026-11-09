@@ -283,18 +283,13 @@ SCROLL_GRADIENT_H: Final[float] = 12.0
 # A-04 / A-05 · entrada y salida del contenido.
 BLOCK_FADE_MS: Final[float] = 180.0
 BLOCK_OFFSET: Final[float] = 6.0
+# Entrada escalonada: cabecera, cada grupo en el orden de GROUPS (40 ms entre
+# uno y otro) y el pie al final. Se deriva de GROUPS para que un grupo nuevo
+# no rompa la coreografía.
 BLOCK_DELAYS_MS: Final[dict[str, float]] = {
     "header": 60.0,
-    "audio": 100.0,
-    "engine": 140.0,
-    "tts": 180.0,
-    "vad": 220.0,
-    "stt": 260.0,
-    "llm": 300.0,
-    "conversation": 340.0,
-    "agent": 380.0,
-    "hotkeys": 420.0,
-    "footer": 460.0,
+    **{name: 100.0 + 40.0 * i for i, (name, _rows) in enumerate(GROUPS)},
+    "footer": 100.0 + 40.0 * len(GROUPS),
 }
 CONTENT_CLOSE_MS: Final[float] = T_MICRO
 CLOSE_HEIGHT_DELAY_MS: Final[float] = 60.0  # A-05: la retracción empieza tras el fundido
@@ -314,12 +309,24 @@ FS_VALUE: Final[FontStyle] = FontStyle(
     uppercase=False,
 )
 
-# Acciones que no son claves persistidas: prueba de voz y abrir system.md.
+# Acciones que no son claves persistidas: prueba de voz, abrir archivos y las
+# de la conversación (repetir lo último, empezar de cero).
 ACTION_KEYS: Final[tuple[str, ...]] = (
     "test_voice",
     "open_system_md",
     "open_voice_json",
+    "repeat_last",
+    "new_conversation",
 )
+ACTION_BUTTON_TEXT: Final[dict[str, str]] = {
+    "repeat_last": "Repetir",
+    "new_conversation": "Borrar",
+}
+# Acciones destructivas: el primer clic arma el botón («¿Seguro?») y solo un
+# segundo clic dentro de ARM_SECS la ejecuta. El texto lo pone el código.
+CONFIRM_ACTIONS: Final[tuple[str, ...]] = ("new_conversation",)
+ARM_SECS: Final[float] = 3.0
+ARMED_TEXT: Final[str] = "¿Seguro?"
 
 
 @dataclass(frozen=True, slots=True)
@@ -676,6 +683,10 @@ class Menu:
         self.on_close = on_close
         self.on_text_edit = on_text_edit
         self.on_action = on_action
+        # Colores que sustituyen a la paleta de tokens (la barra usa los suyos).
+        self._palette_overrides: Callable[[str], dict[str, Color]] | None = None
+        # Acciones destructivas armadas por el primer clic: clave -> caduca en.
+        self._armed: dict[str, float] = {}
 
         # Estado de apertura y contenido. La altura es la del cuerpo del menú,
         # sin la isla (0 .. min(560, 0.7 * pantalla - 36)).
@@ -1110,6 +1121,26 @@ class Menu:
 
     def set_theme(self, theme: str) -> None:
         self._theme = theme if theme in ("auto", "dark", "light") else "dark"
+
+    def is_armed(self, key: str, now: float) -> bool:
+        """¿El botón de una acción destructiva espera la confirmación?"""
+        return self._armed.get(key, -1.0) > now
+
+    def set_palette_overrides(
+        self, provider: Callable[[str], dict[str, Color]] | None
+    ) -> None:
+        """``provider(theme)`` devuelve colores que sustituyen a los tokens."""
+        self._palette_overrides = provider
+
+    def _palette(self) -> dict[str, Color]:
+        pal = palette(self._theme)
+        provider = self._palette_overrides
+        if provider is None:
+            return pal
+        try:
+            return {**pal, **provider(self._theme)}
+        except Exception:
+            return pal
 
     def set_scale(self, scale: float) -> None:
         if scale <= 0:
@@ -1759,7 +1790,10 @@ class Menu:
         elif hit.kind == "action":
             if hit.key == "test_voice":
                 self._start_test(now)
+            elif hit.key in CONFIRM_ACTIONS and not self.is_armed(hit.key, now):
+                self._armed[hit.key] = now + ARM_SECS
             else:
+                self._armed.pop(hit.key, None)
                 self._notify(self.on_action, hit.key)
         elif hit.kind == "select":
             self._toggle_selector(hit.key, now)
@@ -2290,7 +2324,7 @@ class Menu:
         if not self._open and float(self._height.value) <= 0.5:
             return
 
-        pal = palette(self._theme)
+        pal = self._palette()
         # Tres capas disjuntas: así el contenido que se desborda por el scroll
         # nunca se cuela sobre la cabecera ni sobre el pie. Se reutilizan para
         # no pagar una reserva de varios MB en cada fotograma.
@@ -3004,7 +3038,7 @@ class Menu:
     ) -> None:
         if key != "test_voice":
             self._draw_generic_action_row(
-                layer, key, center_y, pal, alpha
+                layer, key, center_y, pal, alpha, armed=self.is_armed(key, now)
             )
             return
         self._text_at(
@@ -3114,8 +3148,9 @@ class Menu:
         center_y: float,
         pal: dict[str, Color],
         alpha: float,
+        armed: bool = False,
     ) -> None:
-        """Fila con etiqueta y un botón «Abrir» estático."""
+        """Fila con etiqueta y un botón («Abrir», «Repetir», «Borrar»…)."""
         self._text_at(
             layer,
             LABELS[key],
@@ -3134,7 +3169,9 @@ class Menu:
         hover = max(
             0.0, min(1.0, float(self._row_hover[key].value))
         )
-        fill, text_color = self._button_colors("secondary", pal)
+        fill, text_color = self._button_colors(
+            "amber" if armed else "secondary", pal
+        )
         if hover > 0.001:
             target: Color = (
                 (255, 255, 255) if self._theme != "light" else (0, 0, 0)
@@ -3165,7 +3202,7 @@ class Menu:
             )
         self._text_at(
             layer,
-            "Abrir",
+            ARMED_TEXT if armed else ACTION_BUTTON_TEXT.get(key, "Abrir"),
             FS_SECONDARY,
             text_color,
             rect.center[0],
@@ -3449,11 +3486,13 @@ class Menu:
             return
         content_top = self._content_top(layout)
         footer_top = self._footer_top(layout)
+        # 1 px hacia dentro: el degradado no debe tapar la línea del borde.
+        x0, x1 = BODY_X0 + 1.0, BODY_X1 - 1.0
         if scroll > 0.5:
             _fill_vertical_gradient(
                 buf,
-                BODY_X0,
-                BODY_X1,
+                x0,
+                x1,
                 content_top,
                 content_top + SCROLL_GRADIENT_H,
                 pal["BODY"],
@@ -3464,8 +3503,8 @@ class Menu:
         if scroll < max_scroll - 0.5:
             _fill_vertical_gradient(
                 buf,
-                BODY_X0,
-                BODY_X1,
+                x0,
+                x1,
                 footer_top - SCROLL_GRADIENT_H,
                 footer_top,
                 pal["BODY"],

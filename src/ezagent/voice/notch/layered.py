@@ -23,6 +23,7 @@ Basado en Dicta (MIT).
 
 import ctypes
 import os
+import sys
 import threading
 import time
 
@@ -479,6 +480,77 @@ def _wndproc_impl(hwnd, msg, wparam, lparam):
 _wndproc = WNDPROC(_wndproc_impl) if _IS_WIN else None
 
 
+def _read_wheel_routing() -> int | None:
+    """Valor de ``MouseWheelRouting`` (0 = ventana activa, 1 = híbrido, 2 = ventana
+    bajo el puntero) o ``None`` si Windows no lo guarda o no se puede leer."""
+    if not _IS_WIN:
+        return None
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Control Panel\Desktop") as key:
+            value, _kind = winreg.QueryValueEx(key, "MouseWheelRouting")
+        return int(value)
+    except Exception:
+        return None
+
+
+def wheel_follows_pointer() -> bool:
+    """¿Windows entrega la rueda a la ventana bajo el puntero, no a la activa?
+
+    Con «Desplazar ventanas inactivas al pasar el ratón» (el valor de fábrica de
+    Windows 10/11) una ventana que no toma el foco, como la tarjeta de ajustes,
+    recibe ``WM_MOUSEWHEEL`` por sí sola y no necesita un gancho global de ratón.
+    Ese gancho (``WH_MOUSE_LL``) obliga a Windows a esperar a un hilo de Python
+    en CADA movimiento de ratón del sistema: era el input lag al abrir el menú.
+    """
+    if not _IS_WIN:
+        return False
+    routing = _read_wheel_routing()
+    if routing is None:
+        # DECISION: si el valor no existe, Windows 10 o posterior usa su valor de
+        # fábrica (rueda a la ventana bajo el puntero). Si ni siquiera se puede
+        # leer el registro, se conserva el comportamiento antiguo (con gancho).
+        try:
+            return sys.getwindowsversion().major >= 10 and _registry_readable()
+        except Exception:
+            return False
+    return routing == 2
+
+
+def _registry_readable() -> bool:
+    try:
+        import winreg
+
+        winreg.CloseKey(winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Control Panel\Desktop"))
+        return True
+    except Exception:
+        return False
+
+# Margen del reloj: Windows despierta en milisegundos enteros. Sin margen, un
+# despertar a los 16,4 ms con un intervalo de 16,7 ms (60 fps) saltaba el
+# fotograma y lo pintaba a los 33 ms: un tirón cada pocos cuadros.
+FRAME_SLACK = 0.002
+
+
+def frame_due(now: float, last_paint: float, interval: float) -> bool:
+    """¿Toca pintar? Admite despertar hasta ``FRAME_SLACK`` antes de la hora."""
+    return now - last_paint >= interval - FRAME_SLACK
+
+
+def paint_mark(now: float, last_paint: float, interval: float) -> float:
+    """Hora de referencia del fotograma pintado.
+
+    Avanza en pasos fijos de ``interval`` para que el ritmo no se arrastre con
+    los despertares tempranos o tardíos; si se va más de un cuadro tarde (o el
+    cuadro se pintó antes por estar sucio), se resincroniza con ``now``.
+    """
+    nxt = last_paint + interval
+    if now < nxt - FRAME_SLACK or now - nxt >= interval:
+        return now
+    return nxt
+
+
 class LayeredWindow:
     """Ventana WS_EX_LAYERED con alpha por píxel y bucle de dibujo propio.
 
@@ -862,10 +934,13 @@ class LayeredWindow:
                 self._pump()
                 self._restore_focus_if_due()
                 now = time.monotonic()
+                interval = self._interval
                 if self._visible and (self._dirty
-                                      or now - self._last_paint >= self._interval):
+                                      or frame_due(now, self._last_paint, interval)):
+                    mark = paint_mark(now, self._last_paint, interval)
                     self._paint(now)
-                delay = 1.0 / 60.0 - (time.monotonic() - now)
+                    self._last_paint = mark
+                delay = min(1.0 / 60.0, self._last_paint + interval - time.monotonic())
                 if delay > 0.001:
                     # Esperar atendiendo mensajes: con un gancho global de
                     # ratón, dormir con time.sleep retenía cada movimiento del

@@ -45,6 +45,22 @@ ROW = {
 # Orden y alturas de la tabla 7.3. La etiqueta de sección va fuera del grupo.
 GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
+        "appearance",
+        (
+            ("ui_layout", "select"),
+            ("theme", "select"),
+            ("ui_motion", "select"),
+        ),
+    ),
+    (
+        "listening",
+        (
+            ("close_action", "select"),
+            ("voice_wake", "toggle"),
+            ("wake_phrase", "text"),
+        ),
+    ),
+    (
         "audio",
         (
             ("input_device_index", "select"),
@@ -106,6 +122,8 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("barge_in", "toggle"),
             ("confirm_actions", "toggle"),
             ("test_voice", "action"),
+            ("repeat_last", "action"),
+            ("new_conversation", "action"),
         ),
     ),
     (
@@ -128,6 +146,8 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
 )
 
 GROUP_LABELS = {
+    "appearance": "APARIENCIA",
+    "listening": "ESCUCHA",
     "audio": "AUDIO",
     "engine": "MOTOR",
     "tts": "TTS",

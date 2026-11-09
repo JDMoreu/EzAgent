@@ -1,7 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="256" height="256">
-  <rect width="48" height="48" rx="11" fill="#141210"/>
-  <g transform="translate(-3 0)" fill="none" stroke="#D4F25A" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M11 24H33A11 11 0 1 0 29.78 31.78C34 35.2 38.5 34.8 43 30.6"/>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3F6EEB"/>
+      <stop offset="1" stop-color="#A9C4FF"/>
+    </linearGradient>
+    <clipPath id="orb"><circle cx="24" cy="24" r="20"/></clipPath>
+    <filter id="soft"><feGaussianBlur stdDeviation="1.2"/></filter>
+  </defs>
+  <circle cx="24" cy="24" r="20" fill="url(#sky)"/>
+  <g clip-path="url(#orb)" fill="#FFFFFF" filter="url(#soft)">
+    <ellipse cx="17" cy="35" rx="11" ry="7.5"/>
+    <ellipse cx="31" cy="37.5" rx="12.5" ry="7"/>
+    <ellipse cx="24" cy="31.5" rx="7.5" ry="6"/>
   </g>
-  <circle cx="40" cy="30.6" r="3" fill="#A8A1FF"/>
+  <ellipse cx="17" cy="14" rx="7" ry="4" fill="#FFFFFF" fill-opacity="0.22"/>
 </svg>

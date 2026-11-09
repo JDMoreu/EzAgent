@@ -8,6 +8,7 @@ el asistente corte al usuario a la primera pausa.
 from __future__ import annotations
 
 import io
+import math
 import threading
 import time
 import wave
@@ -301,6 +302,58 @@ class Segmenter:
         self._pre.clear()
 
 
+# Interrupción (barge-in): una voz de verdad dura más que un golpe. Se exige un
+# mínimo de voz por encima del umbral y las pausas entre sílabas no pueden pasar
+# de unos pocos chunks; un clic, un golpe de teclado o un soplido no lo cumplen.
+BARGE_IN_SECS = 0.25
+BARGE_IN_MAX_GAP = 3  # chunks seguidos bajo el umbral que rompen la racha (90 ms)
+
+
+class BargeInDetector:
+    """Decide si el usuario interrumpe de verdad al asistente mientras habla.
+
+    ``feed`` recibe cada chunk mientras suena el TTS. Devuelve ``None`` mientras
+    no hay interrupción y, al confirmarla, la lista ``[(chunk, nivel), ...]`` de
+    la racha: el principio de la frase del usuario, para no perderlo.
+    """
+
+    def __init__(self, threshold: float = 0.008, secs: float = BARGE_IN_SECS) -> None:
+        self.threshold = threshold
+        self.secs = secs
+        self._loud = 0
+        self._gap = 0
+        self._run: list[tuple[bytes, float]] = []
+
+    @property
+    def need(self) -> int:
+        """Chunks por encima del umbral que hacen falta para confirmar."""
+        return max(1, math.ceil(max(0.0, self.secs) / CHUNK_SECS))
+
+    def reset(self) -> None:
+        self._loud = 0
+        self._gap = 0
+        self._run = []
+
+    def feed(self, chunk: bytes, level: float) -> list[tuple[bytes, float]] | None:
+        if level >= self.threshold:
+            self._gap = 0
+            self._loud += 1
+            self._run.append((chunk, level))
+        elif self._loud:
+            self._gap += 1
+            if self._gap > BARGE_IN_MAX_GAP:
+                self.reset()  # silencio largo: era un golpe, no una frase
+                return None
+            self._run.append((chunk, level))
+        else:
+            return None
+        if self._loud >= self.need:
+            run = self._run
+            self.reset()
+            return run
+        return None
+
+
 class MicCapture:
     """Micrófono real con captura continua y segmentación por VAD."""
 
@@ -313,6 +366,8 @@ class MicCapture:
         min_speech_secs: float = 0.2,
         max_utterance_secs: float = 30.0,
         noise_multiplier: float = 1.3,
+        barge_in_rms: float = 0.0,
+        barge_in_secs: float = BARGE_IN_SECS,
     ):
         self._pa = pyaudio.PyAudio()
         self.device_index = pick_input_device(self._pa, device_index)
@@ -322,6 +377,9 @@ class MicCapture:
         self.min_speech_secs = min_speech_secs
         self.max_utterance_secs = max_utterance_secs
         self.noise_multiplier = noise_multiplier
+        # Se leen en cada chunk: el menú los cambia en vivo, sin esperar otra llamada.
+        self.barge_in_rms = barge_in_rms
+        self.barge_in_secs = barge_in_secs
         self.last_speech_end: float | None = None
         self.rate = 16000
         if self.device_index is not None:
@@ -339,6 +397,34 @@ class MicCapture:
             self._pa.terminate()
         except Exception:
             pass
+
+    def _emit(
+        self,
+        segmenter: Segmenter,
+        pcm: bytes | None,
+        started: bool,
+        level: float,
+        on_speech_start: Callable[[float], None] | None,
+        on_utterance: Callable[[bytes, int], None] | None,
+    ) -> None:
+        if started:
+            start_thr, end_thr = segmenter.thresholds()
+            print(
+                "[ezagent-voice] VAD start: "
+                f"level={level:.4f} noise={segmenter.noise:.4f} "
+                f"start={start_thr:.4f} end={end_thr:.4f}",
+                flush=True,
+            )
+            if on_speech_start is not None:
+                on_speech_start(level)
+        if pcm:
+            self.last_speech_end = segmenter.last_speech_end
+            print(
+                f"[ezagent-voice] VAD end: {len(pcm) / 2 / self.rate:.2f}s",
+                flush=True,
+            )
+            if on_utterance is not None:
+                on_utterance(pcm, self.rate)
 
     def stream(
         self,
@@ -371,6 +457,7 @@ class MicCapture:
             max_utterance_secs=self.max_utterance_secs,
             noise_multiplier=self.noise_multiplier,
         )
+        barge = BargeInDetector()
         try:
             while not stop_event.is_set():
                 chunk = stream.read(frames, exception_on_overflow=False)
@@ -386,43 +473,29 @@ class MicCapture:
                     # Fin del TTS: tira el eco acumulado antes de escuchar.
                     segmenter.reset()
                     reset_event.clear()
-                if (
-                    is_speaking is not None
-                    and is_speaking()
-                    and barge_in_rms > 0
-                    and level >= barge_in_rms
-                ):
-                    # El usuario habla por encima del eco del TTS: corta y
-                    # empieza un turno limpio.
-                    if on_barge_in is not None:
-                        on_barge_in(level)
-                    segmenter.reset()
+                barge.threshold = self.barge_in_rms or barge_in_rms
+                barge.secs = self.barge_in_secs
+                chunks = [(chunk, level)]
+                if is_speaking is not None and is_speaking() and barge.threshold > 0:
+                    run = barge.feed(chunk, level)
+                    if run is not None:
+                        # El usuario habla de verdad por encima del TTS: corta y
+                        # empieza un turno limpio. Se reinyecta el principio de su
+                        # frase (la racha) para que Whisper no la oiga mocha.
+                        if on_barge_in is not None:
+                            on_barge_in(level)
+                        segmenter.reset()
+                        chunks = run
+                else:
+                    barge.reset()
                 if on_level is not None:
                     on_level(level)
-                pcm, started = segmenter.feed(chunk, level)
-                if started:
-                    start_thr, end_thr = segmenter.thresholds()
-                    print(
-                        "[ezagent-voice] VAD start: "
-                        f"level={level:.4f} noise={segmenter.noise:.4f} "
-                        f"start={start_thr:.4f} end={end_thr:.4f}",
-                        flush=True,
-                    )
-                    if on_speech_start is not None:
-                        on_speech_start(level)
-                if pcm:
-                    self.last_speech_end = segmenter.last_speech_end
-                    print(
-                        "[ezagent-voice] VAD end: "
-                        f"{len(pcm) / 2 / self.rate:.2f}s",
-                        flush=True,
-                    )
-                    if on_utterance is not None:
-                        on_utterance(pcm, self.rate)
+                for c, lv in chunks:
+                    pcm, started = segmenter.feed(c, lv)
+                    self._emit(segmenter, pcm, started, lv, on_speech_start, on_utterance)
         finally:
             try:
                 stream.stop_stream()
                 stream.close()
             except Exception:
                 pass
-

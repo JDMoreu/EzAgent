@@ -128,6 +128,9 @@ class VoiceConfig:
     noise_multiplier: float = 1.3
     barge_in: bool = True
     barge_in_rms: float = 0.008
+    # Segundos de voz por encima de barge_in_rms para interrumpir al asistente: un
+    # clic o un golpe de teclado no llegan; una frase sí.
+    barge_in_secs: float = 0.25
     # Versión de los valores por defecto del VAD. La 2 baja el suelo de
     # arranque para voces flojas y acepta frases cortas.
     vad_defaults_version: int = 2
@@ -169,11 +172,20 @@ class VoiceConfig:
     drop_x: int | None = None
     drop_y: int | None = None
     drop_layout: str = ""      # disposición con la que se guardó drop_x/drop_y
-    # Aspecto de la barra: «pill» (cápsula) o «circle» (círculo sobre los botones);
-    # paleta «ezagent» o «sky»; botones «always» (siempre) u «hover» (al acercar).
+    # Forma de la barra: «pill» (cápsula) o «circle» (círculo sobre los botones).
+    # Los colores siguen al tema (claro u oscuro) y los botones solo aparecen al
+    # acercar el puntero; «ui_palette» y «ui_buttons» antiguos se ignoran al cargar.
     ui_layout: str = "pill"
-    ui_palette: str = "sky"
-    ui_buttons: str = "always"
+    # Movimiento de la barra: «system» (sigue a Windows), «full» o «reduced».
+    ui_motion: str = "system"
+
+    # Escucha: qué hace «cierra la escucha» («pause» deja el micro en pausa y
+    # solo atiende a la frase de reactivación; «hangup» cuelga la llamada).
+    close_action: str = "pause"
+    # En pausa, la frase de reactivación vuelve a abrir la escucha. Apagado,
+    # la pausa es un silencio total y solo el botón la quita.
+    voice_wake: bool = True
+    wake_phrase: str = "EzAgent, escúchame"
 
     # Tema del notch: auto (sigue a Windows), dark o light. Se guarda al
     # instante y no cuenta para «cambios sin guardar».

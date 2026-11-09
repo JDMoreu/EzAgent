@@ -134,6 +134,19 @@ def make_menu(
     return menu, calls
 
 
+# Apariencia y Escucha van antes que AUDIO. Las pruebas de interacción
+# desplazan el menú para que AUDIO quede donde estaba (y = 80) y así siguen
+# probando la misma mecánica con las mismas coordenadas.
+AUDIO_TOP = 80.0
+
+
+def at_audio(menu: M.Menu) -> float:
+    offset = layout_menu()["label_audio"].y0 - AUDIO_TOP
+    menu._scroll.value = offset
+    menu._scroll_target = offset
+    return offset
+
+
 def opened(
     menu: M.Menu, now: float = 10.0, settle: float = 1.0
 ) -> float:
@@ -150,26 +163,28 @@ def opened(
 def test_layout_tabla_7_3_exacta():
     layout = layout_menu()
     assert (layout["header"].y0, layout["header"].y1) == (44, 72)
-    assert (layout["group_audio"].y0, layout["group_audio"].y1) == (100, 268)
-    assert (layout["group_engine"].y0, layout["group_engine"].y1) == (300, 372)
-    assert (layout["group_tts"].y0, layout["group_tts"].y1) == (404, 572)
-    assert (layout["group_vad"].y0, layout["group_vad"].y1) == (604, 780)
-    assert (layout["group_stt"].y0, layout["group_stt"].y1) == (812, 972)
-    assert (layout["group_llm"].y0, layout["group_llm"].y1) == (1004, 1332)
+    assert (layout["group_appearance"].y0, layout["group_appearance"].y1) == (100, 208)
+    assert (layout["group_listening"].y0, layout["group_listening"].y1) == (240, 356)
+    assert (layout["group_audio"].y0, layout["group_audio"].y1) == (388, 556)
+    assert (layout["group_engine"].y0, layout["group_engine"].y1) == (588, 660)
+    assert (layout["group_tts"].y0, layout["group_tts"].y1) == (692, 860)
+    assert (layout["group_vad"].y0, layout["group_vad"].y1) == (892, 1068)
+    assert (layout["group_stt"].y0, layout["group_stt"].y1) == (1100, 1260)
+    assert (layout["group_llm"].y0, layout["group_llm"].y1) == (1292, 1620)
     assert (
         layout["group_conversation"].y0,
         layout["group_conversation"].y1,
-    ) == (1364, 1480)
+    ) == (1652, 1856)
     assert (
         layout["group_agent"].y0,
         layout["group_agent"].y1,
-    ) == (1512, 1600)
+    ) == (1888, 1976)
     assert (
         layout["group_hotkeys"].y0,
         layout["group_hotkeys"].y1,
-    ) == (1632, 1852)
-    assert (layout["footer"].y0, layout["footer"].y1) == (1864, 1908)
-    assert layout["total"].y1 == 1920
+    ) == (2008, 2228)
+    assert (layout["footer"].y0, layout["footer"].y1) == (2240, 2284)
+    assert layout["total"].y1 == 2296
     assert visible_menu_height(1080) == 560
     assert visible_menu_height(600) == pytest.approx(384)
 
@@ -180,7 +195,7 @@ def test_layout_bajo_el_pie_se_mueve_y_el_scroll_existe():
     layout = menu._layout()
     assert layout["footer"].y0 == pytest.approx(364)
     # El contenido completo supera con holgura el viewport recortado.
-    assert menu.scroll_max == pytest.approx(1500)
+    assert menu.scroll_max == pytest.approx(1876)
     assert menu.viewport_height == pytest.approx(384)
     assert menu.height(now) == pytest.approx(384)
 
@@ -352,6 +367,7 @@ def test_selector_sin_microfonos_deshabilitado():
     assert settings.value_label("input_device_index") == "Sin micrófonos"
     menu, _ = make_menu(settings)
     now = opened(menu)
+    at_audio(menu)
     assert menu.hit(150, 118, now) is None
     disabled = menu.hit(150, 118, now, include_disabled=True)
     assert disabled is not None
@@ -520,6 +536,7 @@ def test_medidor_de_entrada_arrastra_el_umbral():
     settings = make_settings()
     menu, calls = make_menu(settings)
     now = opened(menu)
+    at_audio(menu)
     menu.set_input_level(0.006, active=True)
     menu.update(now + 0.2)
     old = settings.get("min_rms")
@@ -540,6 +557,7 @@ def test_hit_de_cada_control():
     settings.set("speed", 1.05)  # dirty: el botón Guardar está activo
     menu, _ = make_menu(settings)
     now = opened(menu)
+    at_audio(menu)
 
     cases = [
         ((M.HIDE_CX, 58.0), "hide", "hide"),
@@ -592,6 +610,7 @@ def test_accion_abrir_system_md():
 def test_hit_slider_solo_en_la_franja_de_la_pista():
     menu, _ = make_menu(make_settings())
     now = opened(menu)
+    at_audio(menu)
     assert menu.hit(150, 190, now) is None  # fuera de la franja de la pista
     assert menu.hit(150, 212, now).kind == "slider"  # Umbral de ruido
     assert menu.hit(300, 212, now) is None  # fuera de x 31..289
@@ -606,6 +625,7 @@ def test_selector_abierto_desplaza_filas_y_limita_a_cinco():
     settings = make_settings(count=6)
     menu, _ = make_menu(settings)
     now = opened(menu)
+    offset = at_audio(menu)
     menu.pointer_down(150, 118, now)
     menu.pointer_up(150, 118, now)
     now = now + 0.3
@@ -632,7 +652,7 @@ def test_selector_abierto_desplaza_filas_y_limita_a_cinco():
     # La rueda sobre la lista (>5) desplaza su contenido, no el menú.
     assert menu.wheel(150, 150, -120, now)
     assert menu._list_scroll == pytest.approx(32)
-    assert menu.scroll_offset == pytest.approx(0)
+    assert menu.scroll_offset == pytest.approx(offset)
     second = menu.hit(150, 150, now)
     assert second is not None and second.index == 1
 
@@ -647,8 +667,8 @@ def test_clic_toggle_y_prueba_de_voz():
     settings = make_settings()
     menu, calls = make_menu(settings)
     now = opened(menu)
-    menu._scroll.value = 960.0
-    menu._scroll_target = 960.0
+    menu._scroll.value = 960.0 + at_audio(menu)
+    menu._scroll_target = menu._scroll.value
     menu.pointer_down(270, 420, now)
     menu.pointer_up(270, 420, now)
     assert settings.get("barge_in") is False
@@ -673,6 +693,7 @@ def test_arrastre_de_slider_redondea_y_emite_al_soltar():
     settings = make_settings()
     menu, calls = make_menu(settings)
     now = opened(menu)
+    at_audio(menu)
     # Pista de Umbral de voz: x 31..289, centro y 168.
     menu.pointer_down(150, 168, now)
     menu.pointer_move(210, 168, now + 0.06)

@@ -67,21 +67,62 @@ arranca escuchando; `Ctrl+Alt+Space` cuelga o retoma.
 
 ## La gota (interfaz por defecto)
 
-Desde la versión 0.2 la interfaz es **una barra sin texto**: una cápsula de color
-entre cuatro botones redondos (ajustes ☰, repetir lo último, silenciar y colgar),
-anclada abajo al centro, sobre la barra de tareas. **La forma es fija y de borde
-nítido; lo que se mueve es el interior**, como agua o nubes de color: fluye
-despacio en calma y corre y se arremolina más cuando hablas o escuchas. El color
-cambia con el estado (espera, escucha, piensa, habla, pregunta, error y
-silencio). Una confirmación convierte los botones de los lados en ✕ y ✓ (la
-pregunta se dice por voz). Los ajustes se abren en una tarjeta encima de la
-barra. Se arrastra por la forma y recuerda su posición.
+Desde la versión 0.2 la interfaz es **una barra sin texto**: una cápsula (o un
+círculo) con cielo despejado arriba y un banco de nubes en la mitad inferior,
+anclada abajo al centro, sobre la barra de tareas. **El contorno es fijo y
+nítido; lo que se mueve es el interior**: las nubes tienen inercia. Cuando
+hablas entra aire por abajo que las levanta, las separa, las hincha y deja un
+brillo; al callar se asientan despacio con un vaivén. Cuando habla EzAgent una
+ola recorre el banco al ritmo de su voz, y mientras piensa las nubes giran. Un
+techo suave impide que suban más allá de la mitad. Los colores siguen al estado (espera, escucha, piensa, habla,
+pregunta, error y pausa) y al tema, claro u oscuro.
 
-**Círculo o píldora:** haz doble clic sobre la forma de color, o usa «Cambiar
-forma» en el menú de la bandeja; la elección se guarda. El silencio del
-micrófono solo se activa con el botón, el atajo `Ctrl+Alt+M` o una orden
-explícita («silencia el micro»): palabras sueltas como «silencio» ya no lo
-silencian.
+Los botones solo aparecen al acercar el puntero: la forma crece un poco y ☰,
+🎤 y ✕ nacen desde detrás de ella, escalonados y con un rebote suave. La barra
+pinta a 60 fps fijos mientras algo se mueve. **✕ es dinámico:** con la llamada
+en marcha cuelga; al colgar, el micrófono se pliega y ✕ se convierte en el botón
+azul de **llamar** (ondas de voz), que vuelve a abrir la conversación.
+Una confirmación oculta ☰, convierte 🎤 en ✓ y deja ✕ como «no» (la pregunta se
+dice por voz). Se arrastra por la forma y recuerda su posición.
+
+**El micrófono tiene tres estados:**
+
+| Estado | Cómo se ve | Qué escucha | Cómo se sale |
+|---|---|---|---|
+| Escuchando | 🎤 normal | Todo | — |
+| En pausa | 🎤 tachado | Solo la frase de reactivación | Clic en 🎤 o decir «EzAgent, escúchame» |
+| Colgado | Sin 🎤; ✕ pasa a «llamar» | Nada | Clic en «llamar» o `Ctrl+Alt+Space` |
+
+«Cierra la escucha», «pausa» o «silencia el micro» dejan la escucha **en pausa**;
+«adiós» o «cuelga» cuelgan. En pausa el micrófono sigue abierto en local, pero
+solo se transcriben frases cortas (≤ 3 s) y solo cuentan si la frase entera es la
+de reactivación: tiene que nombrar a EzAgent y decir el verbo («EzAgent,
+escúchame», «EzAgent, vuelve», «EzAgent, abre la escucha»). Lo que no coincide se
+descarta sin llegar al modelo ni al log. Si apagas «Reactivar por voz», la pausa
+es un silencio total y solo el botón la quita. El modelo ya no puede silenciar el
+micrófono: si lo pide, la escucha queda en pausa (siempre reversible).
+
+**Ajustes ☰:** la tarjeta se despliega desde ☰ con colores frescos (blanco con un
+toque de cielo en claro, azul noche en oscuro). «–» cierra solo la tarjeta; la
+barra sigue a la vista. Arriba están **Apariencia** (forma, tema y movimiento) y
+**Escucha** (qué hace «cierra», reactivar por voz y la frase); se aplican y se
+guardan al instante. En **Conversación** están «Repetir lo último» y «Nueva
+conversación», que pide un segundo clic («¿Seguro?») antes de borrar.
+
+**Ratón fluido con el menú abierto.** Antes, al abrir la tarjeta el puntero de todo
+el sistema se sentía con retardo y al cerrarla volvía a ir bien. La causa era un
+gancho global de ratón (`WH_MOUSE_LL`) instalado solo para la rueda: Windows lo
+invoca en cada movimiento del puntero y respondía un hilo de Python que además
+estaba dibujando la tarjeta (23–56 ms por cuadro). Ahora la tarjeta recibe la
+rueda directamente de Windows (ajuste «Desplazar ventanas inactivas al pasar el
+ratón», el de fábrica en Windows 10 y 11) y **no instala el gancho**; solo lo
+conserva como respaldo si ese ajuste está desactivado o no se puede leer. Además,
+el cuerpo de la tarjeta se dibuja una sola vez y se reutiliza (el cuadro con el
+menú quieto baja ~40 %). Si algún día falla la rueda dentro de la tarjeta, mira
+ese ajuste en Configuración → Bluetooth y dispositivos → Mouse.
+
+**Círculo o píldora:** cámbialo en Ajustes → Apariencia, haz doble clic sobre la
+forma de color o usa «Cambiar forma» en el menú de la bandeja.
 
 Se configura en `voice.json`:
 
@@ -89,10 +130,23 @@ Se configura en `voice.json`:
 |---|---|---|
 | `ui_style` | `drop` (la barra) · `notch` (la isla antigua) | `drop` |
 | `ui_layout` | `pill` (cápsula) · `circle` (círculo sobre la fila de botones) | `pill` |
-| `ui_palette` | `ezagent` (lima, menta, violeta) · `sky` (azules y lavanda) | `sky` |
-| `ui_buttons` | `always` (siempre visibles) · `hover` (aparecen al acercar el puntero) | `always` |
+| `theme` | `auto` (sigue a Windows) · `light` · `dark` | `auto` |
+| `ui_motion` | `system` (sigue a Windows) · `full` · `reduced` (solo fundidos de 120 ms) | `system` |
+| `close_action` | `pause` (pausa la escucha) · `hangup` (cuelga) | `pause` |
+| `voice_wake` | `true` · `false` (la pausa es silencio total) | `true` |
+| `wake_phrase` | frase que reabre la escucha; si no nombra a EzAgent, se le antepone | `EzAgent, escúchame` |
+| `barge_in` | `true` · `false` (nadie interrumpe al asistente mientras habla) | `true` |
+| `barge_in_rms` | nivel que tu voz debe superar para interrumpir (0,008 ≈ −42 dB); también en Ajustes → «Umbral de interrupción», y se aplica en vivo | `0.008` |
+| `barge_in_secs` | segundos de voz por encima de ese nivel para interrumpir | `0.25` |
 
-Los iconos se regeneran con `uv run python scripts/make_icons.py`.
+**Interrumpir al asistente.** Mientras habla, solo lo cortas si tu voz supera
+`barge_in_rms` durante `barge_in_secs` seguidos (con pausas de hasta 90 ms entre
+sílabas). Un clic, un golpe de teclado o un soplido duran menos y no lo cortan.
+Si aun así el ruido de fondo es sostenido (un ventilador, música), sube el umbral
+o la duración; si te cuesta interrumpir, bájalos.
+
+El icono (app y bandeja) es un orbe de cielo con nubes; se regenera con
+`uv run python scripts/make_icons.py`.
 
 ## El notch (interfaz anterior)
 

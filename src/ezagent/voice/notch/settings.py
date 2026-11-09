@@ -71,7 +71,17 @@ EDITABLE_KEYS: Final[tuple[str, ...]] = (
 # copia proveedor, modelo, endpoint y clave en los campos reales. No se
 # persiste como ajuste propio.
 UI_KEYS: Final[tuple[str, ...]] = ("llm_profile",)
-ALL_KEYS: Final[tuple[str, ...]] = EDITABLE_KEYS + UI_KEYS
+# Apariencia y escucha: se aplican y se guardan al instante (como el tema), sin
+# pasar por «Guardar» ni contar como cambios pendientes.
+INSTANT_KEYS: Final[tuple[str, ...]] = (
+    "ui_layout",
+    "theme",
+    "ui_motion",
+    "close_action",
+    "voice_wake",
+    "wake_phrase",
+)
+ALL_KEYS: Final[tuple[str, ...]] = EDITABLE_KEYS + UI_KEYS + INSTANT_KEYS
 
 SLIDER_KEYS: Final[tuple[str, ...]] = (
     "min_rms",
@@ -97,11 +107,16 @@ SELECT_KEYS: Final[tuple[str, ...]] = (
     "llm_model",
     "llm_profile",
     "llm_reasoning_effort",
+    "ui_layout",
+    "theme",
+    "ui_motion",
+    "close_action",
 )
 TOGGLE_KEYS: Final[tuple[str, ...]] = (
     "barge_in",
     "confirm_actions",
     "auto_start_whisper",
+    "voice_wake",
 )
 TEXT_KEYS: Final[tuple[str, ...]] = (
     "llm_provider",
@@ -116,10 +131,19 @@ TEXT_KEYS: Final[tuple[str, ...]] = (
     "repeat_hotkey",
     "mute_hotkey",
     "menu_hotkey",
+    "wake_phrase",
 )
 SECRET_KEYS: Final[tuple[str, ...]] = ("api_key",)
 
 LABELS: Final[dict[str, str]] = {
+    "ui_layout": "Forma",
+    "theme": "Tema",
+    "ui_motion": "Movimiento",
+    "close_action": "Al decir «cierra»",
+    "voice_wake": "Reactivar por voz",
+    "wake_phrase": "Frase de reactivación",
+    "repeat_last": "Repetir lo último",
+    "new_conversation": "Nueva conversación",
     "input_device_index": "Micrófono",
     "min_rms": "Umbral de voz",
     "noise_multiplier": "Umbral de ruido",
@@ -207,6 +231,12 @@ DEFAULT_VALUES: Final[dict[str, Any]] = {
     "repeat_hotkey": "ctrl+alt+r",
     "mute_hotkey": "ctrl+alt+m",
     "menu_hotkey": "ctrl+alt+o",
+    "ui_layout": "pill",
+    "theme": "auto",
+    "ui_motion": "system",
+    "close_action": "pause",
+    "voice_wake": True,
+    "wake_phrase": "EzAgent, escúchame",
 }
 
 
@@ -261,6 +291,24 @@ LLM_REASONING_OPTIONS: Final[tuple[SelectOption, ...]] = (
     SelectOption("medium", "Medio"),
     SelectOption("high", "Alto"),
 )
+# Selectores de apariencia y escucha (valores fijos, en orden de muestra).
+FIXED_OPTIONS: Final[dict[str, tuple[SelectOption, ...]]] = {
+    "ui_layout": (SelectOption("pill", "Píldora"), SelectOption("circle", "Círculo")),
+    "theme": (
+        SelectOption("auto", "Automático"),
+        SelectOption("light", "Claro"),
+        SelectOption("dark", "Oscuro"),
+    ),
+    "ui_motion": (
+        SelectOption("system", "Según el sistema"),
+        SelectOption("full", "Completo"),
+        SelectOption("reduced", "Reducido"),
+    ),
+    "close_action": (
+        SelectOption("pause", "Pausa"),
+        SelectOption("hangup", "Cuelga"),
+    ),
+}
 
 
 _MISSING: Final[object] = object()
@@ -586,6 +634,12 @@ class MenuSettings:
             text = str(value or "none")
             valid = {option.value for option in LLM_REASONING_OPTIONS}
             return text if text in valid else "none"
+        if key in FIXED_OPTIONS:
+            text = str(value or DEFAULT_VALUES[key]).lower()
+            valid = {option.value for option in FIXED_OPTIONS[key]}
+            return text if text in valid else str(DEFAULT_VALUES[key])
+        if key == "wake_phrase":
+            return str(value or "").strip() or str(DEFAULT_VALUES[key])
         if key == "llm_profile":
             return str(value or "").strip()
         if key in ("stt_model", "llm_model"):
@@ -783,6 +837,11 @@ class MenuSettings:
                 if option.value == value:
                     return option.label
             return str(value)
+        if key in FIXED_OPTIONS:
+            for option in FIXED_OPTIONS[key]:
+                if option.value == value:
+                    return option.label
+            return str(value)
         if key == "stt_model":
             for option in self.select_options("stt_model"):
                 if option.value == value:
@@ -858,6 +917,8 @@ class MenuSettings:
             return STT_ENGINE_OPTIONS
         if key == "llm_reasoning_effort":
             return LLM_REASONING_OPTIONS
+        if key in FIXED_OPTIONS:
+            return FIXED_OPTIONS[key]
         if key == "llm_model":
             provider = str(self._values.get("llm_provider") or "")
             options = self._llm_models.get(provider, ())
@@ -884,7 +945,7 @@ class MenuSettings:
             return bool(self._stt_models)
         if key == "stt_engine":
             return True
-        if key == "llm_reasoning_effort":
+        if key == "llm_reasoning_effort" or key in FIXED_OPTIONS:
             return True
         if key == "llm_model":
             return bool(self.select_options("llm_model"))
@@ -905,10 +966,17 @@ class MenuSettings:
         return None
 
 
+def normalize_setting(key: str, value: Any) -> Any:
+    """Valor válido para ``key`` (cae al predeterminado si no lo es)."""
+    return MenuSettings({}, None, None)._normalize_value(key, value)
+
+
 __all__ = [
     "ALL_KEYS",
     "DEFAULT_VALUES",
     "EDITABLE_KEYS",
+    "FIXED_OPTIONS",
+    "INSTANT_KEYS",
     "LABELS",
     "MenuSettings",
     "SECRET_KEYS",
@@ -926,4 +994,5 @@ __all__ = [
     "VOICE_IDS",
     "VOICE_LABELS",
     "mask_secret",
+    "normalize_setting",
 ]

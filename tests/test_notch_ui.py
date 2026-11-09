@@ -559,19 +559,20 @@ def test_T05_layout_menu_tabla_7_3():
 
     layout = ml.layout_menu()
     assert (layout["header"].y0, layout["header"].y1) == (44, 72)
-    assert (layout["label_audio"].y0, layout["label_audio"].y1) == (80, 100)
-    assert (layout["group_audio"].y0, layout["group_audio"].y1) == (100, 268)
-    assert (layout["group_engine"].y0, layout["group_engine"].y1) == (300, 372)
-    assert (layout["group_tts"].y0, layout["group_tts"].y1) == (404, 572)
-    assert (layout["footer"].y0, layout["footer"].y1) == (1864, 1908)
-    assert layout["total"].y1 == 1920
+    assert (layout["label_appearance"].y0, layout["label_appearance"].y1) == (80, 100)
+    assert (layout["label_audio"].y0, layout["label_audio"].y1) == (368, 388)
+    assert (layout["group_audio"].y0, layout["group_audio"].y1) == (388, 556)
+    assert (layout["group_engine"].y0, layout["group_engine"].y1) == (588, 660)
+    assert (layout["group_tts"].y0, layout["group_tts"].y1) == (692, 860)
+    assert (layout["footer"].y0, layout["footer"].y1) == (2240, 2284)
+    assert layout["total"].y1 == 2296
     assert ml.MENU_HEIGHT == 560
 
     # Selector de micrófono con 3 elementos: 96 px extra y el resto se desplaza.
     opened = ml.layout_menu({"input_device_index": 96})
-    assert opened["group_audio"].y1 == 364
-    assert opened["footer"].y0 == 1960
-    assert opened["total"].y1 == 2016
+    assert opened["group_audio"].y1 == 652
+    assert opened["footer"].y0 == 2336
+    assert opened["total"].y1 == 2392
 
     # Pantalla baja: el pie se sube y el contenido entre cabecera y pie scrollea.
     short = ml.layout_menu(viewport_h=537)

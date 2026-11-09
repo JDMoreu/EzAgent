@@ -11,12 +11,13 @@ from ezagent.voice.config import VoiceConfig
 from ezagent.voice.notch import drop as D
 
 
-def _run(model, pose, seconds=1.0, rms=0.0, palette="ezagent", hover=False, asking=False,
-         menu_open=False, reduced=False, buttons="always", t0=1000.0):
+def _run(model, pose, seconds=1.0, rms=0.0, palette="dark", hover=False, asking=False,
+         menu_open=False, reduced=False, buttons="always", t0=1000.0, in_call=True):
     t = t0
     for _ in range(int(seconds * 60)):
         t += 1 / 60
-        model.update(t, 1 / 60, pose, rms, palette, hover, asking, menu_open, reduced, buttons)
+        model.update(t, 1 / 60, pose, rms, palette, hover, asking, menu_open, reduced, buttons,
+                     in_call=in_call)
     return t
 
 
@@ -35,14 +36,14 @@ def test_tamanos_de_ventana() -> None:
     assert wp > wc and hp < hc
 
 
-def test_posiciones_de_la_capsula_ordenadas_y_centradas() -> None:
+def test_posiciones_de_la_capsula_ordenadas_y_fijas() -> None:
     m = D.DropModel("pill")
     _run(m, "idle", 1.0)
     pos = m.positions()
-    xs = [pos[n][0] for n in ("gear", "repeat", "pill", "mic", "hang")]
-    assert xs == sorted(xs)
-    w, _ = D.layout_size("pill")
-    assert abs(pos["pill"][0] - w / 2) < 0.5     # la forma queda en el centro
+    xs = [pos[n][0] for n in ("gear", "pill", "mic", "hang")]
+    assert xs == sorted(xs)                       # ☰ (forma) 🎤 ✕
+    assert set(pos) == {"gear", "pill", "mic", "hang"}
+    assert abs(pos["pill"][0] - D.form_center("pill")[0]) < 0.5
     assert len({round(pos[n][1], 3) for n in pos}) == 1   # todos en la misma fila
 
 
@@ -51,23 +52,23 @@ def test_disposicion_circulo_forma_arriba_y_fila_abajo() -> None:
     _run(m, "idle", 1.0)
     pos = m.positions()
     assert pos["pill"][1] < pos["mic"][1]
-    assert pos["gear"][1] == pos["repeat"][1] == pos["mic"][1] == pos["hang"][1]
+    assert pos["gear"][1] == pytest.approx(pos["mic"][1], abs=0.01) == pytest.approx(pos["hang"][1], abs=0.01)
     w, _ = D.layout_size("circle")
     assert abs(pos["pill"][0] - w / 2) < 0.5
+    assert abs(pos["mic"][0] - w / 2) < 0.5       # el micrófono, bajo el círculo
 
 
-def test_al_preguntar_se_pliegan_ajustes_y_colgar_y_se_recentra() -> None:
+def test_al_preguntar_se_oculta_el_menu_y_la_forma_no_se_mueve() -> None:
     m = D.DropModel("pill")
     t = _run(m, "idle", 1.0)
     antes = m.positions()
     _run(m, "ask", 1.5, asking=True, t0=t)
     despues = m.positions()
-    assert despues["gear"][2] < 0.05 and despues["hang"][2] < 0.05      # desaparecen
-    assert despues["repeat"][2] > 0.9 and despues["mic"][2] > 0.9       # quedan ✕ y ✓
-    assert despues["gear"][0] > antes["gear"][0]                        # los ocultos se pliegan hacia dentro
-    assert despues["hang"][0] < antes["hang"][0]
-    assert abs(despues["pill"][0] - D.layout_size("pill")[0] / 2) < 0.5  # forma siempre centrada
-
+    assert despues["gear"][3] < 0.05                                    # ☰ desaparece
+    assert despues["mic"][3] > 0.95 and despues["hang"][3] > 0.95       # quedan ✓ y ✕
+    assert m.ask.x > 0.95                                               # 🎤 se convirtió en ✓
+    assert despues["pill"][:2] == pytest.approx(antes["pill"][:2], abs=0.01)   # la forma no se mueve
+    assert despues["hang"][:2] == pytest.approx(antes["hang"][:2], abs=0.01)
 
 # ------------------------------------------------------- la forma NO se deforma
 def test_la_forma_es_fija_en_todos_los_estados() -> None:
@@ -102,24 +103,58 @@ def test_mascara_nitida_y_estable() -> None:
     assert 0 < borde.sum() < 600                               # borde definido, ~1–2 px
 
 
-# ------------------------------------------------------------- el fluido interior
+# --------------------------------------------------------- nubes y aire (interior)
 def test_el_interior_se_mueve_con_el_tiempo() -> None:
     m = D.DropModel("pill")
     t = _run(m, "idle", 1.0)
     a = D.render_fluid(m, t).astype(int)
-    _run(m, "idle", 2.0, t0=t)
-    b = D.render_fluid(m, t + 2).astype(int)
+    _run(m, "idle", 3.0, t0=t)
+    b = D.render_fluid(m, t + 3).astype(int)
     assert np.abs(a - b).mean() > 1.0
 
 
-def test_la_voz_acelera_el_flujo_y_al_callar_vuelve() -> None:
+def test_al_hablar_entra_aire_que_empuja_las_nubes_y_al_callar_se_asientan() -> None:
     m = D.DropModel()
-    t = _run(m, "speak", 1.5, rms=0.0)
-    v_calma = m.speed
-    t = _run(m, "speak", 1.5, rms=0.12, t0=t)
-    assert m.speed > v_calma + 0.8 and m.lvl > 0.8
-    _run(m, "speak", 3.0, rms=0.0, t0=t)
-    assert abs(m.speed - v_calma) < 0.15 and m.lvl < 0.05
+    t = _run(m, "listen", 1.5, rms=0.0)
+    calma = m.field.pos.copy()
+    t = _run(m, "listen", 1.0, rms=0.12, t0=t)
+    assert m.field.pressure > 0.8 and m.lvl > 0.8
+    empuje = np.abs(m.field.pos - calma).max()
+    assert empuje > 0.3                                    # el aire mueve las nubes
+    assert m.field.pos[:, 1].mean() < calma[:, 1].mean()   # y las eleva (y crece hacia abajo)
+    t = _run(m, "listen", 0.3, rms=0.0, t0=t)
+    assert m.field.pressure > 0.4                          # inercia: el aire no se corta en seco
+    _run(m, "listen", 4.0, rms=0.0, t0=t)
+    assert m.field.pressure < 0.05 and m.lvl < 0.05
+    assert np.abs(m.field.vel).max() < 0.2                 # se asientan
+
+
+def test_en_calma_las_nubes_estan_en_la_mitad_inferior() -> None:
+    from ezagent.voice.notch.clouds import BANK_Y, CloudField
+
+    for layout in ("pill", "circle"):
+        f = CloudField(layout)
+        assert (f.home[:, 1] >= BANK_Y[0]).all()              # y crece hacia abajo
+    m = D.DropModel("pill")
+    _run(m, "idle", 2.0, palette="light")
+    rgb = D.render_fluid(m, 1.0).astype(int)
+    top = rgb[: rgb.shape[0] // 4]
+    assert (top[..., 0] < 200).mean() > 0.95                  # arriba, cielo sin nubes
+
+
+def test_cuando_habla_ezagent_el_banco_ondula() -> None:
+    m = D.DropModel("pill")
+    t = _run(m, "speak", 1.0, rms=0.0)
+    calma = m.field.pos[:, 1].copy()
+    ys = []
+    for _ in range(6):
+        t = _run(m, "speak", 0.25, rms=0.1, t0=t)
+        ys.append(m.field.pos[:, 1].copy())
+    mov = np.abs(np.asarray(ys) - calma).max()
+    assert mov > 0.2                                          # se nota el movimiento
+    sube_y_baja = np.ptp(np.asarray(ys), axis=0)
+    assert (sube_y_baja > 0.05).sum() >= 3                    # ola: varias nubes suben y bajan
+    assert m.field.pos[:, 1].min() > -0.6                     # el techo suave las contiene
 
 
 def test_el_fluido_devuelve_rgb_uint8() -> None:
@@ -131,31 +166,44 @@ def test_el_fluido_devuelve_rgb_uint8() -> None:
         assert rgb.shape[:2] == D._fluid_grid(layout)[0].shape
 
 
+def test_cielo_arriba_y_nubes_claras() -> None:
+    m = D.DropModel("pill")
+    _run(m, "idle", 1.0, palette="light")
+    rgb = D.render_fluid(m, 1.0).astype(int)
+    assert rgb[0].mean() < rgb.max()                       # arriba, cielo azul
+    assert rgb.max() >= 240                                # hay nubes casi blancas
+
+
 def test_ruido_determinista_y_acotado() -> None:
+    from ezagent.voice.notch import clouds as C
+
     x = np.linspace(0, 40, 200, dtype=np.float32)
     xx, yy = np.meshgrid(x, x)
-    n = D._fbm(xx, yy)
+    n = C._fbm(xx, yy)
     assert 0.0 <= n.min() and n.max() <= 1.0001
-    assert np.array_equal(n, D._fbm(xx, yy))
+    assert np.array_equal(n, C._fbm(xx, yy))
 
 
-def test_colores_siguen_al_estado_y_a_la_paleta() -> None:
+def test_colores_siguen_al_estado_y_al_tema() -> None:
+    from ezagent.voice.notch.clouds import colors_for
+
     m = D.DropModel()
-    t = _run(m, "think", 3.0)
-    assert all(abs(c - v) < 8 for c, v in zip(m.cols[0], D.FLUID["ezagent"]["think"][0], strict=True))
-    t = _run(m, "error", 3.0, t0=t)
-    assert all(abs(c - v) < 8 for c, v in zip(m.cols[0], D.FLUID["ezagent"]["error"][0], strict=True))
-    _run(m, "speak", 3.0, palette="sky", t0=t)
-    assert all(abs(c - v) < 8 for c, v in zip(m.cols[0], D.FLUID["sky"]["speak"][0], strict=True))
+    t = _run(m, "think", 3.0, palette="light")
+    assert np.abs(m.cols - colors_for("light", "think")).max() < 8
+    t = _run(m, "error", 3.0, palette="light", t0=t)
+    assert np.abs(m.cols - colors_for("light", "error")).max() < 8
+    _run(m, "speak", 3.0, palette="dark", t0=t)
+    assert np.abs(m.cols - colors_for("dark", "speak")).max() < 8
 
 
-def test_paletas_completas_y_distintas() -> None:
-    estados = ("idle", "listen", "think", "speak", "ask", "error", "mute")
-    for name in D.PALETTES:
-        assert set(D.FLUID[name]) >= set(estados)
-        assert len({D.FLUID[name][s] for s in estados}) == 7
-        for cols in D.FLUID[name].values():
-            assert len(cols) == 5
+def test_temas_completos_y_distintos() -> None:
+    from ezagent.voice.notch import clouds as C
+
+    for theme in C.THEMES:
+        assert set(C.COLORS[theme]) >= set(C.POSES)
+        assert len({C.COLORS[theme][p].tobytes() for p in C.POSES}) == len(C.POSES)
+        assert all(c.shape == (5, 3) for c in C.COLORS[theme].values())
+    assert not np.array_equal(C.COLORS["light"]["idle"], C.COLORS["dark"]["idle"])
 
 
 def test_ganancia_automatica_usa_todo_el_rango() -> None:
@@ -167,8 +215,9 @@ def test_ganancia_automatica_usa_todo_el_rango() -> None:
 
 def test_movimiento_reducido_no_anima_el_flujo() -> None:
     m = D.DropModel()
+    home = m.field.pos.copy()
     _run(m, "speak", 1.0, rms=0.1, reduced=True)
-    assert m.flow == 0.0
+    assert m.flow == 0.0 and np.array_equal(m.field.pos, home)
 
 
 # ------------------------------------------------------------------- botones
@@ -176,7 +225,9 @@ def test_modo_al_acercar_oculta_y_muestra_los_botones() -> None:
     m = D.DropModel()
     t = _run(m, "idle", 1.0, buttons="hover", hover=False)
     assert all(m.positions()[n][3] < 0.05 for n in D.BUTTONS)
-    assert m.item_at(*m.positions()["mic"][:2]) is None           # no se puede pulsar lo invisible
+    for n in D.BUTTONS:                                           # no se puede pulsar lo invisible
+        assert m.item_at(*D.slots("pill")[n]) is None
+        assert m.item_at(*m.positions()[n][:2]) != n
     t = _run(m, "idle", 0.6, buttons="hover", hover=True, t0=t)
     assert all(m.positions()[n][3] > 0.95 for n in D.BUTTONS)
     _run(m, "idle", 1.5, buttons="hover", hover=False, t0=t)
@@ -206,7 +257,7 @@ def test_los_botones_plegados_no_se_pulsan() -> None:
     t = _run(m, "idle", 1.0)
     gear = m.positions()["gear"][:2]
     _run(m, "ask", 1.5, asking=True, t0=t)
-    assert m.item_at(*gear) in (None, "repeat")
+    assert m.item_at(*gear) is None
 
 
 @pytest.mark.parametrize("layout", ["pill", "circle"])
@@ -253,14 +304,50 @@ def test_clic_en_botones_emite_acciones() -> None:
     _prepare(ui)
     ui.set_in_call(True)
     pos = ui.model.positions()
-    for name in ("gear", "repeat", "mic", "hang"):
+    for name in ("gear", "mic", "hang"):
         assert ui.pointer_down(*pos[name][:2]) is True
         ui.pointer_up(*pos[name][:2])
-    assert ui.actions == ["panel", "repeat", "mute", "hangup"]
+    assert ui.actions == ["panel", "mute", "hangup"]
+
+
+def test_al_colgar_x_se_convierte_en_llamar_y_el_micro_se_pliega() -> None:
+    ui = _Fake()
     ui.set_in_call(False)
-    ui.pointer_down(*pos["mic"][:2])
-    ui.pointer_up(*pos["mic"][:2])
-    assert ui.actions[-1] == "listen"
+    _run(ui.model, "sleep", 1.5, in_call=False)
+    pos = ui.model.positions()
+    assert pos["mic"][3] < 0.05                               # sin llamada no hay micrófono
+    assert ui.model.call.x > 0.95                              # ✕ es ahora «llamar»
+    pill_edge = D.slots("pill")["pill"][0] + D.PILL_W / 2
+    gap = pos["hang"][0] - D.BTN / 2 - pill_edge
+    assert abs(gap - (D.GAP + D.CALL_GAP)) < 0.5             # con respiro, no pegado a la forma
+    assert ui.model.positions()["pill"][:2] == pytest.approx(D.slots("pill")["pill"])
+    ui.pointer_down(*pos["hang"][:2])
+    ui.pointer_up(*pos["hang"][:2])
+    assert ui.actions == ["listen"]                            # el mismo botón vuelve a llamar
+    ui.set_in_call(True)
+    _run(ui.model, "listen", 1.5)
+    pos = ui.model.positions()
+    assert pos["mic"][3] > 0.95 and ui.model.call.x < 0.05
+    ui.pointer_down(*pos["hang"][:2])
+    ui.pointer_up(*pos["hang"][:2])
+    assert ui.actions[-1] == "hangup"
+
+
+def test_en_circulo_la_fila_sin_micro_queda_centrada_y_con_respiro() -> None:
+    sl = D.slots("circle", 0.0)
+    w, _ = D.layout_size("circle")
+    assert abs((sl["gear"][0] + sl["hang"][0]) / 2 - w / 2) < 0.5
+    assert sl["hang"][0] - sl["gear"][0] - D.BTN >= D.GAP + D.CALL_GAP - 0.5
+
+
+def test_el_menos_del_menu_cierra_solo_el_menu() -> None:
+    ui = _Fake()
+    hidden: list = []
+    ui.on_hide = lambda: hidden.append(True)
+    closed: list = []
+    ui._close_menu = lambda: closed.append(True)
+    ui._hide_from_menu()
+    assert closed == [True] and hidden == []                   # la barra sigue visible
 
 
 def test_clic_sobre_la_forma_inicia_arrastre() -> None:
@@ -288,8 +375,8 @@ def test_confirmacion_con_los_botones_x_y_v() -> None:
     pos = ui.model.positions()
     ui.pointer_down(*pos["mic"][:2])
     ui.pointer_up(*pos["mic"][:2])
-    ui.pointer_down(*pos["repeat"][:2])
-    ui.pointer_up(*pos["repeat"][:2])
+    ui.pointer_down(*pos["hang"][:2])             # al preguntar, ✕ es «no», no cuelga
+    ui.pointer_up(*pos["hang"][:2])
     assert calls == ["si", "no"] and ui.actions == []
     ui.hide_confirmation()
     assert not ui._asking and ui._on_yes is None
@@ -340,22 +427,30 @@ def test_clamp_mantiene_la_barra_en_pantalla() -> None:
 def test_posicion_por_defecto_abajo_y_centrada() -> None:
     ui = _Fake()
     wa = D._shell.work_area()
-    w, h = ui._size()
+    _, h = ui._size()
     x, y = ui._default_position()
-    assert abs((x + w / 2) - (wa[0] + wa[2]) / 2) <= 1
+    fx, _ = D.form_center(ui.layout)
+    assert abs((x + fx * ui.s) - (wa[0] + wa[2]) / 2) <= 1      # la forma, centrada
     assert y + h <= wa[3]
 
 
 # ------------------------------------------------------------------ configuración
 def test_config_por_defecto_y_validacion() -> None:
     cfg = VoiceConfig()
-    assert (cfg.ui_style, cfg.ui_layout, cfg.ui_palette, cfg.ui_buttons) == ("drop", "pill", "sky", "always")
-    cfg.ui_layout, cfg.ui_palette, cfg.ui_buttons = "circle", "ezagent", "hover"
+    assert (cfg.ui_style, cfg.ui_layout) == ("drop", "pill")
+    assert not hasattr(cfg, "ui_palette") and not hasattr(cfg, "ui_buttons")
+    cfg.ui_layout = "circle"
     ui = D.DropUI(root=None, cfg=cfg)
-    assert (ui.layout, ui.palette_name, ui.buttons) == ("circle", "ezagent", "hover")
-    cfg.ui_layout, cfg.ui_palette, cfg.ui_buttons = "raro", "raro", "raro"
-    ui = D.DropUI(root=None, cfg=cfg)
-    assert (ui.layout, ui.palette_name, ui.buttons) == ("pill", "sky", "always")
+    assert (ui.layout, ui.buttons) == ("circle", "hover")     # botones solo al acercar
+    cfg.ui_layout = "raro"
+    assert D.DropUI(root=None, cfg=cfg).layout == "pill"
+
+
+def test_un_voice_json_antiguo_con_paleta_sigue_cargando(tmp_path) -> None:
+    path = tmp_path / "voice.json"
+    path.write_text('{"ui_palette": "ezagent", "ui_buttons": "always", "ui_layout": "circle"}',
+                    encoding="utf-8")
+    assert VoiceConfig.load(path).ui_layout == "circle"
 
 
 def test_create_ui_respeta_ui_style() -> None:

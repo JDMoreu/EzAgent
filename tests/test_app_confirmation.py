@@ -137,11 +137,28 @@ def test_confirm_done_oculta_la_fila():
 def test_barge_in_durante_la_confirmacion_no_invalida_el_turno():
     app, _notch, _agent, calls = _app()
     app._tts_stop = threading.Event()
-    VoiceApp._on_speech_start(app, 0.02)
+    VoiceApp._on_barge_in(app, 0.02)          # voz sostenida confirmada por el detector
     assert app._turn_gen == 7
     assert app._tts_stop.is_set()
     assert app._user_speaking is True
     assert ("state", LISTENING) in calls
+
+
+def test_un_arranque_de_voz_suelto_no_corta_la_pregunta_de_confirmacion():
+    app, _notch, _agent, calls = _app()
+    app._tts_stop = threading.Event()
+    VoiceApp._on_speech_start(app, 0.02)      # pico de ruido mientras suena la pregunta
+    assert not app._tts_stop.is_set()
+    assert app._ignore_utterance is True      # esa «frase» se descartará
+    assert ("state", LISTENING) not in calls
+
+
+def test_con_la_interrupcion_apagada_responder_a_la_confirmacion_sigue_cortando():
+    app, _notch, _agent, calls = _app()
+    app.cfg = SimpleNamespace(barge_in=False, barge_in_rms=0.008)
+    app._tts_stop = threading.Event()
+    VoiceApp._on_speech_start(app, 0.02)
+    assert app._tts_stop.is_set() and ("state", LISTENING) in calls
 
 
 def test_utterance_durante_la_confirmacion_conserva_la_generacion():

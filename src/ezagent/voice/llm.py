@@ -136,6 +136,11 @@ class Messenger:
             return self._last_agent_address
         return None
 
+    def reset_history(self) -> None:
+        """Olvida la conversación (conserva solo el mensaje de sistema)."""
+        self.messages = self.messages[:1]
+        self._last_user_text = ""
+
     # ------------------------------------------------------------- tool loop
     def _trim_history(self) -> None:
         """Recorta por grupos completos, nunca entre assistant y tool."""
