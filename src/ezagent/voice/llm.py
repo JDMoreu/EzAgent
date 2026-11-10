@@ -534,7 +534,8 @@ class Messenger:
         sanitize_history(self.messages)
         repair_structure(self.messages)
         self.messages[0] = {"role": "system", "content": core}
-        self.messages.append({"role": "user", "content": self._user_content(text, volatile)})
+        # El historial guarda solo el texto; lo volátil se añade a la petición.
+        self.messages.append({"role": "user", "content": text})
         self.last_rounds = []
         spoke = chat  # el acuse de relleno es para la voz; en el chat no hace falta
         read_cache: dict[tuple[str, str], str] = {}
@@ -552,6 +553,7 @@ class Messenger:
             first_tools,
             self._max_tokens(chat, bool(first_tools), caps),
             token,
+            volatile=volatile,
         )
         base = ctx_mgr.with_summary(core, self.summary) if self.summary else core
         if chat:
@@ -574,7 +576,15 @@ class Messenger:
                 remaining = self._remaining_tools(runtime)
                 final = finish_turn or round_index == max_rounds or remaining == 0
                 tools = [] if final else self._tools_for(runtime, text, caps)
-                request = self._request(text, chat, tools, remaining, final, caps)
+                request = self._request(
+                    text,
+                    chat,
+                    tools,
+                    remaining,
+                    final,
+                    caps,
+                    volatile=volatile,
+                )
                 partial = []
                 assistant_appended = False
                 began = time.monotonic()
@@ -769,6 +779,25 @@ class Messenger:
             logger.warning("No pude cargar las herramientas: {}", exc)
             return []
 
+    @staticmethod
+    def _with_volatile(messages: list[dict[str, Any]], volatile: str) -> list[dict[str, Any]]:
+        """Copia los mensajes y añade los datos volátiles al último usuario."""
+        if not volatile.strip():
+            return list(messages)
+        out = list(messages)
+        for index in range(len(out) - 1, -1, -1):
+            message = out[index]
+            if message.get("role") != "user":
+                continue
+            content = message.get("content")
+            if isinstance(content, str):
+                out[index] = {
+                    **message,
+                    "content": Messenger._user_content(content, volatile),
+                }
+            break
+        return out
+
     def _request(
         self,
         text: str,
@@ -777,15 +806,20 @@ class Messenger:
         remaining: int | None,
         final: bool,
         caps: Any,
+        *,
+        volatile: str = "",
     ) -> dict[str, Any]:
         max_tokens = self._max_tokens(chat, bool(tools), caps)
         notices: list[dict[str, Any]] = []
+        base_messages = self._with_volatile(self.messages, volatile)
         request: dict[str, Any] = {
             "model": self.cfg.llm_model,
-            "messages": list(self.messages),
+            "messages": base_messages,
             "max_tokens": max_tokens,
             "stream": True,
         }
+        if volatile.strip():
+            request["_volatile"] = volatile
         if getattr(caps, "temperature", True):
             # El endpoint OpenAI de Anthropic exige 1.0; la API Messages
             # nativa acepta la temperatura configurada.
@@ -808,7 +842,7 @@ class Messenger:
                     )
                 )
         if notices:
-            request["messages"] = [*self.messages, *notices]
+            request["messages"] = [*base_messages, *notices]
             request["_notices"] = notices
         effort = str(getattr(self.cfg, "llm_reasoning_effort", "none") or "none")
         if self.cfg.llm_provider in {"opencode", "openai"}:
@@ -982,6 +1016,7 @@ class Messenger:
         herramientas anteriores: la conversación nunca se queda atascada.
         """
         extra_messages = request.pop("_notices", [])
+        volatile = str(request.pop("_volatile", "") or "")
         for attempt in range(3):
             self._check_cancel(token)
             if deadline is not None:
@@ -1006,7 +1041,10 @@ class Messenger:
                     continue
                 if attempt == 1 and is_tool_json_error(exc):
                     self._strip_tool_history()
-                    request["messages"] = [*self.messages, *extra_messages]
+                    request["messages"] = [
+                        *self._with_volatile(self.messages, volatile),
+                        *extra_messages,
+                    ]
                     logger.warning(
                         "Último recurso: reintento sin las llamadas a herramientas anteriores."
                     )
@@ -1053,18 +1091,22 @@ class Messenger:
         tools: list[dict[str, Any]] | None = None,
         max_tokens: int | None = None,
         token: _TurnToken | None = None,
+        *,
+        volatile: str = "",
     ) -> None:
         """Mantiene la conversación dentro de la ventana de contexto configurada.
 
-        Presupuesta los esquemas reales y la salida efectiva antes de cada petición.
-        Primero recorta resultados de herramientas viejos y, al acercarse al límite,
-        resume lo antiguo en vez de olvidarlo.
+        Presupuesta los esquemas reales, la salida efectiva y los datos volátiles
+        antes de cada petición. Primero recorta resultados de herramientas viejos
+        y, al acercarse al límite, resume lo antiguo en vez de olvidarlo.
         """
         budget = ctx_mgr.budget_tokens(getattr(self.cfg, "llm_context_tokens", 32_000))
         reserve = self._reserve_tokens(
             tools or [],
             int(max_tokens if max_tokens is not None else self.cfg.llm_max_tokens),
         )
+        if volatile.strip():
+            reserve += ctx_mgr.estimate_tokens([{"role": "user", "content": volatile}])
         if ctx_mgr.needs_clipping(self.messages, budget):
             ctx_mgr.clip_old_tool_results(self.messages)
         if ctx_mgr.needs_compaction(self.messages, budget, reserve):

@@ -66,6 +66,9 @@ class Runtime:
     def system_prompt(self) -> str:
         return "SISTEMA"
 
+    def prompt_parts(self) -> tuple[str, str]:
+        return "SISTEMA", ""
+
     def tools_for(self, text: str):
         return [{"type": "function", "function": {"name": "slow"}}]
 
@@ -221,6 +224,27 @@ def test_note_done_durante_un_turno_se_aplica_al_siguiente() -> None:
         i for i, m in enumerate(messenger.messages) if m.get("content") == "siguiente"
     ]
     assert positions and user_positions and positions[-1] < user_positions[-1]
+
+
+def test_los_datos_volatiles_solo_viajan_en_la_peticion() -> None:
+    runtime = Runtime()
+    client = Client([text("a")], [text("b")], [text("c")])
+    messenger = make(client, runtime)
+    volatile = ("MEM-A", "MEM-B", "MEM-C")
+    for index, data in enumerate(volatile):
+        runtime.prompt_parts = lambda data=data: ("SISTEMA", data)  # type: ignore[method-assign]
+        assert messenger.ask(f"turno {index}") == "abc"[index]
+
+    # El historial persistido guarda solo lo que dijo el usuario.
+    assert all("Datos del entorno" not in str(message) for message in messenger.messages)
+
+    for index, data in enumerate(volatile):
+        messages = client.requests[index]["messages"]
+        containing = [m for m in messages if "Datos del entorno" in str(m.get("content"))]
+        assert len(containing) == 1, f"turno {index}: el bloque debe aparecer una sola vez"
+        assert data in containing[0]["content"]
+        users = [m for m in messages if m.get("role") == "user"]
+        assert containing[0] == users[-1], "el bloque va en el último mensaje del usuario"
 
 
 def test_una_transcripcion_atrasada_no_resuelve_la_confirmacion() -> None:
