@@ -471,13 +471,15 @@ Esta sección no reescribe la auditoría: registra qué se cambió, qué se vali
 | F52 | Corregido | `note_done` ya no muta `self.messages` durante un turno: queda en una lista pendiente y se añade al empezar el siguiente, antes del usuario. `reset_history`/`import_context`/`reload_llm` se difieren si el turno sigue vivo. |
 | F53 | Corregido | El historial guarda solo el texto del usuario; el bloque de datos volátiles se añade únicamente al último usuario de la copia enviada en cada petición. |
 | F54 | Corregido | Migración de `stt_timeout_secs`: un 60.0 guardado sin `defaults_version` pasa a 10.0; un valor explícito distinto (25.0) o con la versión nueva se respeta. |
+| F55 | Corregido | `load_skill` se ofrece también cuando el texto coincide con el nombre o las palabras clave de la descripción de una skill instalada. Las palabras clave se calculan una vez por versión del catálogo; los textos sin coincidencia conservan la base de 5. |
+| F56 | Corregido | Si un turno espera más de 1,5 s al anterior, `Messenger.on_busy` avisa una sola vez; `app.py` dice una frase local y deja una nota en el chat, sin añadirla al historial. Si se cancela la espera, no se dice nada. |
 
-F52–F54 son defectos detectados al revisar el cierre anterior (83c3ae5), no formaban parte de la enumeración original.
+F52–F56 son defectos o mejoras detectados al revisar los cierres anteriores (83c3ae5 y posteriores), no formaban parte de la enumeración original.
 
 ### 12.1 Pruebas nuevas o actualizadas
 
-- `tests/test_audit_turn.py`: cancelación durante herramienta, historial sin llamadas huérfanas, `note_done` diferido, datos volátiles solo en la petición, transcripción atrasada, error atrasado y migración del timeout de STT.
-- `tests/test_audit_tools.py`: timeout con resultado incierto, JSON, validación anidada, selección aditiva, `move_path`/`undo_last`/`list_dir`, `load_skill` por formato y conservación de extras un turno.
+- `tests/test_audit_turn.py`: cancelación durante herramienta, historial sin llamadas huérfanas, `note_done` diferido, datos volátiles solo en la petición, aviso de espera, transcripción atrasada, error atrasado y migración del timeout de STT.
+- `tests/test_audit_tools.py`: timeout con resultado incierto, JSON, validación anidada, selección aditiva, `move_path`/`undo_last`/`list_dir`, `load_skill` por formato y por catálogo, y conservación de extras un turno.
 - Se actualizaron expectativas de pruebas que fijaban el comportamiento anterior (tope de 60 mensajes, `note_done` como `system`, selección por sustitución, respuestas ambiguas como rechazo y truncado no-JSON).
 
 ### 12.2 Límites de esta resolución

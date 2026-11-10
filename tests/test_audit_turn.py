@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from types import SimpleNamespace
 
 from ezagent.agent.registry import ToolResult
@@ -181,6 +182,100 @@ def test_una_llamada_huerfana_se_repara_antes_de_enviar() -> None:
     assert any(m.get("role") == "tool" and m.get("tool_call_id") == "old" for m in sent), (
         "el historial enviado debe cerrar la llamada abierta"
     )
+
+
+def _consume(messenger: Messenger, text: str, results: dict[str, str], key: str) -> None:
+    try:
+        results[key] = "".join(messenger.ask_stream(text))
+    except TurnCancelled:
+        results[key] = ""
+
+
+def test_el_turno_que_espera_avisa_una_sola_vez() -> None:
+    runtime = Runtime()
+    client = Client([call("slow", call_id="c1")], [text("segundo")])
+    messenger = make(client, runtime)
+    busy: list[float] = []
+    messenger.on_busy = lambda: busy.append(time.monotonic())
+    results: dict[str, str] = {}
+
+    first = threading.Thread(target=_consume, args=(messenger, "uno", results, "uno"), daemon=True)
+    first.start()
+    assert runtime.entered.wait(2)
+
+    started = time.monotonic()
+    second = threading.Thread(target=_consume, args=(messenger, "dos", results, "dos"), daemon=True)
+    second.start()
+    deadline = time.monotonic() + 3
+    while not busy and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert len(busy) == 1, "on_busy debe llamarse una sola vez"
+    assert busy[0] - started >= 1.4, "no debe avisar antes del timeout de 1,5 s"
+
+    runtime.release.set()
+    first.join(3)
+    second.join(3)
+    assert not first.is_alive() and not second.is_alive()
+    assert results["dos"] == "segundo"
+
+
+def test_no_avisa_si_el_turno_anterior_suelta_antes() -> None:
+    runtime = Runtime()
+    client = Client([call("slow", call_id="c1")], [text("segundo")])
+    messenger = make(client, runtime)
+    busy: list[float] = []
+    messenger.on_busy = lambda: busy.append(time.monotonic())
+    results: dict[str, str] = {}
+
+    first = threading.Thread(target=_consume, args=(messenger, "uno", results, "uno"), daemon=True)
+    first.start()
+    assert runtime.entered.wait(2)
+    second = threading.Thread(target=_consume, args=(messenger, "dos", results, "dos"), daemon=True)
+    second.start()
+    runtime.release.set()
+    first.join(3)
+    second.join(3)
+    assert busy == []
+    assert results["dos"] == "segundo"
+
+
+def test_cancelar_la_espera_no_dice_nada() -> None:
+    runtime = Runtime()
+    client = Client([call("slow", call_id="c1")], [text("segundo")])
+    messenger = make(client, runtime)
+    busy: list[float] = []
+    messenger.on_busy = lambda: busy.append(time.monotonic())
+    results: dict[str, str] = {}
+
+    first = threading.Thread(target=_consume, args=(messenger, "uno", results, "uno"), daemon=True)
+    first.start()
+    assert runtime.entered.wait(2)
+    second = threading.Thread(target=_consume, args=(messenger, "dos", results, "dos"), daemon=True)
+    second.start()
+    time.sleep(0.3)
+    messenger.cancel_turn()
+    runtime.release.set()
+    first.join(3)
+    second.join(3)
+    assert busy == []
+    assert results["dos"] == ""
+
+
+def test_el_aviso_de_espera_se_muestra_y_se_dice() -> None:
+    notes: list[str] = []
+    spoken: list[str] = []
+    stub = SimpleNamespace(
+        _turn_gen=5,
+        chat=SimpleNamespace(add_note=lambda text: notes.append(text)),
+        _speak_busy=lambda text: spoken.append(text),
+    )
+    VoiceApp._handle_event(stub, ("busy_notice", 5))
+    assert notes == ["Termino lo anterior y sigo."]
+    assert spoken == ["Termino lo anterior y sigo."]
+
+    # Un aviso de un turno ya cancelado no se dice ni se muestra.
+    VoiceApp._handle_event(stub, ("busy_notice", 4))
+    assert len(notes) == 1 and len(spoken) == 1
 
 
 def test_note_done_durante_un_turno_se_aplica_al_siguiente() -> None:

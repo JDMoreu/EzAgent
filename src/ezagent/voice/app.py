@@ -495,6 +495,9 @@ class VoiceApp:
         )
         # Cuando la conversación se compacta, el chat lo cuenta con una nota.
         self.messenger.on_context_event = lambda text: self.chat.add_note(text)
+        # Si un turno espera al anterior, un aviso local; el generador evita
+        # decir nada si el usuario ya canceló la espera.
+        self.messenger.on_busy = lambda: self.events.put(("busy_notice", self._turn_gen))
         if self.chat.snapshot()[1]:  # la conversación que se ve ya tenía mensajes
             self.contexts.rebuild()  # el modelo la recuerda aunque se reinició la app
         # Lista real de modelos del proveedor activo: llena el menú y corrige
@@ -1128,6 +1131,13 @@ class VoiceApp:
             self._on_utterance(event[1], int(event[2]))
         elif kind == "say":
             self._speak(str(event[1]), "answer")
+        elif kind == "busy_notice":
+            gen = event[1] if len(event) > 1 else self._turn_gen
+            if gen != self._turn_gen:
+                return
+            text = "Termino lo anterior y sigo."
+            self.chat.add_note(text)
+            self._speak_busy(text)
         elif kind == "chat_new":
             self._chat_new()
         elif kind == "chat_switch":
@@ -2049,6 +2059,25 @@ class VoiceApp:
             self.events.put(("error", f"Kokoro: {exc}", generation))
             return
         self.events.put(("speak_done", generation))
+
+    def _speak_busy(self, text: str) -> None:
+        """Habla un aviso de espera sin tocar el stop_event del turno que espera.
+
+        Usa ese mismo stop para que una interrupción corte también el aviso. No
+        cambia el estado ni el historial: solo suena y queda la nota en el chat.
+        """
+        with self._tts_guard():
+            stop = self._tts_stop
+        if stop is None:
+            stop = threading.Event()
+
+        def run() -> None:
+            try:
+                self.speaker.speak(text, stop)
+            except Exception as exc:  # noqa: BLE001 - el aviso es best-effort
+                log(f"Aviso de espera: {exc}")
+
+        self._start_worker(run, (), "ezagent-busy")
 
     # --------------------------------------------------------------- watcher
     def _should_announce(self, address: str) -> bool:

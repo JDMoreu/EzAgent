@@ -64,6 +64,10 @@ ACK_FILLERS: tuple[str, ...] = (
     "Va, dame un segundo.",
     "Listo, déjame ver.",
 )
+# Aviso de espera: si el turno anterior sigue ocupando el lock, se avisa una vez.
+BUSY_WAIT_SECS = 1.5
+BUSY_POLL_SECS = 0.1
+
 # Herramientas instantáneas que no merecen acuse (silenciar, cerrar…).
 _NO_ACK_TOOLS = frozenset({"voice_control"})
 
@@ -195,6 +199,11 @@ class Messenger:
         self._turn_token: _TurnToken | None = None
         self._stream_lock = threading.Lock()
         self._active_stream: Any | None = None
+        # Se incrementa con cada cancelación para que un turno que espera el
+        # lock sepa que ya no debe empezar (ni avisar de la espera).
+        self._turn_generation = 0
+        # Callback opcional para avisar de que el turno anterior sigue vivo.
+        self.on_busy: Callable[[], None] | None = None
         # El turno es el único dueño de self.messages. Lo que llega desde Tk
         # (note_done, reinicios de contexto) se aparca y se aplica al terminar.
         self._history_lock = threading.RLock()
@@ -302,6 +311,7 @@ class Messenger:
         if token is not None:
             token.cancelled.set()
         with self._stream_lock:
+            self._turn_generation += 1
             stream = self._active_stream
         if stream is not None:
             try:
@@ -483,12 +493,34 @@ class Messenger:
     def ask_stream(self, text: str, mode: str = "voice") -> Iterator[str]:
         """Streaming de la respuesta, incluidas las llamadas a herramientas.
 
-        Un turno nuevo invalida el anterior y espera a que suelte el lock: el
-        historial nunca lo mutan dos turnos a la vez. ``mode="chat"`` permite
-        markdown y respuestas largas, y no añade acuses hablados.
+        Un turno nuevo invalida el anterior y espera a que suelte el lock. Si la
+        espera supera ``BUSY_WAIT_SECS``, avisa una vez por ``on_busy`` y sigue
+        esperando. ``mode="chat"`` permite markdown y respuestas largas, y no
+        añade acuses hablados.
         """
         self.cancel_turn()
-        with self._turn_lock:
+        with self._stream_lock:
+            generation = self._turn_generation
+        acquired = self._turn_lock.acquire(timeout=BUSY_WAIT_SECS)
+        if not acquired:
+            with self._stream_lock:
+                if generation != self._turn_generation:
+                    raise TurnCancelled("turno cancelado mientras esperaba")
+            if self.on_busy is not None:
+                try:
+                    self.on_busy()
+                except Exception:  # noqa: BLE001 - el aviso es best-effort
+                    pass
+            while True:
+                if self._turn_lock.acquire(timeout=BUSY_POLL_SECS):
+                    break
+                with self._stream_lock:
+                    if generation != self._turn_generation:
+                        raise TurnCancelled("turno cancelado mientras esperaba")
+        try:
+            with self._stream_lock:
+                if generation != self._turn_generation:
+                    raise TurnCancelled("turno cancelado mientras esperaba")
             token = _TurnToken()
             self._turn_token = token
             try:
@@ -501,6 +533,8 @@ class Messenger:
                     self._active_stream = None
                 if self._turn_token is token:
                     self._turn_token = None
+        finally:
+            self._turn_lock.release()
 
     def _ask_stream(self, text: str, mode: str, token: _TurnToken) -> Iterator[str]:
         chat = mode == "chat"
