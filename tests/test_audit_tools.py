@@ -211,6 +211,58 @@ def test_el_tope_de_catorce_y_la_memoria_opcional_se_respetan() -> None:
     assert "recall" not in without_memory and "remember" not in without_memory
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "convierte este informe a PDF",
+        "haz una hoja de Excel con estos datos",
+        "pásalo a Word",
+    ],
+)
+def test_los_formatos_de_oficina_ofrecen_load_skill(text: str) -> None:
+    assert "load_skill" in select_tool_names(text)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("qué archivos tengo en Descargas", "list_dir"),
+        ("qué hay en la carpeta", "list_dir"),
+        ("muéstrame la carpeta", "list_dir"),
+        ("mueve el archivo a la carpeta X", "move_path"),
+        ("renombra el informe", "move_path"),
+        ("deshaz lo último", "undo_last"),
+        ("revierte el cambio", "undo_last"),
+    ],
+)
+def test_las_intenciones_nuevas_ofrecen_su_herramienta(text: str, expected: str) -> None:
+    names = select_tool_names(text)
+    assert expected in names
+    assert set(BASE_TOOLS) <= set(names) and len(names) <= 14
+
+
+def test_un_seguimiento_conserva_un_turno_las_herramientas_extra(tmp_path: Path) -> None:
+    root = tmp_path / "work"
+    root.mkdir()
+    runtime = _make_runtime(_write_permissions(tmp_path, root))
+    try:
+        runtime.begin_turn("crea una carpeta")
+        first = {schema["function"]["name"] for schema in runtime.tools_for("crea una carpeta")}
+        assert "create_dir" in first
+
+        runtime.begin_turn("en Documentos")
+        second = {schema["function"]["name"] for schema in runtime.tools_for("en Documentos")}
+        assert "create_dir" in second, (
+            "el seguimiento no debe perder la herramienta del turno anterior"
+        )
+
+        runtime.begin_turn("¿qué hora es?")
+        third = {schema["function"]["name"] for schema in runtime.tools_for("¿qué hora es?")}
+        assert "create_dir" not in third, "la conservación dura un solo turno"
+    finally:
+        runtime.close()
+
+
 # --------------------------------------------------------------- F26/F27
 def _write_skill(root: Path, name: str, description: str, stamp: float) -> None:
     folder = root / name

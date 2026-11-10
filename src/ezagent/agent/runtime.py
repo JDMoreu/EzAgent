@@ -73,7 +73,28 @@ _WRITE_RE = re.compile(
 _COPY_RE = re.compile(r"\b(copia|duplica)\b", re.IGNORECASE)
 _OPEN_RE = re.compile(r"\b(abre|abrir|abreme|ábreme)\b", re.IGNORECASE)
 _DELETE_RE = re.compile(r"\b(borra|borrar|elimina|eliminar|quita|quitar)\b", re.IGNORECASE)
-_LIST_RE = re.compile(r"\b(lista|listar|listado|enumera|enumerar)\b|(qué|que) hay", re.IGNORECASE)
+_MOVE_RE = re.compile(
+    r"\b(mueve|mover|mu[eé]veme|renombra|renombrar|ren[oó]mbrame|"
+    r"pasa(?:lo|la)? a la carpeta)\b",
+    re.IGNORECASE,
+)
+_UNDO_RE = re.compile(
+    r"\b(deshaz|deshacer|deshazlo|revierte|revertir|vuelve atr[aá]s)\b",
+    re.IGNORECASE,
+)
+_LIST_RE = re.compile(
+    r"\b(lista|listar|listado|enumera|enumerar)\b|"
+    r"\b(qu[eé] hay|qu[eé] archivos|mu[eé]strame la carpeta)\b",
+    re.IGNORECASE,
+)
+# Formatos de oficina: la skill correspondiente se carga antes de escribir.
+# DECISION: se suma load_skill por formato/skill; el contrato de
+# ``select_tool_names`` mantiene la base de 5 que ya prueban las suites.
+_DOC_RE = re.compile(
+    r"\b(pdf|excel|xlsx|word|docx|powerpoint|pptx|"
+    r"hoja de c[aá]lculo|presentaci[oó]n)\b",
+    re.IGNORECASE,
+)
 _SKILL_RE = re.compile(r"\b(skill|skills|habilidad|habilidades|script|scripts)\b", re.IGNORECASE)
 _MEMORY_RE = re.compile(
     r"\b(memoria|recuerda|recordar|recuerdas|olvida|olvidar|compacta|compactar)\b",
@@ -119,12 +140,18 @@ def select_tool_names(
         names.append("copy_path")
     if _OPEN_RE.search(text):
         names.append("open_path")
+    if _MOVE_RE.search(text):
+        names.append("move_path")
+    if _UNDO_RE.search(text):
+        names.append("undo_last")
     if _DELETE_RE.search(text):
         names.append("delete_path")
     if _LIST_RE.search(text):
         names.append("list_dir")
+    if _DOC_RE.search(text) or _SKILL_RE.search(text):
+        names.append("load_skill")
     if _SKILL_RE.search(text):
-        names.extend(("load_skill", "run_skill_script"))
+        names.append("run_skill_script")
     if _MEMORY_RE.search(text) and has_memory:
         names.extend(("remember", "recall", "forget", "compact_memory"))
     unique = list(dict.fromkeys(names))
@@ -187,6 +214,10 @@ class AgentRuntime:
         self.confirm_nondestructive = bool(getattr(voice_config, "confirm_actions", False))
         self.last_agent_address: str | None = None
         self._loaded_skills: set[str] = set()
+        # Herramientas extra del turno anterior que se conservan un turno más:
+        # un seguimiento («en Documentos») no debe perder create_dir (F41).
+        self._carry_tools: tuple[str, ...] = ()
+        self._next_carry: tuple[str, ...] = ()
         self._calls_this_turn = 0
         self._level1_writes = 0
         self._level1_times: list[float] = []
@@ -418,6 +449,8 @@ class AgentRuntime:
         self.tainted = False
         self._calls_this_turn = 0
         self._level1_writes = 0
+        # Las extra del turno anterior valen para este; después se descartan.
+        self._carry_tools, self._next_carry = self._next_carry, ()
         # F41: una skill cargada sigue disponible en el seguimiento. Solo se
         # pierde al reiniciar el runtime, no en cada turno.
         self.refresh()
@@ -460,11 +493,18 @@ class AgentRuntime:
 
     def tools_for(self, text: str) -> list[dict[str, Any]]:
         scripts = any(self._skill_has_scripts(name) for name in self._loaded_skills)
-        names = select_tool_names(
+        selected = select_tool_names(
             text,
             scripts_loaded=scripts,
             has_memory=True,
         )
+        # Se conservan un turno las extra del anterior, sin pasar de 14.
+        names = list(selected)
+        for carried in self._carry_tools:
+            if carried not in names:
+                names.append(carried)
+        names = names[:14]
+        self._next_carry = tuple(name for name in selected if name not in BASE_TOOLS)
         try:
             return self.registry.schemas(names=names, limit=14)
         except TypeError:
