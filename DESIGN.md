@@ -46,13 +46,21 @@ propia que se despliega desde ☰.
 
 ## La barra
 
-Dos disposiciones, elegibles en Ajustes → Apariencia, con doble clic sobre la
+Dos disposiciones, elegibles en Ajustes → Aspecto, con doble clic sobre la
 forma o con «Cambiar forma» en la bandeja (`ui_layout` en `voice.json`):
 
 | Disposición | Forma | Botones |
 |---|---|---|
 | `pill` | Cápsula de 148×38 | ☰ a la izquierda; 🎤 y ✕ a la derecha |
-| `circle` | Círculo de 58 de diámetro | Fila de 36 px bajo el círculo, con los mismos botones |
+| `circle` | Esfera de 58 de diámetro | Fila de 36 px bajo la esfera, con los mismos botones |
+
+### Tamaño de la barra
+
+`ui_scale` (60 %–200 %, pasos de 5 %, 100 % por defecto) agranda o encoge la
+barra entera —forma, botones, márgenes y ventana— alrededor del centro de la
+forma de color, que no se mueve. Se ajusta con el slider **Tamaño** (Ajustes →
+Aspecto) o con **Ctrl + rueda** sobre la barra. Solo escala la barra: la
+ventana de ajustes sigue la escala de pantalla de Windows.
 
 - Botones redondos de **36 px**, separados **8 px** (`BTN`, `GAP`). Margen de
   12 px dentro de la ventana para sombras.
@@ -85,7 +93,7 @@ brillo de aire) en `clouds.py`, para claro y oscuro.
 | `error` | Error | Rojo |
 | `mute` | Pausa | Gris apagado |
 
-### Tarjeta de ajustes
+### Superficies de los ajustes
 
 Una paleta clara y otra oscura (`bar_theme.py`), con un acento azul cielo en
 ambas:
@@ -127,7 +135,8 @@ Respaldo en Windows: Segoe UI.
 ## Espaciado y forma
 
 - Escala de espaciado: 2 · 4 · 6 · 8 · 12 · 16 · 20 · 24 px (`SP_1`…`SP_8`).
-- Tarjeta de **320 px** de ancho; menú de hasta **560 px** de alto visible, con
+- Ventana de ajustes de **760×620** de fábrica (mínimo 560×400, máximo el área
+  de trabajo); barra lateral de **184 px**; el menú ocupa el alto de la ventana, con
   desplazamiento por rueda y pulgar visible cuando el contenido no cabe.
 - Radios: tarjeta **22**, grupos **12** (`CARD_RADIUS`, `R_GROUP`).
 
@@ -155,11 +164,36 @@ mueve y 30 en reposo.
 reducido no hay desplazamiento, escala ni rebote: solo fundidos lineales de
 120 ms.
 
-## Componentes de la tarjeta
+## Ventana de ajustes
 
-- **Grupos de ajustes:** AUDIO, MOTOR, TTS, VAD, WHISPER · STT, LLM · API y
-  CONVERSACIÓN. Cada grupo es una superficie `GROUP` con etiqueta `FS_MICRO`.
-- **Controles:** selectores, sliders con pulgar, interruptores y filas de texto
+Una ventana propia, movible y redimensionable, con **cinco secciones** en una
+barra lateral con icono (Aspecto, Escucha, Voz, Modelos, Sistema). Cada sección
+agrupa tarjetas con etiqueta `FS_MICRO`; el título de la sección (`FS_TITLE`) y
+un ✕ forman la cabecera.
+
+| Sección | Grupos |
+|---|---|
+| Aspecto | Forma y tamaño · Tema |
+| Escucha | Micrófono · Fin de turno · Reactivación |
+| Voz | Voz · Conversación · Acciones |
+| Modelos | Transcripción · Modelo de IA |
+| Sistema | Atajos · Avanzado |
+
+- **Opciones avanzadas plegadas.** Ajustes finos (VAD, pausas del TTS, motor de
+  Whisper, conexión a la API, muestreo) solo se ven con «Mostrar opciones
+  avanzadas» (`show_advanced`, Sistema → Avanzado). Siguen aplicándose igual.
+- **Mover.** Se arrastra desde cualquier zona sin controles (cabecera, barra
+  lateral, huecos entre tarjetas). Siempre queda a la vista una franja de 96 px.
+- **Redimensionar.** Desde los cuatro bordes y las cuatro esquinas (cursores de
+  redimensión; marca de agarre abajo a la derecha). El contenido se estira con
+  el ancho y muestra más filas con el alto.
+- **Restablecer.** Doble clic en la cabecera: 760×620 y centrada.
+- **Memoria.** `settings_x/y/w/h` en `voice.json` se guardan al soltar.
+- **Ritmo de filas.** Una línea: 44 px; dos líneas (etiqueta + control): 52 px;
+  paletas: 68 px. Todos los controles comparten los márgenes interiores de 12 px
+  (`ROW_X0`), el mismo pulgar de 14 px, la misma pista de 4 px y el mismo acento.
+- **Controles:** selectores (lista con la opción activa en acento), sliders y
+  medidor con pulgar, interruptores, botones capsulares y filas de texto
   editables (la clave del LLM se enmascara).
 - **Pie:** muestra `TODO GUARDADO` o `● CAMBIOS SIN GUARDAR`. Guardar usa el
   acento cuando hay cambios y confirma con un check.

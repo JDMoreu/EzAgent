@@ -20,6 +20,12 @@ convierte 🎤 en ✓ y deja ✕ como «no». Los ajustes se abren en una tarjet
 que se despliega desde ☰. El recorte de clics se calcula por geometría: todo lo
 que no es forma o botón deja pasar el ratón.
 
+El tamaño de la barra (``ui_scale``) multiplica la escala de dibujo: forma,
+botones y ventana crecen a la vez alrededor del centro de la forma, y también se
+ajusta con Ctrl + rueda sobre ella. La ventana de ajustes se mueve arrastrando
+cualquier zona sin controles, se redimensiona desde bordes y esquinas y recuerda
+su posición y tamaño (``settings_x/y/w/h``).
+
 Expone el contrato que ``app.py`` espera de la interfaz (``show``, ``hide``,
 ``set_state``…) para que apenas
 cambie. La animación vive en ``DropModel`` (pura, sin Win32) para probarla.
@@ -41,6 +47,7 @@ from .anim import animations_enabled
 from .bar_motion import Choreo, Spring, emerge
 from .bar_theme import CARD_RADIUS, body_top, card_overrides, card_palette
 from .flow import CUSTOM_POSES, FlowField, colors_for, custom_palette
+from .settings import UI_SCALE_MAX, UI_SCALE_MIN, UI_SCALE_STEP
 from .state import UiState
 from .tokens import FLARE, H_ISLAND, R_MENU
 from .tokens import palette as token_palette
@@ -562,14 +569,17 @@ class DropWindow(_shell.LayeredWindow):
     def _alpha_at(self, x, y):
         """Recorte de clics por geometría: la forma y los botones son sólidos; el
         resto deja pasar el ratón."""
-        s = float(self.ui.s)
+        s = float(self.ui.bs)
         if self.ui.model.item_at(x / s, y / s) is not None:
             return 255
         return super()._alpha_at(x, y)
 
     def _logical(self, x: int, y: int) -> tuple[float, float]:
-        s = float(self.ui.s)
+        s = float(self.ui.bs)
         return (x / s, y / s)
+
+    def on_wheel(self, x: int, y: int, delta: int) -> bool:
+        return self.ui.bar_wheel(*self._logical(x, y), delta)
 
     def on_pointer_down(self, x: int, y: int) -> bool:
         return self.ui.pointer_down(*self._logical(x, y))
@@ -612,7 +622,13 @@ class CardWindow(_shell.LayeredWindow):
         return self.ui.render_card()
 
     def clamp_position(self, x: int, y: int) -> tuple[int, int]:
-        return (self.x, self.y)
+        return self.ui.clamp_card(x, y)
+
+    def on_window_drag_end(self, x: int, y: int) -> None:
+        self.ui.card_moved()
+
+    def cursor_ident(self, x: int, y: int) -> int:
+        return self.ui.card_cursor(x, y)
 
     def on_pointer_down(self, x: int, y: int) -> bool:
         return self.ui.card_pointer("down", x, y)
@@ -678,6 +694,9 @@ class DropUI:
         except Exception:
             scale = 1.0
         self.s = scale
+        # Tamaño de la barra: múltiplo de la escala de pantalla, solo para la barra.
+        self.bar_scale = self._clean_bar_scale(getattr(cfg, "ui_scale", 1.0))
+        self._persist_pos_at = 0.0
         layout = str(getattr(cfg, "ui_layout", "pill") or "pill").lower()
         self.layout = layout if layout in LAYOUTS else "pill"
         self.buttons = "hover"
@@ -720,6 +739,9 @@ class DropUI:
         self._sidebar_hover: str | None = None
         self._card_lock = threading.RLock()
         self._pending_save: bool | None = None
+        # Geometría de la ventana de ajustes: arrastre de bordes y doble clic.
+        self._resizing: tuple | None = None
+        self._header_click = 0.0
         # Callbacks de la app.
         self.on_action = lambda action: None
         self.on_position_change = lambda x, y: None
@@ -731,16 +753,33 @@ class DropUI:
         self.menu_settings_provider = lambda: None
 
     # ---------------------------------------------------------------- ventana
+    @staticmethod
+    def _clean_bar_scale(value) -> float:
+        """Tamaño de la barra acotado y al paso del slider (5 %)."""
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            number = 1.0
+        if number != number:  # NaN
+            number = 1.0
+        steps = round((number - UI_SCALE_MIN) / UI_SCALE_STEP)
+        return round(max(UI_SCALE_MIN, min(UI_SCALE_MAX, UI_SCALE_MIN + steps * UI_SCALE_STEP)), 4)
+
+    @property
+    def bs(self) -> float:
+        """Escala de dibujo de la barra: pantalla × tamaño elegido."""
+        return self.s * self.bar_scale
+
     def _size(self) -> tuple[int, int]:
         w, h = layout_size(self.layout)
-        return (round(w * self.s), round(h * self.s))
+        return (round(w * self.bs), round(h * self.bs))
 
     def _default_position(self) -> tuple[int, int]:
         """Abajo y con la forma de color centrada en la pantalla."""
         wa = _shell.work_area()
         _, h = self._size()
         fx, _ = form_center(self.layout)
-        return (round((wa[0] + wa[2]) / 2 - fx * self.s), wa[3] - h - round(6 * self.s))
+        return (round((wa[0] + wa[2]) / 2 - fx * self.bs), wa[3] - h - round(6 * self.bs))
 
     def _motion_reduced(self) -> bool:
         if self.motion == "reduced":
@@ -849,6 +888,20 @@ class DropUI:
                 self._menu.set_scale(self.s)
             except Exception:
                 pass
+            if self._card is not None and self._menu_open:
+                self._relayout_card()
+
+    def _relayout_card(self) -> None:
+        """Tras un cambio de DPI: la ventana de ajustes recupera su tamaño lógico."""
+        from .settings_window import content_size
+
+        menu = self._menu
+        if menu is None:
+            return
+        self._place_card()
+        lw, lh = self._card_logical_size()
+        cw, vh = content_size(lw, lh)
+        menu.resize(cw, vh, time.monotonic())
 
     # ------------------------------------------------------------ confirmación
     def show_confirmation(self, summary: str, strong: bool, on_yes, on_no) -> None:
@@ -894,7 +947,7 @@ class DropUI:
             sx, sy = win._screen_cursor()
         except Exception:
             return None
-        return ((sx - win.x) / self.s, (sy - win.y) / self.s)
+        return ((sx - win.x) / self.bs, (sy - win.y) / self.bs)
 
     def render_frame(self) -> np.ndarray:
         now = time.monotonic()
@@ -918,8 +971,11 @@ class DropUI:
                           in_call=self._in_call, custom=self._custom_for_frame())
         if self._win is not None:
             self._win._interval = 1.0 / self.target_fps(pose, hover, now)
+        if self._persist_pos_at and now >= self._persist_pos_at:
+            self._persist_pos_at = 0.0
+            self._save_bar_position()
         w, h = self._size()
-        return render_model(self.model, w, h, self.s, self._theme_name(), self._muted,
+        return render_model(self.model, w, h, self.bs, self._theme_name(), self._muted,
                             self._in_call, self._menu_open, now, self._hover_item)
 
     def target_fps(self, pose: str, hover: bool, now: float) -> float:
@@ -938,18 +994,16 @@ class DropUI:
         anchor = None
         if win is not None:
             fx, fy = form_center(self.layout)
-            anchor = (win.x + fx * self.s, win.y + fy * self.s)
+            anchor = (win.x + fx * self.bs, win.y + fy * self.bs)
         self.layout = layout
         self.model.layout = layout
         if win is not None and anchor is not None:
             fx, fy = form_center(layout)
-            nx, ny = self.clamp_position(round(anchor[0] - fx * self.s), round(anchor[1] - fy * self.s))
+            nx, ny = self.clamp_position(round(anchor[0] - fx * self.bs), round(anchor[1] - fy * self.bs))
             w, h = self._size()
             win.resize(w, h)
             win.set_pos(nx, ny)
             self._position = (nx, ny)
-            if self._menu_open:
-                self._place_card()      # el menú sigue abierto junto a la nueva forma
         if self.cfg is not None:
             try:
                 self.cfg.save_key("ui_layout", layout)
@@ -962,6 +1016,59 @@ class DropUI:
 
     def toggle_layout(self) -> None:
         self.set_layout("circle" if self.layout == "pill" else "pill")
+
+    # ---------------------------------------------------- tamaño de la barra
+    def set_bar_scale(self, value) -> None:
+        """Cambia el tamaño de la barra sin mover el centro de la forma de color."""
+        new = self._clean_bar_scale(value)
+        if abs(new - self.bar_scale) < 1e-6:
+            return
+        win = self._win
+        anchor = None
+        if win is not None:
+            fx, fy = form_center(self.layout)
+            anchor = (win.x + fx * self.bs, win.y + fy * self.bs)
+        self.bar_scale = new
+        if win is not None and anchor is not None:
+            fx, fy = form_center(self.layout)
+            nx, ny = self.clamp_position(round(anchor[0] - fx * self.bs), round(anchor[1] - fy * self.bs))
+            w, h = self._size()
+            win.resize(w, h)
+            win.set_pos(nx, ny)
+            self._position = (nx, ny)
+            # La posición se guarda cuando se deja de ajustar (no en cada paso).
+            self._persist_pos_at = time.monotonic() + 0.6
+
+    def _save_bar_position(self) -> None:
+        win = self._win
+        if self.cfg is None or win is None:
+            return
+        try:
+            self.cfg.save_key("drop_x", int(win.x))
+            self.cfg.save_key("drop_y", int(win.y))
+            self.cfg.save_key("drop_layout", self.layout)
+        except Exception:
+            pass
+
+    def bar_wheel(self, x: float, y: float, delta: int) -> bool:
+        """Ctrl + rueda sobre la barra: la agranda o la encoge de 5 en 5 %."""
+        try:
+            ctrl = bool(_shell._u32.GetAsyncKeyState(0x11) & 0x8000)
+        except Exception:
+            ctrl = False
+        if not ctrl or not delta or self.model.item_at(x, y) is None:
+            return False
+        steps = 1 if delta > 0 else -1
+        target = self._clean_bar_scale(self.bar_scale + steps * UI_SCALE_STEP)
+        if target != self.bar_scale:
+            self.set_bar_scale(target)
+            if self._menu is not None:
+                try:
+                    self._menu.settings.set("ui_scale", target)
+                except Exception:
+                    pass
+            self._live_setting("ui_scale", target)
+        return True
 
     # ----------------------------------------------------------------- puntero
     def pointer_down(self, x: float, y: float) -> bool:
@@ -1014,7 +1121,7 @@ class DropUI:
         """Mantiene la barra dentro del área de trabajo."""
         wa = _shell.work_area()
         w, h = self._size()
-        margin = round(PAD * self.s)
+        margin = round(PAD * self.bs)
         return (
             max(wa[0] - margin, min(int(x), wa[2] - w + margin)),
             max(wa[1] - margin, min(int(y), wa[3] - h + margin)),
@@ -1029,8 +1136,6 @@ class DropUI:
             except Exception:
                 pass
         self.on_position_change(int(x), int(y))
-        if self._menu_open:
-            self._place_card()
 
     # ----------------------------------------------- tarjeta de ajustes (Menu)
     def open_menu(self) -> None:
@@ -1054,15 +1159,17 @@ class DropUI:
             return
         now = time.monotonic()
         try:
-            from .settings_window import CONTENT_MAX_H, CONTENT_W, section_groups
+            from .settings_window import content_size, section_groups, section_title
 
-            menu.set_width(CONTENT_W)
             menu.set_theme(self._theme_name())
             menu.set_scale(self.s)
             menu.set_reduced_motion(self._reduced)
-            menu.set_max_height(CONTENT_MAX_H)
             menu.set_available_height(self._settings_room())
-            menu.set_groups(section_groups(self._section), "", now)
+            lw, lh = self._card_logical_size()
+            cw, vh = content_size(lw, lh)
+            menu.set_width(cw)
+            menu.set_max_height(vh)
+            menu.set_groups(section_groups(self._section), section_title(self._section), now)
             menu.open(now)
         except Exception:
             return
@@ -1114,26 +1221,73 @@ class DropUI:
         return (win.x + w / 2 * self.s, win.y + top * self.s, win.y + bottom * self.s)
 
     def _settings_room(self) -> float:
-        """Alto lógico disponible para la ventana de ajustes (con margen)."""
+        """Alto lógico máximo que puede ocupar la ventana de ajustes."""
         wa = _shell.work_area()
-        return max(240.0, (wa[3] - wa[1]) / self.s - 48.0)
+        return max(240.0, (wa[3] - wa[1]) / self.s)
+
+    # -- geometría de la ventana de ajustes (posición y tamaño recordados)
+    def _card_logical_size(self) -> tuple[float, float]:
+        """Tamaño lógico de la ventana: el guardado (acotado a la pantalla) o el de fábrica."""
+        from .settings_window import DEFAULT_H, DEFAULT_W, clamp_size
+
+        w = getattr(self.cfg, "settings_w", None)
+        h = getattr(self.cfg, "settings_h", None)
+        w = float(w) if isinstance(w, (int, float)) and w > 0 else DEFAULT_W
+        h = float(h) if isinstance(h, (int, float)) and h > 0 else DEFAULT_H
+        return clamp_size(w, h, _shell.work_area(), self.s)
+
+    def _card_position(self, w: int, h: int) -> tuple[int, int]:
+        """Posición física: la guardada (si sigue a la vista) o el centro de la pantalla."""
+        from .settings_window import centered, clamp_position
+
+        x = getattr(self.cfg, "settings_x", None)
+        y = getattr(self.cfg, "settings_y", None)
+        work = _shell.work_area()
+        if isinstance(x, int) and isinstance(y, int):
+            return clamp_position(x, y, w, h, work, self.s)
+        return centered(work, w, h)
+
+    def clamp_card(self, x: int, y: int) -> tuple[int, int]:
+        """Mantiene una franja de la ventana de ajustes dentro del área de trabajo."""
+        from .settings_window import clamp_position
+
+        card = self._card
+        w, h = (card.w, card.h) if card is not None else (0, 0)
+        return clamp_position(x, y, w, h, _shell.work_area(), self.s)
+
+    def _save_card_geometry(self) -> None:
+        """Guarda posición y tamaño actuales (se llama al soltar, no en cada paso)."""
+        card = self._card
+        if card is None:
+            return
+        values = {
+            "settings_x": int(card.x),
+            "settings_y": int(card.y),
+            "settings_w": round(card.w / self.s),
+            "settings_h": round(card.h / self.s),
+        }
+        for key, value in values.items():
+            if self.cfg is None:
+                break
+            try:
+                setattr(self.cfg, key, value)
+                self.cfg.save_key(key, value)
+            except Exception:
+                pass
+
+    def card_moved(self) -> None:
+        self._header_click = 0.0        # un arrastre no cuenta como primer clic
+        self._save_card_geometry()
 
     def _place_card(self, create: bool = False) -> None:
-        """La ventana de ajustes se abre centrada en el área de trabajo."""
-        from .settings_window import centered, window_size
-
+        """La ventana de ajustes se abre donde se dejó (o centrada) con su último tamaño."""
         menu, win = self._menu, self._win
         if menu is None or win is None:
             return
         self._card_above = False
-        try:
-            menu.set_available_height(self._settings_room())
-            vh = float(menu.viewport_height)
-        except Exception:
-            vh = 480.0
-        lw, lh = window_size(vh)
+        lw, lh = self._card_logical_size()
         w, h = round(lw * self.s), round(lh * self.s)
-        x, y = centered(_shell.work_area(), w, h)
+        x, y = self._card_position(w, h)
         with self._card_lock:
             if self._card is None:
                 if not create:
@@ -1145,16 +1299,41 @@ class DropUI:
                 self._card.set_pos(x, y)
             self._card.show()
 
+    def _apply_card_rect(self, x: int, y: int, w: int, h: int) -> None:
+        """Aplica un nuevo rectángulo físico a la ventana y adapta el menú a su tamaño."""
+        from .settings_window import content_size
+
+        card, menu = self._card, self._menu
+        if card is None or menu is None:
+            return
+        card.resize(w, h)
+        card.set_pos(x, y)
+        cw, vh = content_size(w / self.s, h / self.s)
+        menu.resize(cw, vh, time.monotonic())
+
+    def reset_card(self) -> None:
+        """Doble clic en la cabecera: tamaño de fábrica y centrada."""
+        from .settings_window import DEFAULT_H, DEFAULT_W, centered, clamp_size
+
+        card = self._card
+        if card is None:
+            return
+        lw, lh = clamp_size(DEFAULT_W, DEFAULT_H, _shell.work_area(), self.s)
+        w, h = round(lw * self.s), round(lh * self.s)
+        x, y = centered(_shell.work_area(), w, h)
+        self._apply_card_rect(x, y, w, h)
+        self._save_card_geometry()
+
     def select_section(self, name: str) -> None:
         """Cambia la sección visible de la ventana de ajustes."""
-        from .settings_window import section_groups
+        from .settings_window import section_groups, section_title
 
         menu = self._menu
         if menu is None or name == self._section:
             return
         self._section = name
         try:
-            menu.set_groups(section_groups(name), "", time.monotonic())
+            menu.set_groups(section_groups(name), section_title(name), time.monotonic())
         except Exception:
             pass
 
@@ -1248,7 +1427,7 @@ class DropUI:
 
     def render_card(self) -> np.ndarray:
         """Cuadro de la ventana de ajustes: cuerpo, barra lateral y la sección."""
-        from .settings_window import SIDEBAR_W, Sidebar, composite_over, fade
+        from .settings_window import SIDEBAR_W, Sidebar, composite_over, draw_grip, fade
 
         card, menu = self._card, self._menu
         if card is None or menu is None:
@@ -1289,6 +1468,10 @@ class DropUI:
         except Exception:
             return np.zeros((h, w, 4), np.uint8)
         composite_over(frame, np.clip(content[y0:y0 + h], 0.0, 1.0), round(SIDEBAR_W * s), 0)
+        try:
+            draw_grip(frame, s, card_palette(theme))
+        except Exception:
+            pass
         # Al abrir y cerrar, la ventana entera aparece o se desvanece con el menú.
         fade(frame, mh / max(1.0, vh))
         out = (np.clip(frame, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)[..., [2, 1, 0, 3]]
@@ -1318,31 +1501,101 @@ class DropUI:
         return item_at(x / self.s, y / self.s)
 
     def card_pointer(self, kind: str, x: int, y: int) -> bool:
-        menu = self._menu
-        if menu is None:
+        """Reparte el puntero: bordes (redimensionar), barra lateral, menú o arrastre.
+
+        Devuelve ``False`` en ``down`` cuando el clic no cae en nada interactivo:
+        la ventana lo toma entonces como un arrastre para moverla.
+        """
+        from .settings_window import in_header, resize_edges
+
+        menu, card = self._menu, self._card
+        if menu is None or card is None:
             return False
+        if self._resizing is not None:
+            return self._resize_pointer(kind)
+        s = self.s
+        lx, ly = x / s, y / s
+        now = time.monotonic()
         section = self._sidebar_item(x, y)
         if kind == "move":
             self._sidebar_hover = section
-        if kind == "down" and section is not None:
-            self.select_section(section)
-            return True
         mx, my, inside = self._card_point(x, y)
-        now = time.monotonic()
         try:
-            if kind == "down":
-                if not inside:
-                    return True
-                menu.pointer_down(mx, my, now)
-            elif kind == "move":
+            if kind == "move":
                 menu.pointer_move(mx, my, now)
-            else:
+                return True
+            if kind == "up":
                 menu.pointer_up(mx, my, now)
+                return True
+            # kind == "down"
+            hit = menu.hit(mx, my, now) if inside else None
+            edges = None if hit is not None else resize_edges(lx, ly, card.w / s, card.h / s)
+            if edges is not None:
+                self._begin_resize(edges)
+                return True
+            if section is not None:
+                self.select_section(section)
+                return True
+            if hit is not None or menu.editing_key is not None:
+                menu.pointer_down(mx, my, now)
+                return True
+            if in_header(lx, ly):
+                if now - self._header_click < DOUBLE_CLICK:
+                    self._header_click = 0.0
+                    self.reset_card()
+                    return True
+                self._header_click = now
+            return False                    # zona libre: arrastra la ventana
         except Exception as exc:  # noqa: BLE001
             # Un fallo aquí dejaba el menú sin responder en silencio: que conste.
             if kind != "move":
                 logger.warning("Ajustes: el clic falló ({}: {})", type(exc).__name__, exc)
         return True
+
+    # -- redimensionar desde bordes y esquinas
+    def _begin_resize(self, edges: tuple[bool, bool, bool, bool]) -> None:
+        card = self._card
+        if card is None:
+            return
+        sx, sy = card._screen_cursor()
+        self._resizing = (edges, sx, sy, (int(card.x), int(card.y), int(card.w), int(card.h)))
+
+    def _resize_pointer(self, kind: str) -> bool:
+        from .settings_window import MIN_H, MIN_W, resized_rect
+
+        card = self._card
+        state = self._resizing
+        if card is None or state is None:
+            self._resizing = None
+            return True
+        edges, sx0, sy0, start = state
+        if kind == "up":
+            self._resizing = None
+            self._save_card_geometry()
+            return True
+        sx, sy = card._screen_cursor()
+        wa = _shell.work_area()
+        s = self.s
+        limits = (round(MIN_W * s), round(MIN_H * s), wa[2] - wa[0], wa[3] - wa[1])
+        x, y, w, h = resized_rect(edges, start, (sx - sx0, sy - sy0), limits)
+        if (x, y, w, h) != (card.x, card.y, card.w, card.h):
+            self._apply_card_rect(x, y, w, h)
+        return True
+
+    def card_cursor(self, x: int, y: int) -> int:
+        """Cursor de redimensión (``IDC_*``) si el punto está en un borde; 0 si no."""
+        from .settings_window import cursor_for, resize_edges
+
+        card, menu = self._card, self._menu
+        if card is None or menu is None:
+            return 0
+        if self._resizing is not None:
+            return cursor_for(self._resizing[0])
+        mx, my, inside = self._card_point(x, y)
+        if inside and menu.hit(mx, my, time.monotonic()) is not None:
+            return 0
+        s = self.s
+        return cursor_for(resize_edges(x / s, y / s, card.w / s, card.h / s))
 
     def card_wheel(self, x: int, y: int, delta: int) -> bool:
         menu = self._menu

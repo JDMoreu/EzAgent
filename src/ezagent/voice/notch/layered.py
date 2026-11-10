@@ -850,6 +850,13 @@ class LayeredWindow:
     def on_wheel(self, x: int, y: int, delta: int) -> bool:
         return False
 
+    def cursor_ident(self, x: int, y: int) -> int:
+        """Cursor del sistema (``IDC_*``) para el punto; 0 = el de siempre (mano o flecha).
+
+        Lo sobrescriben las ventanas con bordes de redimensión.
+        """
+        return 0
+
     def cursor_hand(self, x: int, y: int) -> bool:
         return False
 
@@ -1114,10 +1121,13 @@ class LayeredWindow:
         _u32.GetCursorPos(ctypes.byref(p))
         return int(p.x), int(p.y)
 
-    def _set_cursor(self, hand: bool) -> None:
-        """Cursor mano sobre zonas interactivas; flecha en el resto."""
+    def _set_cursor(self, hand: bool, ident: int = 0) -> None:
+        """Cursor mano sobre zonas interactivas; flecha en el resto.
+
+        ``ident`` fuerza otro cursor del sistema (bordes de redimensión).
+        """
         try:
-            ident = _IDC_HAND if hand else 32512  # IDC_ARROW
+            ident = ident or (_IDC_HAND if hand else 32512)  # IDC_ARROW
             _u32.SetCursor(_u32.LoadCursorW(None, ctypes.c_void_p(ident)))
         except Exception:
             pass
@@ -1211,6 +1221,12 @@ class LayeredWindow:
                     self.on_pointer_move(x, y)
                 except Exception:
                     pass
+                try:
+                    ident = int(self.cursor_ident(x, y))
+                except Exception:
+                    ident = 0
+                if ident:
+                    self._set_cursor(False, ident)
                 return 0
             if self._dragging and not _lbutton_down():
                 # Se perdio el WM_LBUTTONUP (p. ej. lo consumio otro proceso):
@@ -1249,7 +1265,11 @@ class LayeredWindow:
                     hand = bool(self.cursor_hand(x, y))
                 except Exception:
                     hand = False
-                self._set_cursor(hand)
+                try:
+                    ident = int(self.cursor_ident(x, y))
+                except Exception:
+                    ident = 0
+                self._set_cursor(hand, ident)
                 act = self._hit_at(x, y)
                 if act != self._hover:
                     self._hover = act

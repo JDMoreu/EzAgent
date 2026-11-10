@@ -18,24 +18,24 @@ from dataclasses import dataclass
 from .tokens import H_ISLAND, H_MENU
 
 ISLAND_H = H_ISLAND
-PAD_TOP = 8
-HEADER = 28
-GAP_HEADER = 8
-LABEL = 20
-GROUP_GAP = 12
-FOOTER = 44
-PAD_BOTTOM = 12
+PAD_TOP = 10
+HEADER = 32
+GAP_HEADER = 10
+LABEL = 22
+GROUP_GAP = 14
+FOOTER = 48
+PAD_BOTTOM = 10
 
-ROW_SELECT = 36
-ROW_SLIDER = 44
-ROW_TOGGLE = 36
-ROW_TEXT = 44
-# El medidor ya no dibuja la línea de estado inferior: cabe en una fila
-# compacta como el resto de controles.
-ROW_METER = 44
+# Rejilla de filas: 44 (una línea) y 52 (dos líneas: etiqueta y control). Todos
+# los controles comparten los mismos márgenes interiores.
+ROW_SELECT = 44
+ROW_SLIDER = 52
+ROW_TOGGLE = 44
+ROW_TEXT = 52
+ROW_METER = 52
 ROW_ACTION = 44
 # Vista de las paletas (Claro, Oscuro, Personalizado): tres muestras con nombre.
-ROW_PALETTE = 64
+ROW_PALETTE = 68
 ROW = {
     "select": ROW_SELECT,
     "slider": ROW_SLIDER,
@@ -46,15 +46,22 @@ ROW = {
     "palette": ROW_PALETTE,
 }
 
-# Orden por tarea: cómo se ve, cómo te escucha, cuándo cierra tu turno, cómo
-# conversa, cómo habla, cómo transcribe y con qué modelo piensa. La etiqueta de
-# sección va fuera del grupo.
+# Grupos de ajustes. Cada grupo es una tarjeta con su etiqueta; varias tarjetas
+# forman una sección de la barra lateral (ver ``SECTIONS``). Las filas de
+# ``ADVANCED_ROWS`` solo se ven con «Mostrar opciones avanzadas» y las de
+# ``CUSTOM_THEME_ROWS`` solo con el tema «Personalizado».
 GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
-        "appearance",
+        "look",
         (
             ("ui_layout", "select"),
+            ("ui_scale", "slider"),
             ("ui_motion", "select"),
+        ),
+    ),
+    (
+        "theme",
+        (
             ("theme", "select"),
             ("theme_preview", "palette"),
             # Solo con el tema «Personalizado» (el menú las oculta si no):
@@ -67,15 +74,7 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ),
     ),
     (
-        "listening",
-        (
-            ("close_action", "select"),
-            ("voice_wake", "toggle"),
-            ("wake_phrase", "text"),
-        ),
-    ),
-    (
-        "audio",
+        "mic",
         (
             ("input_device_index", "select"),
             ("input_meter", "meter"),
@@ -84,7 +83,7 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ),
     (
         # Cuándo se da por terminada tu frase.
-        "vad",
+        "turn",
         (
             ("silence_secs", "slider"),
             ("smart_turn", "toggle"),
@@ -95,57 +94,63 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ),
     ),
     (
-        "conversation",
+        "wake",
+        (
+            ("voice_wake", "toggle"),
+            ("wake_phrase", "text"),
+            ("close_action", "select"),
+        ),
+    ),
+    (
+        "speech",
+        (
+            ("voice", "select"),
+            ("speed", "slider"),
+            ("tts_model_variant", "select"),
+            ("tts_sentence_pause", "slider"),
+            ("tts_clause_pause", "slider"),
+        ),
+    ),
+    (
+        "dialog",
         (
             ("barge_in", "toggle"),
             ("barge_in_rms", "slider"),
             ("confirm_actions", "toggle"),
+        ),
+    ),
+    (
+        "actions",
+        (
             ("test_voice", "action"),
             ("repeat_last", "action"),
             ("new_conversation", "action"),
         ),
     ),
     (
-        "tts",
-        (
-            ("voice", "select"),
-            ("tts_model_variant", "select"),
-            ("speed", "slider"),
-            ("tts_sentence_pause", "slider"),
-            ("tts_clause_pause", "slider"),
-        ),
-    ),
-    (
         "stt",
         (
-            ("stt_engine", "select"),
             ("stt_model", "select"),
+            ("auto_start_whisper", "toggle"),
+            ("stt_engine", "select"),
             ("stt_prompt", "text"),
             ("stt_timeout_secs", "slider"),
-            ("auto_start_whisper", "toggle"),
         ),
     ),
     (
         "llm",
         (
-            # Proveedor -> cómo se conecta -> qué modelo -> cómo responde.
+            # Proveedor -> qué modelo -> cómo se conecta -> cómo responde.
             ("llm_profile", "select"),
+            ("llm_model", "text"),
+            ("api_key", "text"),
             ("llm_provider", "text"),
             ("llm_api_style", "select"),
             ("llm_base_url", "text"),
-            ("api_key", "text"),
-            ("llm_model", "text"),
             ("llm_model_pick", "select"),
             ("llm_temperature", "slider"),
             ("llm_max_tokens", "slider"),
             ("llm_reasoning_effort", "select"),
-        ),
-    ),
-    (
-        "agent",
-        (
-            ("open_system_md", "action"),
-            ("open_voice_json", "action"),
         ),
     ),
     (
@@ -156,6 +161,14 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("repeat_hotkey", "text"),
             ("mute_hotkey", "text"),
             ("menu_hotkey", "text"),
+        ),
+    ),
+    (
+        "advanced",
+        (
+            ("show_advanced", "toggle"),
+            ("open_system_md", "action"),
+            ("open_voice_json", "action"),
         ),
     ),
 )
@@ -172,45 +185,60 @@ CUSTOM_THEME_ROWS = frozenset(
     }
 )
 
-# Orden de la barra lateral de la ventana de ajustes.
-SIDEBAR_ORDER = (
-    "appearance",
-    "listening",
-    "audio",
-    "vad",
-    "conversation",
-    "tts",
-    "stt",
-    "llm",
-    "agent",
-    "hotkeys",
+# Filas poco habituales: ajustes finos de VAD, pausas del TTS, motor de Whisper,
+# conexión a la API y muestreo del modelo. Se ocultan hasta que el usuario pide
+# verlas (``show_advanced``); sus valores siguen aplicándose igual.
+ADVANCED_ROWS = frozenset(
+    {
+        "turn_threshold",
+        "pre_roll_secs",
+        "min_speech_secs",
+        "max_utterance_secs",
+        "tts_model_variant",
+        "tts_sentence_pause",
+        "tts_clause_pause",
+        "barge_in_rms",
+        "stt_engine",
+        "stt_prompt",
+        "stt_timeout_secs",
+        "llm_provider",
+        "llm_api_style",
+        "llm_base_url",
+        "llm_model_pick",
+        "llm_temperature",
+        "llm_max_tokens",
+        "llm_reasoning_effort",
+    }
 )
 
-# Títulos de la barra lateral de la ventana de ajustes.
-SECTION_TITLES = {
-    "appearance": "Apariencia",
-    "listening": "Escucha",
-    "audio": "Micrófono",
-    "vad": "Fin de turno",
-    "conversation": "Conversación",
-    "tts": "Voz",
-    "stt": "Transcripción",
-    "llm": "Modelo e IA",
-    "agent": "Agente",
-    "hotkeys": "Atajos",
-}
+# Secciones de la barra lateral: ``(id, título, grupos)``. Cinco, por tarea:
+# cómo se ve, cómo te escucha, cómo habla, con qué piensa y el sistema.
+SECTIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("appearance", "Aspecto", ("look", "theme")),
+    ("listening", "Escucha", ("mic", "turn", "wake")),
+    ("voice", "Voz", ("speech", "dialog", "actions")),
+    ("models", "Modelos", ("stt", "llm")),
+    ("system", "Sistema", ("hotkeys", "advanced")),
+)
+
+# Orden y títulos de la barra lateral de la ventana de ajustes.
+SIDEBAR_ORDER = tuple(name for name, _title, _groups in SECTIONS)
+SECTION_TITLES = {name: title for name, title, _groups in SECTIONS}
+SECTION_GROUPS = {name: groups for name, _title, groups in SECTIONS}
 
 GROUP_LABELS = {
-    "appearance": "APARIENCIA",
-    "listening": "ESCUCHA",
-    "audio": "MICRÓFONO",
-    "vad": "FIN DE TURNO",
-    "conversation": "CONVERSACIÓN",
-    "tts": "VOZ · KOKORO",
+    "look": "FORMA Y TAMAÑO",
+    "theme": "TEMA",
+    "mic": "MICRÓFONO",
+    "turn": "FIN DE TURNO",
+    "wake": "REACTIVACIÓN",
+    "speech": "VOZ · KOKORO",
+    "dialog": "CONVERSACIÓN",
+    "actions": "ACCIONES",
     "stt": "TRANSCRIPCIÓN · WHISPER",
-    "llm": "LLM · API",
-    "agent": "AGENTE",
+    "llm": "MODELO DE IA",
     "hotkeys": "ATAJOS",
+    "advanced": "AVANZADO",
 }
 
 MENU_HEIGHT = H_MENU

@@ -93,6 +93,7 @@ import numpy as np
 from .anim import EASE_IN, EASE_OUT, EASE_SPRING, Tween, lerp_rgb
 from .icons import draw_icon
 from .menu_layout import (
+    ADVANCED_ROWS,
     CUSTOM_THEME_ROWS,
     GAP_HEADER,
     GROUP_LABELS,
@@ -126,6 +127,7 @@ from .tokens import (
     FS_MICRO,
     FS_ROW,
     FS_SECONDARY,
+    FS_TITLE,
     H_ISLAND,
     R_GROUP,
     T_CLOSE_RETRACT,
@@ -180,13 +182,13 @@ SLIDER_HOVER_MS: Final[float] = 120.0
 SLIDER_DRAG_MS: Final[float] = 80.0
 SLIDER_RELEASE_MS: Final[float] = 180.0
 SLIDER_EMIT_MS: Final[float] = 50.0
-SLIDER_LINE1_TOP: Final[float] = 6.0
+SLIDER_LINE1_TOP: Final[float] = 9.0
 SLIDER_LINE1_H: Final[float] = 16.0
-SLIDER_LINE2_CY: Final[float] = 32.0
+SLIDER_LINE2_CY: Final[float] = 38.0
 
 # Fila de texto editable: etiqueta arriba y valor en la segunda línea.
-TEXT_LINE1_CY: Final[float] = 14.0
-TEXT_LINE2_CY: Final[float] = 32.0
+TEXT_LINE1_CY: Final[float] = 17.0
+TEXT_LINE2_CY: Final[float] = 37.0
 TEXT_CARET_W: Final[float] = 1.5
 TEXT_CARET_H: Final[float] = 16.0
 
@@ -194,7 +196,7 @@ TEXT_CARET_H: Final[float] = 16.0
 # arrastrable. Escala dBFS de -80 a -20, suficiente para voces flojas.
 METER_DB_FLOOR: Final[float] = -80.0
 METER_DB_CEIL: Final[float] = -20.0
-METER_TRACK_Y: Final[float] = 28.0
+METER_TRACK_Y: Final[float] = 36.0
 METER_TRACK_H: Final[float] = 4.0
 METER_TRACK_PAD: Final[float] = 10.0
 METER_THUMB: Final[float] = 14.0
@@ -858,7 +860,7 @@ class Menu:
     def viewport_height(self) -> float:
         """Alto visible objetivo del cuerpo del menú, en px lógicos."""
         if self._max_h is not None:
-            height = min(self._max_h, max(160.0, 0.85 * self._screen_h - H_ISLAND))
+            height = self._max_h
         else:
             height = visible_menu_height(self._screen_h)
         if self._available_h is not None:
@@ -867,12 +869,16 @@ class Menu:
 
     def _shown_groups(self) -> tuple[tuple[str, tuple[tuple[str, str], ...]], ...]:
         """Grupos visibles: las filas del tema personalizado solo con «Personalizado»."""
-        if self.settings.get("theme") == "custom":
-            return self._groups
-        return tuple(
-            (name, tuple(row for row in rows if row[0] not in CUSTOM_THEME_ROWS))
+        hidden: set[str] = set()
+        if self.settings.get("theme") != "custom":
+            hidden |= CUSTOM_THEME_ROWS
+        if not self.settings.get("show_advanced"):
+            hidden |= ADVANCED_ROWS
+        shown = tuple(
+            (name, tuple(row for row in rows if row[0] not in hidden))
             for name, rows in self._groups
         )
+        return tuple(group for group in shown if group[1]) or shown
 
     def set_width(self, width: float | None) -> None:
         """Ancho lógico del menú (``None`` o menos de 320 = el de la tarjeta)."""
@@ -881,6 +887,17 @@ class Menu:
     @property
     def width(self) -> float:
         return float(W) + self._dx
+
+    def resize(self, width: float, height: float, now: float) -> None:
+        """Cambia el ancho y el alto visibles al instante (ventana redimensionada).
+
+        La altura animada salta al nuevo valor: durante un arrastre de borde no
+        debe haber retraso entre el marco y el contenido.
+        """
+        self.set_width(width)
+        self.set_max_height(height)
+        if self._open:
+            self._height.to(self.viewport_height, float(now), 0.0, EASE_OUT)
 
     def set_max_height(self, height: float | None) -> None:
         """Alto máximo propio (ventana de ajustes); None vuelve al de la tarjeta."""
@@ -2382,6 +2399,9 @@ class Menu:
             self._edit_buffer,
             self._edit_cursor,
             self.settings.get("llm_profile"),
+            self.settings.get("theme"),
+            self.settings.get("show_advanced"),
+            round(self._dx, 2),
             round(self._meter_level, 3),
             round(self._meter_target, 3),
             self._meter_muted,
@@ -2524,7 +2544,7 @@ class Menu:
         header = layout["header"]
         cy = (header.y0 + header.y1) / 2.0 + dy
         self._text_at(
-            layer, self._title, FS_MICRO, pal["TEXT_3"], LABEL_X, cy, alpha
+            layer, self._title, FS_TITLE, pal["TEXT"], LABEL_X, cy, alpha
         )
         hover = max(0.0, min(1.0, float(self._button_hover["hide"].value)))
         press = max(0.0, min(1.0, float(self._press["hide"].value)))
@@ -2547,7 +2567,7 @@ class Menu:
         icon_size = HIDE_ICON_SIZE * (1.0 - (1.0 - HIDE_ICON_PRESS_SCALE) * press)
         draw_icon(
             layer,
-            "minus",
+            "close",
             (HIDE_CX + self._dx),
             cy,
             icon_size,
@@ -2719,7 +2739,7 @@ class Menu:
         out = []
         for index, (value, label) in enumerate(self._PALETTES):
             left = x0 + index * (width + gap)
-            out.append((value, label, Rect(left, row_y0 + 8.0, left + width, row_y0 + 32.0)))
+            out.append((value, label, Rect(left, row_y0 + 10.0, left + width, row_y0 + 36.0)))
         return out
 
     def _palette_stops(self, value: str) -> np.ndarray:
@@ -2752,7 +2772,7 @@ class Menu:
             color = pal["MINT"] if value == active else pal["TEXT_2"]
             self._text_at(
                 layer, label, FS_SECONDARY, color, (pill.x0 + pill.x1) / 2.0,
-                row_y0 + 48.0, alpha, align="center",
+                row_y0 + 52.0, alpha, align="center",
             )
 
     def _draw_color_swatch(
@@ -2765,7 +2785,7 @@ class Menu:
         rgb = parse_hex(str(raw or "")) or parse_hex(str(self.settings.get(key) or ""))
         if rgb is None:
             return
-        cx, cy = ROW_X1 + self._dx - 11.0, row_y0 + 22.0
+        cx, cy = ROW_X1 + self._dx - 11.0, row_y0 + 26.0
         _fill_circle(layer, cx, cy, 24.0, pal["LINE"], self._scale, alpha)
         _fill_circle(layer, cx, cy, 22.0, tuple(int(c) for c in rgb), self._scale, alpha)
 
@@ -2883,7 +2903,7 @@ class Menu:
             FS_ROW,
             pal["TEXT"],
             ROW_X0,
-            row_y0 + 14.0,
+            row_y0 + 17.0,
             alpha,
         )
         self._text_at(
@@ -2892,7 +2912,7 @@ class Menu:
             FS_VALUE,
             pal["TEXT_2"],
             (ROW_X1 + self._dx),
-            row_y0 + 14.0,
+            row_y0 + 17.0,
             alpha,
             align="right",
         )
@@ -3418,6 +3438,19 @@ class Menu:
                     self._scale,
                     item_alpha,
                 )
+            chosen = option.value == selected
+            if chosen:
+                _fill_round_rect(
+                    layer,
+                    GROUP_X0,
+                    item_y0,
+                    (GROUP_X1 + self._dx),
+                    item_y1,
+                    0.0,
+                    pal["MINT"],
+                    self._scale,
+                    item_alpha * 0.10,
+                )
             label = _fit_text(
                 option.label, FS_BODY, (LIST_TEXT_MAX_W + self._dx), self._scale
             )
@@ -3425,7 +3458,7 @@ class Menu:
                 layer,
                 label,
                 FS_BODY,
-                pal["TEXT"],
+                pal["MINT"] if chosen else pal["TEXT"],
                 LIST_TEXT_X,
                 center_y,
                 item_alpha,

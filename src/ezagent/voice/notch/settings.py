@@ -89,6 +89,8 @@ INSTANT_KEYS: Final[tuple[str, ...]] = (
     "theme_accent",
     "theme_background",
     "ui_motion",
+    "ui_scale",
+    "show_advanced",
     "close_action",
     "voice_wake",
     "wake_phrase",
@@ -96,6 +98,7 @@ INSTANT_KEYS: Final[tuple[str, ...]] = (
 ALL_KEYS: Final[tuple[str, ...]] = EDITABLE_KEYS + UI_KEYS + INSTANT_KEYS
 
 SLIDER_KEYS: Final[tuple[str, ...]] = (
+    "ui_scale",
     "min_rms",
     "noise_multiplier",
     "silence_secs",
@@ -134,6 +137,7 @@ TOGGLE_KEYS: Final[tuple[str, ...]] = (
     "confirm_actions",
     "auto_start_whisper",
     "voice_wake",
+    "show_advanced",
 )
 TEXT_KEYS: Final[tuple[str, ...]] = (
     "llm_provider",
@@ -166,6 +170,8 @@ SECRET_KEYS: Final[tuple[str, ...]] = ("api_key",)
 
 LABELS: Final[dict[str, str]] = {
     "ui_layout": "Forma",
+    "ui_scale": "Tamaño",
+    "show_advanced": "Mostrar opciones avanzadas",
     "theme": "Tema",
     "theme_preview": "Paletas",
     "theme_base": "Interfaz",
@@ -276,6 +282,8 @@ DEFAULT_VALUES: Final[dict[str, Any]] = {
     "mute_hotkey": "ctrl+alt+m",
     "menu_hotkey": "ctrl+alt+o",
     "ui_layout": "pill",
+    "ui_scale": 1.0,
+    "show_advanced": False,
     "theme": "auto",
     "theme_preset": "",
     "theme_base": "dark",
@@ -301,7 +309,13 @@ class SliderSpec:
     suffix: str = ""
 
 
+# Tamaño de la barra: de 60 % a 200 % del base, en pasos de 5 %.
+UI_SCALE_MIN: Final[float] = 0.6
+UI_SCALE_MAX: Final[float] = 2.0
+UI_SCALE_STEP: Final[float] = 0.05
+
 SLIDERS: Final[dict[str, SliderSpec]] = {
+    "ui_scale": SliderSpec(UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_STEP, 2, " %"),
     "min_rms": SliderSpec(0.0003, 0.008, 0.0001, 4),
     "noise_multiplier": SliderSpec(1.0, 2.5, 0.1, 1, "×"),
     "silence_secs": SliderSpec(0.8, 3.5, 0.1, 1, " s"),
@@ -344,7 +358,7 @@ LLM_REASONING_OPTIONS: Final[tuple[SelectOption, ...]] = (
 )
 # Selectores de apariencia y escucha (valores fijos, en orden de muestra).
 FIXED_OPTIONS: Final[dict[str, tuple[SelectOption, ...]]] = {
-    "ui_layout": (SelectOption("pill", "Píldora"), SelectOption("circle", "Círculo")),
+    "ui_layout": (SelectOption("pill", "Píldora"), SelectOption("circle", "Esfera")),
     "theme": (
         SelectOption("auto", "Automático"),
         SelectOption("light", "Claro"),
@@ -929,6 +943,8 @@ class MenuSettings:
         self._require(key)
         if value is _MISSING:
             value = self._values[key]
+        if key == "ui_scale":
+            return f"{round(_quantize(value, SLIDERS[key]) * 100)} %"
         if key in SLIDERS:
             spec = SLIDERS[key]
             return _decimal(_quantize(value, spec), spec.decimals) + spec.suffix

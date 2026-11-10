@@ -391,6 +391,15 @@ class VoiceConfig:
     ui_layout: str = "pill"
     # Movimiento de la barra: «system» (sigue a Windows), «full» o «reduced».
     ui_motion: str = "system"
+    # Tamaño de la barra (píldora o esfera) como múltiplo del tamaño base.
+    ui_scale: float = 1.0
+    # Ajustes: muestra también las opciones poco habituales.
+    show_advanced: bool = False
+    # Ventana de ajustes: última posición y tamaño (px físicos / lógicos).
+    settings_x: int | None = None
+    settings_y: int | None = None
+    settings_w: int | None = None
+    settings_h: int | None = None
 
     # Escucha: qué hace «cierra la escucha» («pause» deja el micro en pausa y
     # solo atiende a la frase de reactivación; «hangup» cuelga la llamada).

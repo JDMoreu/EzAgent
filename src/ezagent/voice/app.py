@@ -89,6 +89,8 @@ INSTANT_SETTINGS = (
     "theme_accent",
     "theme_background",
     "ui_motion",
+    "ui_scale",
+    "show_advanced",
     "close_action",
     "voice_wake",
     "wake_phrase",
@@ -2138,6 +2140,7 @@ class VoiceApp:
             "theme": "set_theme",
             "theme_base": "set_custom_base",
             "ui_motion": "set_motion",
+            "ui_scale": "set_bar_scale",
         }.get(key)
         method = getattr(self.notch, setter, None) if setter else None
         if callable(method):

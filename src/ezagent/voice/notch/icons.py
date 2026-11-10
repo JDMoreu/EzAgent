@@ -44,6 +44,19 @@ ICON_NAMES: Final[tuple[str, ...]] = (
     "minus",
     "check",
     "speaker",
+    # Siempre vectoriales: iconos de la barra lateral de ajustes y de ventana.
+    "close",
+    "sparkle",
+    "mic-line",
+    "voice-line",
+    "chip",
+    "sliders",
+)
+
+# Los iconos de esta lista no usan la fuente Segoe: así los cinco de la barra
+# lateral comparten el mismo trazo y las mismas terminaciones.
+_VECTOR_ONLY: Final[frozenset[str]] = frozenset(
+    {"close", "sparkle", "mic-line", "voice-line", "chip", "sliders"}
 )
 
 # Alias tolerantes con los nombres que ya usa el notch actual.
@@ -239,6 +252,54 @@ def _draw_vector(
         _path(draw, ((6.4, 12.0), (17.6, 12.0)), width, k)
     elif name == "check":
         _path(draw, ((5.2, 12.4), (9.8, 17.0), (18.8, 6.8)), width, k)
+    elif name == "close":
+        _path(draw, ((7.0, 7.0), (17.0, 17.0)), width, k)
+        _path(draw, ((17.0, 7.0), (7.0, 17.0)), width, k)
+    elif name == "sparkle":
+        _path(
+            draw,
+            (
+                (12.0, 3.4), (14.1, 9.9), (20.6, 12.0), (14.1, 14.1),
+                (12.0, 20.6), (9.9, 14.1), (3.4, 12.0), (9.9, 9.9),
+            ),
+            width,
+            k,
+            closed=True,
+        )
+    elif name == "mic-line":
+        draw.rounded_rectangle(
+            (9.0 * k, 3.4 * k, 15.0 * k, 13.4 * k),
+            radius=3.0 * k,
+            outline=255,
+            width=max(1, int(round(width))),
+        )
+        _arc(draw, (5.4, 6.0, 18.6, 18.0), 0.0, 180.0, width, k)
+        _path(draw, ((12.0, 18.0), (12.0, 20.6)), width, k)
+    elif name == "voice-line":
+        for x, half in ((5.0, 2.6), (9.0, 6.0), (13.0, 8.6), (17.0, 5.0), (21.0, 2.2)):
+            _path(draw, ((x - 1.0, 12.0 - half), (x - 1.0, 12.0 + half)), width, k)
+    elif name == "chip":
+        draw.rounded_rectangle(
+            (6.4 * k, 6.4 * k, 17.6 * k, 17.6 * k),
+            radius=2.4 * k,
+            outline=255,
+            width=max(1, int(round(width))),
+        )
+        for t in (9.6, 14.4):
+            _path(draw, ((t, 3.2), (t, 6.4)), width, k)
+            _path(draw, ((t, 17.6), (t, 20.8)), width, k)
+            _path(draw, ((3.2, t), (6.4, t)), width, k)
+            _path(draw, ((17.6, t), (20.8, t)), width, k)
+    elif name == "sliders":
+        for y, knob in ((7.0, 15.0), (12.0, 9.0), (17.0, 13.5)):
+            _path(draw, ((4.5, y), (knob - 2.2, y)), width, k)
+            _path(draw, ((knob + 2.2, y), (19.5, y)), width, k)
+            r = 2.1 * k
+            draw.ellipse(
+                (knob * k - r, y * k - r, knob * k + r, y * k + r),
+                outline=255,
+                width=max(1, int(round(width))),
+            )
     elif name == "speaker":
         _path(
             draw,
@@ -399,10 +460,12 @@ def _make_sprite(
     scale: float,
 ) -> np.ndarray:
     """Glifo Segoe si está disponible; si no, respaldo vectorial."""
-    try:
-        mask = _font_mask(name, size, scale)
-    except Exception:
-        mask = None
+    mask = None
+    if name in _GLYPHS and name not in _VECTOR_ONLY:
+        try:
+            mask = _font_mask(name, size, scale)
+        except Exception:
+            mask = None
     if mask is not None:
         return _colorize(mask, color)
     return _make_vector_sprite(name, color, size, scale)
