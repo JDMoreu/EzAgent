@@ -8,12 +8,13 @@ F29 (un error viejo no interrumpe el turno actual).
 from __future__ import annotations
 
 import json
+import queue
 import threading
 import time
 from types import SimpleNamespace
 
 from ezagent.agent.registry import ToolResult
-from ezagent.voice.app import VoiceApp
+from ezagent.voice.app import LISTENING, THINKING, VoiceApp
 from ezagent.voice.config import VoiceConfig
 from ezagent.voice.llm import Messenger, TurnCancelled
 
@@ -195,8 +196,8 @@ def test_el_turno_que_espera_avisa_una_sola_vez() -> None:
     runtime = Runtime()
     client = Client([call("slow", call_id="c1")], [text("segundo")])
     messenger = make(client, runtime)
-    busy: list[float] = []
-    messenger.on_busy = lambda: busy.append(time.monotonic())
+    busy: list[tuple[float, str]] = []
+    messenger.on_busy = lambda mode: busy.append((time.monotonic(), mode))
     results: dict[str, str] = {}
 
     first = threading.Thread(target=_consume, args=(messenger, "uno", results, "uno"), daemon=True)
@@ -210,7 +211,8 @@ def test_el_turno_que_espera_avisa_una_sola_vez() -> None:
     while not busy and time.monotonic() < deadline:
         time.sleep(0.02)
     assert len(busy) == 1, "on_busy debe llamarse una sola vez"
-    assert busy[0] - started >= 1.4, "no debe avisar antes del timeout de 1,5 s"
+    assert busy[0][1] == "voice"
+    assert busy[0][0] - started >= 1.4, "no debe avisar antes del timeout de 1,5 s"
 
     runtime.release.set()
     first.join(3)
@@ -223,8 +225,8 @@ def test_no_avisa_si_el_turno_anterior_suelta_antes() -> None:
     runtime = Runtime()
     client = Client([call("slow", call_id="c1")], [text("segundo")])
     messenger = make(client, runtime)
-    busy: list[float] = []
-    messenger.on_busy = lambda: busy.append(time.monotonic())
+    busy: list[tuple[float, str]] = []
+    messenger.on_busy = lambda mode: busy.append((time.monotonic(), mode))
     results: dict[str, str] = {}
 
     first = threading.Thread(target=_consume, args=(messenger, "uno", results, "uno"), daemon=True)
@@ -243,8 +245,8 @@ def test_cancelar_la_espera_no_dice_nada() -> None:
     runtime = Runtime()
     client = Client([call("slow", call_id="c1")], [text("segundo")])
     messenger = make(client, runtime)
-    busy: list[float] = []
-    messenger.on_busy = lambda: busy.append(time.monotonic())
+    busy: list[tuple[float, str]] = []
+    messenger.on_busy = lambda mode: busy.append((time.monotonic(), mode))
     results: dict[str, str] = {}
 
     first = threading.Thread(target=_consume, args=(messenger, "uno", results, "uno"), daemon=True)
@@ -261,21 +263,133 @@ def test_cancelar_la_espera_no_dice_nada() -> None:
     assert results["dos"] == ""
 
 
-def test_el_aviso_de_espera_se_muestra_y_se_dice() -> None:
+def test_el_aviso_de_espera_en_voz_se_muestra_y_se_dice() -> None:
     notes: list[str] = []
     spoken: list[str] = []
     stub = SimpleNamespace(
         _turn_gen=5,
-        chat=SimpleNamespace(add_note=lambda text: notes.append(text)),
-        _speak_busy=lambda text: spoken.append(text),
+        chat=SimpleNamespace(add_note=lambda text: notes.append(text), voice_replies=False),
+        _speak_busy=lambda text, generation: spoken.append(text),
     )
-    VoiceApp._handle_event(stub, ("busy_notice", 5))
+    VoiceApp._handle_event(stub, ("busy_notice", 5, "voice"))
     assert notes == ["Termino lo anterior y sigo."]
     assert spoken == ["Termino lo anterior y sigo."]
 
     # Un aviso de un turno ya cancelado no se dice ni se muestra.
-    VoiceApp._handle_event(stub, ("busy_notice", 4))
+    VoiceApp._handle_event(stub, ("busy_notice", 4, "voice"))
     assert len(notes) == 1 and len(spoken) == 1
+
+
+def test_el_aviso_de_espera_en_chat_sin_voz_solo_deja_la_nota() -> None:
+    notes: list[str] = []
+    spoken: list[str] = []
+    stub = SimpleNamespace(
+        _turn_gen=5,
+        chat=SimpleNamespace(add_note=lambda text: notes.append(text), voice_replies=False),
+        _speak_busy=lambda text, generation: spoken.append(text),
+    )
+    VoiceApp._handle_event(stub, ("busy_notice", 5, "chat"))
+    assert notes == ["Termino lo anterior y sigo."]
+    assert spoken == []
+
+
+def test_el_aviso_de_espera_en_chat_con_voz_se_dice() -> None:
+    notes: list[str] = []
+    spoken: list[str] = []
+    stub = SimpleNamespace(
+        _turn_gen=5,
+        chat=SimpleNamespace(add_note=lambda text: notes.append(text), voice_replies=True),
+        _speak_busy=lambda text, generation: spoken.append(text),
+    )
+    VoiceApp._handle_event(stub, ("busy_notice", 5, "chat"))
+    assert notes == ["Termino lo anterior y sigo."]
+    assert spoken == ["Termino lo anterior y sigo."]
+
+
+def test_el_aviso_de_espera_cuenta_como_tts_para_el_vad() -> None:
+    stub = SimpleNamespace(state=THINKING, _busy_speaking=threading.Event())
+    assert VoiceApp._is_speaking(stub) is False
+    stub._busy_speaking.set()
+    assert VoiceApp._is_speaking(stub) is True
+
+
+def test_un_arranque_de_voz_durante_el_aviso_se_ignora() -> None:
+    cancels: list[int] = []
+    stub = SimpleNamespace(
+        in_call=True,
+        muted=False,
+        state=THINKING,
+        _busy_speaking=threading.Event(),
+        _ignore_utterance=False,
+        _post_tts_ignore=False,
+        _turn_gen=5,
+        messenger=SimpleNamespace(cancel_turn=lambda: cancels.append(1)),
+    )
+    stub._busy_speaking.set()
+    VoiceApp._on_speech_start(stub, 0.1)
+    assert stub._turn_gen == 5 and cancels == []
+    assert stub._ignore_utterance is True
+
+
+def test_un_barge_in_durante_el_aviso_solo_corta_la_frase() -> None:
+    stopped: list[int] = []
+    states: list[str] = []
+    cancels: list[int] = []
+    stub = SimpleNamespace(
+        muted=False,
+        in_call=True,
+        state=THINKING,
+        cfg=SimpleNamespace(barge_in=True),
+        _busy_speaking=threading.Event(),
+        _close_after_answer=False,
+        _user_speaking=False,
+        _ignore_utterance=False,
+        _post_tts_ignore=False,
+        _turn_gen=5,
+        _signal_tts_stop=lambda: stopped.append(1),
+        _set_state=lambda state: states.append(state),
+        messenger=SimpleNamespace(cancel_turn=lambda: cancels.append(1)),
+    )
+    stub._busy_speaking.set()
+    VoiceApp._on_barge_in(stub, 0.1)
+    assert stub._turn_gen == 5 and cancels == []
+    assert stopped == [1] and not stub._busy_speaking.is_set()
+    assert states == [LISTENING]
+
+
+def test_al_terminar_el_aviso_aplica_la_ventana_post_tts() -> None:
+    stub = SimpleNamespace(
+        _turn_gen=5,
+        _busy_speaking=threading.Event(),
+        _ignore_utterance=True,
+        _post_tts_ignore=True,
+        _post_tts_until=0.0,
+        state=THINKING,
+        _reset_capture=threading.Event(),
+    )
+    stub._busy_speaking.set()
+    before = time.monotonic()
+    VoiceApp._handle_event(stub, ("busy_done", 5))
+    assert not stub._busy_speaking.is_set()
+    assert stub._post_tts_until >= before + 0.2
+    assert stub._reset_capture.is_set()
+
+
+def test_speak_busy_marca_el_aviso_y_emite_busy_done() -> None:
+    events: queue.Queue = queue.Queue()
+    spoken: list[str] = []
+    stub = SimpleNamespace(
+        _busy_speaking=threading.Event(),
+        _tts_guard=lambda: threading.Lock(),
+        _tts_stop=threading.Event(),
+        speaker=SimpleNamespace(speak=lambda text, stop: spoken.append(text)),
+        events=events,
+        _start_worker=lambda target, args=(), name="": target(*args),
+    )
+    VoiceApp._speak_busy(stub, "frase", 5)
+    assert stub._busy_speaking.is_set()
+    assert spoken == ["frase"]
+    assert events.get_nowait() == ("busy_done", 5)
 
 
 def test_note_done_durante_un_turno_se_aplica_al_siguiente() -> None:

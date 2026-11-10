@@ -203,7 +203,8 @@ class Messenger:
         # lock sepa que ya no debe empezar (ni avisar de la espera).
         self._turn_generation = 0
         # Callback opcional para avisar de que el turno anterior sigue vivo.
-        self.on_busy: Callable[[], None] | None = None
+        # Recibe el modo del turno que espera: «voice» o «chat».
+        self.on_busy: Callable[[str], None] | None = None
         # El turno es el único dueño de self.messages. Lo que llega desde Tk
         # (note_done, reinicios de contexto) se aparca y se aplica al terminar.
         self._history_lock = threading.RLock()
@@ -508,7 +509,7 @@ class Messenger:
                     raise TurnCancelled("turno cancelado mientras esperaba")
             if self.on_busy is not None:
                 try:
-                    self.on_busy()
+                    self.on_busy(mode)
                 except Exception:  # noqa: BLE001 - el aviso es best-effort
                     pass
             while True:

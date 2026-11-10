@@ -392,6 +392,9 @@ class VoiceApp:
         # Un único lock protege la reasignación del evento de parada.
         self._tts_lock = threading.Lock()
         self._speaking_kind: str | None = None
+        # El aviso de espera suena como un TTS más: el VAD lo trata como eco y
+        # solo un barge-in sostenido lo corta.
+        self._busy_speaking = threading.Event()
         self._turn_gen = 0
         self._turn_started = 0.0
         self._turn_timing: TurnTimings | None = None
@@ -497,7 +500,7 @@ class VoiceApp:
         self.messenger.on_context_event = lambda text: self.chat.add_note(text)
         # Si un turno espera al anterior, un aviso local; el generador evita
         # decir nada si el usuario ya canceló la espera.
-        self.messenger.on_busy = lambda: self.events.put(("busy_notice", self._turn_gen))
+        self.messenger.on_busy = lambda mode: self.events.put(("busy_notice", self._turn_gen, mode))
         if self.chat.snapshot()[1]:  # la conversación que se ve ya tenía mensajes
             self.contexts.rebuild()  # el modelo la recuerda aunque se reinició la app
         # Lista real de modelos del proveedor activo: llena el menú y corrige
@@ -1133,11 +1136,24 @@ class VoiceApp:
             self._speak(str(event[1]), "answer")
         elif kind == "busy_notice":
             gen = event[1] if len(event) > 1 else self._turn_gen
+            mode = str(event[2]) if len(event) > 2 else "voice"
             if gen != self._turn_gen:
                 return
             text = "Termino lo anterior y sigo."
             self.chat.add_note(text)
-            self._speak_busy(text)
+            # En el chat escrito solo se habla si el usuario activó la voz.
+            if mode == "chat" and not self.chat.voice_replies:
+                return
+            self._speak_busy(text, gen)
+        elif kind == "busy_done":
+            gen = event[1] if len(event) > 1 else self._turn_gen
+            self._busy_speaking.clear()
+            if gen == self._turn_gen:
+                self._ignore_utterance = False
+                self._post_tts_ignore = False
+                self._post_tts_until = time.monotonic() + 0.25
+                if self.state != LISTENING:
+                    self._reset_capture.set()
         elif kind == "chat_new":
             self._chat_new()
         elif kind == "chat_switch":
@@ -1381,7 +1397,7 @@ class VoiceApp:
                 on_speech_start=lambda level: self.events.put(("audio_speech_start", level)),
                 on_utterance=lambda pcm, rate: self.events.put(("audio_utterance", pcm, rate)),
                 reset_event=self._reset_capture,
-                is_speaking=lambda: self.state == SPEAKING,
+                is_speaking=self._is_speaking,
                 on_barge_in=lambda level: self.events.put(("audio_barge_in", level)),
             )
         except Exception as exc:  # noqa: BLE001
@@ -1395,15 +1411,21 @@ class VoiceApp:
         if self.in_call and self.state == LISTENING:
             self.notch.draw(0.0 if self.muted else level, LISTENING)
 
+    def _is_speaking(self) -> bool:
+        """El aviso de espera también cuenta como TTS para el detector de barge-in."""
+        return self.state == SPEAKING or self._busy_speaking.is_set()
+
     def _on_barge_in(self, level: float) -> None:
         if self.muted:
             return
-        if not self.in_call or self.state != SPEAKING or not self.cfg.barge_in:
+        busy = self._busy_speaking.is_set() and self.state != SPEAKING
+        if not self.in_call or not (self.state == SPEAKING or busy) or not self.cfg.barge_in:
             return
         agent = getattr(self, "agent", None)
         if agent is not None and agent.confirm_pending:
             # La respuesta a la confirmación pertenece al turno bloqueado:
             # se corta el TTS pero no se invalida el turno.
+            self._busy_speaking.clear()
             self._signal_tts_stop()
             self._user_speaking = True
             self._ignore_utterance = False
@@ -1413,6 +1435,17 @@ class VoiceApp:
             # El usuario interrumpe el cierre: no cerramos.
             self._close_after_answer = False
             self._close_mode = ""
+        if busy:
+            # El aviso de espera es un TTS: se corta la frase, pero el turno
+            # que espera no se invalida por el barge-in.
+            self._busy_speaking.clear()
+            self._signal_tts_stop()
+            self._user_speaking = True
+            self._ignore_utterance = False
+            self._post_tts_ignore = False
+            self._set_state(LISTENING)
+            log("Barge-in durante el aviso: te escucho.")
+            return
         log("Barge-in: te escucho.")
         _advance_turn(self)
         self._signal_tts_stop()
@@ -1424,6 +1457,12 @@ class VoiceApp:
         if not self.in_call:
             return
         if self.muted:
+            self._ignore_utterance = True
+            self._post_tts_ignore = False
+            return
+        if self._busy_speaking.is_set():
+            # Eco del aviso de espera: se ignora igual que el del TTS. Un
+            # barge-in sostenido lo detecta BargeInDetector y corta la frase.
             self._ignore_utterance = True
             self._post_tts_ignore = False
             return
@@ -2060,12 +2099,14 @@ class VoiceApp:
             return
         self.events.put(("speak_done", generation))
 
-    def _speak_busy(self, text: str) -> None:
+    def _speak_busy(self, text: str, generation: int) -> None:
         """Habla un aviso de espera sin tocar el stop_event del turno que espera.
 
-        Usa ese mismo stop para que una interrupción corte también el aviso. No
-        cambia el estado ni el historial: solo suena y queda la nota en el chat.
+        Usa ese mismo stop para que una interrupción corte también el aviso. Se
+        marca como TTS para que el VAD lo trate como eco; no cambia el estado
+        visible ni el historial: solo suena y deja la nota en el chat.
         """
+        self._busy_speaking.set()
         with self._tts_guard():
             stop = self._tts_stop
         if stop is None:
@@ -2076,6 +2117,8 @@ class VoiceApp:
                 self.speaker.speak(text, stop)
             except Exception as exc:  # noqa: BLE001 - el aviso es best-effort
                 log(f"Aviso de espera: {exc}")
+            finally:
+                self.events.put(("busy_done", generation))
 
         self._start_worker(run, (), "ezagent-busy")
 
