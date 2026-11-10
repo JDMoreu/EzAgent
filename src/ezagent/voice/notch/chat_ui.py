@@ -58,7 +58,7 @@ from .chat_geometry import (
 from .chat_paint import PaintMixin, row_reveal, shape_progress
 from .chat_view import Action, ChatView
 
-CLOSE_SECS: Final[float] = 0.30  # cerrar es más rápido que abrir
+CLOSE_SECS: Final[float] = 0.20  # cerrar es más rápido que abrir
 STATUS_TEXT: Final[dict[str, str]] = {
     "listen": "Escuchando…",
     "think": "Pensando…",

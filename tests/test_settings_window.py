@@ -31,6 +31,21 @@ from ezagent.voice.notch.settings import (
 WORK = (0, 0, 1920, 1040)
 
 
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_shared_surfaces_and_semantic_states_have_accessible_contrast(theme: str) -> None:
+    from ezagent.voice.notch.a11y import validate_palette
+    from ezagent.voice.notch.bar_theme import card_palette, contrast
+    from ezagent.voice.notch.tokens import palette
+
+    colors = card_palette(theme)
+    assert colors == palette(theme)
+    for foreground in ("TEXT", "TEXT_2", "TEXT_3", "MINT"):
+        for surface in ("BODY", "GROUP"):
+            assert contrast(colors[foreground], colors[surface]) >= 4.5
+    assert colors["MINT"] != colors["WARM"] != colors["ERR"]
+    assert validate_palette(theme)
+
+
 def _settings(**overrides) -> MenuSettings:
     values = dict(DEFAULT_VALUES)
     values.update(overrides)
@@ -95,6 +110,14 @@ def test_advanced_rows_are_folded_until_asked() -> None:
     folded = _visible_rows(menu)
     assert not folded & ADVANCED_ROWS
     assert {"stt_model", "llm_profile", "llm_model", "api_key"} <= folded
+    assert "stt_dictionary" in folded
+    assert {
+        "llm_saved_profile",
+        "llm_profile_name",
+        "llm_base_url",
+        "llm_api_style",
+        "llm_model_pick",
+    } <= folded
 
     menu = Menu(_settings(), scale=1.0)
     menu.set_groups(sw.section_groups("system"), "Sistema")
@@ -103,6 +126,66 @@ def test_advanced_rows_are_folded_until_asked() -> None:
     menu = Menu(_settings(show_advanced=True), scale=1.0)
     menu.set_groups(sw.section_groups("system"), "Sistema")
     assert ADVANCED_ROWS <= _visible_rows(menu)
+
+
+def test_saved_configurations_restore_connection_fields_and_keep_provider_identity() -> None:
+    providers = {
+        "custom": {"label": "Personalizado", "model": "default"},
+        "saved:local": {
+            "label": "Local",
+            "provider": "custom",
+            "saved": "true",
+            "model": "fast",
+            "base_url": "http://localhost:1234/v1",
+            "api_key": "secret",
+        },
+    }
+    settings = MenuSettings.from_app({}, [], None, providers=providers)
+    assert [o.value for o in settings.select_options("llm_profile")] == ["custom"]
+    assert settings.selector_enabled("llm_saved_profile")
+    settings.set("llm_saved_profile", "saved:local")
+    assert settings.get("llm_provider") == settings.get("llm_profile") == "custom"
+    assert settings.get("llm_profile_name") == "Local"
+    assert settings.get("llm_model") == "fast"
+    assert settings.get("llm_base_url") == "http://localhost:1234/v1"
+    assert settings.get("api_key") == "secret" and "secret" not in settings.format("api_key")
+    assert settings.dirty() and settings.snapshot()["llm_profile_name"] == "Local"
+    settings.set("llm_profile", "custom")
+    assert settings.get("llm_profile_name") == settings.get("llm_saved_profile") == ""
+
+
+def test_dictionary_edits_validate_before_saving_and_keep_errors_visible() -> None:
+    saved = []
+    settings = _settings()
+    menu = Menu(settings, on_save=lambda values: saved.append(values))
+    menu.begin_text_edit("stt_dictionary", 0.0)
+    menu.paste_text("open code => OpenCode\ncloud => Claude")
+    menu.finish_text_edit()
+    assert settings.get("stt_dictionary") == "open code → OpenCode; cloud → Claude"
+    assert settings.dirty()
+    menu.begin_text_edit("stt_dictionary", 1.0)
+    menu.text_key(65, ctrl=True)
+    menu.paste_text("regla sin flecha")
+    menu._save(2.0)
+    assert saved == [] and menu.editing_key == "stt_dictionary"
+    assert menu._edit_error is not None
+    assert settings.get("stt_dictionary").startswith("open code")
+    menu.text_key(27)
+    assert menu.editing_key is None
+
+
+def test_naming_a_configuration_is_saved_without_leaving_the_menu_dirty() -> None:
+    from ezagent.voice.config import VoiceConfig
+
+    settings = _settings()
+    settings.set("llm_profile_name", "  Trabajo local  ")
+    saved = settings.snapshot()
+    assert saved["llm_saved_profile"] == "saved:trabajo local"
+    assert saved["llm_profile_name"] == "Trabajo local"
+    reloaded = MenuSettings.from_app(saved, [], None)
+    reloaded.restore_saved(saved)
+    assert not reloaded.dirty()
+    assert hasattr(VoiceConfig(), "llm_saved_profile")
 
 
 def test_advanced_rows_live_only_next_to_their_switch() -> None:

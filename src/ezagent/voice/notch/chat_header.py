@@ -11,7 +11,7 @@ import numpy as np
 
 from .chat_footer import BTN, PAD
 from .icons import draw_icon
-from .menu import _fill_circle, _fill_round_rect
+from .menu import _fill_circle, _fill_round_rect, _fit_text
 from .text import draw_text  # noqa: F401  (los métodos usan ``self._text``)
 from .tokens import FS_MICRO, FS_ROW, FS_SECONDARY, FS_TITLE
 
@@ -143,19 +143,19 @@ class HeaderMixin:
         title = "Historial" if self.mode == "history" else ("Anterior" if viewing else "Chat")
         if self.status and not back:
             self._text(buf, title, FS_TITLE, self._color("TEXT"), x, cy - 15)
-            self._text(buf, self.status, FS_MICRO, self._color("MINT"), x, cy + 4)
+            available = g.width - PAD - 4 * (BTN + 2) - x
+            status = _fit_text(self.status, FS_SECONDARY, available, sc)
+            self._text(buf, status, FS_SECONDARY, self._color("MINT"), x, cy + 4)
         else:
             self._text(buf, title, FS_TITLE, self._color("TEXT"), x, cy - 9)
         right = g.width - PAD - BTN / 2 + 6
-        muted = self.model.mic_muted
-        voice = self.model.voice_replies
+        # DECISION: conversation actions belong in the header; audio controls
+        # stay beside the composer so compact windows retain a readable title.
         for name, key, active, alert in (
-            ("close", "close", False, False),
+            ("minus", "close", False, False),
             ("plus", "new", False, False),
             ("clock", "history", self.mode == "history", False),
-            ("menu", "settings", False, False),
-            ("speaker" if voice else "speaker-slash", "voice", False, not voice),
-            ("microphone-slash" if muted else "microphone", "mic", False, muted),
+            ("sliders", "settings", False, False),
         ):
             self._icon_button(buf, name, right, cy, key, active, alert)
             right -= BTN + 2

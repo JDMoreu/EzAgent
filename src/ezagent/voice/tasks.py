@@ -19,8 +19,16 @@ import json
 import os
 import threading
 import time
+from html import escape
 from pathlib import Path
 from typing import Any
+
+
+def _prompt_value(value: Any, limit: int = 220) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) > limit:
+        text = text[: limit - 1].rstrip() + "…"
+    return escape(text, quote=False)
 
 
 class TaskRegistry:
@@ -200,28 +208,28 @@ class TaskRegistry:
 
     # -------------------------------------------------------------- prompt
     def prompt_block(self) -> str:
-        tasks = self.all()
-        chains = self.chains()
+        with self._lock:
+            tasks = self.all()
+            chains = self.chains()
         if not tasks and not chains:
             return ""
         lines = ["<pending_tasks>"]
-        for item in tasks:
-            address = item.get("address") or "?"
-            agent = item.get("agent") or "agente"
-            task = str(item.get("task") or "").strip()
-            if len(task) > 220:
-                task = task[:219].rstrip() + "…"
-            task = task.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        # DECISION: bound prompt context to recent work, retaining the full registry.
+        for item in tasks[-12:]:
+            address = _prompt_value(item.get("address"), 96) or "?"
+            agent = _prompt_value(item.get("agent"), 80) or "agente"
+            task = _prompt_value(item.get("task"))
             lines.append(f"- {address} · {agent} · «{task or 'tarea sin describir'}»")
-        for chain in chains:
-            source = chain.get("source") or "?"
-            agent = chain.get("agent") or "agente"
-            task = str(chain.get("task") or "").strip()
-            if len(task) > 220:
-                task = task[:219].rstrip() + "…"
-            task = task.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        for chain in chains[-8:]:
+            source = _prompt_value(chain.get("source"), 96) or "?"
+            agent = _prompt_value(chain.get("agent"), 80) or "agente"
+            task = _prompt_value(chain.get("task"))
             lines.append(
                 f"- cadena: cuando termine {source} → {agent} · «{task or 'tarea sin describir'}»"
+            )
+        if len(tasks) > 12 or len(chains) > 8:
+            lines.append(
+                f"Otras pendientes: {max(0, len(tasks) - 12)} tareas y {max(0, len(chains) - 8)} cadenas."
             )
         lines.append("</pending_tasks>")
         return "\n".join(lines)

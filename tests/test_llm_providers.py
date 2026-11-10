@@ -347,6 +347,36 @@ def test_guardar_conserva_los_otros_perfiles_y_la_etiqueta_personalizada(cfg: Pa
     assert data["providers"]["openai"] == {"model": "z"}
 
 
+def test_named_configurations_keep_two_models_for_the_same_provider(cfg: Path) -> None:
+    for label, model in (("Rápido", "fast"), ("Preciso", "careful")):
+        save_provider_profile(
+            "custom",
+            model=model,
+            base_url="http://localhost:1234/v1",
+            api_key="",
+            profile_name=label,
+            config_file=cfg,
+        )
+    catalog = load_provider_catalog(environ={}, config_file=cfg)
+    assert catalog["saved:rápido"]["model"] == "fast"
+    assert catalog["saved:preciso"]["model"] == "careful"
+    assert catalog["saved:rápido"]["provider"] == "custom"
+    assert catalog["saved:rápido"]["label"] == "Rápido"
+    assert catalog["saved:rápido"]["saved"] == "true"
+    save_provider_profile(
+        "custom",
+        model="updated",
+        base_url="http://localhost:1234/v1",
+        api_key="",
+        profile_name="Rápido",
+        config_file=cfg,
+    )
+    updated = load_provider_catalog(environ={}, config_file=cfg)
+    assert updated["saved:rápido"]["model"] == "updated"
+    assert updated["saved:preciso"]["model"] == "careful"
+    assert json.loads(cfg.read_text("utf-8"))["provider"] == "custom"
+
+
 def test_guardar_sobre_un_archivo_corrupto_no_lo_destruye(cfg: Path) -> None:
     cfg.write_text("{corrupto", encoding="utf-8")
     with pytest.raises(ValueError, match="llm.json inválido"):

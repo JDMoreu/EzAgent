@@ -10,6 +10,46 @@ import pytest
 
 from ezagent.voice import stt
 from ezagent.voice.stt import STTError, is_hallucination, transcribe
+from ezagent.voice.stt_dictionary import correct_transcription, normalize_rules
+
+
+@pytest.mark.parametrize(
+    ("text", "rules", "expected"),
+    [
+        ("Abre OPEN CODE, por favor.", "open code → OpenCode", "Abre OpenCode, por favor."),
+        ("code codec decode code_base", "code => Code", "Code codec decode code_base"),
+        ("open code y code", "code → Code; open code → OpenCode", "OpenCode y Code"),
+        ("uno dos", "uno → dos; dos → tres", "dos tres"),
+        ("[x] y xxx", "[x] → $1", "$1 y xxx"),
+        ("open   code", "open code → OpenCode", "OpenCode"),
+        ("ÁRBOL, árbol.", "árbol → árbolito", "árbolito, árbolito."),
+        ("İ ı I i", "i → letra", "letra letra letra letra"),
+        ("Texto intacto.", "", "Texto intacto."),
+    ],
+)
+def test_dictionary_matches_literals_without_chaining(text: str, rules: str, expected: str) -> None:
+    assert correct_transcription(text, rules) == expected
+
+
+@pytest.mark.parametrize("rules", ["sin flecha", "uno →", "→ dos", "a → b; A → c", "x" * 12001])
+def test_dictionary_rejects_invalid_or_ambiguous_rules(rules: str) -> None:
+    with pytest.raises(ValueError):
+        normalize_rules(rules)
+
+
+def test_dictionary_normalizes_pasted_lines_and_limits_rule_count() -> None:
+    assert (
+        normalize_rules(" open code => OpenCode\n cloud → Claude ")
+        == "open code → OpenCode; cloud → Claude"
+    )
+    with pytest.raises(ValueError):
+        normalize_rules(";".join(f"word{i} → term{i}" for i in range(101)))
+
+
+def test_transcribe_applies_the_saved_dictionary(monkeypatch: pytest.MonkeyPatch) -> None:
+    post = Post(reply(payload={"text": "abre open code"}))
+    monkeypatch.setattr(httpx, "post", post)
+    assert transcribe(cfg(stt_dictionary="open code → OpenCode"), b"wav") == "abre OpenCode"
 
 
 # ----------------------------------------------------------- alucinaciones
@@ -117,13 +157,32 @@ def test_transcribe_envia_el_audio_y_devuelve_el_texto_limpio(
     assert call["files"] == {"file": ("utterance.wav", b"RIFFwav", "audio/wav")}
 
 
-def test_sin_prompt_no_se_envia_el_campo(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_default_vocabulary_hints_and_the_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:
     post = Post(reply(payload={"text": "hola"}))
     monkeypatch.setattr(httpx, "post", post)
     transcribe(cfg(stt_model="ggml-base-q5_1"), b"x")
-    assert (
-        "prompt" not in post.calls[0]["data"] and post.calls[0]["data"]["model"] == "ggml-base-q5_1"
-    )
+    assert "OpenCode" in post.calls[0]["data"]["prompt"]
+    assert post.calls[0]["data"]["model"] == "ggml-base-q5_1"
+    post = Post(reply(payload={"text": "hola"}))
+    monkeypatch.setattr(httpx, "post", post)
+    transcribe(cfg(stt_vocabulary_hints=False), b"x")
+    assert "prompt" not in post.calls[0]["data"]
+
+
+def test_dictionary_targets_prime_whisper_without_inventing_brand_corrections(monkeypatch) -> None:
+    post = Post(reply(payload={"text": " planes de Cloud\n Edge y Q1 "}))
+    monkeypatch.setattr(httpx, "post", post)
+    result = transcribe(cfg(stt_dictionary="mi proyecto → MiProyecto"), b"wav")
+    assert "MiProyecto" in post.calls[0]["data"]["prompt"]
+    assert result == "planes de Cloud Edge y Q1"
+
+
+def test_vocabulary_hints_are_bounded_and_respect_explicit_prompts() -> None:
+    from ezagent.voice.stt_dictionary import transcription_hint
+
+    dictionary = "; ".join(f"source{i} → {'word' * 20}{i}" for i in range(100))
+    assert len(transcription_hint("", dictionary)) <= 512
+    assert transcription_hint("Mi vocabulario", dictionary) == "Mi vocabulario"
 
 
 def test_un_404_prueba_la_ruta_alternativa_de_openai(monkeypatch: pytest.MonkeyPatch) -> None:

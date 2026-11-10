@@ -813,6 +813,7 @@ class Menu:
         self._edit_cursor = 0
         self._edit_select_all = False
         self._edit_t0 = 0.0
+        self._edit_error: tuple[str, str] | None = None
 
         # Medidor de entrada. El notch entrega el RMS del micrófono en cada
         # fotograma; el menú lo suaviza y pinta el umbral arrastrable.
@@ -1761,6 +1762,8 @@ class Menu:
             hit is not None and hit.kind == "text" and hit.key == self._editing_key
         ):
             self._finish_text_edit(commit=True)
+            if self._editing_key is not None:
+                return True
         if hit is not None and hit.kind == "meter":
             self._meter_drag = True
             self._meter_pending = None
@@ -2044,10 +2047,13 @@ class Menu:
             return
         if self._editing_key is not None:
             self._finish_text_edit(commit=True)
+            if self._editing_key is not None:
+                return
         if key in hk.HOTKEY_KEYS:
             self._begin_capture(key, now)
             return
         self._editing_key = key
+        self._edit_error = None
         self._edit_buffer = str(self.settings.get(key, "") or "")
         self._edit_cursor = len(self._edit_buffer)
         self._edit_select_all = False
@@ -2066,18 +2072,20 @@ class Menu:
             self._end_capture()
             return
         text = self._edit_buffer
-        self._editing_key = None
-        self._edit_buffer = ""
-        self._edit_cursor = 0
-        self._edit_select_all = False
         if commit:
             old = self.settings.get(key)
             try:
                 new = self.settings.set(key, text)
-            except Exception:
-                new = old
+            except ValueError as exc:
+                self._edit_error = (key, str(exc))
+                return
             if new != old:
                 self._notify(self.on_live_change, key, new)
+        self._editing_key = None
+        self._edit_buffer = ""
+        self._edit_cursor = 0
+        self._edit_select_all = False
+        self._edit_error = None
         self._notify(self.on_text_edit, False)
 
     def _stop_text_edit(self) -> None:
@@ -2145,7 +2153,10 @@ class Menu:
             return False
         if self._capturing:
             return True
-        clean = str(text or "").replace("\r", " ").replace("\n", " ")
+        if self._editing_key == "stt_dictionary":
+            clean = "; ".join(str(text or "").splitlines())
+        else:
+            clean = str(text or "").replace("\r", " ").replace("\n", " ")
         self._insert_text(clean)
         return True
 
@@ -2203,6 +2214,7 @@ class Menu:
         return True
 
     def _insert_text(self, text: str) -> None:
+        self._edit_error = None
         if not text:
             return
         if self._edit_select_all:
@@ -2245,6 +2257,8 @@ class Menu:
 
     def _save(self, now: float) -> None:
         self._finish_text_edit(commit=True)
+        if self._editing_key is not None:
+            return
         if self._saving_pending or not self.settings.dirty():
             return
         self._save_backup = self.settings.saved_snapshot()
@@ -2407,6 +2421,7 @@ class Menu:
             self._hover_option,
             self._editing_key,
             self._edit_buffer,
+            self._edit_error,
             self._edit_cursor,
             self._capturing,
             tuple(sorted(self._capture_mods)),
@@ -2997,11 +3012,13 @@ class Menu:
         editing = self._editing_key == key
         label_cy = row_y0 + TEXT_LINE1_CY
         value_cy = row_y0 + TEXT_LINE2_CY
+        error = self._edit_error[1] if self._edit_error and self._edit_error[0] == key else ""
+        label = _fit_text(error or LABELS[key], FS_ROW, ROW_X1 + self._dx - ROW_X0, self._scale)
         self._text_at(
             layer,
-            LABELS[key],
+            label,
             FS_ROW,
-            pal["TEXT"],
+            pal["ERR"] if error else pal["TEXT"],
             ROW_X0,
             label_cy,
             alpha,

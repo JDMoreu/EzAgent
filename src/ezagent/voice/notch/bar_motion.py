@@ -30,7 +30,7 @@ SETTLE_EPS = 1e-3
 
 
 class Spring:
-    """Damped spring (k, c, unit mass) integrated at a fixed 1/120 s step."""
+    """Damped spring (k, c, unit mass) solved for the elapsed frame time."""
 
     def __init__(self, x: float = 0.0, k: float = 300.0, c: float = 18.0) -> None:
         self.x = float(x)
@@ -43,11 +43,38 @@ class Spring:
         if instant:
             self.x, self.v = self.t, 0.0
             return self.x
-        n = max(1, math.ceil(dt * 120))
-        h = dt / n
-        for _ in range(n):
-            self.v += (-self.k * (self.x - self.t) - self.c * self.v) * h
-            self.x += self.v * h
+        if dt <= 0.0:
+            return self.x
+        # DECISION: solve the spring analytically to keep its trajectory the
+        # same at idle/active frame rates without per-frame integration loops.
+        offset, velocity = self.x - self.t, self.v
+        damping = self.c / 2.0
+        discriminant = damping * damping - self.k
+        if abs(discriminant) < 1e-8:
+            decay = math.exp(-damping * dt)
+            b = velocity + damping * offset
+            offset, velocity = (
+                (offset + b * dt) * decay,
+                (velocity - damping * b * dt) * decay,
+            )
+        elif discriminant < 0.0:
+            frequency = math.sqrt(-discriminant)
+            angle = frequency * dt
+            cosine, sine = math.cos(angle), math.sin(angle)
+            b = (velocity + damping * offset) / frequency
+            decay = math.exp(-damping * dt)
+            offset, velocity = (
+                (offset * cosine + b * sine) * decay,
+                (velocity * cosine - (damping * b + frequency * offset) * sine) * decay,
+            )
+        else:
+            root = math.sqrt(discriminant)
+            r1, r2 = -damping + root, -damping - root
+            a = (velocity - r2 * offset) / (r1 - r2)
+            b = offset - a
+            e1, e2 = math.exp(r1 * dt), math.exp(r2 * dt)
+            offset, velocity = a * e1 + b * e2, r1 * a * e1 + r2 * b * e2
+        self.x, self.v = self.t + offset, velocity
         return self.x
 
     def fade(self, dt: float, seconds: float = REDUCED_FADE) -> float:

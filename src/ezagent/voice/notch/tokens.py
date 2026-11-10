@@ -27,61 +27,57 @@ RGB = tuple[int, int, int]
 RGBA = tuple[int, int, int, int]
 Color = RGB | RGBA
 
+# DECISION: retain the shipped Marea identity as the shared palette for all surfaces.
 DARK: Final[dict[str, Color]] = {
-    "BODY": (20, 18, 16),  # #0E0F13
-    "GROUP": (30, 27, 24),  # #1C1C1F
-    "GROUP_HOVER": (40, 36, 32),  # #26262A
-    "TRACK": (52, 48, 43),  # #2F2F34
-    "TEXT": (244, 239, 232),  # #F5F5F7
-    "TEXT_2": (194, 186, 174),  # #B6B6BF
-    "TEXT_3": (156, 148, 136),  # #94949E
-    "LINE": (244, 239, 232, 23),  # rgba(255,255,255,.09)
-    "LINE_2": (244, 239, 232, 15),  # rgba(255,255,255,.06)
-    "MINT": (212, 242, 90),  # #5EEAC4
-    "WARM": (255, 178, 62),  # #FFC24A
-    "ERR": (255, 93, 82),  # #FF453A
-    "MINT_BTN": (212, 242, 90),  # #5EEAC4
-    "MINT_INK": (20, 18, 16),  # #0B1220
-    "WARM_BTN": (255, 178, 62),  # #FFC24A
-    "WARM_INK": (26, 16, 0),  # #1A1200
-    "ERR_INK": (20, 18, 16),  # #0E0F13
-    "EYE_IDLE": (140, 160, 63),  # #3E927D
-    "EYE_MUTE": (183, 140, 58),  # #B78C3A
-    # Variantes de texto de la palabra de estado (AA sobre BODY). En oscuro
-    # coinciden con el color del ojo; en claro se oscurecen para el texto.
-    "WORD_IDLE": (140, 160, 63),
-    "WORD_MINT": (212, 242, 90),
+    "BODY": (13, 22, 26),
+    "GROUP": (20, 33, 38),
+    "GROUP_HOVER": (28, 45, 51),
+    "TRACK": (44, 70, 76),
+    "TEXT": (228, 242, 240),
+    "TEXT_2": (172, 196, 194),
+    "TEXT_3": (138, 164, 163),
+    "LINE": (228, 242, 240, 24),
+    "LINE_2": (228, 242, 240, 15),
+    "MINT": (94, 226, 196),
+    "WARM": (255, 178, 62),
+    "ERR": (255, 93, 82),
+    "MINT_BTN": (94, 226, 196),
+    "MINT_INK": (6, 34, 30),
+    "WARM_BTN": (255, 178, 62),
+    "WARM_INK": (26, 16, 0),
+    "ERR_INK": (13, 22, 26),
+    "EYE_IDLE": (94, 174, 155),
+    "EYE_MUTE": (183, 140, 58),
+    "WORD_IDLE": (94, 174, 155),
+    "WORD_MINT": (94, 226, 196),
     "WORD_WARM": (255, 178, 62),
     "WORD_MUTE": (183, 140, 58),
     "WORD_ERR": (255, 93, 82),
 }
 
 LIGHT: Final[dict[str, Color]] = {
-    "BODY": (250, 248, 245),  # #FFFFFF
-    "GROUP": (241, 237, 231),  # #F5F5F7
-    "GROUP_HOVER": (232, 227, 219),  # #EBEBEF
-    "TRACK": (214, 208, 198),  # #D1D1D6
-    "TEXT": (26, 23, 20),  # #1D1D1F
-    "TEXT_2": (78, 72, 64),  # #52525A
-    "TEXT_3": (111, 103, 92),  # #6E6E73
-    "LINE": (26, 23, 20, 26),  # rgba(0,0,0,.10)
-    "LINE_2": (26, 23, 20, 15),  # rgba(0,0,0,.06)
-    "MINT": (77, 107, 0),  # #0C917E
-    "WARM": (163, 95, 0),  # #C2760A
-    "ERR": (200, 36, 26),  # #D70015
-    "MINT_BTN": (92, 127, 0),  # #0A7A6A
-    "MINT_INK": (255, 255, 255),  # #FFFFFF
-    "WARM_BTN": (163, 95, 0),  # #B25000
-    "WARM_INK": (255, 255, 255),  # #FFFFFF
-    "ERR_INK": (255, 255, 255),  # #FFFFFF
-    # Ajuste AA sobre la spec: #6DBDB2 (2,19:1) y #D49F54 (2,36:1) no
-    # alcanzaban ni el 3:1 gráfico sobre blanco. Se conserva la temperatura
-    # mint/ámbar, un paso más profunda.
-    "EYE_IDLE": (111, 138, 31),  # #2F7F74
-    "EYE_MUTE": (163, 95, 0),  # #A06412
-    "WORD_IDLE": (86, 110, 18),
-    "WORD_MINT": (77, 107, 0),  # #0A7A6A
-    "WORD_WARM": (163, 95, 0),  # #8A5207
+    "BODY": (250, 253, 252),
+    "GROUP": (237, 246, 244),
+    "GROUP_HOVER": (224, 239, 236),
+    "TRACK": (199, 224, 219),
+    "TEXT": (16, 34, 38),
+    "TEXT_2": (56, 82, 86),
+    "TEXT_3": (78, 102, 106),
+    "LINE": (16, 34, 38, 20),
+    "LINE_2": (16, 34, 38, 15),
+    "MINT": (12, 112, 117),
+    "WARM": (163, 95, 0),
+    "ERR": (200, 36, 26),
+    "MINT_BTN": (12, 112, 117),
+    "MINT_INK": (255, 255, 255),
+    "WARM_BTN": (163, 95, 0),
+    "WARM_INK": (255, 255, 255),
+    "ERR_INK": (255, 255, 255),
+    "EYE_IDLE": (12, 112, 117),
+    "EYE_MUTE": (163, 95, 0),
+    "WORD_IDLE": (12, 112, 117),
+    "WORD_MINT": (12, 112, 117),
+    "WORD_WARM": (163, 95, 0),
     "WORD_MUTE": (163, 95, 0),
     "WORD_ERR": (200, 36, 26),
 }

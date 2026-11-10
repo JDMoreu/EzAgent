@@ -150,6 +150,7 @@ class Messenger:
                 api_key=self.cfg.api_key or "sin-clave",
                 base_url=self.cfg.llm_base_url,
                 default_headers=headers,
+                timeout=self._request_timeout(),
             )
             return
         # DECISION: sin reintentos automáticos. Ante un 429 el SDK espera el
@@ -159,6 +160,7 @@ class Messenger:
             base_url=self.cfg.llm_base_url or None,
             default_headers=headers,
             max_retries=0,
+            timeout=self._request_timeout(),
         )
 
     def _anthropic_style(self) -> bool:
@@ -344,9 +346,16 @@ class Messenger:
         self._trim_history(MAX_HISTORY_MESSAGES)
         self.last_rounds = []
         spoke = chat  # el acuse de relleno es para la voz; en el chat no hace falta
-        for _ in range(4):
+        read_cache: dict[tuple[str, str], str] = {}
+        finish_turn = False
+        max_rounds = self._tool_round_limit()
+        # DECISION: reserve one model response without tools to deliver the
+        # results; the runtime's configured execution budget is never increased.
+        for round_index in range(max_rounds + 1):
+            remaining = self._remaining_tools(runtime)
+            final = finish_turn or round_index == max_rounds or remaining == 0
             tools: list[dict[str, Any]] = []
-            if runtime is not None:
+            if runtime is not None and not final:
                 try:
                     tools = runtime.tools_for(text)
                 except Exception as exc:  # noqa: BLE001
@@ -364,9 +373,33 @@ class Messenger:
                 "max_tokens": self._max_tokens(chat, bool(tools)),
                 "stream": True,
             }
+            if final:
+                request["messages"] = self.messages + [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Cierra ahora con los resultados ya obtenidos, sin herramientas. "
+                            "No repitas consultas, no prometas seguir en otro turno ni pidas reformular. "
+                            "Distingue lo verificado, lo pendiente y los archivos realmente creados. "
+                            "Si delegaste, informa su dirección real y que la tarea sigue pendiente. "
+                            "Por voz usa como máximo dos frases."
+                        ),
+                    }
+                ]
             if tools:
                 request["tools"] = tools
                 request["tool_choice"] = "auto"
+                if remaining is not None:
+                    request["messages"] = self.messages + [
+                        {
+                            "role": "system",
+                            "content": (
+                                f"Quedan {remaining} llamadas a herramientas en este turno. "
+                                "Planifica con ese presupuesto: si el trabajo requiere más pasos, "
+                                "prioriza delegarlo antes de agotar las llamadas."
+                            ),
+                        }
+                    ]
             effort = str(getattr(self.cfg, "llm_reasoning_effort", "none") or "none")
             if self.cfg.llm_provider in {"opencode", "openai"}:
                 # Se conserva el valor explícito (incluido «none») que ya
@@ -444,24 +477,14 @@ class Messenger:
                     name = call["function"]["name"]
                     tool_began = time.monotonic()
                     try:
-                        if runtime is None:
-                            raise RuntimeError("el núcleo agéntico no está disponible")
-                        if not complete[number]:
-                            # Respuesta cortada a mitad de los argumentos: no se ejecuta con medio dato.
-                            content = json.dumps(
-                                {
-                                    "ok": False,
-                                    "error": (
-                                        "Los argumentos de la herramienta llegaron incompletos "
-                                        "(la respuesta se cortó). Repite la llamada con menos texto."
-                                    ),
-                                },
-                                ensure_ascii=False,
-                            )
-                        else:
-                            content = runtime.render_result(
-                                runtime.execute(name, call["function"]["arguments"])
-                            )
+                        content, repeated = self._run_tool(
+                            runtime,
+                            call,
+                            complete[number],
+                            read_cache,
+                            allow=not final,
+                        )
+                        finish_turn = finish_turn or repeated
                     except Exception as exc:  # noqa: BLE001
                         logger.warning("Herramienta {}: {}", name, exc)
                         # El aviso sale por voz, no solo al log.
@@ -484,18 +507,86 @@ class Messenger:
                     )
                     round_note += f", {name} {(time.monotonic() - tool_began) * 1000:.0f} ms"
                 self.last_rounds.append(round_note)
+                if final:
+                    break
                 continue
             self.last_rounds.append(round_note)
 
             content = "".join(content_parts).strip()
-            self.messages.append({"role": "assistant", "content": content})
-            if runtime is not None and content:
-                try:
-                    runtime.record_assistant(content)
-                except Exception:
-                    pass
+            if final and not content:
+                break
+            self._record_answer(content, runtime)
             return
-        yield "Me he quedado dando vueltas con las herramientas; prueba a preguntar de otra forma."
+        fallback = (
+            "Conservé los resultados obtenidos, pero no pude completar la tarea. "
+            "Todavía no hay una entrega final confirmada."
+        )
+        self._record_answer(fallback, runtime)
+        yield fallback
+
+    @staticmethod
+    def _remaining_tools(runtime: Any) -> int | None:
+        remaining = getattr(runtime, "remaining_tool_calls", None)
+        return max(0, int(remaining())) if callable(remaining) else None
+
+    def _request_timeout(self) -> float:
+        try:
+            timeout = float(getattr(self.cfg, "llm_timeout_secs", 30.0))
+        except (TypeError, ValueError):
+            return 30.0
+        return timeout if 1 <= timeout <= 120 else 30.0
+
+    def _tool_round_limit(self) -> int:
+        try:
+            return max(1, min(12, int(getattr(self.cfg, "llm_max_tool_rounds", 8))))
+        except (TypeError, ValueError, OverflowError):
+            return 8
+
+    def _run_tool(
+        self,
+        runtime: Any,
+        call: dict[str, Any],
+        complete: bool,
+        cache: dict[tuple[str, str], str],
+        *,
+        allow: bool,
+    ) -> tuple[str, bool]:
+        if not allow or self._remaining_tools(runtime) == 0:
+            return json.dumps(
+                {"ok": False, "error": "Finaliza con los resultados disponibles."}
+            ), True
+        if runtime is None:
+            raise RuntimeError("el núcleo agéntico no está disponible")
+        if not complete:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": (
+                        "Los argumentos de la herramienta llegaron incompletos "
+                        "(la respuesta se cortó). Repite la llamada con menos texto."
+                    ),
+                }
+            ), False
+        name, raw = call["function"]["name"], call["function"]["arguments"]
+        key = None
+        if name in {"web_search", "fetch_page"}:
+            key = (name, json.dumps(json.loads(raw), sort_keys=True, ensure_ascii=False))
+            if key in cache:
+                # DECISION: reuse only identical web reads in this turn; never
+                # cache writes, confirmations or commands sent to an agent.
+                return cache[key], True
+        content = runtime.render_result(runtime.execute(name, raw))
+        if key is not None:
+            cache[key] = content
+        return content, False
+
+    def _record_answer(self, content: str, runtime: Any) -> None:
+        self.messages.append({"role": "assistant", "content": content})
+        if runtime is not None and content:
+            try:
+                runtime.record_assistant(content)
+            except Exception:
+                pass
 
     # ------------------------------------------------- JSON, contexto y recuperación
     def _max_tokens(self, chat: bool, has_tools: bool) -> int:
@@ -527,6 +618,7 @@ class Messenger:
         Primero reintenta con los argumentos reparados y, si aun así falla, sin las llamadas a
         herramientas anteriores: la conversación nunca se queda atascada.
         """
+        extra_messages = request["messages"][len(self.messages) :]
         try:
             return self.client.chat.completions.create(**request)
         except Exception as exc:  # noqa: BLE001
@@ -541,6 +633,7 @@ class Messenger:
             if not is_tool_json_error(exc):
                 raise
         self._strip_tool_history()
+        request["messages"] = [*self.messages, *extra_messages]
         logger.warning("Último recurso: reintento sin las llamadas a herramientas anteriores.")
         return self.client.chat.completions.create(**request)
 

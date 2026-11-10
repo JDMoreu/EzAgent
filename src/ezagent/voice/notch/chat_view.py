@@ -42,6 +42,7 @@ GAP = 14.0
 KEYED = ("session", "delete_ask", "delete_yes", "delete_no")  # el hover lleva su fila
 COPY_W = 30.0  # ancho (px lógicos) de la zona del icono de copiar
 SCROLL_STEP = 56.0
+STREAM_REFRESH = 0.05
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,9 +63,6 @@ class _Entry:
     hits: tuple[Hit, ...] = ()
     caption_hit: tuple[float, float, float, float] | None = None
     plain: str = ""
-    caption_x: float = PAD  # dónde empieza la zona «Copiar» (los del usuario, a la derecha)
-    label_y: float = 0.0  # altura (relativa al mensaje) del rótulo «Copiar»
-    copy_align: str = "left"
 
 
 @dataclass(slots=True)
@@ -142,10 +140,15 @@ class ChatView(HeaderMixin, FooterMixin):
 
     # --------------------------------------------------------------- mensajes
     def _entry(self, msg: ChatMessage, now: float) -> _Entry:
-        """El dibujo de un mensaje; el que llega en streaming se rehace como mucho cada 90 ms."""
-        key = (len(msg.text), msg.streaming, msg.error, self.g.theme, round(self.g.width))
+        """Cache rich messages while showing the first streamed text immediately."""
+        key = (msg.text, msg.streaming, msg.error, self.g.theme, round(self.g.width))
         cached = self._cache.get(msg.id)
-        if cached is not None and (cached.key == key or (msg.streaming and now - cached.at < 0.09)):
+        # DECISION: the first text and final answer bypass batching; subsequent
+        # chunks are painted at most every 50 ms to bound rich-text layout work.
+        if cached is not None and (
+            cached.key == key
+            or (msg.streaming and cached.entry.plain and now - cached.at < STREAM_REFRESH)
+        ):
             return cached.entry
         entry = self._build_entry(msg)
         if len(self._cache) > 400:
@@ -188,24 +191,20 @@ class ChatView(HeaderMixin, FooterMixin):
         rendered = render_message(
             msg.text, self.g.pal, inner, self.g.scale, self.roots, self.base_dirs
         )
-        bw, bh = inner + 24, rendered.height + 18
+        bw, bh = inner + 24, rendered.height + 42
         sc = self.g.scale
         img = Image.new("RGBA", (round(bw * sc), round(bh * sc)), (0, 0, 0, 0))
         ctx = self._ctx(bw)
         round_rect(img, ctx, (0, 0, bw, bh), 16.0, ctx.color("MINT", 0.15), ctx.color("MINT", 0.34))
         img.alpha_composite(rendered.image, (round(12 * sc), round(9 * sc)))
         hits = tuple(_shift(h, 12.0, 9.0) for h in rendered.hits)
-        extra = 20.0  # fila de «Copiar» (y «por voz») bajo la burbuja
         return _Entry(
-            bh + extra,
+            bh,
             _premult(img),
             self.g.width - PAD - bw,
             hits,
-            caption_hit=(0.0, bh, COPY_W, bh + extra),
+            caption_hit=(bw - COPY_W - 6, bh - 28, bw - 6, bh - 4),
             plain=msg.text,  # lo escrito, tal cual (sin interpretar markdown)
-            caption_x=self.g.width - PAD - COPY_W,
-            label_y=bh + 4.0,
-            copy_align="right",
         )
 
     def _assistant_entry(self, msg: ChatMessage) -> _Entry:
@@ -213,19 +212,34 @@ class ChatView(HeaderMixin, FooterMixin):
         if msg.error:
             pal["TEXT"] = pal["ERR"]
         rendered = render_message(
-            msg.text, pal, self.content_w, self.g.scale, self.roots, self.base_dirs
+            msg.text, pal, self.content_w - 24, self.g.scale, self.roots, self.base_dirs
         )
         sc = self.g.scale
         caption = 20.0
-        copy_h = 22.0 if (msg.text and not msg.streaming and not msg.error) else 4.0
-        height = caption + (rendered.height if msg.text else 16.0) + copy_h
+        copy_h = 28.0 if (msg.text and not msg.streaming and not msg.error) else 12.0
+        height = caption + 12 + (rendered.height if msg.text else 16.0) + copy_h
         img = Image.new("RGBA", (round(self.content_w * sc), round(height * sc)), (0, 0, 0, 0))
+        ctx = self._ctx(self.content_w)
+        # DECISION: reserve a bottom inset inside each message card so copying
+        # never covers text, code, attachments or their interaction targets.
+        round_rect(
+            img,
+            ctx,
+            (0, caption, self.content_w, height),
+            16,
+            ctx.color("GROUP"),
+            ctx.color("LINE"),
+        )
         if msg.text:
-            img.alpha_composite(rendered.image, (0, round(caption * sc)))
-        hits = tuple(_shift(h, 0.0, caption) for h in rendered.hits)
+            img.alpha_composite(rendered.image, (round(12 * sc), round((caption + 12) * sc)))
+        hits = tuple(_shift(h, 12.0, caption + 12) for h in rendered.hits)
         arr = _premult(img)
-        copy_rect = (0.0, height - copy_h, COPY_W, height) if copy_h > 5 else None
-        return _Entry(height, arr, PAD, hits, copy_rect, rendered.plain, PAD, height - copy_h + 5.0)
+        copy_rect = (
+            (self.content_w - COPY_W - 6, height - 28, self.content_w - 6, height - 4)
+            if copy_h > 12
+            else None
+        )
+        return _Entry(height, arr, PAD, hits, copy_rect, rendered.plain)
 
     # -------------------------------------------------------------- dibujo
     def render(self, now: float) -> np.ndarray:
@@ -302,35 +316,27 @@ class ChatView(HeaderMixin, FooterMixin):
         self._blit(buf, entry.arr, entry.x, y, top, bottom)
         # Los rótulos se pintan enteros o no se pintan: nunca asoman bajo la cabecera.
         if msg.role == "assistant" and y >= top - 1 and y + 16 <= bottom:
-            label = "EZAGENT" + (" · VOZ" if msg.source == "voice" else "")
+            label = "EZAGENT"
             self._text(buf, label, FS_MICRO, self._color("TEXT_3"), PAD, y + 2)
             if msg.streaming and not msg.text and y + 34 <= bottom:
-                self._draw_dots(buf, PAD, y + 28, now)
+                self._draw_dots(buf, PAD + 12, y + 40, now)
         self._draw_copy_label(buf, msg, entry, y, top, bottom, now)
         self._register_message_hits(msg, entry, y, top, bottom)
 
     def _draw_copy_label(self, buf, msg, entry: _Entry, y: float, top, bottom, now: float) -> None:
-        """Icono de copiar bajo cada mensaje (y «POR VOZ» en los hablados); un ✓ al copiar."""
-        if entry.caption_hit is None or y + entry.label_y < top or y + entry.label_y + 14 > bottom:
+        """Draw copy/check inside the bottom-right corner of each message card."""
+        if entry.caption_hit is None:
+            return
+        x0, y0, x1, y1 = entry.caption_hit
+        if y + y0 < top or y + y1 > bottom:
             return
         copied = self._flash is not None and self._flash[0] == entry.plain and now < self._flash[1]
         tone = "MINT" if copied else ("TEXT" if self.hover == "copy_msg" else "TEXT_2")
-        cy = y + entry.label_y + 6
-        right = entry.copy_align == "right"
-        cx = self.g.width - PAD - COPY_W / 2 if right else PAD + COPY_W / 2
+        cy = y + (y0 + y1) / 2
+        cx = entry.x + (x0 + x1) / 2
         draw_icon(
             buf, "check" if copied else "copy", cx, cy, 15.0, self._color(tone)[:3], self.g.scale
         )
-        if right and msg.source == "voice":
-            self._text(
-                buf,
-                "POR VOZ",
-                FS_MICRO,
-                self._color("TEXT_3"),
-                self.g.width - PAD - COPY_W,
-                cy - 6,
-                align="right",
-            )
 
     def _register_message_hits(self, msg, entry: _Entry, y: float, top, bottom) -> None:
         for h in entry.hits:
@@ -340,9 +346,9 @@ class ChatView(HeaderMixin, FooterMixin):
                 self._hit(rect, h.kind, h.data)
         if entry.caption_hit is not None:
             x0, y0, x1, y1 = entry.caption_hit
-            if y + y1 > top and y + y0 < bottom:
+            if y + y0 >= top and y + y1 <= bottom:
                 self._hit(
-                    (entry.caption_x + x0, y + y0, entry.caption_x + x1, y + y1),
+                    (entry.x + x0, y + y0, entry.x + x1, y + y1),
                     "copy_msg",
                     entry.plain,
                 )

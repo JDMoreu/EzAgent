@@ -22,6 +22,8 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Final, Iterable, Mapping, Sequence
 
+from ..stt_dictionary import normalize_rules
+
 # --------------------------------------------------------------------------
 # Vocabulario de ajustes
 # --------------------------------------------------------------------------
@@ -51,10 +53,13 @@ EDITABLE_KEYS: Final[tuple[str, ...]] = (
     "stt_model",
     "stt_engine",
     "stt_prompt",
+    "stt_dictionary",
     "stt_timeout_secs",
     "auto_start_whisper",
     # LLM y API.
     "llm_provider",
+    "llm_profile_name",
+    "llm_saved_profile",
     "llm_api_style",
     "llm_model",
     "llm_base_url",
@@ -128,6 +133,7 @@ SELECT_KEYS: Final[tuple[str, ...]] = (
     "stt_model",
     "stt_engine",
     "llm_profile",
+    "llm_saved_profile",
     "llm_api_style",
     "llm_model_pick",
     "theme_preset",
@@ -148,6 +154,8 @@ TOGGLE_KEYS: Final[tuple[str, ...]] = (
     "chat_voice",
 )
 TEXT_KEYS: Final[tuple[str, ...]] = (
+    "stt_dictionary",
+    "llm_profile_name",
     "llm_provider",
     "llm_model",
     "llm_base_url",
@@ -217,10 +225,13 @@ LABELS: Final[dict[str, str]] = {
     "stt_engine": "Motor de Whisper",
     "input_meter": "Entrada y umbral",
     "stt_prompt": "Indicación para Whisper",
+    "stt_dictionary": "Correcciones · origen → destino; …",
     "stt_timeout_secs": "Tiempo máximo",
     "auto_start_whisper": "Arrancar Whisper",
     "llm_profile": "Proveedor",
-    "llm_provider": "Nombre del perfil",
+    "llm_saved_profile": "Configuración guardada",
+    "llm_profile_name": "Guardar perfil como",
+    "llm_provider": "Identificador del proveedor",
     "llm_api_style": "Compatibilidad",
     "llm_model": "Modelo",
     "llm_model_pick": "Modelos de la API",
@@ -275,9 +286,12 @@ DEFAULT_VALUES: Final[dict[str, Any]] = {
     "whisper_url": "http://127.0.0.1:8088/inference",
     "stt_model": "ggml-large-v3-turbo-q5_0",
     "stt_prompt": "",
+    "stt_dictionary": "",
     "stt_timeout_secs": 60.0,
     "auto_start_whisper": True,
     "llm_profile": "opencode",
+    "llm_saved_profile": "",
+    "llm_profile_name": "",
     "llm_provider": "opencode",
     "llm_api_style": "openai",
     "llm_model": "deepseek-v4.1-flash",
@@ -651,6 +665,7 @@ def _normalize_providers(
             "model": model,
             "api_key": api_key,
             "provider": provider or name,
+            "saved": str(raw.get("saved") or "") if isinstance(raw, Mapping) else "",
             "api_style": api_style if api_style in ("openai", "anthropic") else "openai",
         }
     return out
@@ -709,6 +724,9 @@ class MenuSettings:
         current_provider = str(self._values.get("llm_provider") or "")
         if current_provider:
             self._values["llm_profile"] = current_provider
+        saved_id = "saved:" + str(self._values.get("llm_profile_name") or "").strip().casefold()
+        if saved_id in self._providers:
+            self._values["llm_saved_profile"] = saved_id
         self._saved: dict[str, Any] = {key: self._values[key] for key in TRACKED_KEYS}
 
     # ---- construcción -----------------------------------------------------
@@ -774,7 +792,9 @@ class MenuSettings:
             return text if text in valid else str(DEFAULT_VALUES[key])
         if key == "wake_phrase":
             return str(value or "").strip() or str(DEFAULT_VALUES[key])
-        if key in ("llm_profile", "llm_model_pick", "theme_preset"):
+        if key == "llm_profile_name":
+            return str(value or "").strip()
+        if key in ("llm_profile", "llm_saved_profile", "llm_model_pick", "theme_preset"):
             return str(value or "").strip()
         if key in COLOR_KEYS:
             return _hex_or(value, str(DEFAULT_VALUES[key]))
@@ -814,12 +834,18 @@ class MenuSettings:
     def set(self, key: str, value: Any) -> Any:
         """Cambia un valor, lo valida y lo normaliza. Devuelve el nuevo valor."""
         self._require(key)
+        if key == "stt_dictionary":
+            value = normalize_rules(str(value or ""))
+        if key == "llm_profile_name" and len(str(value or "").strip()) > 80:
+            raise ValueError("El nombre de la configuración admite hasta 80 caracteres.")
         if key in COLOR_KEYS and not _hex_or(value, ""):
             return self._values[key]  # un color mal escrito no borra el anterior
         new = self._normalize_value(key, value)
         self._values[key] = new
-        if key == "llm_profile":
+        if key in ("llm_profile", "llm_saved_profile"):
             self._apply_profile(new)
+        elif key == "llm_profile_name":
+            self._values["llm_saved_profile"] = "saved:" + new.casefold() if new else ""
         elif key == "llm_model_pick" and new:
             self._values["llm_model"] = new
         elif key == "theme_preset" and new in _PRESETS:
@@ -869,9 +895,12 @@ class MenuSettings:
             "llm_model": profile.get("model", ""),
             "llm_base_url": profile.get("base_url", ""),
             "api_key": profile.get("api_key", ""),
+            "llm_profile_name": profile.get("label", "") if profile.get("saved") else "",
         }
         for key, value in values.items():
             self._values[key] = self._normalize_value(key, value)
+        self._values["llm_profile"] = provider
+        self._values["llm_saved_profile"] = str(name) if profile.get("saved") else ""
 
     # ---- guardado ---------------------------------------------------------
     def dirty(self) -> bool:
@@ -995,12 +1024,19 @@ class MenuSettings:
             return str(value or "Sin modelo")
         if key == "llm_model_pick":
             count = len(self._model_options())
-            return f"{count} disponibles" if count else "Sin lista"
+            return (
+                ("1 disponible" if count == 1 else f"{count} disponibles") if count else "Sin lista"
+            )
         if key == "theme_preset":
             return _PRESET_LABELS.get(str(value), "Elegir paleta")
-        if key == "llm_profile":
+        if key in ("llm_profile", "llm_saved_profile"):
             profile = self._providers.get(str(value))
-            return str(profile.get("label")) if profile else str(value or "Sin perfiles")
+            if profile:
+                return str(profile.get("label"))
+            if key == "llm_saved_profile":
+                name = self._values.get("llm_profile_name")
+                return f"Nueva · {name}" if name else "Sin configuración guardada"
+            return str(value or "Sin perfiles")
         if key == "llm_provider":
             profile = self._providers.get(str(value))
             return str(profile.get("label")) if profile else str(value or "Sin proveedor")
@@ -1009,6 +1045,8 @@ class MenuSettings:
         if key in TOGGLE_KEYS:
             return "Sí" if _as_bool(value) else "No"
         if key in TEXT_KEYS:
+            if key == "stt_dictionary" and not value:
+                return "Ejemplo: open code → OpenCode; cloud → Claude"
             return str(value) if str(value or "") else "Sin definir"
         return str(value)
 
@@ -1065,6 +1103,13 @@ class MenuSettings:
             return tuple(
                 SelectOption(name, values.get("label", name))
                 for name, values in self._providers.items()
+                if not values.get("saved")
+            )
+        if key == "llm_saved_profile":
+            return (SelectOption("", "Elegir configuración"),) + tuple(
+                SelectOption(name, values.get("label", name))
+                for name, values in self._providers.items()
+                if values.get("saved")
             )
         raise KeyError(f"{key!r} no es un selector")
 
@@ -1088,6 +1133,8 @@ class MenuSettings:
             return True
         if key == "llm_profile":
             return bool(self._providers)
+        if key == "llm_saved_profile":
+            return any(profile.get("saved") for profile in self._providers.values())
         return False
 
 

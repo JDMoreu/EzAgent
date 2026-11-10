@@ -11,6 +11,7 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 
 from .config import VoiceConfig
+from .stt_dictionary import correct_transcription, transcription_hint
 
 
 class STTError(RuntimeError):
@@ -145,8 +146,18 @@ def transcribe(cfg: VoiceConfig, wav_bytes: bytes) -> str:
         "response_format": "json",
         "temperature": "0.00",
     }
-    if cfg.stt_prompt:
-        form["prompt"] = cfg.stt_prompt
+    prompt = cfg.stt_prompt
+    if getattr(cfg, "stt_vocabulary_hints", True):
+        try:
+            prompt = transcription_hint(
+                prompt,
+                str(getattr(cfg, "stt_dictionary", "") or ""),
+                getattr(cfg, "agents", {}) or {},
+            )
+        except ValueError as exc:
+            raise STTError(f"Diccionario de transcripción inválido: {exc}") from exc
+    if prompt:
+        form["prompt"] = prompt
 
     last_error = ""
     for url in endpoints:
@@ -171,7 +182,12 @@ def transcribe(cfg: VoiceConfig, wav_bytes: bytes) -> str:
             text = response.json().get("text", "")
         except ValueError:
             text = response.text
-        return str(text).strip()
+        try:
+            return correct_transcription(
+                " ".join(str(text).split()), str(getattr(cfg, "stt_dictionary", "") or "")
+            )
+        except ValueError as exc:
+            raise STTError(f"Diccionario de transcripción inválido: {exc}") from exc
 
     raise STTError(
         "No puedo conectar con whisper-server. Arranca scripts\\start-whisper.ps1. " + last_error

@@ -125,15 +125,21 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         (
             ("stt_model", "select"),
             ("auto_start_whisper", "toggle"),
+            ("stt_dictionary", "text"),
         ),
     ),
     (
         "llm",
         (
-            # Proveedor -> qué modelo -> cómo se conecta -> cómo responde.
+            # Saved configuration -> provider -> model -> connection -> save name.
+            ("llm_saved_profile", "select"),
             ("llm_profile", "select"),
+            ("llm_model_pick", "select"),
             ("llm_model", "text"),
             ("api_key", "text"),
+            ("llm_api_style", "select"),
+            ("llm_base_url", "text"),
+            ("llm_profile_name", "text"),
         ),
     ),
     (
@@ -185,9 +191,6 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         "adv_llm",
         (
             ("llm_provider", "text"),
-            ("llm_api_style", "select"),
-            ("llm_base_url", "text"),
-            ("llm_model_pick", "select"),
             ("llm_temperature", "slider"),
             ("llm_max_tokens", "slider"),
             ("llm_context_tokens", "slider"),
@@ -235,9 +238,6 @@ ADVANCED_ROWS = frozenset(
         "stt_prompt",
         "stt_timeout_secs",
         "llm_provider",
-        "llm_api_style",
-        "llm_base_url",
-        "llm_model_pick",
         "llm_temperature",
         "llm_max_tokens",
         "llm_context_tokens",

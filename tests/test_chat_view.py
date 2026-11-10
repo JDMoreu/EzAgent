@@ -75,6 +75,32 @@ def test_header_buttons_exist_in_every_state(tmp_path: Path) -> None:
     assert {"close", "voice", "mic", "settings", "history", "new", "back"} <= kinds(view)
 
 
+@pytest.mark.parametrize("width", [340.0, 440.0, 760.0])
+def test_navigation_and_audio_controls_are_separated_and_do_not_overlap(
+    tmp_path: Path, width: float
+) -> None:
+    from ezagent.voice.notch.chat_header import HEADER_H
+
+    _, view = make(tmp_path)
+    view.configure(width, H, 1.0, "dark", card_palette("dark"))
+    view.status = "Esperando tu respuesta"
+    view.render(1.0)
+    controls = {
+        key: rect
+        for rect, key, _ in view._hits
+        if key in {"mic", "voice", "settings", "history", "new", "close"}
+    }
+    for key in ("settings", "history", "new", "close"):
+        assert controls[key][3] <= HEADER_H
+    for key in ("mic", "voice"):
+        assert controls[key][2] < view._input_box[0]
+        assert view._input_box[1] <= controls[key][1] < controls[key][3] <= view._input_box[3]
+        assert controls[key][3] <= H
+    assert controls["mic"][2] < controls["voice"][0]
+    for rect in controls.values():
+        assert 0 <= rect[0] < rect[2] <= width
+
+
 def test_a_streaming_answer_shows_the_typing_dots_until_text_arrives(tmp_path: Path) -> None:
     model, view = make(tmp_path)
     model.add_user("hola")
@@ -84,6 +110,24 @@ def test_a_streaming_answer_shows_the_typing_dots_until_text_arrives(tmp_path: P
     filled = view.render(1.0 + 0.2)
     assert not np.array_equal(empty, filled)
     assert view.animating(1.0)  # mientras llega la respuesta, la ventana repinta
+
+
+def test_first_streamed_text_is_immediate_and_later_chunks_are_batched(tmp_path: Path) -> None:
+    model, view = make(tmp_path)
+    message = model.begin_assistant()
+    view.render(1.0)
+    model.append(message.id, "Hola")
+    view.render(1.001)
+    assert view._cache[message.id].entry.plain == "Hola"
+    model.append(message.id, " de nuevo")
+    view.render(1.02)
+    assert view._cache[message.id].entry.plain == "Hola"
+    view.render(1.06)
+    assert view._cache[message.id].entry.plain == "Hola de nuevo"
+    model.append(message.id, ".")
+    model.finish(message.id)
+    view.render(1.061)
+    assert view._cache[message.id].entry.plain == "Hola de nuevo."
 
 
 def test_captions_never_show_under_the_header(tmp_path: Path, monkeypatch) -> None:
@@ -488,12 +532,52 @@ def test_the_copy_icon_turns_into_a_check_for_a_moment(tmp_path: Path, monkeypat
     assert view.animating(10.5) and not view.animating(12.0)
 
 
-def test_voice_messages_say_so_next_to_the_copy_icon(tmp_path: Path, monkeypatch) -> None:
+def test_voice_messages_do_not_add_source_labels(tmp_path: Path, monkeypatch) -> None:
     model, view = make(tmp_path)
     model.add_user("dicho en voz alta", "voice")
+    message = model.begin_assistant("voice")
+    model.append(message.id, "respuesta hablada")
+    model.finish(message.id)
     icons, texts = record_drawing(view, monkeypatch)
     view.render(1.0)
-    assert "POR VOZ" in texts and "copy" in icons
+    assert not any("VOZ" in text for text in texts) and icons.count("copy") == 2
+
+
+@pytest.mark.parametrize("scale", [1.0, 1.5, 2.0])
+def test_message_copy_targets_stay_inside_the_bottom_right_of_the_card(
+    tmp_path: Path, scale: float
+) -> None:
+    model, view = make(tmp_path, scale=scale)
+    reply(model, "hola", "Texto y un [enlace](https://example.com)")
+    for message in model.snapshot()[1]:
+        entry = view._entry(message, 1.0)
+        assert entry.caption_hit is not None
+        x0, y0, x1, y1 = entry.caption_hit
+        width, height = entry.arr.shape[1] / scale, entry.arr.shape[0] / scale
+        assert 0 <= x0 < x1 <= width and 0 <= y0 < y1 <= height
+        assert width - x1 == pytest.approx(6, abs=1 / scale)
+        assert height - y1 == pytest.approx(4, abs=1 / scale)
+        assert all(hit.rect[3] <= y0 for hit in entry.hits)
+
+
+def test_header_uses_a_minimize_icon_and_composer_has_no_enter_hint(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from ezagent.voice.notch import chat_header
+
+    _, view = make(tmp_path)
+    icons, texts = record_drawing(view, monkeypatch)
+    real_icon = chat_header.draw_icon
+
+    def record_icon(buf, name, *args, **kwargs):
+        icons.append(name)
+        return real_icon(buf, name, *args, **kwargs)
+
+    monkeypatch.setattr(chat_header, "draw_icon", record_icon)
+    view.render(1.0)
+    assert "minus" in icons and "close" not in icons
+    assert not any("Enter" in text for text in texts)
+    assert click(view, "close") == Action("close")
 
 
 def test_the_copy_zone_is_just_the_icon(tmp_path: Path) -> None:

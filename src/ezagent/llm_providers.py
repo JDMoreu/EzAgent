@@ -289,6 +289,9 @@ def load_provider_catalog(
             ),
             "api_key": str(raw.get("api_key") or base.get("api_key") or ""),
         }
+        if raw.get("saved"):
+            catalog[name]["provider"] = str(raw.get("provider") or CUSTOM_PROVIDER)
+            catalog[name]["saved"] = "true"
     return catalog
 
 
@@ -299,12 +302,16 @@ def save_provider_profile(
     base_url: str,
     api_key: str,
     api_style: str = "openai",
+    profile_name: str = "",
     config_file: Path | None = None,
 ) -> str:
     """Guarda un perfil en ``llm.json`` y lo deja como proveedor activo."""
     name = normalize_provider(provider)
     if not name:
         raise ValueError("El perfil necesita un nombre de proveedor.")
+    profile_name = str(profile_name or "").strip()
+    if len(profile_name) > 80:
+        raise ValueError("El nombre de la configuración admite hasta 80 caracteres.")
     path = config_file or config_path()
     data: dict = {}
     if path.exists():
@@ -330,6 +337,15 @@ def save_provider_profile(
         "api_key": str(api_key or "").strip(),
         "api_style": normalize_api_style(api_style),
     }
+    if profile_name:
+        # DECISION: named snapshots coexist with provider defaults; saving
+        # another model for the same provider must not overwrite older presets.
+        providers["saved:" + profile_name.casefold()] = {
+            **providers[name],
+            "label": profile_name,
+            "provider": name,
+            "saved": True,
+        }
     data["providers"] = providers
     data["provider"] = name
     path.parent.mkdir(parents=True, exist_ok=True)

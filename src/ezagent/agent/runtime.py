@@ -180,6 +180,7 @@ class AgentRuntime:
             memory_block=self._memory_and_tasks,
             skills_catalog=self.skills.catalog_text,
             agents_catalog=self._agents_catalog,
+            agent_windows=self._agent_windows,
             audit_warn=self._audit_warn,
             say_warn=self._warn,
         )
@@ -288,6 +289,11 @@ class AgentRuntime:
         provider = getattr(self.herdr, "catalog_text", None)
         return str(provider()) if callable(provider) else ""
 
+    def _agent_windows(self) -> str:
+        """Cached window observations; these are data, not agent instructions."""
+        snapshot = getattr(self.herdr, "context_text", None)
+        return str(snapshot()) if callable(snapshot) else ""
+
     def _agent_at(self, address: str) -> str:
         """Agente que corre en una dirección de Herdr (vacío si no se sabe)."""
         if not address:
@@ -322,6 +328,7 @@ class AgentRuntime:
                     memory_block=self._memory_and_tasks,
                     skills_catalog=self.skills.catalog_text,
                     agents_catalog=self._agents_catalog,
+                    agent_windows=self._agent_windows,
                     audit_warn=self._audit_warn,
                     say_warn=self._warn,
                 )
@@ -368,6 +375,10 @@ class AgentRuntime:
             pass
 
     # -------------------------------------------------------- herramientas
+    def remaining_tool_calls(self) -> int:
+        """Expose the configured budget so the messenger can finish before hitting it."""
+        return max(0, self.config.general.max_tool_calls_per_turn - self._calls_this_turn)
+
     def tools_for(self, text: str) -> list[dict[str, Any]]:
         scripts = any(self._skill_has_scripts(name) for name in self._loaded_skills)
         names = select_tool_names(

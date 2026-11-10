@@ -70,6 +70,18 @@ def test_no_pisa_un_system_md_existente(agent_config, sink) -> None:
     assert "# Mío" in b.build(NOW)
 
 
+def test_execution_guidance_reaches_existing_prompts_without_rewriting_them(
+    agent_config, sink
+) -> None:
+    from ezagent.agent.system_prompt import EXECUTION_HINT
+
+    agent_config.system_md_path.parent.mkdir(parents=True, exist_ok=True)
+    agent_config.system_md_path.write_text("# Personal\nResponde breve.", "utf-8")
+    prompt = builder(agent_config, sink).build(NOW)
+    assert EXECUTION_HINT in prompt and prompt.startswith(SAFETY_PREAMBLE_TEXT)
+    assert agent_config.system_md_path.read_text("utf-8") == "# Personal\nResponde breve."
+
+
 # --------------------------------------------------------------------- orden
 def test_el_preambulo_de_seguridad_va_primero_y_es_inmutable(agent_config, sink) -> None:
     prompt = builder(agent_config, sink).build(NOW)
@@ -101,11 +113,11 @@ def test_orden_completo_de_las_secciones(agent_config, sink) -> None:
         prompt.index(SAFETY_PREAMBLE_TEXT),
         prompt.index("# Identidad"),
         prompt.index(VOICE_FLOW_HINT),
-        prompt.index("# Memoria"),
         prompt.index(ORCHESTRATION_HINT),
         prompt.index("# Agentes"),
         prompt.index("# Skills"),
         prompt.index(SKILLS_HINT),
+        prompt.index("# Memoria"),
         prompt.index("# Momento actual"),
     ]
     assert order == sorted(order) and len(set(order)) == len(order)
@@ -115,6 +127,26 @@ def test_sin_catalogos_no_aparecen_sus_pistas(agent_config, sink) -> None:
     prompt = builder(agent_config, sink).build(NOW)
     assert ORCHESTRATION_HINT not in prompt and SKILLS_HINT not in prompt
     assert "# Memoria" not in prompt
+
+
+def test_volatile_terminal_metadata_does_not_change_the_catalog_prefix(agent_config, sink) -> None:
+    state = {"name": "Terminal uno"}
+    b = builder(
+        agent_config,
+        sink,
+        agents_catalog="# Agentes\ncodex",
+        skills_catalog="# Skills\nweb",
+        agent_windows=lambda: (
+            "<untrusted_agent_windows>" + state["name"] + "</untrusted_agent_windows>"
+        ),
+    )
+    first = b.build(NOW)
+    state["name"] = "Terminal dos"
+    second = b.build(NOW)
+    assert (
+        first.split("<untrusted_agent_windows>")[0] == second.split("<untrusted_agent_windows>")[0]
+    )
+    assert "Terminal dos" in second and "Terminal uno" not in second
 
 
 def test_una_seccion_vacia_o_en_blanco_se_omite(agent_config, sink) -> None:

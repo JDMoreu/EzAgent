@@ -217,6 +217,37 @@ def test_opening_creates_the_window_around_the_panel_and_takes_the_keyboard(pane
     assert panel.ui.open_flags == [True] and panel.is_open and panel.anim.state == "opening"
 
 
+@pytest.mark.parametrize("damping", [22.0, 40.0, 55.0])
+@pytest.mark.parametrize("fps", [30, 60, 144])
+def test_button_motion_keeps_its_trajectory_across_frame_rates(damping: float, fps: int) -> None:
+    from ezagent.voice.notch.bar_motion import Spring
+
+    reference = Spring(0.0, 400.0, damping)
+    reference.t = 1.0
+    reference.step(0.5)
+    sampled = Spring(0.0, 400.0, damping)
+    sampled.t = 1.0
+    for _ in range(fps // 2):
+        sampled.step(1.0 / fps)
+    assert sampled.x == pytest.approx(reference.x, abs=1e-10)
+    assert sampled.v == pytest.approx(reference.v, abs=1e-10)
+
+
+def test_button_spring_reverses_without_resetting_position_or_velocity() -> None:
+    from ezagent.voice.notch.bar_motion import Spring
+
+    spring = Spring()
+    spring.t = 1.0
+    spring.step(0.08)
+    position, velocity = spring.x, spring.v
+    spring.t = 0.0
+    assert spring.step(0.0) == position and spring.v == velocity
+    spring.step(0.001)
+    assert abs(spring.x - position) < 0.01
+    spring.step(10.0)
+    assert spring.settled() and spring.x == pytest.approx(0.0, abs=1e-8)
+
+
 def test_without_a_model_or_a_bar_the_chat_does_not_open(clock, tmp_path: Path) -> None:
     assert ChatPanel(FakeUI(None)).open() is False
     ui = FakeUI(ChatModel(ChatStore(tmp_path / "c.jsonl")), anchor=None)

@@ -19,7 +19,8 @@ BTN = 32.0
 INPUT_MIN = 46.0
 INPUT_LINE = 21.0
 INPUT_MAX_LINES = 6
-HINT_H = 18.0
+HINT_H = 0.0
+AUDIO_W = BTN * 2 + 16.0
 
 
 class FooterMixin:
@@ -35,7 +36,7 @@ class FooterMixin:
         return lines or [(0, 0)]
 
     def _footer_height(self) -> float:
-        width = self.g.width - 2 * PAD - 12 - BTN - 14
+        width = self.g.width - 2 * PAD - AUDIO_W - 12 - BTN - 14
         self._input_lines = self._wrap_input(width)
         rows = min(len(self._input_lines), INPUT_MAX_LINES)
         box = max(INPUT_MIN, rows * INPUT_LINE + 24)
@@ -64,22 +65,41 @@ class FooterMixin:
             y += 84
         rows = min(len(self._input_lines), INPUT_MAX_LINES)
         box_h = max(INPUT_MIN, rows * INPUT_LINE + 24)
-        box = (PAD, y + 6, g.width - PAD, y + 6 + box_h)
+        box = (PAD + AUDIO_W, y + 6, g.width - PAD, y + 6 + box_h)
         self._input_box = box
         _fill_round_rect(buf, *box, 16.0, self._color("GROUP")[:3], g.scale)
         _stroke_round_rect(
             buf,
             *box,
             16.0,
-            self._color("MINT" if not self.input.empty else "LINE")[:3],
+            self._color("MINT" if not self.input.empty else "LINE"),
             g.scale,
             0.7,
         )
         self._draw_input_text(buf, box, now)
         self._hit(box, "input")  # antes que el botón: gana la zona registrada al final
         self._draw_send(buf, box)
-        hint = "Enter envía · Mayús+Enter salta de línea"
-        self._text(buf, hint, FS_MICRO, self._color("TEXT_3", 0.85), PAD + 12, box[3] + 6)
+        self._draw_composer_tools(buf, box[3] - INPUT_MIN / 2)
+
+    def _draw_composer_tools(self, buf, cy: float) -> None:
+        """Place audio controls to the left, aligned with the composer row."""
+        muted, voice = self.model.mic_muted, self.model.voice_replies
+        self._icon_button(
+            buf,
+            "microphone-slash" if muted else "microphone",
+            PAD + BTN / 2,
+            cy,
+            "mic",
+            active=not muted,
+        )
+        self._icon_button(
+            buf,
+            "speaker" if voice else "speaker-slash",
+            PAD + BTN * 1.5 + 8,
+            cy,
+            "voice",
+            active=voice,
+        )
 
     def _draw_input_text(self, buf, box, now: float) -> None:
         x0, y0 = box[0] + 14, box[1] + 12

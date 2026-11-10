@@ -1,19 +1,19 @@
 ---
 name: EzAgent
-description: "Una barra de cielo: una forma fija con nubes dentro que responden a la voz, y una tarjeta de ajustes fresca y silenciosa."
+description: "Marea: una forma nítida con un gradiente orgánico que responde a la voz y superficies coherentes en ajustes y chat."
 colors:
-  card-body-light: "#FAFCFF"
-  card-group-light: "#EEF4FD"
-  card-text-light: "#161E34"
-  card-accent-light: "#2F5FD0"
-  card-body-dark: "#111626"
-  card-group-dark: "#1A2136"
-  card-text-dark: "#E8EEFA"
-  card-accent-dark: "#8DB4FF"
-  signal-light: "#2F5FD0"
-  signal-dark: "#8DB4FF"
-  error-light: "#D6333D"
-  error-dark: "#FF7876"
+  card-body-light: "#FAFDFC"
+  card-group-light: "#EDF6F4"
+  card-text-light: "#102226"
+  card-accent-light: "#0C7075"
+  card-body-dark: "#0D161A"
+  card-group-dark: "#142126"
+  card-text-dark: "#E4F2F0"
+  card-accent-dark: "#5EE2C4"
+  signal-light: "#0C7075"
+  signal-dark: "#5EE2C4"
+  error-light: "#C8241A"
+  error-dark: "#FF5D52"
 typography:
   title: { fontFamily: Geist, fontSize: 16px, fontWeight: 600 }
   row: { fontFamily: Geist, fontSize: 14px, fontWeight: 400 }
@@ -25,22 +25,22 @@ typography:
 # Sistema de diseño: EzAgent
 
 La fuente de verdad es el código: `src/ezagent/voice/notch/` (`drop.py`,
-`clouds.py`, `bar_motion.py`, `bar_theme.py`, `tokens.py`, `menu.py`). Este
+`flow.py`, `bar_motion.py`, `bar_theme.py`, `tokens.py`, `menu.py`). Este
 documento resume sus reglas; si algo no coincide, manda el código.
 
 ## Resumen
 
 EzAgent es una **barra flotante sin texto**. Una forma de contorno fijo y
-nítido contiene un cielo con nubes. El estado se lee por el color y el
-movimiento del cielo, nunca por palabras. Los ajustes viven en una tarjeta
-propia que se despliega desde ☰.
+nítido contiene el gradiente orgánico Marea. El estado se lee por el color y el
+movimiento del fluido, nunca por palabras en la barra. Los ajustes viven en una
+tarjeta propia; el chat escrito se abre desde la forma y comparte su identidad.
 
 - **Una sola forma.** El contorno nunca se deforma; lo que se mueve es el
   interior.
 - **Sin texto en la barra.** Ni palabra de estado, ni pistas, ni tooltips. Los
   botones son iconos vectoriales.
 - **Los botones se ganan.** Solo aparecen al acercar el puntero.
-- **Nunca solo color.** Cada pose cambia también el movimiento de las nubes.
+- **Nunca solo color.** Cada pose cambia también el movimiento del fluido.
 - **No roba el foco.** La barra y la tarjeta no toman el teclado salvo mientras
   se edita una fila de texto.
 
@@ -51,8 +51,8 @@ forma o con «Cambiar forma» en la bandeja (`ui_layout` en `voice.json`):
 
 | Disposición | Forma | Botones |
 |---|---|---|
-| `pill` | Cápsula de 148×38 | ☰ a la izquierda; 🎤 y ✕ a la derecha |
-| `circle` | Esfera de 58 de diámetro | Fila de 36 px bajo la esfera, con los mismos botones |
+| `pill` | Cápsula de 108×38 | Ajustes y chat a la izquierda; micrófono y llamada a la derecha |
+| `circle` | Esfera de 58 de diámetro | Botones de 36 px junto a la esfera; posición según el anclaje |
 
 ### Tamaño de la barra
 
@@ -64,7 +64,7 @@ ventana de ajustes sigue la escala de pantalla de Windows.
 
 - Botones redondos de **36 px**, separados **8 px** (`BTN`, `GAP`). Margen de
   12 px dentro de la ventana para sombras.
-- Los tres botones son ☰ (ajustes), 🎤 (micrófono) y ✕ (colgar). Sin llamada, el
+- Los controles son ajustes, chat, micrófono y llamada. Sin llamada, el
   micrófono se pliega y ✕ se convierte en el botón de llamar.
 - El micrófono tiene tres estados: escuchando, en pausa (tachado; solo atiende a
   la frase de reactivación) y colgado.
@@ -77,42 +77,42 @@ ventana de ajustes sigue la escala de pantalla de Windows.
 
 ## Color
 
-### Cielo y nubes (según estado y tema)
+### Fluido Marea (según estado y tema)
 
-Dentro de la forma hay cielo despejado arriba y un banco de nubes abajo. Cada
-pose tiene su propia paleta (cielo arriba, cielo abajo, nube, sombra de nube,
-brillo de aire) en `clouds.py`, para claro y oscuro.
+Dentro de la forma fluye un gradiente orgánico. Cada pose tiene una paleta
+propia en `flow.py`, para claro y oscuro. Escuchar acelera el fluido desde abajo;
+hablar produce pulsos de luz y pensar mantiene un giro lento.
 
 | Pose | Estado | Carácter |
 |---|---|---|
-| `idle` | Espera / colgado | Azul en calma |
-| `listen` | Escuchando | Azul más vivo; el aire entra por abajo |
-| `think` | Piensa | Violeta; las nubes giran |
-| `speak` | Habla | Azul intenso; un oleaje recorre el banco al ritmo de la voz |
+| `idle` | Espera / colgado | Marea en calma |
+| `listen` | Escuchando | Fluido más activo desde abajo |
+| `think` | Piensa | Giro lento |
+| `speak` | Habla | Pulsos de luz al ritmo de la voz |
 | `ask` | Pregunta (confirmación) | Ámbar |
 | `error` | Error | Rojo |
 | `mute` | Pausa | Gris apagado |
 
 ### Superficies de los ajustes
 
-Una paleta clara y otra oscura (`bar_theme.py`), con un acento azul cielo en
-ambas:
+Una paleta clara y otra oscura en `tokens.py`, compartidas por la barra,
+los ajustes y el chat. `bar_theme.py` entrega copias para las superficies:
 
 | Token | Claro | Oscuro |
 |---|---|---|
-| `BODY` | `#FAFCFF` | `#111626` |
-| `GROUP` | `#EEF4FD` | `#1A2136` |
-| `GROUP_HOVER` | `#E3ECFB` | `#232C46` |
-| `TRACK` | `#CDDAF0` | `#344062` |
-| `TEXT` | `#161E34` | `#E8EEFA` |
-| `TEXT_2` | `#424E6C` | `#B0BCD6` |
-| `TEXT_3` | `#626E8C` | `#8C99B8` |
-| `MINT` / `MINT_BTN` (acento) | `#255AD2` / `#2F5FD0` | `#8DB4FF` |
-| `MINT_INK` (texto sobre acento) | `#FFFFFF` | `#0E162C` |
+| `BODY` | `#FAFDFC` | `#0D161A` |
+| `GROUP` | `#EDF6F4` | `#142126` |
+| `GROUP_HOVER` | `#E0EFEC` | `#1C2D33` |
+| `TRACK` | `#C7E0DB` | `#2C464C` |
+| `TEXT` | `#102226` | `#E4F2F0` |
+| `TEXT_2` | `#385256` | `#ACC4C2` |
+| `TEXT_3` | `#4E666A` | `#8AA4A3` |
+| `MINT` / `MINT_BTN` (acento) | `#0C7075` | `#5EE2C4` |
+| `MINT_INK` (texto sobre acento) | `#FFFFFF` | `#06221E` |
 
-(Los nombres `MINT*` se conservan por compatibilidad del código; el color es
-azul cielo.) El cuerpo lleva un degradado vertical muy suave, un poco más
-cielo arriba (`#F1F6FF` claro, `#161D32` oscuro).
+El cuerpo lleva un degradado vertical suave, un poco más menta arriba
+(`#EEF9F6` claro, `#111E22` oscuro). Ámbar y rojo conservan su significado
+de confirmación y error; no se utilizan como acentos decorativos.
 
 ### Tema
 
@@ -132,6 +132,10 @@ cielo arriba (`#F1F6FF` claro, `#161D32` oscuro).
 
 Respaldo en Windows: Segoe UI.
 
+El texto se rasteriza al tamaño físico de pantalla. La medición, la alineación
+y los cambios de color reutilizan una sola máscara por texto, estilo y DPI;
+no se agrandan imágenes de texto para simular alta definición.
+
 ## Espaciado y forma
 
 - Escala de espaciado: 2 · 4 · 6 · 8 · 12 · 16 · 20 · 24 px (`SP_1`…`SP_8`).
@@ -150,8 +154,9 @@ Coreografía de los botones (`bar_motion.py`):
 - **Salida:** orden inverso, 25 ms de escalonado, amortiguación crítica (sin
   rebote).
 - **Puntero:** el botón bajo el puntero crece a 1,08; al pulsarlo, 0,94.
-- **Nubes:** tienen inercia. Cuando hablas entra aire por abajo y las empuja e
-  hincha; al callar vuelven despacio con un vaivén amortiguado.
+- **Fluido:** responde con inercia al nivel de voz y vuelve suavemente al reposo.
+- **Continuidad:** los resortes tienen solución analítica; mantienen el mismo
+  recorrido a 30, 60 y 144 fps y conservan posición y velocidad al invertirlos.
 
 Duraciones del menú: 120 / 180 / 240 / 320 ms. Muelle solo en los botones y los
 controles al soltar; **nunca** en la altura del menú, porque recortaría el
@@ -176,11 +181,11 @@ un ✕ forman la cabecera.
 | Aspecto | Forma y tamaño · Tema |
 | Escucha | Micrófono · Fin de turno · Reactivación |
 | Voz | Voz · Conversación · Acciones |
-| Modelos | Transcripción · Modelo de IA |
+| Modelos | Transcripción y diccionario · Proveedor, conexión y configuraciones guardadas |
 | Sistema | Atajos · Avanzado |
 
 - **Opciones avanzadas plegadas.** Ajustes finos (VAD, pausas del TTS, motor de
-  Whisper, conexión a la API, muestreo) solo se ven con «Mostrar opciones
+  Whisper, muestreo) solo se ven con «Mostrar opciones
   avanzadas» (`show_advanced`, Sistema → Avanzado). Siguen aplicándose igual.
 - **Mover.** Se arrastra desde cualquier zona sin controles (cabecera, barra
   lateral, huecos entre tarjetas). Siempre queda a la vista una franja de 96 px.
@@ -200,11 +205,52 @@ un ✕ forman la cabecera.
 - **Iconos:** vectoriales, rejilla de 24 px, trazo 1,8 (1,6 por debajo de 18 px),
   rasterizados con supermuestreo ×4.
 
+### Modelos y configuraciones guardadas
+
+«Proveedor» elige una conexión de fábrica o personalizada. Modelo, lista de
+modelos de la API, compatibilidad, URL y clave se editan en Modelos, sin activar
+opciones avanzadas. Las claves permanecen enmascaradas.
+
+«Guardar perfil como» asigna un nombre a esa conexión y modelo. El botón
+Guardar persiste la configuración en `llm.json`; «Configuración guardada» la
+recupera. Nombres diferentes conservan modelos distintos del mismo proveedor;
+guardar con el mismo nombre actualiza esa configuración. Los cambios pendientes
+siguen indicándose en el pie.
+
+### Diccionario de transcripción
+
+En Modelos → Transcripción, «Correcciones» admite pares como
+`open code → OpenCode; cloud → Claude`. También acepta `=>` y reglas pegadas
+desde varias líneas. Enter confirma la edición; Guardar conserva las reglas.
+Vaciar el campo desactiva las correcciones. Los errores se muestran junto al
+campo sin descartar lo escrito ni guardar una regla inválida.
+
+Las sustituciones se aplican localmente después de Whisper, por palabras o
+frases completas, sin distinguir mayúsculas. Las frases más largas tienen
+prioridad y cada texto se procesa una sola vez para evitar sustituciones en
+cadena. No se entrena Whisper ni se añade una llamada de red. Límite: 100 reglas.
+
+## Chat escrito
+
+- **Cabecera:** título y estado a la izquierda; ajustes, historial, nueva
+  conversación y minimizar (barra horizontal) a la derecha. El estado se recorta al espacio disponible.
+- **Composición:** micrófono y respuesta por voz a la izquierda del campo, en la misma fila.
+  Desactivar audio usa un estado neutro; el rojo se reserva para errores.
+- **Campo:** borde discreto en reposo, acento al escribir, enviar/detener en
+  la misma posición. Sin indicaciones de Enter debajo; los atajos siguen funcionando.
+- **Mensajes:** copiar aparece dentro de cada tarjeta, en la esquina inferior derecha,
+  con espacio reservado para no tapar contenido. No se muestran etiquetas «por voz».
+- **Movimiento:** apertura de 280 ms, cierre de 200 ms; con movimiento reducido,
+  fundido de 120 ms y línea de estado sin desplazamiento.
+- **Streaming:** el primer fragmento y el resultado final se pintan sin esperar
+  el intervalo de agrupación. Los siguientes fragmentos se agrupan cada 50 ms
+  para limitar la recomposición de Markdown. Esto no cambia la latencia del LLM.
+
 ## Accesibilidad
 
 - Contraste WCAG: texto y texto de acento ≥ 4,5:1 sobre las superficies de la
   tarjeta; botones de acento con su tinta ≥ 4,5:1. Lo comprueban
-  `tests/test_menu_appearance.py` y `tests/test_notch_ui.py`.
+  `tests/test_settings_window.py` y el validador `notch/a11y.py`.
 - Nunca solo color: la pose cambia también el movimiento.
 - Movimiento reducido respetado (ver arriba).
 - Las acciones principales tienen atajo global (`Ctrl+Alt+Space`,
@@ -217,7 +263,7 @@ un ✕ forman la cabecera.
 - Mantener el contorno fijo y mover solo el interior.
 - Comunicar el estado con color y movimiento a la vez.
 - Mantener la barra sin texto.
-- Usar los colores de `bar_theme.py` y `clouds.py`, no valores sueltos.
+- Usar los colores semánticos de `tokens.py` y las paletas del fluido de `flow.py`.
 
 **Don't**
 - No deformar la forma ni añadir segundas ventanas, tooltips o popups.

@@ -81,7 +81,7 @@ class PaintMixin:
             view.pending_delete,
             view.status,
             view.flash_token,
-            int(now * 2) if ticking else 0,
+            int((now - view._focus_t0) * 2) % 2 if ticking else 0,
             int(now * 30) if ticking and view.animating(now) else 0,
             view.g.theme,
             round(view.g.width),
@@ -331,7 +331,8 @@ class PaintMixin:
         if fluid is None:
             return None
         x = np.linspace(0.0, 1.0, w, dtype=np.float32)
-        wave = 0.5 + 0.5 * np.sin(2 * math.pi * (x * 1.6 - now * 0.9))
+        phase = 0.0 if self.ui._reduced else now * 0.9
+        wave = 0.5 + 0.5 * np.sin(2 * math.pi * (x * 1.6 - phase))
         alpha = (0.18 + 0.82 * wave**2) * act * 0.9
         edge = np.minimum(1.0, np.minimum(x, 1.0 - x) * 12.0)  # se funde en los extremos
         alpha = (alpha * edge)[None, :, None] * np.ones((h, 1, 1), np.float32)

@@ -321,6 +321,8 @@ class VoiceConfig:
     # Carpeta con whisper-server.exe y models/ (vacío = autodetección).
     whisper_home: str = ""
     stt_prompt: str = ""
+    stt_dictionary: str = ""
+    stt_vocabulary_hints: bool = True
     stt_timeout_secs: float = 60.0
     voice: str = "em_alex"
     speed: float = 0.95
@@ -354,6 +356,8 @@ class VoiceConfig:
 
     # LLM.
     llm_provider: str = "opencode"
+    llm_profile_name: str = ""
+    llm_saved_profile: str = ""
     llm_model: str = "deepseek-v4.1-flash"
     llm_base_url: str = OPENCODE_BASE_URL
     api_key: str = ""
@@ -366,6 +370,8 @@ class VoiceConfig:
     # lo antiguo se resume. Ponla según tu modelo (p. ej. 160000 para uno local de 200 k).
     llm_context_tokens: int = 32000
     llm_reasoning_effort: str = "none"
+    llm_timeout_secs: float = 30.0
+    llm_max_tool_rounds: int = 8
     # True cuando el usuario elige proveedor/modelo desde el menú del notch.
     # A partir de ahí voice.json manda sobre LLM_PROVIDER del .env, para que
     # el cambio sobreviva al reinicio.

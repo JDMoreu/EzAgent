@@ -303,14 +303,19 @@ def test_un_fallo_del_runtime_se_dice_por_voz_y_el_modelo_recibe_el_error() -> N
     )
 
 
-def test_si_el_modelo_insiste_en_herramientas_se_corta_a_las_cuatro_rondas() -> None:
+def test_repeated_web_queries_finish_with_results_instead_of_asking_to_rephrase() -> None:
     runtime = Runtime()
-    client = Client(*[tool_round("web_search", "{}", f"c{i}") for i in range(4)])
+    client = Client(
+        tool_round("web_search", "{}", "c1"),
+        tool_round("web_search", "{}", "c2"),
+        [text("Encontré resultados, pero aún faltan fuentes por verificar.")],
+    )
     messenger = make(client, runtime)
     spoken = say(messenger, "busca sin parar")
-    assert len(client.requests) == 4 and len(runtime.executed) == 4
-    assert spoken.endswith("prueba a preguntar de otra forma.")
-    assert messenger.messages[-1]["role"] == "tool"  # no quedó un assistant a medias
+    assert len(client.requests) == 3 and len(runtime.executed) == 1
+    assert "tools" not in client.requests[-1]
+    assert spoken.endswith("faltan fuentes por verificar.")
+    assert messenger.messages[-1]["role"] == "assistant"
 
 
 def test_el_error_del_proveedor_se_propaga_para_que_la_app_lo_diga() -> None:

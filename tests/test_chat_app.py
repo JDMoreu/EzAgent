@@ -244,6 +244,40 @@ def test_the_settings_switch_updates_the_open_chat(tmp_path: Path) -> None:
     assert stub.chat.voice_replies is True
 
 
+def test_selecting_a_saved_model_uses_its_provider_and_connection(
+    tmp_path: Path, monkeypatch
+) -> None:
+    stub, _ = make(tmp_path)
+    reloads, fetched = [], []
+    stub.messenger.reload_llm = lambda: reloads.append(True)
+    stub._fetch_llm_models = lambda *args: fetched.append(args)
+    monkeypatch.setattr(
+        app,
+        "load_provider_catalog",
+        lambda: {
+            "saved:local": {
+                "provider": "custom",
+                "label": "Local",
+                "saved": "true",
+                "model": "local-model",
+                "base_url": "http://localhost:1234/v1",
+                "api_key": "",
+                "api_style": "openai",
+            },
+        },
+    )
+    app.VoiceApp._apply_live_setting(stub, "llm_saved_profile", "saved:local")
+    assert stub.cfg.llm_provider == "custom" and stub.cfg.llm_model == "local-model"
+    assert stub.cfg.llm_saved_profile == "saved:local" and stub.cfg.llm_profile_name == "Local"
+    assert reloads == [True] and fetched == [("custom", "http://localhost:1234/v1", "", "openai")]
+
+
+def test_dictionary_changes_reach_the_transcription_configuration(tmp_path: Path) -> None:
+    stub, _ = make(tmp_path)
+    app.VoiceApp._apply_live_setting(stub, "stt_dictionary", "open code → OpenCode")
+    assert stub.cfg.stt_dictionary == "open code → OpenCode"
+
+
 def test_the_chat_hotkey_opens_the_chat_even_with_the_bar_hidden(tmp_path: Path) -> None:
     stub, _ = make(tmp_path)
     calls: list[str] = []

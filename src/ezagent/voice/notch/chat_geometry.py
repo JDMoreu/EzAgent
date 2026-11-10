@@ -19,8 +19,9 @@ MARGIN: Final[float] = 16.0  # aire alrededor del panel para la sombra (px lógi
 SCREEN_PAD: Final[float] = 12.0  # separación mínima al borde de la pantalla
 PANEL_RADIUS: Final[float] = 22.0
 GRIP: Final[float] = 8.0  # grosor de la zona de agarre de los bordes (px lógicos)
-MORPH_SECS: Final[float] = 0.40
-FADE_SECS: Final[float] = 0.14  # con movimiento reducido
+# DECISION: keep the morph readable while shortening the delay before interacting.
+MORPH_SECS: Final[float] = 0.28
+FADE_SECS: Final[float] = 0.12  # con movimiento reducido
 
 Rect = tuple[float, float, float, float]
 Edges = tuple[bool, bool, bool, bool]  # (izquierda, arriba, derecha, abajo)

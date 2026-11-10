@@ -407,10 +407,13 @@ def test_limite_de_herramientas_por_turno(tmp_path: Path, work, trash) -> None:
     runtime = build(tmp_path, work)
     runtime.config.general.max_tool_calls_per_turn = 3
     for i in range(3):
+        assert runtime.remaining_tool_calls() == 3 - i
         assert runtime.execute("get_datetime", {}).ok, i
+    assert runtime.remaining_tool_calls() == 0
     blocked = runtime.execute("get_datetime", {})
     assert not blocked.ok and "límite" in blocked.error
     runtime.begin_turn("otro turno")  # se reinicia
+    assert runtime.remaining_tool_calls() == runtime.config.general.max_tool_calls_per_turn
     assert runtime.execute("get_datetime", {}).ok
     runtime.close()
 

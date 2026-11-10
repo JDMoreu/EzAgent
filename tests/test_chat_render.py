@@ -16,6 +16,35 @@ from ezagent.voice.notch.bar_theme import card_palette
 WIDTH = 420.0
 
 
+@pytest.mark.parametrize("scale", [1.0, 1.25, 1.5, 2.0])
+def test_text_measurement_and_paint_share_masks_across_colors(scale: float, monkeypatch) -> None:
+    import numpy as np
+
+    from ezagent.voice.notch import text as typography
+    from ezagent.voice.notch.tokens import FS_BODY
+
+    typography.clear_cache()
+    calls = []
+    original = typography._render_bitmap
+
+    def counted(*args):
+        calls.append(args)
+        return original(*args)
+
+    monkeypatch.setattr(typography, "_render_bitmap", counted)
+    size = typography.text_size("Configuración", FS_BODY, scale)
+    for theme in ("light", "dark"):
+        for align in ("left", "center", "right"):
+            buf = np.zeros((round(80 * scale), round(240 * scale), 4), np.float32)
+            color = card_palette(theme)["TEXT"]
+            painted = typography.draw_text(
+                buf, "Configuración", FS_BODY, color, 120, 16, scale, align=align
+            )
+            assert painted[0] > 0 and size[0] > 0 and buf[..., 3].any()
+    assert len(calls) == 1  # one physical mask for measurement and six paint variants
+    typography.clear_cache()
+
+
 def _render(text: str, theme: str = "dark", scale: float = 1.0, roots=None, width: float = WIDTH):
     return render_message(text, card_palette(theme), width, scale, roots=roots)
 

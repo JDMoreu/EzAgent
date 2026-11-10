@@ -2403,13 +2403,19 @@ class VoiceApp:
                 if index != self.mic.device_index:
                     self._reload_mic(index)
                 return
-            if key == "llm_profile":
+            if key in ("llm_profile", "llm_saved_profile"):
                 try:
                     profile = load_provider_catalog().get(str(value))
                 except Exception:
                     profile = None
                 if profile:
-                    self.cfg.llm_provider = normalize_provider(str(value))
+                    self.cfg.llm_provider = normalize_provider(
+                        profile.get("provider") or str(value)
+                    )
+                    self.cfg.llm_profile_name = (
+                        profile.get("label", "") if profile.get("saved") else ""
+                    )
+                    self.cfg.llm_saved_profile = str(value) if profile.get("saved") else ""
                     self.cfg.llm_model = profile.get("model", "")
                     self.cfg.llm_base_url = profile.get("base_url", "")
                     self.cfg.api_key = profile.get("api_key", "")
@@ -2466,12 +2472,16 @@ class VoiceApp:
                 self.cfg.stt_engine = str(value)
             elif key == "stt_prompt":
                 self.cfg.stt_prompt = str(value)
+            elif key == "stt_dictionary":
+                self.cfg.stt_dictionary = str(value)
             elif key == "stt_timeout_secs":
                 self.cfg.stt_timeout_secs = float(value)
             elif key == "auto_start_whisper":
                 self.cfg.auto_start_whisper = bool(value)
             elif key == "llm_provider":
                 self.cfg.llm_provider = normalize_provider(str(value))
+            elif key == "llm_profile_name":
+                self.cfg.llm_profile_name = str(value).strip()
             elif key in ("llm_model", "llm_model_pick"):
                 if str(value or "").strip():
                     self.cfg.llm_model = str(value).strip()
@@ -2675,6 +2685,13 @@ class VoiceApp:
 
     def _apply_settings(self, values: dict) -> bool:
         """Aplica y guarda los valores del panel; True si reinició la llamada."""
+        from .stt_dictionary import normalize_rules
+
+        dictionary = normalize_rules(
+            str(values.get("stt_dictionary", self.cfg.stt_dictionary) or "")
+        )
+        if len(str(values.get("llm_profile_name", "") or "").strip()) > 80:
+            raise ValueError("El nombre de la configuración admite hasta 80 caracteres.")
         old_device = self.mic.device_index
         was_in_call = self.in_call
         device_changed = False
@@ -2725,6 +2742,7 @@ class VoiceApp:
         self.cfg.stt_model = str(values.get("stt_model", self.cfg.stt_model))
         self.cfg.stt_engine = str(values.get("stt_engine", self.cfg.stt_engine))
         self.cfg.stt_prompt = str(values.get("stt_prompt", self.cfg.stt_prompt))
+        self.cfg.stt_dictionary = dictionary
         self.cfg.stt_timeout_secs = number("stt_timeout_secs", self.cfg.stt_timeout_secs)
         self.cfg.auto_start_whisper = bool(
             values.get("auto_start_whisper", self.cfg.auto_start_whisper)
@@ -2733,6 +2751,12 @@ class VoiceApp:
             str(values.get("llm_provider", self.cfg.llm_provider))
         )
         self.cfg.llm_model = str(values.get("llm_model", self.cfg.llm_model)).strip()
+        self.cfg.llm_profile_name = str(
+            values.get("llm_profile_name", self.cfg.llm_profile_name)
+        ).strip()
+        self.cfg.llm_saved_profile = (
+            "saved:" + self.cfg.llm_profile_name.casefold() if self.cfg.llm_profile_name else ""
+        )
         self.cfg.llm_base_url = str(values.get("llm_base_url", self.cfg.llm_base_url)).strip()
         self.cfg.api_key = str(values.get("api_key", self.cfg.api_key)).strip()
         self.cfg.llm_api_style = str(
@@ -2783,6 +2807,7 @@ class VoiceApp:
                 base_url=self.cfg.llm_base_url,
                 api_key=self.cfg.api_key,
                 api_style=self.cfg.llm_api_style,
+                profile_name=self.cfg.llm_profile_name,
             )
             self.cfg.llm_pinned = True
             # Con URL o clave nuevas, la lista de modelos puede ser otra.
@@ -2791,6 +2816,16 @@ class VoiceApp:
                 self.cfg.llm_base_url,
                 self.cfg.api_key,
                 self.cfg.llm_api_style,
+            )
+
+        if new_llm == old_llm and self.cfg.llm_profile_name:
+            save_provider_profile(
+                self.cfg.llm_provider,
+                model=self.cfg.llm_model,
+                base_url=self.cfg.llm_base_url,
+                api_key=self.cfg.api_key,
+                api_style=self.cfg.llm_api_style,
+                profile_name=self.cfg.llm_profile_name,
             )
 
         new_device = values.get("input_device_index")

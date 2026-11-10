@@ -46,7 +46,7 @@ class _TextBitmap:
     line_h_px: int
 
 
-_CACHE: dict[tuple[str, FontStyle, Color, float, float, str], _TextBitmap] = {}
+_CACHE: dict[tuple[str, FontStyle, float, float], _TextBitmap] = {}
 _FONT_CACHE: dict[tuple[str, int, float], ImageFont.FreeTypeFont | ImageFont.ImageFont] = {}
 _FONT_PATH_CACHE: dict[tuple[str, int], object] = {}
 
@@ -160,12 +160,12 @@ def _render_bitmap(
 def _bitmap_for(
     text: str,
     style: FontStyle,
-    color: Color,
     scale: float,
     tracking: float,
-    align: str,
 ) -> _TextBitmap:
-    key = (text, style, tuple(color), float(scale), float(tracking), align)
+    # DECISION: coverage depends on glyphs and DPI, not paint color or placement.
+    # Measurement and hover/theme variants can reuse the same physical mask.
+    key = (text, style, float(scale), float(tracking))
     cached = _CACHE.get(key)
     if cached is not None:
         return cached
@@ -196,7 +196,7 @@ def text_size(
     resolved = _resolve_style(style)
     track = _resolve_tracking(resolved, tracking)
     display = text.upper() if resolved.uppercase else text
-    bitmap = _bitmap_for(display, resolved, (0, 0, 0), scale, track, align)
+    bitmap = _bitmap_for(display, resolved, scale, track)
     if bitmap.alpha.size:
         h, w = bitmap.alpha.shape
     else:
@@ -239,7 +239,7 @@ def draw_text(
     if draw_alpha <= 0.0 or not display:
         return (0.0, 0.0)
 
-    bitmap = _bitmap_for(display, resolved, tuple(color), scale, track, align)
+    bitmap = _bitmap_for(display, resolved, scale, track)
     if bitmap.alpha.size == 0:
         width = bitmap.width_px / scale
         height = bitmap.line_h_px / scale
