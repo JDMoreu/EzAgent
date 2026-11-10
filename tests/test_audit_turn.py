@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 from ezagent.agent.registry import ToolResult
 from ezagent.voice.app import VoiceApp
+from ezagent.voice.config import VoiceConfig
 from ezagent.voice.llm import Messenger, TurnCancelled
 
 
@@ -281,3 +282,19 @@ def test_un_error_atrasado_no_interrumpe_el_turno_actual() -> None:
 
     VoiceApp._handle_event(stub, ("error", "fallo actual", 9))
     assert spoken and "fallo actual" in spoken[0][0]
+
+
+def test_migracion_del_timeout_stt(tmp_path) -> None:
+    path = tmp_path / "voice.json"
+    path.write_text(json.dumps({"stt_timeout_secs": 60.0}), encoding="utf-8")
+    assert VoiceConfig.load(path).stt_timeout_secs == 10.0
+
+    path.write_text(json.dumps({"stt_timeout_secs": 25.0}), encoding="utf-8")
+    assert VoiceConfig.load(path).stt_timeout_secs == 25.0
+
+    # Un 60 explícito con la versión nueva se respeta: no se re-migra.
+    path.write_text(
+        json.dumps({"stt_timeout_secs": 60.0, "defaults_version": 2}),
+        encoding="utf-8",
+    )
+    assert VoiceConfig.load(path).stt_timeout_secs == 60.0

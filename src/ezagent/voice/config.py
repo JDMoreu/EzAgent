@@ -353,6 +353,9 @@ class VoiceConfig:
     # Versión de los valores por defecto del VAD. La 2 baja el suelo de
     # arranque para voces flojas y acepta frases cortas.
     vad_defaults_version: int = 2
+    # Versión de otros valores de fábrica (STT). La 2 baja el timeout de 60 s
+    # a 10 s: un whisper local no debe consumir dos presupuestos completos.
+    defaults_version: int = 2
 
     # LLM.
     llm_provider: str = "opencode"
@@ -474,6 +477,16 @@ class VoiceConfig:
             if cfg.min_speech_secs == 0.3:
                 cfg.min_speech_secs = 0.2
             cfg.vad_defaults_version = 2
+        try:
+            defaults_version = int(data.get("defaults_version", 1))
+        except (TypeError, ValueError):
+            defaults_version = 1
+        if data and defaults_version < 2:
+            # El valor de fábrica antiguo era 60 s por intento; con el fallback
+            # de endpoint podía esperar 120 s antes de avisar.
+            if cfg.stt_timeout_secs == 60.0:
+                cfg.stt_timeout_secs = 10.0
+            cfg.defaults_version = 2
         cfg.apply_env()
         return cfg
 

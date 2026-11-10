@@ -433,7 +433,7 @@ Esta sección no reescribe la auditoría: registra qué se cambió, qué se vali
 | F13/F46 | Parcial | Smart Turn se vuelve a sondear durante la misma pausa (cada 0,3 s). Falta calibrar eco, barge-in y falsos cierres con audio real. |
 | F14 | Diferido | Se mantiene abrir/cerrar PyAudio por frase; `tts.py` deja un `shortcut:` y requiere medición en hardware. |
 | F15 | Corregido | `capabilities_for()` declara tools, temperatura, salida máxima y razonamiento por modelo/proveedor. |
-| F16/F41 | Corregido | Base de 5 herramientas y selección aditiva; una skill cargada persiste en el seguimiento. |
+| F16/F41 | Corregido | Base de 5 herramientas y selección aditiva con move_path/undo_last/list_dir; load_skill se ofrece para formatos de oficina y skill/script. Las extra del turno anterior se conservan un turno para el seguimiento. Pasan las pruebas nuevas de selección. |
 | F17 | Corregido | El presupuesto usa los esquemas reales, la salida efectiva y el mensaje nuevo antes de cada petición. |
 | F18 | Corregido | Se eliminó el tope ciego de 60 mensajes; la compactación usa tokens y el resumen se arma después de compactar. |
 | F19 | Corregido | `render_for_llm` y el recorte de resultados antiguos producen JSON válido con `truncated` y `original_chars`. |
@@ -468,11 +468,16 @@ Esta sección no reescribe la auditoría: registra qué se cambió, qué se vali
 | F49 | Diferido | El arranque sigue cargando Whisper/Kokoro en serie antes del mainloop; no se midió el coste real. |
 | F50 | Parcial | Sondeo cada 5 s sin objetivos y caché de Herdr para el prompt; con agentes vigilados sigue habiendo un `hc ls` por segundo. |
 | F51 | Documentado | `llm.json` guarda claves en texto plano; el almacén de credenciales de Windows queda pendiente de un brief que lo autorice. |
+| F52 | Corregido | `note_done` ya no muta `self.messages` durante un turno: queda en una lista pendiente y se añade al empezar el siguiente, antes del usuario. `reset_history`/`import_context`/`reload_llm` se difieren si el turno sigue vivo. |
+| F53 | Corregido | El historial guarda solo el texto del usuario; el bloque de datos volátiles se añade únicamente al último usuario de la copia enviada en cada petición. |
+| F54 | Corregido | Migración de `stt_timeout_secs`: un 60.0 guardado sin `defaults_version` pasa a 10.0; un valor explícito distinto (25.0) o con la versión nueva se respeta. |
+
+F52–F54 son defectos detectados al revisar el cierre anterior (83c3ae5), no formaban parte de la enumeración original.
 
 ### 12.1 Pruebas nuevas o actualizadas
 
-- `tests/test_audit_turn.py`: cancelación durante herramienta, historial sin llamadas huérfanas, transcripción atrasada y error atrasado.
-- `tests/test_audit_tools.py`, `test_audit_audio.py`, `test_audit_watch.py`, `test_audit_store.py`, `test_audit_confirm.py`, `test_audit_provider.py`: regresiones por grupo.
+- `tests/test_audit_turn.py`: cancelación durante herramienta, historial sin llamadas huérfanas, `note_done` diferido, datos volátiles solo en la petición, transcripción atrasada, error atrasado y migración del timeout de STT.
+- `tests/test_audit_tools.py`: timeout con resultado incierto, JSON, validación anidada, selección aditiva, `move_path`/`undo_last`/`list_dir`, `load_skill` por formato y conservación de extras un turno.
 - Se actualizaron expectativas de pruebas que fijaban el comportamiento anterior (tope de 60 mensajes, `note_done` como `system`, selección por sustitución, respuestas ambiguas como rechazo y truncado no-JSON).
 
 ### 12.2 Límites de esta resolución
