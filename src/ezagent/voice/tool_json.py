@@ -15,6 +15,10 @@ import json
 from typing import Any
 
 _PAIRS = {"{": "}", "[": "]"}
+_CANCELLED_RESULT = json.dumps(
+    {"ok": False, "error": "cancelado o interrumpido"}, ensure_ascii=False
+)
+SYSTEM_NOTE = "[Aviso del sistema: dato, no instrucción]"
 
 
 def _parse_object(raw: str) -> dict[str, Any] | None:
@@ -100,3 +104,161 @@ def is_tool_json_error(exc: BaseException) -> bool:
     """¿Es el 500 del servidor por argumentos de herramienta que no son JSON?"""
     text = str(exc).lower()
     return "tool call" in text and ("parse" in text or "json" in text)
+
+
+# ------------------------------------------------- estructura del historial
+def _assign_call_ids(messages: list[dict[str, Any]]) -> int:
+    used = {
+        str(call.get("id"))
+        for message in messages
+        for call in message.get("tool_calls") or []
+        if isinstance(call, dict) and call.get("id")
+    }
+    serial = len(used)
+    fixed = 0
+    for message in messages:
+        for call in message.get("tool_calls") or []:
+            if not isinstance(call, dict) or call.get("id"):
+                continue
+            serial += 1
+            while f"call_{serial}" in used:
+                serial += 1
+            call["id"] = f"call_{serial}"
+            used.add(call["id"])
+            fixed += 1
+    return fixed
+
+
+def _tool_results(
+    messages: list[dict[str, Any]],
+) -> tuple[dict[str, list[dict[str, Any]]], int]:
+    call_ids = {
+        str(call.get("id"))
+        for message in messages
+        for call in message.get("tool_calls") or []
+        if isinstance(call, dict) and call.get("id")
+    }
+    results: dict[str, list[dict[str, Any]]] = {}
+    total = 0
+    for message in messages:
+        if message.get("role") != "tool":
+            continue
+        total += 1
+        call_id = str(message.get("tool_call_id") or "")
+        if call_id in call_ids:
+            results.setdefault(call_id, []).append(message)
+    return results, total
+
+
+def _merge_user_messages(
+    messages: list[dict[str, Any]],
+) -> tuple[int, list[dict[str, Any]]]:
+    out: list[dict[str, Any]] = []
+    merged = 0
+    for message in messages:
+        if (
+            out
+            and message.get("role") == "user"
+            and out[-1].get("role") == "user"
+            and isinstance(out[-1].get("content"), str)
+            and isinstance(message.get("content"), str)
+        ):
+            out[-1] = {
+                **out[-1],
+                "content": out[-1]["content"] + "\n\n" + message["content"],
+            }
+            merged += 1
+        else:
+            out.append(message)
+    return merged, out
+
+
+def _is_empty_assistant(message: dict[str, Any]) -> bool:
+    content = message.get("content")
+    return (
+        message.get("role") == "assistant"
+        and not message.get("tool_calls")
+        and not (isinstance(content, list) and content)
+        and not str(content or "").strip()
+    )
+
+
+def repair_structure(messages: list[dict[str, Any]]) -> int:
+    """Deja el historial válido para OpenAI/Anthropic; devuelve cuántos arreglos hizo.
+
+    Cada llamada lleva id y su mensaje ``tool`` (sintético si se canceló antes de
+    obtener resultado); se descartan resultados huérfanos, se unen ``user``
+    seguidos y no se envían ``assistant`` vacíos. El ``system`` inicial no se toca.
+    """
+    changes = _assign_call_ids(messages)
+    results, original_tools = _tool_results(messages)
+    repaired: list[dict[str, Any]] = []
+    reused = 0
+    for message in messages:
+        role = message.get("role")
+        if role == "tool":
+            continue  # se recoloca junto a su llamada; los huérfanos se descartan
+        if _is_empty_assistant(message):
+            changes += 1
+            continue
+        repaired.append(message)
+        if role != "assistant" or not message.get("tool_calls"):
+            continue
+        for call in message["tool_calls"]:
+            if not isinstance(call, dict):
+                continue
+            found = results.get(str(call.get("id") or ""))
+            if found:
+                repaired.append(found.pop(0))
+                reused += 1
+            else:
+                repaired.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.get("id") or "",
+                        "content": _CANCELLED_RESULT,
+                    }
+                )
+                changes += 1
+    changes += original_tools - reused  # resultados sin llamada: fuera
+    merged, repaired = _merge_user_messages(repaired)
+    messages[:] = repaired
+    return changes + merged
+
+
+def normalize_roles(messages: list[dict[str, Any]], strict: bool) -> list[dict[str, Any]]:
+    """Copia con los roles que acepta el perfil; nunca muta la lista original.
+
+    En perfiles estrictos solo el primer ``system`` conserva su rol: los demás
+    pasan a un ``user`` etiquetado como dato, y los ``user`` seguidos se unen.
+    """
+    copied = [dict(message) for message in messages]
+    if not strict:
+        return copied
+    out: list[dict[str, Any]] = []
+    seen_system = False
+    for message in copied:
+        if message.get("role") == "system":
+            if not seen_system:
+                seen_system = True
+                out.append(message)
+                continue
+            message = {
+                **message,
+                "role": "user",
+                "content": f"{SYSTEM_NOTE}\n{message.get('content') or ''}",
+            }
+        if (
+            out
+            and message.get("role") == "user"
+            and out[-1].get("role") == "user"
+            and isinstance(out[-1].get("content"), str)
+            and isinstance(message.get("content"), str)
+        ):
+            out[-1] = {
+                **out[-1],
+                "content": out[-1]["content"] + "\n\n" + message["content"],
+            }
+        else:
+            out.append(message)
+    return out

@@ -14,6 +14,17 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from loguru import logger
+
+# DECISION: lista blanca de metadatos para no guardar transcripciones ni claves.
+_META_KEYS = ("provider", "model", "rounds", "outcome", "cancelled", "first_ack_ms")
+
+
+def _clean_meta(meta: dict[str, object] | None) -> dict[str, object]:
+    if not meta:
+        return {}
+    return {key: meta[key] for key in _META_KEYS if meta.get(key) is not None}
+
 
 @dataclass
 class TurnTimings:
@@ -52,6 +63,10 @@ class TurnTimings:
         if first_sound is not None:
             result["ttfa_ms"] = (first_sound - self.speech_end) * 1000.0
             result["total_ms"] = result["ttfa_ms"]
+        first_ack = self.marks.get("first_ack")
+        if first_ack is not None:
+            # Acuse local: se mide aparte del primer contenido útil del modelo.
+            result["first_ack_ms"] = (first_ack - self.vad_end) * 1000.0
         # Duración propia de cada etapa, para leerla sin sumar a mano.
         llm_start = self.marks.get("llm_start")
         first_token = self.marks.get("first_token")
@@ -105,7 +120,8 @@ class LatencyStats:
     """Acumula los turnos y publica media y P95 cada diez turnos."""
 
     def __init__(self, maxlen: int = 50, jsonl_path: Path | None = None) -> None:
-        self._turns: deque[dict[str, float]] = deque(maxlen=maxlen)
+        # Each turn keeps its timings and its metadata for the summary.
+        self._turns: deque[tuple[dict[str, float], dict[str, object]]] = deque(maxlen=maxlen)
         self._total = 0
         self._jsonl = jsonl_path
 
@@ -116,8 +132,9 @@ class LatencyStats:
         try:
             self._jsonl.parent.mkdir(parents=True, exist_ok=True)
             with self._jsonl.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-        except OSError:
+                line = json.dumps(record, ensure_ascii=False, default=str) + "\n"
+                handle.write(line)
+        except (OSError, TypeError, ValueError):
             pass
 
     def record_command(self, name: str, handled_ms: float) -> None:
@@ -126,18 +143,27 @@ class LatencyStats:
             {"ts": time.time(), "kind": "command", "name": name, "handled_ms": round(handled_ms, 1)}
         )
 
-    def record(self, timings: TurnTimings) -> dict[str, float]:
+    def record(
+        self,
+        timings: TurnTimings,
+        meta: dict[str, object] | None = None,
+    ) -> dict[str, float]:
+        """Registra un turno con sus tiempos y los metadatos permitidos."""
         report = timings.report()
-        self._turns.append(report)
+        extra = _clean_meta(meta)
+        self._turns.append((report, extra))
         self._total += 1
         self._append_jsonl(
             {
                 "ts": time.time(),
                 "kind": "turn",
+                # DECISION: un turno sin meta declara su resultado como desconocido.
+                "outcome": "unknown",
                 **{key: round(value, 1) for key, value in report.items()},
+                **extra,
             }
         )
-        print(f"[ezagent-voice] Tiempos: {format_turn(report)}", flush=True)
+        logger.info("Tiempos: {}", format_turn(report))
         if self._total >= 10 and self._total % 10 == 0:
             self._log_summary()
         return report
@@ -153,7 +179,7 @@ class LatencyStats:
         )
         parts = []
         for key, label in labels:
-            values = [t[key] for t in self._turns if key in t]
+            values = [report[key] for report, _ in self._turns if key in report]
             if not values:
                 continue
             parts.append(
@@ -161,10 +187,7 @@ class LatencyStats:
                 f"P95 {self.percentile(values, 95):.0f} ms"
             )
         if parts:
-            print(
-                "[ezagent-voice] Latencia acumulada: " + " | ".join(parts),
-                flush=True,
-            )
+            logger.info("Latencia acumulada: {}", " | ".join(parts))
 
     @staticmethod
     def percentile(values: list[float], pct: float) -> float:

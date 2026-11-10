@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
@@ -103,6 +104,32 @@ PROVIDERS: Final[dict[str, ProviderSpec]] = {
 def normalize_api_style(value: str | None) -> str:
     text = str(value or "").strip().lower()
     return text if text in API_STYLES else "openai"
+
+
+@dataclass(frozen=True, slots=True)
+class ModelCapabilities:
+    """Lo que un modelo/endpoint acepta; conservador si el nombre no lo aclara."""
+
+    tools: bool = True
+    temperature: bool = True
+    max_output: int = 32_000
+    reasoning: bool = False
+
+
+# ``r1``, ``reasoner`` y las familias o1/o3/o4 razonan antes de responder y no
+# aceptan los mismos parámetros que un modelo de chat corriente.
+_REASONING_NAME = re.compile(r"(?:^|[/_.:-])(?:r1|reasoner|o1|o3|o4|thinking)(?:$|[/_.:-])")
+
+
+def capabilities_for(
+    provider: str | None, model: str | None, api_style: str = ""
+) -> ModelCapabilities:
+    """Capacidades declarativas de un modelo, sin consultar al servidor."""
+    # DECISION: el nombre del modelo decide el razonamiento; provider/api_style
+    # quedan como contexto para perfiles más finos cuando haya datos medidos.
+    name = str(model or "").strip().lower()
+    reasoning = bool(_REASONING_NAME.search(name))
+    return ModelCapabilities(reasoning=reasoning)
 
 
 OPENCODE_BASE_URL: Final[str] = "https://opencode.ai/inference/go/openai/v1"
@@ -533,9 +560,11 @@ __all__ = [
     "API_STYLES",
     "CUSTOM_PROVIDER",
     "LLMConfig",
+    "ModelCapabilities",
     "DEFAULT_LLM_MODEL",
     "OPENCODE_BASE_URL",
     "PROVIDERS",
+    "capabilities_for",
     "ProviderSpec",
     "config_path",
     "fetch_models",

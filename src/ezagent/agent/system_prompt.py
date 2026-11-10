@@ -252,10 +252,19 @@ class SystemPromptBuilder:
 
     def build(self, now: datetime | None = None) -> str:
         """Devuelve el prompt completo.  ``now`` permite fijar fecha y hora."""
+        stable, volatile = self.build_parts(now)
+        return "\n\n".join(part for part in (stable, volatile) if part.strip())
+
+    def build_parts(self, now: datetime | None = None) -> tuple[str, str]:
+        """``(prefijo estable, datos volátiles)`` para conservar la caché por prefijo.
+
+        El prefijo agrupa política, ``system.md``, guías y catálogos. Memoria,
+        ventanas de Herdr y hora van aparte y se adjuntan al turno del usuario.
+        """
         self.reload_if_changed()
         moment = now if now is not None else datetime.now()
-        stable, clock = _split_clock_lines(self._last_valid_text or DEFAULT_SYSTEM_MD)
-        system_text = self._render_system_md(stable, moment)
+        stable_text, clock = _split_clock_lines(self._last_valid_text or DEFAULT_SYSTEM_MD)
+        system_text = self._render_system_md(stable_text, moment)
 
         parts: list[str] = [SAFETY_PREAMBLE_TEXT, system_text, VOICE_FLOW_HINT, EXECUTION_HINT]
         agents = self._section(self._agents_catalog)
@@ -266,16 +275,19 @@ class SystemPromptBuilder:
         if catalog:
             parts.append(catalog)
             parts.append(SKILLS_HINT)
-        # DECISION: volatile data follows stable catalogs to retain a reusable prompt prefix.
+        volatile: list[str] = []
         memory = self._section(self._memory_block)
         if memory:
-            parts.append(memory)
+            volatile.append(memory)
         windows = self._section(self._agent_windows)
         if windows:
-            parts.append(windows)
+            volatile.append(windows)
         if clock:
-            parts.append("# Momento actual\n" + self._render_system_md(clock, moment))
-        return "\n\n".join(part.strip() for part in parts if part.strip())
+            volatile.append("# Momento actual\n" + self._render_system_md(clock, moment))
+        return (
+            "\n\n".join(part.strip() for part in parts if part.strip()),
+            "\n\n".join(part.strip() for part in volatile if part.strip()),
+        )
 
     def reload_if_changed(self) -> bool:
         """Recarga ``system.md`` si cambió.  Devuelve True si hay versión nueva."""

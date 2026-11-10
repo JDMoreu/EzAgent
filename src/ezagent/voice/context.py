@@ -29,6 +29,7 @@ TOOL_RESULT_KEEP: Final[int] = (
 )
 TRANSCRIPT_CHARS: Final[int] = 48_000  # tope de lo que se le pasa al modelo para resumir
 MIN_BUDGET: Final[int] = 4_000
+RESERVE_MARGIN: Final[int] = 500  # tokens de formato/plantilla que no se cuentan aparte
 
 SUMMARY_SYSTEM: Final[str] = (
     "Eres el archivista de una conversación entre un usuario y un asistente de voz y chat. "
@@ -59,6 +60,28 @@ def estimate_tokens(messages: list[dict[str, Any]]) -> int:
             function = call.get("function") or {}
             chars += len(str(function.get("name", ""))) + len(str(function.get("arguments", "")))
     return int(chars / CHARS_PER_TOKEN) + MESSAGE_OVERHEAD * len(messages)
+
+
+def estimate_tools_tokens(schemas: list[dict[str, Any]] | None) -> int:
+    """Tokens estimados de los esquemas de herramientas tal como se envían."""
+    if not schemas:
+        return 0
+    chars = 0
+    for schema in schemas:
+        if isinstance(schema, dict):
+            chars += len(json.dumps(schema, ensure_ascii=False, separators=(",", ":")))
+        else:
+            chars += len(str(schema))
+    return int(chars / CHARS_PER_TOKEN) + MESSAGE_OVERHEAD * len(schemas)
+
+
+def reserve_tokens(tools_schemas: list[dict[str, Any]] | None, max_tokens: int) -> int:
+    """Tokens que hay que reservar: esquemas reales + salida + margen de formato."""
+    try:
+        output = max(0, int(max_tokens))
+    except (TypeError, ValueError):
+        output = 0
+    return estimate_tools_tokens(tools_schemas) + output + RESERVE_MARGIN
 
 
 def budget_tokens(configured: Any) -> int:
@@ -157,6 +180,23 @@ def with_summary(system_prompt: str, summary: str) -> str:
     )
 
 
+def _clip_tool_content(content: str) -> str:
+    """Recorta un resultado largo; si era JSON, el resultado sigue siendo JSON válido."""
+    try:
+        json.loads(content)
+    except (TypeError, ValueError):
+        omitted = len(content) - TOOL_RESULT_KEEP
+        return content[:TOOL_RESULT_KEEP] + f"… [recortado: {omitted} caracteres]"
+    # DECISION: ``data`` guarda el prefijo literal (recuperable) en vez de reserializar
+    # la estructura; la mitad deja sitio al envoltorio y evita recortes anidados.
+    payload = {
+        "truncated": True,
+        "original_chars": len(content),
+        "data": content[: TOOL_RESULT_KEEP // 2],
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def clip_old_tool_results(messages: list[dict[str, Any]], protect_last_turns: int = 1) -> int:
     """Recorta los resultados de herramientas de vueltas antiguas; devuelve cuántos recortó.
 
@@ -175,8 +215,7 @@ def clip_old_tool_results(messages: list[dict[str, Any]], protect_last_turns: in
         content = message.get("content")
         already = isinstance(content, str) and "… [recortado:" in content[-80:]
         if isinstance(content, str) and len(content) > TOOL_RESULT_KEEP and not already:
-            omitted = len(content) - TOOL_RESULT_KEEP
-            message["content"] = content[:TOOL_RESULT_KEEP] + f"… [recortado: {omitted} caracteres]"
+            message["content"] = _clip_tool_content(content)
             clipped += 1
     return clipped
 
@@ -188,14 +227,17 @@ def describe(tokens: int, budget: int) -> str:
 
 __all__ = [
     "KEEP_TURNS",
+    "RESERVE_MARGIN",
     "budget_tokens",
     "clip_old_tool_results",
     "describe",
     "estimate_tokens",
+    "estimate_tools_tokens",
     "json",
     "needs_clipping",
     "needs_compaction",
     "render_transcript",
+    "reserve_tokens",
     "split_history",
     "summary_messages",
     "with_summary",

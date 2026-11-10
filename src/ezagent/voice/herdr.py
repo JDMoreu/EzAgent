@@ -82,6 +82,8 @@ class Herdr(AgentDriver):
         self._context_at: float | None = None
         self._context_pending = False
         self._context_snapshot: dict[str, Any] | None = None
+        self._agents_at: float | None = None
+        self._agents_cache: list[dict[str, Any]] | None = None
         self._resolve_paths()
 
     # ------------------------------------------------------------- instalación
@@ -269,6 +271,20 @@ class Herdr(AgentDriver):
             )
         return agents
 
+    def cached_agents(self, max_age: float = 1.5) -> list[dict[str, Any]] | None:
+        """Último snapshot de agentes si tiene menos de ``max_age`` segundos.
+
+        Sirve al contexto del prompt para no lanzar otro `hc ls` cuando el
+        vigía acaba de consultar. Las acciones siguen usando `list_agents`.
+        """
+        now = time.monotonic()
+        with self._context_lock:
+            if self._agents_cache is None or self._agents_at is None:
+                return None
+            if now - self._agents_at > max_age:
+                return None
+            return [dict(item) for item in self._agents_cache]
+
     def context_text(self) -> str:
         """Return bounded terminal metadata immediately and refresh it off the caller thread."""
         now = time.monotonic()
@@ -287,8 +303,9 @@ class Herdr(AgentDriver):
                     self._context_pending = False
         if snapshot is None:
             return ""
+        age = max(0.0, now - (captured or now))
         payload = json.dumps(
-            {**snapshot, "age_seconds": round(max(0.0, now - (captured or now)), 1)},
+            {**snapshot, "freshness": "antiguo" if age > 30.0 else "reciente"},
             ensure_ascii=False,
         )
         payload = payload.replace("<", "\\u003c").replace(">", "\\u003e")
@@ -301,7 +318,12 @@ class Herdr(AgentDriver):
     def _refresh_context(self) -> None:
         snapshot = None
         try:
-            agents = self.list_agents(timeout=1.0)
+            agents = self.cached_agents()
+            if agents is None:
+                agents = self.list_agents(timeout=1.0)
+                with self._context_lock:
+                    self._agents_cache = [dict(item) for item in agents]
+                    self._agents_at = time.monotonic()
             fields = {"address": 96, "agent": 80, "state": 40, "cwd": 512, "name": 120, "where": 80}
             terminals = [
                 {

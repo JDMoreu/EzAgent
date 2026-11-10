@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import math
 import os
 import queue
@@ -28,6 +29,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 from dotenv import load_dotenv
+from loguru import logger
 
 from ezagent.agent.handoff import answer_or_tail, compose_handoff
 from ezagent.agent.handoff_packet import Packet, build_packet, packet_text
@@ -52,9 +54,10 @@ from .condenser import Condenser
 from .config import VoiceConfig, config_path
 from .herdr import Herdr
 from .hotkeys import GlobalHotkey, parse_hotkey
-from .llm import Messenger, friendly_llm_error
+from .llm import Messenger, TurnCancelled, friendly_llm_error
 from .metrics import LatencyStats, TurnTimings, format_stt
 from .notch.drop import create_ui
+from .redact import redact
 from .speech_queue import SpeechQueue
 from .stt import (
     STTError,
@@ -62,6 +65,9 @@ from .stt import (
     is_hallucination,
     transcribe,
     whisper_model_path,
+)
+from .stt import (
+    close_client as close_stt_client,
 )
 from .tasks import TaskRegistry
 from .tts import Speaker
@@ -208,7 +214,19 @@ def _strip_courtesy(key: str) -> str:
 
 
 def log(message: str) -> None:
-    print(f"[ezagent-voice] {message}", flush=True)
+    logger.info(redact(str(message)))
+
+
+def _advance_turn(app) -> int:
+    """Invalida el turno vigente; sirve también para los dobles de prueba."""
+    app._turn_gen = int(getattr(app, "_turn_gen", 0)) + 1
+    messenger = getattr(app, "messenger", None)
+    if messenger is not None:
+        try:
+            messenger.cancel_turn()
+        except Exception as exc:  # noqa: BLE001 - cancelar es best-effort
+            log(f"No pude cancelar el turno anterior: {exc}")
+    return app._turn_gen
 
 
 def _timed_stream(stream, timing: TurnTimings | None):
@@ -377,6 +395,13 @@ class VoiceApp:
         self._turn_gen = 0
         self._turn_started = 0.0
         self._turn_timing: TurnTimings | None = None
+        # Una sola transcripción en vuelo; la siguiente sustituye a la pendiente.
+        self._stt_lock = threading.Lock()
+        self._stt_pending: tuple[bytes, int, int, TurnTimings] | None = None
+        # Token de la confirmación que se mostró, para no aceptar respuestas viejas.
+        self._confirm_token = ""
+        # Hilos propios de la app, para drenarlos en el apagado.
+        self._workers: set[threading.Thread] = set()
         self._latency = LatencyStats(jsonl_path=config_path().parent / "logs" / "latency.jsonl")
         self._notch_hidden = bool(cfg.notch_hidden)
         self._restarting = False
@@ -426,8 +451,8 @@ class VoiceApp:
             )
         log("Cargando Kokoro…")
         self.speaker = Speaker(cfg)
-        threading.Thread(target=self._warm_tts, daemon=True).start()
-        threading.Thread(target=self._warm_stt, daemon=True).start()
+        self._start_worker(self._warm_tts, (), "ezagent-warm-tts")
+        self._start_worker(self._warm_stt, (), "ezagent-warm-stt")
         self.mic = MicCapture(
             device_index=cfg.input_device_index,
             min_rms=cfg.min_rms,
@@ -456,11 +481,7 @@ class VoiceApp:
         self.herdr = Herdr(cfg)
         # Si Herdr o `hc` faltan, se instalan solos en segundo plano; el
         # primer comando que los necesite espera a que termine el instalador.
-        threading.Thread(
-            target=self.herdr.ensure_installed,
-            daemon=True,
-            name="ez-herdr-install",
-        ).start()
+        self._start_worker(self.herdr.ensure_installed, (), "ez-herdr-install")
         self.agent = self._create_agent_runtime(cfg)
         self.messenger = Messenger(
             cfg,
@@ -489,6 +510,7 @@ class VoiceApp:
             cfg,
             on_event=self._on_watcher_event,
             should_announce=self._should_announce,
+            has_targets=lambda: bool(self.watched) or bool(self.cfg.announce_all),
         )
 
         self.hotkeys = self._build_hotkeys()
@@ -560,8 +582,8 @@ class VoiceApp:
                 prewarm_chain=self._start_prelaunch,
                 async_launch=True,
                 pending_tasks=lambda: self.tasks.prompt_block(),
-                on_confirm_ask=lambda summary, strong: self.events.put(
-                    ("confirm_ask", summary, strong)
+                on_confirm_ask=lambda summary, strong, token: self.events.put(
+                    ("confirm_ask", summary, strong, token)
                 ),
                 on_confirm_done=lambda: self.events.put(("confirm_done",)),
                 on_warn=lambda message: self.events.put(("agent_warn", message)),
@@ -676,7 +698,7 @@ class VoiceApp:
 
     def _new_conversation(self) -> None:
         """Olvida la conversación (el menú ya pidió la confirmación)."""
-        self._turn_gen += 1
+        _advance_turn(self)
         self._signal_tts_stop()
         self._speaking_kind = None
         self.contexts.new_chat()
@@ -916,11 +938,7 @@ class VoiceApp:
         self.watcher.start()
         # Las tareas/cadenas pendientes se reanudan en segundo plano: lanzar
         # una cadena puede tardar y no debe bloquear el mainloop.
-        threading.Thread(
-            target=self._resume_pending_tasks,
-            name="ezagent-resume-tasks",
-            daemon=True,
-        ).start()
+        self._start_worker(self._resume_pending_tasks, (), "ezagent-resume-tasks")
         # La app nace en modo escucha: no hace falta pulsar nada al abrirla.
         self.root.after(600, self._start_listening_on_launch)
         try:
@@ -953,13 +971,28 @@ class VoiceApp:
                 pass
         self.in_call = False
         self._user_speaking = False
-        self._turn_gen += 1
+        _advance_turn(self)
         if self._call_stop is not None:
             self._call_stop.set()
         self._signal_tts_stop()
         self.watcher.stop()
         for hotkey in self.hotkeys:
             hotkey.stop()
+        # Da tiempo a que los workers vean la cancelación antes de cerrar audio
+        # y transporte; lo que no termine dentro del plazo no usa ya esos recursos.
+        self._drain_workers(3.0)
+        if self._call_thread is not None:
+            self._call_thread.join(1.0)
+        messenger = getattr(self, "messenger", None)
+        if messenger is not None:
+            try:
+                messenger.close()
+            except Exception:
+                pass
+        try:
+            close_stt_client()
+        except Exception:
+            pass
         if self._whisper_proc is not None and self._whisper_proc.poll() is None:
             try:
                 subprocess.run(
@@ -1087,6 +1120,14 @@ class VoiceApp:
             self._suspend_hotkeys(bool(event[1]))
         elif kind == "chat_send":
             self._chat_send(str(event[1]))
+        elif kind == "audio_speech_start":
+            self._on_speech_start(float(event[1]))
+        elif kind == "audio_barge_in":
+            self._on_barge_in(float(event[1]))
+        elif kind == "audio_utterance":
+            self._on_utterance(event[1], int(event[2]))
+        elif kind == "say":
+            self._speak(str(event[1]), "answer")
         elif kind == "chat_new":
             self._chat_new()
         elif kind == "chat_switch":
@@ -1100,13 +1141,17 @@ class VoiceApp:
         elif kind == "transcribed":
             _, text, gen = event
             text = (text or "").strip()
-            # Una confirmación pendiente se resuelve con la siguiente frase,
-            # antes de cualquier otro atajo o turno del LLM (sección 5.5).
+            # Una transcripción vieja nunca resuelve la confirmación vigente ni
+            # inicia un turno que ya no existe (F02/F29).
+            if not self.in_call or gen != self._turn_gen:
+                return
             agent = getattr(self, "agent", None)
             if agent is not None and agent.confirm_pending and text:
-                agent.submit_confirmation(text)
-                return
-            if not self.in_call or gen != self._turn_gen:
+                token = getattr(self, "_confirm_token", "") or None
+                result = agent.submit_confirmation(text, token=token)
+                if result is None:
+                    # Ni aceptación ni rechazo: se repregunta sin cerrar la pendiente.
+                    self._speak_same_turn("No te entendí. Responde «sí» o «no».", "confirm")
                 return
             if not text:
                 self._set_state(LISTENING)
@@ -1122,19 +1167,20 @@ class VoiceApp:
                 return
             self._set_state(THINKING)
             self.chat.add_user(text, "voice")
-            threading.Thread(target=self._answer_worker, args=(text, gen), daemon=True).start()
+            self._start_worker(self._answer_worker, (text, gen), "ezagent-answer")
         elif kind == "speaking":
             gen = event[1]
             if gen == self._turn_gen:
                 self._set_state(SPEAKING)
         elif kind == "answer_done":
             gen = event[1]
+            outcome = str(event[2]) if len(event) > 2 else "ok"
             if gen != self._turn_gen:
                 return
             timing = self._turn_timing
             if timing is not None:
                 timing.mark("turn_end")
-                self._latency.record(timing)
+                self._record_latency(timing, outcome)
                 self._turn_timing = None
             self._speaking_kind = None
             self._reset_capture.set()
@@ -1165,7 +1211,15 @@ class VoiceApp:
             gen = event[1]
             if gen != self._turn_gen:
                 return
+            kind_before = self._speaking_kind
             self._speaking_kind = None
+            if kind_before == "confirm":
+                agent = getattr(self, "agent", None)
+                if agent is not None:
+                    try:
+                        agent.arm_confirmation()
+                    except Exception:  # noqa: BLE001
+                        pass
             self._reset_capture.set()
             self._ignore_utterance = False
             self._post_tts_ignore = False
@@ -1185,6 +1239,10 @@ class VoiceApp:
             self._fix_model_name(str(event[1]), tuple(event[2]))
         elif kind == "error":
             message = str(event[1])[:320]
+            event_gen = event[2] if len(event) > 2 else None
+            if event_gen is not None and event_gen != self._turn_gen:
+                log(f"Error obsoleto del turno {event_gen}: {message}")
+                return
             log(f"Error: {message}")
             if message.startswith("Kokoro:"):
                 # No reintentar con el mismo TTS que acaba de fallar.
@@ -1212,6 +1270,7 @@ class VoiceApp:
             else:
                 self._set_idle()
         elif kind == "confirm_ask":
+            self._confirm_token = str(event[3]) if len(event) > 3 else ""
             self._show_confirmation(str(event[1]), bool(event[2]))
         elif kind == "confirm_done":
             self.chat.clear_confirm()
@@ -1222,6 +1281,13 @@ class VoiceApp:
         elif kind == "confirm_click":
             self._signal_tts_stop()
             agent = getattr(self, "agent", None)
+            token = str(event[2]) if len(event) > 2 else ""
+            pending = ""
+            if agent is not None:
+                pending = str(getattr(agent, "pending_confirmation_token", "") or "")
+            if token and pending and token != pending:
+                log("Confirmación atrasada ignorada.")
+                return
             if agent is not None:
                 agent.submit_confirmation_click(bool(event[1]))
         elif kind == "agent_warn":
@@ -1247,7 +1313,7 @@ class VoiceApp:
         self._speaking_kind = None
         self.in_call = True
         self._user_speaking = False
-        self._turn_gen += 1
+        _advance_turn(self)
         self._call_stop = threading.Event()
         self.notch.set_in_call(True)
         self._set_state(LISTENING)
@@ -1287,7 +1353,7 @@ class VoiceApp:
             # Un aviso de agente en curso se entrega aunque cuelgues.
             log("Llamada terminada; termino el aviso en curso.")
             return
-        self._turn_gen += 1
+        _advance_turn(self)
         self._signal_tts_stop()
         self._speaking_kind = None
         self.notch.set_in_call(False)
@@ -1297,14 +1363,16 @@ class VoiceApp:
 
     def _call_worker(self, stop_event: threading.Event) -> None:
         try:
+            # El hilo de audio solo publica intenciones: el hilo de Tk decide
+            # generación y estado (AGENTS.md §4, F45).
             self.mic.stream(
                 stop_event,
                 on_level=self._on_mic_level,
-                on_speech_start=self._on_speech_start,
-                on_utterance=self._on_utterance,
+                on_speech_start=lambda level: self.events.put(("audio_speech_start", level)),
+                on_utterance=lambda pcm, rate: self.events.put(("audio_utterance", pcm, rate)),
                 reset_event=self._reset_capture,
                 is_speaking=lambda: self.state == SPEAKING,
-                on_barge_in=self._on_barge_in,
+                on_barge_in=lambda level: self.events.put(("audio_barge_in", level)),
             )
         except Exception as exc:  # noqa: BLE001
             self.events.put(("error", f"No puedo usar el micrófono: {exc}"))
@@ -1336,7 +1404,7 @@ class VoiceApp:
             self._close_after_answer = False
             self._close_mode = ""
         log("Barge-in: te escucho.")
-        self._turn_gen += 1
+        _advance_turn(self)
         self._signal_tts_stop()
         self._user_speaking = True
         self._ignore_utterance = False
@@ -1384,7 +1452,7 @@ class VoiceApp:
                 # anterior con la que viene para no perder la primera parte.
                 self._resume_pcm = (last[0], last[1])
                 log("Sigues hablando: uno esta frase con la anterior.")
-            self._turn_gen += 1
+            _advance_turn(self)
             self._signal_tts_stop()
             self._set_state(LISTENING)
             return
@@ -1443,12 +1511,9 @@ class VoiceApp:
             # está esperando en el hilo de herramientas.
             gen = self._turn_gen
         else:
-            self._turn_gen += 1
-            gen = self._turn_gen
+            gen = _advance_turn(self)
         self._set_state(THINKING)
-        threading.Thread(
-            target=self._stt_worker, args=(pcm, rate, gen, timing), daemon=True
-        ).start()
+        self._start_stt(pcm, rate, gen, timing)
 
     # ---------------------------------------------------------------- estados
     def _set_state(self, state: str) -> None:
@@ -1480,6 +1545,53 @@ class VoiceApp:
     def _set_idle(self) -> None:
         self._set_state(IDLE)
 
+    def _bump_turn(self) -> int:
+        """Invalida el turno vigente y pide al LLM que suelte la red y las herramientas."""
+        return _advance_turn(self)
+
+    def _start_worker(self, target, args: tuple = (), name: str = "ezagent-worker") -> None:
+        """Lanza un worker propio y lo registra para drenarlo en el apagado."""
+        workers = getattr(self, "_workers", None)
+        if workers is None:
+            workers = set()
+            self._workers = workers
+
+        def run() -> None:
+            try:
+                target(*args)
+            finally:
+                workers.discard(threading.current_thread())
+
+        thread = threading.Thread(target=run, name=name, daemon=True)
+        workers.add(thread)
+        thread.start()
+
+    def _drain_workers(self, timeout: float = 3.0) -> None:
+        """Espera a los workers propios hasta ``timeout``; no bloquea el cierre."""
+        deadline = time.monotonic() + max(0.0, timeout)
+        current = threading.current_thread()
+        for thread in list(getattr(self, "_workers", ())):
+            if thread is current or not thread.is_alive():
+                continue
+            thread.join(max(0.0, deadline - time.monotonic()))
+
+    def _record_latency(self, timing: TurnTimings | None, outcome: str) -> None:
+        if timing is None:
+            return
+        meta = {
+            "provider": self.cfg.llm_provider,
+            "model": self.cfg.llm_model,
+            "rounds": len(getattr(self.messenger, "last_rounds", []) or []),
+            "outcome": outcome,
+        }
+        report = timing.report()
+        if "first_ack_ms" in report:
+            meta["first_ack_ms"] = round(report["first_ack_ms"], 1)
+        try:
+            self._latency.record(timing, meta)  # type: ignore[call-arg]
+        except TypeError:  # compatibilidad con una versión sin metadatos
+            self._latency.record(timing)
+
     def _tts_guard(self) -> threading.Lock:
         """Lock de ``_tts_stop``; lo crea si la instancia no pasó por __init__."""
         # DECISION: las pruebas construyen VoiceApp con __new__; en la app real
@@ -1505,16 +1617,15 @@ class VoiceApp:
     def _speak(self, text: str, kind: str = "announce") -> None:
         if not text:
             return
-        self._turn_gen += 1
-        generation = self._turn_gen
+        generation = _advance_turn(self)
         stop_event = self._new_tts_stop()
         self._speaking_kind = kind
         self._set_state(SPEAKING)
-        threading.Thread(
-            target=self._tts_worker,
-            args=(text, stop_event, generation),
-            daemon=True,
-        ).start()
+        self._start_worker(
+            self._tts_worker,
+            (text, stop_event, generation),
+            "ezagent-tts",
+        )
 
     def _speak_same_turn(self, text: str, kind: str = "answer") -> None:
         """Habla sin incrementar ``_turn_gen``.
@@ -1529,11 +1640,11 @@ class VoiceApp:
         stop_event = self._new_tts_stop()
         self._speaking_kind = kind
         self._set_state(SPEAKING)
-        threading.Thread(
-            target=self._tts_worker,
-            args=(text, stop_event, generation),
-            daemon=True,
-        ).start()
+        self._start_worker(
+            self._tts_worker,
+            (text, stop_event, generation),
+            "ezagent-tts",
+        )
 
     def _show_confirmation(self, summary: str, strong: bool) -> None:
         """Muestra la fila Sí/No en la barra y lee el resumen."""
@@ -1543,17 +1654,18 @@ class VoiceApp:
         if agent is None or not agent.confirm_pending:
             return
         self.chat.ask_confirm(summary, strong)
+        token = getattr(self, "_confirm_token", "")
         try:
             self.notch.show_confirmation(
                 summary,
                 strong,
-                lambda: self.events.put(("confirm_click", True)),
-                lambda: self.events.put(("confirm_click", False)),
+                lambda: self.events.put(("confirm_click", True, token)),
+                lambda: self.events.put(("confirm_click", False, token)),
             )
         except Exception as exc:  # noqa: BLE001
             log(f"No pude mostrar la confirmación: {exc}")
         hint = " Di «confirmo» y el número para aceptar." if strong else " ¿Confirmas?"
-        self._speak_same_turn(summary + hint)
+        self._speak_same_turn(summary + hint, "confirm")
 
     def _announcements(self) -> list[tuple[str, bool]]:
         # Creación diferida: algunas pruebas construyen VoiceApp sin __init__.
@@ -1586,6 +1698,17 @@ class VoiceApp:
         self._speak(text, "announce")
 
     # --------------------------------------------------------------- workers
+    def _start_stt(self, pcm: bytes, rate: int, gen: int, timing: TurnTimings) -> None:
+        """Una sola transcripción en vuelo; si llega otra, sustituye a la pendiente."""
+        lock = getattr(self, "_stt_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self._stt_lock = lock
+        if not lock.acquire(blocking=False):
+            self._stt_pending = (pcm, rate, gen, timing)
+            return
+        self._start_worker(self._stt_worker, (pcm, rate, gen, timing), "ezagent-stt")
+
     def _stt_worker(self, pcm: bytes, rate: int, gen: int, timing: TurnTimings) -> None:
         try:
             text = transcribe(self.cfg, pcm_to_wav(pcm, rate))
@@ -1595,9 +1718,17 @@ class VoiceApp:
                 text = ""
             self.events.put(("transcribed", text, gen))
         except STTError as exc:
-            self.events.put(("error", str(exc)))
+            self.events.put(("error", str(exc), gen))
         except Exception as exc:  # noqa: BLE001
-            self.events.put(("error", f"STT: {exc}"))
+            self.events.put(("error", f"STT: {exc}", gen))
+        finally:
+            lock = getattr(self, "_stt_lock", None)
+            if lock is not None:
+                lock.release()
+            pending = getattr(self, "_stt_pending", None)
+            self._stt_pending = None
+            if pending is not None and pending[2] == self._turn_gen:
+                self._start_stt(*pending)
 
     def _answer_worker(self, text: str, gen: int) -> None:
         """Consume el LLM en streaming y habla cada frase en cuanto llega."""
@@ -1613,29 +1744,52 @@ class VoiceApp:
         finished = False
         chat_msg = self.chat.begin_assistant("voice")
         chat_done = False
+        outcome = "ok"
+        first_delta = threading.Event()
+
+        def local_ack() -> None:
+            """Acuse local si el modelo tarda: no afirma que la acción ya empezó."""
+            if first_delta.is_set() or stop_event.is_set() or gen != self._turn_gen:
+                return
+            try:
+                if timing is not None:
+                    timing.mark("first_ack")
+                speech.say("Un momento.")
+            except Exception:  # noqa: BLE001 - el acuse es opcional
+                pass
 
         def speak_sentence(sentence: str) -> None:
             nonlocal first_audio
             if timing is not None and not first_audio:
                 timing.mark("first_sentence")
                 first_audio = True
-            # Sintetiza aquí y encola: suena en el hilo de la cola mientras
-            # este hilo sigue leyendo el LLM y sintetizando la frase siguiente.
+            # La cola sintetiza en su hilo: este sigue leyendo el LLM.
             speech.say(sentence)
 
+        def ack_worker() -> None:
+            if first_delta.wait(1.4):
+                return
+            local_ack()
+
+        ack_thread = threading.Thread(target=ack_worker, daemon=True, name="ezagent-ack")
+        ack_thread.start()
         try:
             if timing is not None:
                 timing.mark("llm_start")
             for delta in _timed_stream(self.messenger.ask_stream(text), timing):
                 if gen != self._turn_gen or stop_event.is_set():
+                    outcome = "cancelled"
                     return
                 if timing is not None and not first_token and delta.strip():
                     timing.mark("first_token")
                     first_token = True
+                if delta.strip() and not first_delta.is_set():
+                    first_delta.set()
                 full.append(delta)
                 self.chat.append(chat_msg.id, delta)
                 for sentence in sentences.feed(delta):
                     if gen != self._turn_gen or stop_event.is_set():
+                        outcome = "cancelled"
                         return
                     if not started:
                         started = True
@@ -1643,10 +1797,12 @@ class VoiceApp:
                     try:
                         speak_sentence(sentence)
                     except Exception as exc:  # noqa: BLE001
-                        self.events.put(("error", f"Kokoro: {exc}"))
+                        outcome = "error"
+                        self.events.put(("error", f"Kokoro: {exc}", gen))
                         return
             for sentence in sentences.flush():
                 if gen != self._turn_gen or stop_event.is_set():
+                    outcome = "cancelled"
                     return
                 if not started:
                     started = True
@@ -1654,14 +1810,15 @@ class VoiceApp:
                 try:
                     speak_sentence(sentence)
                 except Exception as exc:  # noqa: BLE001
-                    self.events.put(("error", f"Kokoro: {exc}"))
+                    outcome = "error"
+                    self.events.put(("error", f"Kokoro: {exc}", gen))
                     return
             answer = "".join(full).strip()
             self.chat.finish(chat_msg.id)
             chat_done = True
             if answer:
                 self.last_summary = answer
-                log(f"Mensajero: {answer}")
+                log(f"Mensajero: {answer[:600]}")
             rounds = list(getattr(self.messenger, "last_rounds", []) or [])
             if len(rounds) > 1:
                 # Con herramientas, «1.er token» suma varias llamadas al LLM.
@@ -1671,19 +1828,27 @@ class VoiceApp:
                 speech.finish()
                 finished = True
             except Exception as exc:  # noqa: BLE001
-                self.events.put(("error", f"Kokoro: {exc}"))
+                outcome = "error"
+                self.events.put(("error", f"Kokoro: {exc}", gen))
+        except TurnCancelled:
+            outcome = "cancelled"
+            log("Turno cancelado por el usuario.")
         except Exception as exc:  # noqa: BLE001
+            outcome = "error"
             log(f"LLM ({self.cfg.llm_provider}): {type(exc).__name__}: {exc}")
             reason = friendly_llm_error(exc, self._llm_label(), self.cfg.llm_model)
             self.chat.fail(chat_msg.id, reason)
             chat_done = True
-            self.events.put(("error", reason))
+            self.events.put(("error", reason, gen))
         finally:
+            first_delta.set()  # libera el acuse pendiente
             if not chat_done:  # turno interrumpido: se conserva lo que llegó
                 self.chat.cancel(chat_msg.id)
             if not finished:
                 speech.abort()
-            self.events.put(("answer_done", gen))
+            if outcome == "ok" and not "".join(full).strip():
+                outcome = "empty"
+            self.events.put(("answer_done", gen, outcome))
 
     # ------------------------------------------------------------------ chat
     def _toggle_chat(self) -> None:
@@ -1714,7 +1879,7 @@ class VoiceApp:
 
     def _chat_stop(self) -> None:
         """El usuario pulsó «detener» en el chat: se corta la respuesta y la voz."""
-        self._turn_gen += 1
+        _advance_turn(self)
         self._signal_tts_stop()
         self._speaking_kind = None
         if self.in_call:
@@ -1724,7 +1889,7 @@ class VoiceApp:
 
     def _chat_new(self) -> None:
         """Nueva conversación desde el chat: igual que la del menú, pero sin decirlo en voz alta."""
-        self._turn_gen += 1
+        _advance_turn(self)
         self._signal_tts_stop()
         self._speaking_kind = None
         self.contexts.new_chat()
@@ -1735,7 +1900,7 @@ class VoiceApp:
         """Retoma otra conversación del historial con su propio contexto del modelo."""
         if self.chat.busy:  # no se cambia el contexto en mitad de una respuesta
             return
-        self._turn_gen += 1
+        _advance_turn(self)
         self._signal_tts_stop()
         self._speaking_kind = None
         if self.contexts.switch(session):
@@ -1761,30 +1926,55 @@ class VoiceApp:
             self.chat.add_user(text, "chat")
             agent.submit_confirmation(text)
             return
-        self._turn_gen += 1
+        _advance_turn(self)
         gen = self._turn_gen
         self._signal_tts_stop()
         self._speaking_kind = None
         self.chat.add_user(text, "chat")
         log(f"Chat: {text[:80]}")
         self._set_state(THINKING)
-        threading.Thread(target=self._chat_worker, args=(text, gen), daemon=True).start()
+        self._start_worker(self._chat_worker, (text, gen), "ezagent-chat")
 
     def _chat_worker(self, text: str, gen: int) -> None:
         """Turno del chat: el texto llega en streaming a la pantalla; solo habla si se quiere."""
         stop_event = self._new_tts_stop()
         message = self.chat.begin_assistant("chat")
         finished = False
+        outcome = "ok"
+        voice = bool(self.chat.voice_replies)
+        speech = self._speech_queue(stop_event, None) if voice else None
+        sentences = _Sentences()
+        rich = False
+        spoken_any = False
+
+        def say_sentence(sentence: str) -> None:
+            nonlocal spoken_any
+            if speech is None:
+                return
+            text_to_say = spoken_version(sentence).strip()
+            if text_to_say:
+                speech.say(text_to_say)
+                spoken_any = True
+
         try:
             got_text = False
             for delta in self.messenger.ask_stream(text, mode="chat"):
                 if gen != self._turn_gen or stop_event.is_set():
+                    outcome = "cancelled"
                     return
                 got_text = got_text or bool(delta.strip())
                 self.chat.append(message.id, delta)
+                if speech is not None and not rich:
+                    if "```" in delta or "\n|" in delta or delta.lstrip().startswith("|"):
+                        rich = True
+                    else:
+                        # Se habla mientras llega el resto, sin esperar al final.
+                        for sentence in sentences.feed(delta):
+                            say_sentence(sentence)
             if not got_text:
                 self.chat.fail(message.id, "El modelo no devolvió respuesta. Prueba de nuevo.")
                 finished = True
+                outcome = "empty"
                 return
             self.chat.finish(message.id)
             finished = True
@@ -1792,13 +1982,24 @@ class VoiceApp:
             spoken = spoken_version(answer) if answer else ""
             if answer:
                 self.last_summary = spoken or answer
-            if spoken and self.chat.voice_replies and gen == self._turn_gen:
+            if speech is not None and gen == self._turn_gen:
+                if rich:
+                    if spoken_any:
+                        speech.say("El resto está en el chat.")
+                    else:
+                        say_sentence(answer)
+                else:
+                    for sentence in sentences.flush():
+                        say_sentence(sentence)
                 self._speaking_kind = "answer"
-                self.events.put(("speaking", gen))
-                self.speaker.speak(
-                    spoken, stop_event, on_level=lambda level: self.notch.draw(level, SPEAKING)
-                )
+                if spoken_any:
+                    self.events.put(("speaking", gen))
+                speech.finish()
+        except TurnCancelled:
+            outcome = "cancelled"
+            log("Turno del chat cancelado por el usuario.")
         except Exception as exc:  # noqa: BLE001
+            outcome = "error"
             log(f"Chat ({self.cfg.llm_provider}): {type(exc).__name__}: {exc}")
             reason = friendly_llm_error(exc, self._llm_label(), self.cfg.llm_model)
             self.chat.fail(message.id, reason)
@@ -1806,7 +2007,9 @@ class VoiceApp:
         finally:
             if not finished:  # interrumpido: se conserva lo que llegó
                 self.chat.cancel(message.id)
-            self.events.put(("answer_done", gen))
+            if speech is not None and not finished:
+                speech.abort()
+            self.events.put(("answer_done", gen, outcome))
 
     def _speech_queue(self, stop_event: threading.Event, timing: TurnTimings | None) -> SpeechQueue:
         """Cola de voz del turno: sintetiza en el hilo del LLM y suena aparte."""
@@ -1843,7 +2046,7 @@ class VoiceApp:
                 on_level=lambda level: self.notch.draw(level, SPEAKING),
             )
         except Exception as exc:  # noqa: BLE001
-            self.events.put(("error", f"Kokoro: {exc}"))
+            self.events.put(("error", f"Kokoro: {exc}", generation))
             return
         self.events.put(("speak_done", generation))
 
@@ -1855,6 +2058,16 @@ class VoiceApp:
 
     def _on_watcher_event(self, address: str, agent: str, state: str, reason: str) -> None:
         if address not in self.watched:
+            return
+        if reason == "lost":
+            # Desaparecer no es terminar: no se lanza ninguna cadena ni se
+            # anuncia éxito. La tarea queda pendiente para que el usuario decida.
+            info = self.tasks.get(address) or {}
+            task = info.get("task") or (
+                "No pude confirmar que el agente terminara: su terminal desapareció."
+            )
+            self.watched.discard(address)
+            self.events.put(("done_prompt", address, agent, "lost", "", task))
             return
         has_chains = bool(self.tasks.chains_for(address))
         if has_chains and reason == "blocked":
@@ -1885,17 +2098,20 @@ class VoiceApp:
             self._deliver_set().discard(address)
             answer = self._read_answer(address, info.get("task", ""))
             if answer:
-                # Por voz y al contexto solo la conclusión, no el registro.
-                packet = self._packet_for(answer)
-                self.events.put(
-                    (
-                        "done_answer",
-                        address,
-                        agent,
-                        packet.text or answer,
-                        info.get("task", ""),
+                # El condensador puede llamar al LLM: fuera del hilo del watcher.
+                def deliver_packet() -> None:
+                    packet = self._packet_for(answer)
+                    self.events.put(
+                        (
+                            "done_answer",
+                            address,
+                            agent,
+                            packet.text or answer,
+                            info.get("task", ""),
+                        )
                     )
-                )
+
+                self._start_worker(deliver_packet, (), "ezagent-packet")
                 return
         try:
             output = self.herdr.read_agent(address, 60)
@@ -1938,8 +2154,11 @@ class VoiceApp:
         select = None
         client = getattr(getattr(self, "messenger", None), "client", None)
         if client is not None:
-            if not hasattr(self, "_condenser"):
+            # El cliente cambia al cambiar de proveedor: el condensador no puede
+            # quedarse enviando al endpoint anterior (F44).
+            if getattr(self, "_condenser_client", None) is not client:
                 self._condenser = Condenser(client, self.cfg)
+                self._condenser_client = client
             select = self._condenser.conclusion_start
         return build_packet(answer, select=select, save=getattr(self.herdr, "save_context", None))
 
@@ -2104,35 +2323,39 @@ class VoiceApp:
             return True
         if key in agent_words:
             log("Atajo local: listar agentes.")
-            try:
-                agents = self.herdr.list_agents()
-            except Exception as exc:  # noqa: BLE001
-                log(f"No pude listar agentes: {exc}")
-                self._speak("No pude consultar Herdr.", "answer")
-                return True
-            if not agents:
-                self._speak("No hay agentes vivos.", "answer")
-                return True
-            state_names = {
-                "working": "trabajando",
-                "done": "terminado",
-                "blocked": "bloqueado",
-                "idle": "inactivo",
-            }
-            parts = []
-            for agent in agents[:4]:
-                name = agent.get("agent") or "agente"
-                address = agent.get("address") or "?"
-                state = state_names.get(
-                    str(agent.get("state") or ""), str(agent.get("state") or "—")
+
+            # Nunca bloquear el hilo de Tk con un `hc ls` de hasta 20 s.
+            def list_agents() -> None:
+                try:
+                    agents = self.herdr.list_agents()
+                except Exception as exc:  # noqa: BLE001
+                    log(f"No pude listar agentes: {exc}")
+                    self.events.put(("say", "No pude consultar Herdr."))
+                    return
+                if not agents:
+                    self.events.put(("say", "No hay agentes vivos."))
+                    return
+                state_names = {
+                    "working": "trabajando",
+                    "done": "terminado",
+                    "blocked": "bloqueado",
+                    "idle": "inactivo",
+                }
+                parts = []
+                for agent in agents[:4]:
+                    name = agent.get("agent") or "agente"
+                    address = agent.get("address") or "?"
+                    state = state_names.get(
+                        str(agent.get("state") or ""), str(agent.get("state") or "—")
+                    )
+                    parts.append(f"{name} en {address}, {state}")
+                extra = len(agents) - len(parts)
+                suffix = f", y {extra} más" if extra > 0 else ""
+                self.events.put(
+                    ("say", f"Hay {len(agents)} agentes: " + "; ".join(parts) + suffix + ".")
                 )
-                parts.append(f"{name} en {address}, {state}")
-            extra = len(agents) - len(parts)
-            suffix = f", y {extra} más" if extra > 0 else ""
-            self._speak(
-                f"Hay {len(agents)} agentes: " + "; ".join(parts) + suffix + ".",
-                "answer",
-            )
+
+            self._start_worker(list_agents, (), "ezagent-list-agents")
             return True
         if key in task_words:
             log("Atajo local: listar tareas pendientes.")
@@ -2521,13 +2744,21 @@ class VoiceApp:
         except Exception as exc:  # noqa: BLE001
             log(f"Ajuste en vivo {key}: {exc}")
 
+    @staticmethod
+    def _restore_config(target: VoiceConfig, snapshot: VoiceConfig) -> None:
+        """Restaura todos los campos si un guardado falla a mitad."""
+        for name in VoiceConfig.__dataclass_fields__:
+            setattr(target, name, copy.deepcopy(getattr(snapshot, name)))
+
     def _save_from_menu(self, values: dict) -> None:
         ok = False
+        before = copy.deepcopy(self.cfg)
         try:
             self._apply_settings(values)
             self._menu_saved = dict(values)
             ok = True
         except Exception as exc:  # noqa: BLE001
+            self._restore_config(self.cfg, before)
             log(f"No pude guardar los ajustes: {exc}")
         if ok:
             try:
@@ -2577,7 +2808,7 @@ class VoiceApp:
                     pass
                 self.events.put(("test_done", old_muted, old_barge))
 
-        threading.Thread(target=run, daemon=True).start()
+        self._start_worker(run, (), "ezagent-voice-test")
 
     def _reload_mic(self, index: int | None, *, restart: bool = True) -> None:
         was_in_call = self.in_call
@@ -2681,7 +2912,7 @@ class VoiceApp:
             except Exception:
                 pass
 
-        threading.Thread(target=worker, name="ezagent-models", daemon=True).start()
+        self._start_worker(worker, (), "ezagent-models")
 
     def _apply_settings(self, values: dict) -> bool:
         """Aplica y guarda los valores del panel; True si reinició la llamada."""
@@ -2714,6 +2945,64 @@ class VoiceApp:
             self.cfg.kokoro_model_path,
             self.cfg.kokoro_voices_path,
         )
+        # Valida una configuración candidata completa antes de mutar self.cfg:
+        # un endpoint, modelo, voz o ruta inválidos no dejan cambios a medias.
+        candidate_provider = normalize_provider(
+            str(values.get("llm_provider", self.cfg.llm_provider))
+        )
+        candidate_model = str(values.get("llm_model", self.cfg.llm_model)).strip()
+        candidate_url = str(values.get("llm_base_url", self.cfg.llm_base_url)).strip()
+        candidate_key = str(values.get("api_key", self.cfg.api_key)).strip()
+        candidate_style = str(values.get("llm_api_style", self.cfg.llm_api_style) or "openai")
+        new_llm = (
+            candidate_provider,
+            candidate_model,
+            candidate_url,
+            candidate_key,
+            candidate_style,
+        )
+        if new_llm != old_llm:
+            if not candidate_url:
+                raise ValueError("El proveedor LLM necesita un endpoint (URL).")
+            if not candidate_model:
+                raise ValueError("El proveedor LLM necesita un modelo.")
+            with self._llm_models_lock:
+                known_models = self._llm_models_cache.get(candidate_provider, ())
+            fixed = match_model(candidate_model, known_models)
+            if fixed != candidate_model:
+                log(f"Modelo «{candidate_model}» completado como «{fixed}».")
+                candidate_model = fixed
+                new_llm = (
+                    candidate_provider,
+                    candidate_model,
+                    candidate_url,
+                    candidate_key,
+                    candidate_style,
+                )
+
+        candidate_voice = str(values.get("voice", self.cfg.voice))
+        candidate_variant = str(values.get("tts_model_variant", self.cfg.tts_model_variant))
+        candidate_kokoro_model = str(values.get("kokoro_model_path", self.cfg.kokoro_model_path))
+        candidate_kokoro_voices = str(values.get("kokoro_voices_path", self.cfg.kokoro_voices_path))
+        new_tts = (candidate_variant, candidate_kokoro_model, candidate_kokoro_voices)
+        kokoro = getattr(getattr(self, "speaker", None), "kokoro", None)
+        voice_names = [name.strip() for name in candidate_voice.split("+") if name.strip()]
+        valid_voices = set(getattr(kokoro, "voices", {}) or {})
+        if valid_voices and not any(name in valid_voices for name in voice_names):
+            raise ValueError(f"Ninguna voz de Kokoro válida en {candidate_voice!r}.")
+        if new_tts != old_tts:
+            from ezagent.tts import resolve_kokoro_files
+
+            try:
+                model_path, voices_path = resolve_kokoro_files(
+                    candidate_variant, candidate_kokoro_model, candidate_kokoro_voices
+                )
+            except Exception as exc:  # noqa: BLE001
+                raise ValueError(f"No pude preparar Kokoro: {exc}") from exc
+            if not model_path or not Path(model_path).is_file():
+                raise ValueError("Falta el modelo de Kokoro; revisa la variante o la ruta.")
+            if not voices_path or not Path(voices_path).is_file():
+                raise ValueError("Faltan las voces de Kokoro; revisa la ruta.")
 
         def number(key: str, default: float) -> float:
             return float(values.get(key, default))
@@ -2725,19 +3014,13 @@ class VoiceApp:
         self.cfg.min_speech_secs = number("min_speech_secs", self.cfg.min_speech_secs)
         self.cfg.max_utterance_secs = number("max_utterance_secs", self.cfg.max_utterance_secs)
         self.cfg.barge_in_rms = number("barge_in_rms", self.cfg.barge_in_rms)
-        self.cfg.voice = str(values.get("voice", self.cfg.voice))
+        self.cfg.voice = candidate_voice
         self.cfg.speed = number("speed", self.cfg.speed)
         self.cfg.tts_sentence_pause = number("tts_sentence_pause", self.cfg.tts_sentence_pause)
         self.cfg.tts_clause_pause = number("tts_clause_pause", self.cfg.tts_clause_pause)
-        self.cfg.tts_model_variant = str(
-            values.get("tts_model_variant", self.cfg.tts_model_variant)
-        )
-        self.cfg.kokoro_model_path = str(
-            values.get("kokoro_model_path", self.cfg.kokoro_model_path)
-        )
-        self.cfg.kokoro_voices_path = str(
-            values.get("kokoro_voices_path", self.cfg.kokoro_voices_path)
-        )
+        self.cfg.tts_model_variant = candidate_variant
+        self.cfg.kokoro_model_path = candidate_kokoro_model
+        self.cfg.kokoro_voices_path = candidate_kokoro_voices
         self.cfg.whisper_url = str(values.get("whisper_url", self.cfg.whisper_url))
         self.cfg.stt_model = str(values.get("stt_model", self.cfg.stt_model))
         self.cfg.stt_engine = str(values.get("stt_engine", self.cfg.stt_engine))
@@ -2747,21 +3030,17 @@ class VoiceApp:
         self.cfg.auto_start_whisper = bool(
             values.get("auto_start_whisper", self.cfg.auto_start_whisper)
         )
-        self.cfg.llm_provider = normalize_provider(
-            str(values.get("llm_provider", self.cfg.llm_provider))
-        )
-        self.cfg.llm_model = str(values.get("llm_model", self.cfg.llm_model)).strip()
+        self.cfg.llm_provider = candidate_provider
+        self.cfg.llm_model = candidate_model
         self.cfg.llm_profile_name = str(
             values.get("llm_profile_name", self.cfg.llm_profile_name)
         ).strip()
         self.cfg.llm_saved_profile = (
             "saved:" + self.cfg.llm_profile_name.casefold() if self.cfg.llm_profile_name else ""
         )
-        self.cfg.llm_base_url = str(values.get("llm_base_url", self.cfg.llm_base_url)).strip()
-        self.cfg.api_key = str(values.get("api_key", self.cfg.api_key)).strip()
-        self.cfg.llm_api_style = str(
-            values.get("llm_api_style", self.cfg.llm_api_style) or "openai"
-        )
+        self.cfg.llm_base_url = candidate_url
+        self.cfg.api_key = candidate_key
+        self.cfg.llm_api_style = candidate_style
         self.cfg.llm_temperature = number("llm_temperature", self.cfg.llm_temperature)
         self.cfg.llm_max_tokens = int(round(number("llm_max_tokens", self.cfg.llm_max_tokens)))
         self.cfg.llm_context_tokens = int(
@@ -2776,31 +3055,7 @@ class VoiceApp:
         self._apply_turn_settings()
         self.cfg.confirm_actions = bool(values.get("confirm_actions", self.cfg.confirm_actions))
 
-        new_llm = (
-            self.cfg.llm_provider,
-            self.cfg.llm_model,
-            self.cfg.llm_base_url,
-            self.cfg.api_key,
-            self.cfg.llm_api_style,
-        )
-        with self._llm_models_lock:
-            known = self._llm_models_cache.get(self.cfg.llm_provider, ())
-        fixed = match_model(self.cfg.llm_model, known)
-        if fixed != self.cfg.llm_model:
-            log(f"Modelo «{self.cfg.llm_model}» completado como «{fixed}».")
-            self.cfg.llm_model = fixed
-            new_llm = (
-                self.cfg.llm_provider,
-                self.cfg.llm_model,
-                self.cfg.llm_base_url,
-                self.cfg.api_key,
-                self.cfg.llm_api_style,
-            )
         if new_llm != old_llm:
-            if not self.cfg.llm_base_url:
-                raise ValueError("El proveedor LLM necesita un endpoint (URL).")
-            if not self.cfg.llm_model:
-                raise ValueError("El proveedor LLM necesita un modelo.")
             save_provider_profile(
                 self.cfg.llm_provider,
                 model=self.cfg.llm_model,
@@ -2841,14 +3096,11 @@ class VoiceApp:
             self.mic.max_utterance_secs = self.cfg.max_utterance_secs
             self.mic.barge_in_rms = self.cfg.barge_in_rms
             self.mic.barge_in_secs = self.cfg.barge_in_secs
-        new_tts = (
-            self.cfg.tts_model_variant,
-            self.cfg.kokoro_model_path,
-            self.cfg.kokoro_voices_path,
-        )
         if new_tts != old_tts:
-            self.speaker.reload_model()
-        self.speaker.set_voice(self.cfg.voice)
+            # Cargar Kokoro tarda: se hace en un worker para no congelar la UI.
+            self._reload_tts_async()
+        else:
+            self.speaker.set_voice(self.cfg.voice)
         self.messenger.set_confirm_actions(self.cfg.confirm_actions)
         agent = getattr(self, "agent", None)
         if agent is not None:
@@ -2887,6 +3139,17 @@ class VoiceApp:
         log("Ajustes guardados.")
         return restarted
 
+    def _reload_tts_async(self) -> None:
+        """Recarga Kokoro sin bloquear el hilo de Tk; el lock de TTS evita mezclar voces."""
+
+        def run() -> None:
+            try:
+                self.speaker.reload_model()
+            except Exception as exc:  # noqa: BLE001
+                self.events.put(("error", f"Kokoro: {exc}"))
+
+        self._start_worker(run, (), "ezagent-tts-reload")
+
     def _restart_whisper_async(self) -> None:
         """Aplica el modelo elegido si el whisper-server lo arrancó esta app."""
         proc = self._whisper_proc
@@ -2911,9 +3174,7 @@ class VoiceApp:
             except Exception as exc:  # noqa: BLE001
                 log(f"No pude reiniciar whisper-server: {exc}")
 
-        threading.Thread(target=run, daemon=True).start()
-
-    def _request_close(self) -> None:
+        self._start_worker(run, (), "ezagent-whisper-restart")
         self._close_after_answer = True
 
     # ------------------------------------------------- pausa y reactivación
@@ -2971,7 +3232,7 @@ class VoiceApp:
         lock = self._wake_guard()
         if not lock.acquire(blocking=False):
             return  # ya hay una comprobación en curso
-        threading.Thread(target=self._wake_worker, args=(pcm, rate, lock), daemon=True).start()
+        self._start_worker(self._wake_worker, (pcm, rate, lock), "ezagent-wake")
 
     def _wake_worker(self, pcm: bytes, rate: int, lock: threading.Lock) -> None:
         try:
@@ -3049,7 +3310,7 @@ class VoiceApp:
             finally:
                 entry["event"].set()
 
-        threading.Thread(target=work, daemon=True, name="ez-prelaunch").start()
+        self._start_worker(work, (), "ez-prelaunch")
 
     def _take_prelaunched(self, spec: dict) -> str:
         """Dirección del agente abierto por adelantado (o '' si no hay)."""

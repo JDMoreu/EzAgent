@@ -262,7 +262,12 @@ def test_registro_seguro_ante_hilos() -> None:
 # ---------------------------------------------------------------- render
 def test_render_for_llm_es_json_valido_si_cabe() -> None:
     out = ToolRegistry.render_for_llm(ToolResult(ok=True, data={"á": 1}))
-    assert json.loads(out) == {"ok": True, "data": {"á": 1}, "error": None}
+    assert json.loads(out) == {
+        "ok": True,
+        "data": {"á": 1},
+        "error": None,
+        "outcome": "completed",
+    }
     assert "á" in out  # sin escapes \u
 
 
@@ -270,9 +275,12 @@ def test_render_for_llm_trunca_sin_pasarse_del_limite() -> None:
     big = ToolResult(ok=True, data="x" * 5000)
     for limit in (20, 100, 2000):
         out = ToolRegistry.render_for_llm(big, max_chars=limit)
-        assert len(out) == limit
-    assert ToolRegistry.render_for_llm(big, max_chars=100).endswith("…(truncado)")
-    assert len(ToolRegistry.render_for_llm(big, max_chars=5)) == 5
+        assert len(out) <= limit
+        payload = json.loads(out)  # F19: el recorte nunca rompe el JSON
+        assert payload["truncated"] is True
+        if limit >= 100:
+            assert payload["original_chars"] > limit
+    assert ToolRegistry.render_for_llm(big, max_chars=5) == "{}"
     assert ToolRegistry.render_for_llm(big, max_chars=0) == ""
 
 
@@ -280,9 +288,9 @@ def test_render_for_llm_respeta_el_limite_exacto() -> None:
     result = ToolResult(ok=True, data="x" * 40)
     full = ToolRegistry.render_for_llm(result, max_chars=10_000)
     exact = ToolRegistry.render_for_llm(result, max_chars=len(full))
-    assert exact == full and "truncado" not in exact  # cabe justo: no se recorta
+    assert exact == full and "truncated" not in exact  # cabe justo: no se recorta
     shorter = ToolRegistry.render_for_llm(result, max_chars=len(full) - 1)
-    assert len(shorter) == len(full) - 1 and shorter.endswith("…(truncado)")
+    assert len(shorter) <= len(full) - 1 and json.loads(shorter)["truncated"] is True
 
 
 def test_render_for_llm_tolera_datos_no_serializables() -> None:

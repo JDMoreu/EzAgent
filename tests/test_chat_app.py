@@ -44,15 +44,38 @@ class Speaker:
         self.said.append(text)
 
 
+class Speech:
+    """Cola de voz falsa: lo que se diría se apunta en el altavoz del doble."""
+
+    def __init__(self, speaker: Speaker) -> None:
+        self._speaker = speaker
+
+    def say(self, text: str) -> bool:
+        self._speaker.said.append(text)
+        return True
+
+    def finish(self, timeout=None) -> bool:
+        return True
+
+    def abort(self) -> None:
+        pass
+
+
 def make(tmp_path: Path, *deltas, voice: bool = False, boom=None, store: bool = True):
     chat = ChatModel(ChatStore(tmp_path / "chat.jsonl") if store else None, voice_replies=voice)
     events: queue.Queue = queue.Queue()
     states: list[str] = []
+    speaker = Speaker()
+
+    def start_worker(target, args=(), name="") -> None:
+        worker = threading.Thread(target=target, args=args, daemon=True, name=name)
+        worker.start()
+
     stub = SimpleNamespace(
         chat=chat,
         events=events,
         messenger=Messenger(*deltas, boom=boom),
-        speaker=Speaker(),
+        speaker=speaker,
         notch=SimpleNamespace(draw=lambda level, state: None),
         cfg=SimpleNamespace(
             chat_voice=voice,
@@ -67,6 +90,8 @@ def make(tmp_path: Path, *deltas, voice: bool = False, boom=None, store: bool = 
         _signal_tts_stop=lambda: states.append("tts-stop"),
         _set_state=lambda state: states.append(state),
         _new_tts_stop=lambda: threading.Event(),
+        _speech_queue=lambda stop, timing: Speech(speaker),
+        _start_worker=start_worker,
         _llm_label=lambda: "OpenAI",
         _chat_worker=lambda text, gen: None,
     )
@@ -128,7 +153,7 @@ def test_the_answer_streams_into_the_chat_in_chat_mode_and_stays_silent_by_defau
     _, messages = stub.chat.snapshot()
     assert messages[-1].text == "## Resumen\n\nVentas **+12 %**." and not messages[-1].streaming
     assert stub.speaker.said == []  # el usuario no pidió voz
-    assert _events(stub) == [("answer_done", 4)]
+    assert _events(stub) == [("answer_done", 4, "ok")]
     assert stub.last_summary == "Resumen. Ventas +12 %."  # «repetir» lee la versión hablada
 
 
@@ -183,7 +208,7 @@ def test_a_provider_error_is_shown_in_the_chat_and_not_stored_as_an_answer(tmp_p
     _, messages = stub.chat.snapshot()
     assert messages[-1].error and "se cayó" in messages[-1].text
     assert [e.role for e in stub.chat.store.entries()] == []  # solo se guardan respuestas buenas
-    assert _events(stub) == [("answer_done", 4)]
+    assert _events(stub) == [("answer_done", 4, "error")]
 
 
 def test_an_empty_answer_leaves_no_blank_bubble(tmp_path: Path) -> None:
@@ -191,7 +216,7 @@ def test_an_empty_answer_leaves_no_blank_bubble(tmp_path: Path) -> None:
     app.VoiceApp._chat_worker(stub, "hola", 4)
     _, messages = stub.chat.snapshot()
     assert messages[-1].error and "no devolvió respuesta" in messages[-1].text
-    assert stub.speaker.said == [] and _events(stub) == [("answer_done", 4)]
+    assert stub.speaker.said == [] and _events(stub) == [("answer_done", 4, "empty")]
     assert stub.chat.store.entries() == []  # un fallo no se guarda como respuesta
 
 

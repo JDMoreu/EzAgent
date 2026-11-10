@@ -50,29 +50,37 @@ def answer(text: str, **ask_kwargs) -> bool:
     return final
 
 
+def answer_or_none(text: str, **ask_kwargs) -> bool | None:
+    """Respuesta clara -> True/False; ambigua -> None y la confirmación sigue pendiente."""
+    manager = make()
+    asker = Asker(manager, **ask_kwargs)
+    returned = manager.submit_text(text)
+    if returned is None:
+        assert manager.pending
+        manager.cancel()
+    final = asker.join()
+    if returned is not None:
+        assert returned is final
+    assert not manager.pending
+    return returned
+
+
 @pytest.mark.parametrize(
     "text", ["sí", "Sí", "SÍ", "si", "dale", "adelante", "sí, adelante", "Dale, hazlo"]
 )
 def test_respuestas_afirmativas_aceptan(text: str) -> None:
-    assert answer(text) is True
+    assert answer_or_none(text) is True
 
 
-@pytest.mark.parametrize(
-    "text",
-    [
-        "no",
-        "No.",
-        "cancela",
-        "para",
-        "",
-        "quizás",
-        "hmm no sé",
-        "daleee",  # palabra completa: no es «dale»
-        "sin duda",  # «sin» no es «si»
-    ],
-)
-def test_respuestas_negativas_o_ambiguas_rechazan(text: str) -> None:
-    assert answer(text) is False
+@pytest.mark.parametrize("text", ["no", "No.", "cancela", "para"])
+def test_respuestas_negativas_claras_rechazan(text: str) -> None:
+    assert answer_or_none(text) is False
+
+
+@pytest.mark.parametrize("text", ["", "quizás", "hmm no sé", "daleee", "sin duda"])
+def test_una_frase_ajena_no_resuelve_la_confirmacion(text: str) -> None:
+    # F48: ni acepta ni rechaza; se repregunta una vez y sigue pendiente.
+    assert answer_or_none(text) is None
 
 
 @pytest.mark.parametrize("text", ["no, dale", "dale, no", "sí pero cancela", "para, sí"])
@@ -82,9 +90,9 @@ def test_si_aparece_una_palabra_de_rechazo_gana_el_rechazo(text: str) -> None:
 
 def test_confirmacion_fuerte_exige_la_palabra_confirmo() -> None:
     for text in ["sí", "dale", "adelante", "ok", "confirma"]:
-        assert answer(text, strong=True) is False, text
-    assert answer("confirmo", strong=True) is True
-    assert answer("Sí, confirmo", strong=True) is True
+        assert answer_or_none(text, strong=True) is None, text
+    assert answer_or_none("confirmo", strong=True) is True
+    assert answer_or_none("Sí, confirmo", strong=True) is True
 
 
 def test_confirmacion_fuerte_con_negacion_rechaza() -> None:
@@ -98,8 +106,8 @@ def test_confirmacion_fuerte_con_negacion_rechaza() -> None:
         ("confirmo siete", True, 7),
         ("confirmo 8", False, 7),
         ("confirmo seis", False, 7),
-        ("confirmo", False, 7),  # falta el número
-        ("siete", False, 7),  # falta la palabra
+        ("confirmo", None, 7),  # falta el número: se repregunta
+        ("siete", None, 7),  # falta la palabra: se repregunta
         ("confirmo treinta y dos", True, 32),
         ("confirmo treinta y tres", False, 32),
         ("confirmo cien", True, 100),
@@ -110,8 +118,8 @@ def test_confirmacion_fuerte_con_negacion_rechaza() -> None:
         ("confirmo 12 elementos", True, 12),
     ],
 )
-def test_confirmacion_fuerte_con_numero(text: str, expected: bool, required: int) -> None:
-    assert answer(text, strong=True, require_number=required) is expected
+def test_confirmacion_fuerte_con_numero(text: str, expected: bool | None, required: int) -> None:
+    assert answer_or_none(text, strong=True, require_number=required) is expected
 
 
 def test_sin_confirmacion_pendiente_submit_devuelve_none() -> None:
@@ -187,14 +195,18 @@ def test_un_fallo_de_la_interfaz_no_tumba_la_confirmacion() -> None:
     assert asker.join() is True
 
 
-def test_el_plazo_cuenta_desde_la_pregunta_no_desde_el_callback() -> None:
+def test_el_plazo_cuenta_desde_que_termina_la_pregunta_no_desde_el_callback() -> None:
+    manager: ConfirmationManager
+
     def slow(summary: str, strong: bool) -> None:
         time.sleep(0.3)
+        manager.arm()  # el TTS de la pregunta terminó
 
     manager = make(timeout=0.2, on_ask=slow)
     began = time.monotonic()
     assert manager.ask("¿Borro?") is False
-    assert time.monotonic() - began < 0.6
+    elapsed = time.monotonic() - began
+    assert 0.45 <= elapsed < 1.5  # 0.3 de pregunta + 0.2 de plazo
 
 
 def test_respuestas_concurrentes_solo_resuelven_una_vez() -> None:

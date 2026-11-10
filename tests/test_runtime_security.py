@@ -461,44 +461,46 @@ def test_una_herramienta_que_explota_devuelve_error_y_no_tumba_el_runtime(rt) ->
 
 def test_render_result_limita_lo_que_ve_el_modelo(rt) -> None:
     out = rt.render_result(ToolResult(ok=True, data="z" * 10_000))
-    assert len(out) == 2000 and out.endswith("…(truncado)")
+    assert len(out) <= 2000
+    payload = json.loads(out)
+    assert payload["truncated"] is True and payload["original_chars"] > 2000
 
 
 # --------------------------------------------------------------- selección
-def test_las_catorce_herramientas_base_son_unicas_y_existen(rt) -> None:
+def test_las_cinco_herramientas_base_son_unicas_y_existen(rt) -> None:
     names = select_tool_names("hola")
-    assert len(names) == 14 == len(set(names))
+    assert len(names) == 5 == len(set(names))
     assert set(names) <= set(rt.registry.names())
 
 
 @pytest.mark.parametrize(
-    ("text", "added", "removed"),
+    ("text", "added", "kept"),
     [
         ("¿qué hora es?", "get_datetime", "fetch_page"),
         ("dime la fecha de hoy", "get_datetime", "fetch_page"),
-        ("copia el informe", "copy_path", "create_dir"),
-        ("duplica la carpeta", "copy_path", "create_dir"),
-        ("abre el documento", "open_path", "create_dir"),
+        ("copia el informe", "copy_path", "read_file"),
+        ("duplica la carpeta", "copy_path", "read_file"),
+        ("abre el documento", "open_path", "read_file"),
         ("olvida lo que te dije", "forget", "remember"),
         ("compacta la memoria", "compact_memory", "web_search"),
     ],
 )
-def test_la_intencion_cambia_una_herramienta_por_otra(text, added, removed, rt) -> None:
+def test_la_intencion_suma_capacidades_sin_quitar_las_anteriores(text, added, kept, rt) -> None:
     names = select_tool_names(text)
-    assert added in names and removed not in names and len(names) == 14
+    assert added in names and kept in names and len(names) <= 14
     assert set(names) <= set(rt.registry.names())
-    assert len(rt.tools_for(text)) == 14
+    assert len(rt.tools_for(text)) == len(names)
 
 
-def test_copiar_gana_a_abrir_y_el_resto_se_mantiene() -> None:
+def test_copiar_y_abrir_pueden_coexistir() -> None:
     names = select_tool_names("copia y abre el archivo")
-    assert "copy_path" in names and "open_path" not in names
+    assert "copy_path" in names and "open_path" in names
 
 
-def test_sin_memoria_no_se_ofrece_recall_y_con_scripts_se_ofrece_run_skill_script() -> None:
+def test_sin_memoria_no_se_ofrece_recall_y_con_scripts_se_conserva_fetch_page() -> None:
     assert "recall" not in select_tool_names("hola", has_memory=False)
     with_scripts = select_tool_names("hola", scripts_loaded=True)
-    assert "run_skill_script" in with_scripts and "fetch_page" not in with_scripts
+    assert "run_skill_script" in with_scripts and "fetch_page" in with_scripts
 
 
 def test_nunca_se_pasa_de_catorce_herramientas() -> None:

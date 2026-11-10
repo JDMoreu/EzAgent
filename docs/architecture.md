@@ -77,7 +77,9 @@ descartan.
 
 `whisper-server` (whisper.cpp) corre en un puerto local libre. Lo arranca la
 app, que lo precalienta y elige Vulkan o CPU según `stt_engine`. La frase viaja
-como WAV por HTTP local y tarda 150–250 ms con `large-v3-turbo`.
+como WAV por HTTP local. En la instalación medida (auditoría, §11.2), con
+`ggml-large-v3-turbo-q5_0`, tarda 172 ms de mediana (P50) y 281 ms en P95; el
+tiempo depende del modelo y del equipo.
 
 ### 3. Atajos locales
 
@@ -91,16 +93,23 @@ cortesías iniciales, así «Ok, gracias. Mutéate» silencia igual que
 
 `Messenger.ask_stream` arma la petición y la envía en streaming. En cada turno:
 
-1. `AgentRuntime.begin_turn` recarga permisos, skills y herramientas.
-2. **System prompt**, con el orden pensado para la caché por prefijo del
-   proveedor:
-   preámbulo de seguridad (inmutable) → `system.md` → guía de acuse →
-   memoria y tareas pendientes → catálogo de agentes → catálogo de skills →
-   **momento actual** (la hora, al final, porque cambia cada minuto).
-3. **Herramientas:** hasta 14, elegidas según el texto (`select_tool_names`).
-4. **Bucle de hasta 4 rondas:** si el modelo pide herramientas, el runtime las
-   ejecuta con política, confirmación y auditoría, y el resultado vuelve al
-   modelo como mensaje `tool`.
+1. `AgentRuntime.begin_turn` revisa permisos y skills; solo reconstruye las
+   herramientas si cambió `permissions.toml` o el catálogo de skills.
+2. **Prompt estable**, pensado para la caché por prefijo del proveedor:
+   preámbulo de seguridad (inmutable) → `system.md` → guía de acuse → guía de
+   ejecución → catálogo de agentes → catálogo de skills. La memoria, las tareas
+   pendientes, las ventanas de Herdr y la hora van aparte, al final del turno
+   del usuario, etiquetadas como datos: así el prefijo anterior no cambia en
+   cada turno.
+3. **Herramientas:** 5 de uso real como base y el resto se **suman** por
+   intención (`select_tool_names`), hasta 14. Una consulta de hora ya no quita
+   `fetch_page`, y una skill cargada sigue disponible en el seguimiento.
+4. **Bucle de herramientas:** hasta `llm_max_tool_rounds` rondas (8 por
+   defecto, entre 1 y 12) más una ronda final de cierre sin herramientas. Si el
+   modelo pide herramientas, el runtime las ejecuta con política, confirmación y
+   auditoría, y el resultado vuelve al modelo como mensaje `tool`. Aparte de las
+   rondas, el runtime limita las llamadas por turno
+   (`max_tool_calls_per_turn`, 4 por defecto, en `permissions.toml`).
 
 **Acuse inmediato.** Si el modelo va a usar una herramienta, el prompt le pide
 empezar con una frase corta («Va, lo reviso.»). Si no lo hace, el código dice
@@ -143,6 +152,14 @@ llamada 2: 1235 ms al 1.er fragmento
 Cada diez turnos se añaden la media y el P95 por etapa, y todo queda en
 `%APPDATA%\EzAgent\logs\latency.jsonl`.
 
+Las cifras de latencia de este documento son de referencia, no garantías
+universales: dependen del equipo, del modelo y del proveedor. Las medidas en 107
+turnos de una sola instalación (auditoría, §11.2) fueron: espera de fin de turno
+391 ms P50 / 1297 ms P95; STT 172 / 281 ms; LLM hasta el primer token
+1688 / 3469 ms; acumular la primera frase 62 / 272 ms; síntesis y apertura hasta
+el primer sonido 485 / 719 ms; primer audio desde el fin de la voz
+3156 / 5356 ms.
+
 ## Agentes delegados
 
 `delegate_to_agent` (`agent/tools_herdr.py`) es la única puerta hacia los CLIs
@@ -176,8 +193,10 @@ confiable.
 - El contenido de la web, los archivos y los agentes activa `taint`: en ese
   turno, cualquier escritura pide confirmación.
 - La auditoría (`logs\audit.jsonl`) redacta claves y no guarda contenidos.
-- Las claves de API viven en `.env` o `llm.json`, nunca en `voice.json`, y no
-  se registran.
+- Las claves de API viven en `.env` o en `llm.json`, nunca en `voice.json`, y no
+  se registran. **`llm.json` las guarda en texto plano**, sin cifrado; moverlas
+  al almacén de credenciales de Windows queda pendiente de un brief que lo
+  autorice.
 
 ## Proveedores del LLM
 

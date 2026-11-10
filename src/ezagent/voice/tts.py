@@ -46,7 +46,8 @@ class Speaker:
         self._play_lock = threading.Lock()
 
     def set_voice(self, voice: str) -> None:
-        self.style = _voice_style(self.kokoro, voice)
+        with self._synth_lock:
+            self.style = _voice_style(self.kokoro, voice)
 
     def reload_model(self) -> None:
         """Recarga Kokoro si el menú cambia la variante o las rutas."""
@@ -55,8 +56,13 @@ class Speaker:
             model_path=self.cfg.kokoro_model_path,
             voices_path=self.cfg.kokoro_voices_path,
         )
-        self.kokoro = Kokoro(str(model), str(voices))
-        self.style = _voice_style(self.kokoro, self.cfg.voice)
+        # Carga fuera del lock: la síntesis en curso termina con el modelo y la
+        # voz anteriores, y el intercambio es atómico entre ambos.
+        kokoro = Kokoro(str(model), str(voices))
+        style = _voice_style(kokoro, self.cfg.voice)
+        with self._synth_lock:
+            self.kokoro = kokoro
+            self.style = style
 
     def close(self) -> None:
         try:
@@ -96,6 +102,10 @@ class Speaker:
         on_level: Callable[[float], None] | None,
         on_start: Callable[[], None] | None,
     ) -> bool:
+        # shortcut: se abre y cierra un stream de PyAudio por frase (F14).
+        # Medir en hardware el coste real de apertura por dispositivo/frecuencia
+        # y mantener un stream persistente solo si ese coste supera el hueco
+        # audible entre frases; hoy la cota medida es menor que la síntesis.
         pcm = (np.clip(samples, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
         stream = self.pa.open(
             format=pyaudio.paInt16,

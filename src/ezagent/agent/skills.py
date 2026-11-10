@@ -18,6 +18,7 @@ import hashlib
 import logging
 import re
 import shutil
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 MAX_CATALOG = 20
 MAX_DESCRIPTION_CHARS = 1024
-MAX_CATALOG_DESCRIPTION_CHARS = 200
+MAX_CATALOG_DESCRIPTION_CHARS = 110
 MAX_SKILL_CHARS = 20_000  # ~5.000 tokens
 MAX_NAME_CHARS = 64
 
@@ -94,59 +95,86 @@ class SkillLibrary:
         self._skills: dict[str, Skill] = {}
         self._warnings: list[str] = []
         self._collisions: list[str] = []
+        self._fingerprint: tuple[tuple[str, int, int], ...] = ()
+        self._refresh_lock = threading.Lock()
         self.refresh()
 
     # ------------------------------------------------------------ catálogo
-    def refresh(self) -> None:
-        """Vuelve a descubrir ambas carpetas.  Es idempotente."""
-        self._skills = {}
-        self._warnings = []
-        self._collisions = []
+    def refresh(self, force: bool = False) -> bool:
+        """Vuelve a descubrir ambas carpetas si cambiaron o si ``force``.
 
-        yaml_module = _import_yaml()
-        if yaml_module is None:
-            self._warn("PyYAML no está instalado; el catálogo de skills queda vacío.")
-            return
+        Devuelve True si releyó el catálogo. Compara mtime y tamaño de las
+        carpetas y archivos relevantes, sin volver a leer los SKILL.md ni
+        parsear YAML cuando nada cambió (F26).
+        """
+        with self._refresh_lock:
+            fingerprint = self._fingerprint_tree()
+            if not force and fingerprint == self._fingerprint:
+                return False
+            self._fingerprint = fingerprint
+            self._skills = {}
+            self._warnings = []
+            self._collisions = []
 
-        self._discover(Path(self._config.skills_dir), "local", yaml_module)
-        self._discover(Path(self._config.global_skills_dir), "global", yaml_module)
+            yaml_module = _import_yaml()
+            if yaml_module is None:
+                self._warn("PyYAML no está instalado; el catálogo de skills queda vacío.")
+                return True
+
+            self._discover(Path(self._config.skills_dir), "local", yaml_module)
+            self._discover(Path(self._config.global_skills_dir), "global", yaml_module)
+            # Recalcular tras leer evita perder un cambio ocurrido durante el barrido.
+            self._fingerprint = self._fingerprint_tree()
+            return True
+
+    def _fingerprint_tree(self) -> tuple[tuple[str, int, int], ...]:
+        entries: list[tuple[str, int, int]] = []
+        for root in (Path(self._config.skills_dir), Path(self._config.global_skills_dir)):
+            entries.extend(_tree_signature(root))
+        return tuple(entries)
 
     @property
     def warnings(self) -> list[str]:
-        return list(self._warnings)
+        with self._refresh_lock:
+            return list(self._warnings)
 
     @property
     def collisions(self) -> list[str]:
-        return list(self._collisions)
+        with self._refresh_lock:
+            return list(self._collisions)
 
     def get(self, name: str) -> Skill | None:
         if not isinstance(name, str):
             return None
         cleaned = name.strip()
-        skill = self._skills.get(cleaned)
-        if skill is not None:
-            return skill
-        lowered = cleaned.lower()
-        for known, candidate in self._skills.items():
-            if known.lower() == lowered:
-                return candidate
+        with self._refresh_lock:
+            skill = self._skills.get(cleaned)
+            if skill is not None:
+                return skill
+            lowered = cleaned.lower()
+            for known, candidate in self._skills.items():
+                if known.lower() == lowered:
+                    return candidate
         return None
 
     def names(self) -> list[str]:
-        return list(self._skills)
+        with self._refresh_lock:
+            return list(self._skills)
 
     def all(self) -> list[Skill]:
-        return list(self._skills.values())
+        with self._refresh_lock:
+            return list(self._skills.values())
 
     def catalog_text(self) -> str:
         """Catálogo compacto para el LLM: máximo 20 skills y 200 caracteres."""
-        skills = list(self._skills.values())[: self._max_catalog]
+        with self._refresh_lock:
+            skills = list(self._skills.values())[: self._max_catalog]
         if not skills:
             return ""
         lines = ["<available_skills>"]
         for skill in skills:
             description = _clip(skill.description, MAX_CATALOG_DESCRIPTION_CHARS)
-            lines.append(f"- {skill.name}: {description} ({skill.path})")
+            lines.append(f"- {skill.name}: {description}")
         lines.append("</available_skills>")
         return "\n".join(lines)
 
@@ -356,6 +384,25 @@ class SkillLibrary:
             self._audit_warn(message)
         except Exception as exc:  # noqa: BLE001 - avisos best-effort
             logger.warning("El callback de auditoría de skills falló: %s", exc)
+
+
+def _tree_signature(root: Path) -> list[tuple[str, int, int]]:
+    """mtime y tamaño de la carpeta y de todo su contenido, sin leerlo."""
+    signature = [_path_signature(root)]
+    try:
+        for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
+            signature.append(_path_signature(path))
+    except OSError:
+        pass
+    return signature
+
+
+def _path_signature(path: Path) -> tuple[str, int, int]:
+    try:
+        stat = path.stat()
+        return (str(path), int(stat.st_mtime_ns), int(stat.st_size))
+    except OSError:
+        return (str(path), -1, -1)
 
 
 def hash_folder(folder: Path) -> str:

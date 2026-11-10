@@ -8,6 +8,7 @@ añadir Brave Search o SearXNG en el futuro basta con implementar el protocolo
 
 from __future__ import annotations
 
+import threading
 from typing import Any, Protocol, TypedDict, runtime_checkable
 
 
@@ -22,9 +23,17 @@ class SearchResult(TypedDict):
 class SearchError(RuntimeError):
     """Error de búsqueda con un mensaje en español apto para el usuario."""
 
+    def __init__(self, message: str, *, kind: str = "provider") -> None:
+        super().__init__(message)
+        # Clase estable para la auditoría: unavailable/timeout/rate_limit/provider.
+        self.kind = kind
+
 
 class SearchUnavailableError(SearchError):
     """El proveedor no está disponible (por ejemplo, falta su paquete)."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, kind="unavailable")
 
 
 @runtime_checkable
@@ -39,6 +48,23 @@ class SearchProvider(Protocol):
     def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
         """Busca ``query`` y devuelve como mucho ``max_results`` resultados."""
         ...
+
+
+def _classify_error(exc: BaseException) -> str:
+    """Clase estable del fallo para auditoría y para ToolResult.error_kind."""
+    name = type(exc).__name__.lower()
+    text = str(exc).lower()
+    if "timeout" in name or "timeout" in text or "timed out" in text:
+        return "timeout"
+    if (
+        "ratelimit" in name
+        or "toomanyrequests" in name
+        or "rate limit" in text
+        or "too many requests" in text
+        or "429" in text
+    ):
+        return "rate_limit"
+    return "provider"
 
 
 class DdgsSearchProvider:
@@ -59,6 +85,10 @@ class DdgsSearchProvider:
         self._region = region
         self._backend = backend
         self._timeout_s = timeout_s
+        # DECISION: ddgs crea una sesión por motor; reutilizarla ahorra el
+        # arranque y serializa las búsquedas con un lock (F47).
+        self._engine: Any | None = None
+        self._lock = threading.Lock()
 
     def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
         if not isinstance(query, str):
@@ -73,18 +103,25 @@ class DdgsSearchProvider:
         ):
             raise SearchError("El número de resultados debe estar entre 1 y 10.")
 
-        ddgs_class = self._load_ddgs()
-        try:
-            engine = self._new_engine(ddgs_class)
-            raw_results = self._run(engine, normalized_query, max_results)
-        except SearchError:
-            raise
-        except Exception as exc:  # noqa: BLE001 - se traduce a un error de usuario
-            # DECISION: ddgs lanza DDGSException("No results found.") cuando no
-            # hay coincidencias; eso no es un fallo, es una lista vacía.
-            if "no results found" in str(exc).lower():
-                return []
-            raise SearchError(f"La búsqueda web falló: {exc}") from exc
+        with self._lock:
+            try:
+                engine = self._engine
+                if engine is None:
+                    engine = self._new_engine(self._load_ddgs())
+                    self._engine = engine
+                raw_results = self._run(engine, normalized_query, max_results)
+            except SearchError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - se traduce a un error de usuario
+                # DECISION: ddgs lanza DDGSException("No results found.") cuando no
+                # hay coincidencias; eso no es un fallo, es una lista vacía.
+                if "no results found" in str(exc).lower():
+                    return []
+                # Un motor que falló puede quedar inservible: se recrea.
+                self._engine = None
+                raise SearchError(
+                    f"La búsqueda web falló: {exc}", kind=_classify_error(exc)
+                ) from exc
 
         return self._normalize(raw_results, max_results)
 

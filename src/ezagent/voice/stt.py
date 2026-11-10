@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import atexit
 import os
 import re
+import threading
+import time
 import unicodedata
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
@@ -16,6 +20,71 @@ from .stt_dictionary import correct_transcription, transcription_hint
 
 class STTError(RuntimeError):
     pass
+
+
+# F12: un cliente por proceso reutiliza conexión y TLS entre turnos. El
+# endpoint que funcionó se recuerda para no repetir el 404 de la ruta alterna.
+_CLIENT_LOCK = threading.Lock()
+_CLIENT: httpx.Client | None = None
+_WORKING_ENDPOINT: dict[str, str] = {}
+_DEFAULT_POST = httpx.post
+
+
+def _client() -> httpx.Client:
+    global _CLIENT
+    with _CLIENT_LOCK:
+        if _CLIENT is None:
+            _CLIENT = httpx.Client()
+        return _CLIENT
+
+
+def close_client() -> None:
+    """Cierra el cliente persistente (atexit y pruebas)."""
+    global _CLIENT
+    with _CLIENT_LOCK:
+        client, _CLIENT = _CLIENT, None
+        _WORKING_ENDPOINT.clear()
+    if client is not None:
+        client.close()
+
+
+atexit.register(close_client)
+
+
+def _post(
+    client: Any | None, url: str, *, data: dict, files: dict, timeout: float
+) -> httpx.Response:
+    # DECISION: honor a runtime replacement of httpx.post so the existing STT
+    # tests keep their transport seam; production uses the pooled client (F12).
+    if client is not None:
+        return client.post(url, data=data, files=files, timeout=timeout)
+    if httpx.post is not _DEFAULT_POST:
+        return httpx.post(url, data=data, files=files, timeout=timeout)
+    return _client().post(url, data=data, files=files, timeout=timeout)
+
+
+def _endpoints(primary: str) -> list[str]:
+    endpoints = [primary]
+    fallback = _derive_fallback(primary)
+    if fallback:
+        endpoints.append(fallback)
+    with _CLIENT_LOCK:
+        cached = _WORKING_ENDPOINT.get(primary)
+    if cached in endpoints:
+        endpoints.remove(cached)
+        endpoints.insert(0, cached)
+    return endpoints
+
+
+def _remember_endpoint(primary: str, url: str) -> None:
+    with _CLIENT_LOCK:
+        _WORKING_ENDPOINT[primary] = url
+
+
+def _forget_endpoint(primary: str, url: str) -> None:
+    with _CLIENT_LOCK:
+        if _WORKING_ENDPOINT.get(primary) == url:
+            del _WORKING_ENDPOINT[primary]
 
 
 _WHISPER_ORDER = (
@@ -134,12 +203,7 @@ def _derive_fallback(url: str) -> str | None:
     return urlunsplit((parts.scheme, parts.netloc, new_path, parts.query, ""))
 
 
-def transcribe(cfg: VoiceConfig, wav_bytes: bytes) -> str:
-    endpoints = [cfg.whisper_url]
-    fallback = _derive_fallback(cfg.whisper_url)
-    if fallback:
-        endpoints.append(fallback)
-
+def _form(cfg: VoiceConfig) -> dict[str, str]:
     form = {
         "model": cfg.stt_model or "ggml-large-v3-turbo-q5_0",
         "language": "es",
@@ -158,36 +222,57 @@ def transcribe(cfg: VoiceConfig, wav_bytes: bytes) -> str:
             raise STTError(f"Diccionario de transcripción inválido: {exc}") from exc
     if prompt:
         form["prompt"] = prompt
+    return form
 
+
+def _text(cfg: VoiceConfig, response: httpx.Response) -> str:
+    try:
+        text = response.json().get("text", "")
+    except ValueError:
+        text = response.text
+    try:
+        return correct_transcription(
+            " ".join(str(text).split()), str(getattr(cfg, "stt_dictionary", "") or "")
+        )
+    except ValueError as exc:
+        raise STTError(f"Diccionario de transcripción inválido: {exc}") from exc
+
+
+def transcribe(cfg: VoiceConfig, wav_bytes: bytes, *, client: Any | None = None) -> str:
+    form = _form(cfg)
+    budget = float(getattr(cfg, "stt_timeout_secs", 60.0) or 60.0)
+    deadline = time.monotonic() + budget
+    endpoints = _endpoints(cfg.whisper_url)
+    files = {"file": ("utterance.wav", wav_bytes, "audio/wav")}
     last_error = ""
-    for url in endpoints:
+    for index, url in enumerate(endpoints):
+        # Un solo presupuesto para toda la llamada: el reintento de ruta usa
+        # lo que quede, no un timeout completo nuevo.
+        timeout = budget if index == 0 else deadline - time.monotonic()
+        if timeout <= 0:
+            break
         try:
-            response = httpx.post(
-                url,
-                data=form,
-                files={"file": ("utterance.wav", wav_bytes, "audio/wav")},
-                timeout=cfg.stt_timeout_secs,
-            )
-        except httpx.HTTPError as exc:
+            response = _post(client, url, data=form, files=files, timeout=timeout)
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            _forget_endpoint(cfg.whisper_url, url)
             last_error = f"{url}: {exc}"
             continue
+        except httpx.TimeoutException as exc:
+            # Un timeout de lectura no es incompatibilidad de ruta: repetirlo
+            # con la ruta alterna solo duplicaría la espera (F12).
+            raise STTError(f"whisper-server no respondió a tiempo ({url}): {exc}") from exc
+        except httpx.HTTPError as exc:
+            raise STTError(f"whisper-server: {exc}") from exc
         if response.status_code == 404:
+            _forget_endpoint(cfg.whisper_url, url)
             last_error = f"{url}: 404"
             continue
         if response.status_code >= 400:
             raise STTError(
                 f"whisper-server respondió {response.status_code}: {response.text[:200]}"
             )
-        try:
-            text = response.json().get("text", "")
-        except ValueError:
-            text = response.text
-        try:
-            return correct_transcription(
-                " ".join(str(text).split()), str(getattr(cfg, "stt_dictionary", "") or "")
-            )
-        except ValueError as exc:
-            raise STTError(f"Diccionario de transcripción inválido: {exc}") from exc
+        _remember_endpoint(cfg.whisper_url, url)
+        return _text(cfg, response)
 
     raise STTError(
         "No puedo conectar con whisper-server. Arranca scripts\\start-whisper.ps1. " + last_error
@@ -233,6 +318,7 @@ def is_hallucination(text: str, *, weak_audio: bool = False) -> bool:
 __all__ = [
     "STTError",
     "available_whisper_models",
+    "close_client",
     "is_hallucination",
     "transcribe",
     "whisper_home",

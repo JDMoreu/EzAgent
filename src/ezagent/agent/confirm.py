@@ -5,10 +5,15 @@ bloqueado hasta que la interfaz entrega una respuesta o vence el tiempo
 límite. El hilo de UI nunca se bloquea: usa ``submit_text``, ``submit_click``
 o ``cancel``.
 
-# DECISION: una respuesta se acepta si contiene alguna palabra completa de la
-# lista ``accept`` y ninguna de ``reject``. Las palabras desconocidas se
-# ignoran para tolerar fórmulas naturales («sí, adelante»), pero si aparece
-# una palabra de rechazo la respuesta es ambigua y se rechaza.
+El plazo no empieza al plantear la pregunta, sino cuando la interfaz llama a
+:meth:`ConfirmationManager.arm` tras terminar de leerla por TTS. Cada
+confirmación tiene un token: una respuesta con otro token (una transcripción
+atrasada) no la resuelve.
+
+# DECISION: una respuesta solo resuelve si contiene alguna palabra completa de
+# ``accept`` o de ``reject``. Una frase ajena o vacía devuelve None y deja la
+# confirmación pendiente para que el llamador pueda repreguntar una vez. Si
+# aparecen palabras de ambas listas gana el rechazo.
 """
 
 from __future__ import annotations
@@ -17,10 +22,17 @@ import re
 import threading
 import time
 import unicodedata
+import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 CONFIRM_WORD = "confirmo"
+
+# Si la interfaz nunca arma la pregunta (TTS caído), el plazo cuenta igual
+# después de esta gracia para no bloquear el hilo de herramientas para siempre.
+_ARM_GRACE_S = 30.0
+
+Outcome = str  # yes | no | timeout | cancelled | unavailable
 
 
 def _fold(text: str) -> str:
@@ -142,9 +154,12 @@ class _Pending:
     summary: str
     strong: bool
     require_number: int | None
-    event: threading.Event = field(default_factory=threading.Event)
+    token: str = field(default_factory=lambda: uuid.uuid4().hex)
+    condition: threading.Condition = field(default_factory=threading.Condition)
+    armed: bool = False
     result: bool = False
     resolved: bool = False
+    outcome: Outcome | None = None
 
 
 class ConfirmationManager:
@@ -164,11 +179,45 @@ class ConfirmationManager:
         self._on_ask = on_ask
         self._lock = threading.Lock()
         self._pending: _Pending | None = None
+        self._last_outcome: Outcome | None = None
 
     @property
     def pending(self) -> bool:
         with self._lock:
             return self._pending is not None and not self._pending.resolved
+
+    @property
+    def pending_token(self) -> str | None:
+        """Token de la confirmación vigente, o None si no hay ninguna."""
+        with self._lock:
+            if self._pending is None or self._pending.resolved:
+                return None
+            return self._pending.token
+
+    @property
+    def last_outcome(self) -> Outcome | None:
+        """Último resultado: yes, no, timeout, cancelled o unavailable.
+
+        ``unavailable`` significa que no se pudo plantear otra confirmación
+        porque ya había una pendiente.
+        """
+        with self._lock:
+            return self._last_outcome
+
+    def arm(self, token: str | None = None) -> None:
+        """Empieza a contar el plazo cuando la pregunta ya se terminó de leer.
+
+        Con ``token``, un armado atrasado de otra pregunta no arma esta.
+        """
+        with self._lock:
+            request = self._pending
+            if request is None or request.resolved:
+                return
+            if token is not None and token != request.token:
+                return
+            with request.condition:
+                request.armed = True
+                request.condition.notify_all()
 
     def ask(
         self,
@@ -179,8 +228,8 @@ class ConfirmationManager:
     ) -> bool:
         """Muestra el resumen y espera la respuesta. Devuelve True si acepta.
 
-        Bloquea solo al hilo que ejecuta herramientas. Un timeout equivale a
-        rechazo.
+        Bloquea solo al hilo que ejecuta herramientas. Espera a :meth:`arm`
+        antes de contar el plazo; un timeout equivale a rechazo.
         """
         request = _Pending(
             summary=summary,
@@ -191,10 +240,10 @@ class ConfirmationManager:
             # DECISION: no se encolan varias confirmaciones. Si ya hay una
             # pendiente, la nueva se rechaza para no confundir al usuario.
             if self._pending is not None and not self._pending.resolved:
+                self._last_outcome = "unavailable"
                 return False
             self._pending = request
 
-        started = time.monotonic()
         if self._on_ask is not None:
             try:
                 self._on_ask(summary, strong)
@@ -202,44 +251,43 @@ class ConfirmationManager:
                 # DECISION: un fallo de la UI no debe tumbar la herramienta.
                 pass
 
-        # El plazo cuenta desde que se plantea la confirmación, no desde que
-        # termina el callback de la UI.
-        remaining = max(0.0, self._timeout_s - (time.monotonic() - started))
-        completed = request.event.wait(remaining)
+        with request.condition:
+            if self._on_ask is None:
+                # DECISION: sin interfaz no hay TTS que esperar; el plazo cuenta ya.
+                request.armed = True
+            self._wait_armed(request)
+            if not request.resolved:
+                self._wait_answer(request)
+            accepted = bool(request.result)
+            outcome = request.outcome
 
         with self._lock:
-            if request.resolved:
-                accepted = request.result
-            elif not completed:
-                # Sin respuesta dentro del plazo: rechazo.
-                request.resolved = True
-                request.result = False
-                request.event.set()
-                accepted = False
-            else:
-                # El evento se activó sin resultado: no debería ocurrir.
-                request.resolved = True
-                request.result = False
-                accepted = False
+            # Si otra confirmación ya ocupó el lugar, no pises su resultado.
             if self._pending is request:
+                if outcome is not None:
+                    self._last_outcome = outcome
                 self._pending = None
-        return bool(accepted)
+        return accepted
 
-    def submit_text(self, text: str) -> bool | None:
+    def submit_text(self, text: str, token: str | None = None) -> bool | None:
         """Resuelve la confirmación pendiente con una respuesta de voz.
 
-        Devuelve True/False si había una pendiente y None si no había ninguna.
+        Devuelve True/False si la respuesta es clara, y None si no había una
+        pendiente, el token no coincide o el texto no es ni aceptación ni
+        rechazo (la confirmación sigue pendiente).
         """
         words = _words(str(text or ""))
-        word_set = set(words)
         with self._lock:
             request = self._pending
             if request is None or request.resolved:
                 return None
-            accepted = self._accepts(request, word_set, words)
-            request.resolved = True
-            request.result = accepted
-            request.event.set()
+            if token is not None and token != request.token:
+                return None
+            outcome = self._intent(request, words)
+            if outcome is None:
+                return None
+            accepted = outcome == "yes"
+            self._resolve(request, accepted, outcome)
             self._pending = None
             return accepted
 
@@ -249,9 +297,8 @@ class ConfirmationManager:
             request = self._pending
             if request is None or request.resolved:
                 return
-            request.resolved = True
-            request.result = bool(yes)
-            request.event.set()
+            outcome = "yes" if yes else "no"
+            self._resolve(request, bool(yes), outcome)
             self._pending = None
 
     def cancel(self, reason: str = "") -> None:
@@ -262,23 +309,66 @@ class ConfirmationManager:
             request = self._pending
             if request is None or request.resolved:
                 return
-            request.resolved = True
-            request.result = False
-            request.event.set()
+            self._resolve(request, False, "cancelled")
             self._pending = None
 
-    def _accepts(self, request: _Pending, word_set: set[str], words: list[str]) -> bool:
+    def _resolve(self, request: _Pending, accepted: bool, outcome: Outcome) -> None:
+        """Cierra ``request`` y despierta a ``ask``. Se llama con el lock tomado."""
+        with request.condition:
+            request.resolved = True
+            request.result = bool(accepted)
+            request.outcome = outcome
+            self._last_outcome = outcome
+            request.condition.notify_all()
+
+    def _wait_armed(self, request: _Pending) -> None:
+        """Espera a ``arm`` con una gracia máxima. Se llama con la condición tomada."""
+        deadline = time.monotonic() + _ARM_GRACE_S
+        while not request.armed and not request.resolved:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                # DECISION: sin armado, el plazo cuenta desde que vence la gracia.
+                request.armed = True
+                return
+            request.condition.wait(remaining)
+
+    def _wait_answer(self, request: _Pending) -> None:
+        """Espera la respuesta hasta ``timeout_s``. Se llama con la condición tomada."""
+        deadline = time.monotonic() + self._timeout_s
+        while not request.resolved:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                request.resolved = True
+                request.result = False
+                request.outcome = "timeout"
+                return
+            request.condition.wait(remaining)
+
+    def _intent(self, request: _Pending, words: list[str]) -> Outcome | None:
+        """Devuelve yes/no para una respuesta clara, o None si es ajena."""
+        word_set = set(words)
+        folded = " ".join(words)
+        if any(
+            phrase in folded
+            for phrase in ("no se", "no estoy seguro", "no sabria", "no sabría", "quizas")
+        ):
+            return None
         if any(_contains_phrase(words, phrase) for phrase in self._reject):
-            return False
+            return "no"
+        if not any(_contains_phrase(words, phrase) for phrase in self._accept):
+            return None
         if request.strong:
             if CONFIRM_WORD not in word_set:
-                return False
+                # Una frase sin «confirmo» no es un rechazo: es ambigua y se
+                # repregunta, igual que el ruido (F48).
+                return None
             if request.require_number is not None:
                 numbers = {int(word) for word in words if word.isdigit()}
                 spoken = _number_from_words(words)
                 if spoken is not None:
                     numbers.add(spoken)
+                if not numbers:
+                    return None  # «confirmo» sin número: aún no es respuesta
                 if request.require_number not in numbers:
-                    return False
-            return True
-        return any(_contains_phrase(words, phrase) for phrase in self._accept)
+                    return "no"
+        return "yes"

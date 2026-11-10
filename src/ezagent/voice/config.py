@@ -323,7 +323,7 @@ class VoiceConfig:
     stt_prompt: str = ""
     stt_dictionary: str = ""
     stt_vocabulary_hints: bool = True
-    stt_timeout_secs: float = 60.0
+    stt_timeout_secs: float = 10.0
     voice: str = "em_alex"
     speed: float = 0.95
     tts_model_variant: str = "int8"
@@ -371,6 +371,9 @@ class VoiceConfig:
     llm_context_tokens: int = 32000
     llm_reasoning_effort: str = "none"
     llm_timeout_secs: float = 30.0
+    # Presupuesto total de un turno con herramientas; corta un servidor que
+    # responde a cuentagotas aunque cada lectura aislada no venza.
+    llm_turn_timeout_secs: float = 120.0
     llm_max_tool_rounds: int = 8
     # True cuando el usuario elige proveedor/modelo desde el menú del notch.
     # A partir de ahí voice.json manda sobre LLM_PROVIDER del .env, para que

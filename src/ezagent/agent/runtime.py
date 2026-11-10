@@ -15,7 +15,7 @@ import json
 import re
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable
 
 from .audit import AuditLog
@@ -51,32 +51,49 @@ WRITE_TOOLS = frozenset(
     }
 )
 
-# Base estable de 14 herramientas (el tope del documento). Las consultas de
-# hora cambian fetch_page por get_datetime; copiar/abrir/olvidar/compactar y
-# ejecutar scripts de skills sustituyen una herramienta equivalente. El LLM
-# siempre puede delegar una tarea compleja en Herdr.
+# Base estable de 5 herramientas de uso real: la auditoría midió que cuatro de
+# ellas suman el 94 % del uso. El resto se añade por intención sin quitar
+# ninguna de las anteriores (F16/F41). El LLM siempre puede delegar una tarea
+# compleja en Herdr.
 BASE_TOOLS: tuple[str, ...] = (
     "voice_control",
     "web_search",
     "fetch_page",
-    "list_dir",
     "read_file",
-    "write_file",
-    "create_dir",
-    "move_path",
-    "delete_path",
-    "undo_last",
-    "load_skill",
-    "remember",
-    "recall",
     "delegate_to_agent",
 )
 
 _TIME_RE = re.compile(r"\b(hora|fecha|d[ií]a|hoy|calendario)\b", re.IGNORECASE)
+_WRITE_RE = re.compile(
+    r"\b(escribe|escribir|escribeme|escríbeme|crea|crear|creame|créame|"
+    r"genera|generar|generame|genérame|guarda|guardar|redacta|redactar|"
+    r"añade|anade|añadir|agrega|agregar)\b",
+    re.IGNORECASE,
+)
 _COPY_RE = re.compile(r"\b(copia|duplica)\b", re.IGNORECASE)
 _OPEN_RE = re.compile(r"\b(abre|abrir|abreme|ábreme)\b", re.IGNORECASE)
-_FORGET_RE = re.compile(r"\b(olvida|olvidar|borra .*memoria)\b", re.IGNORECASE)
-_COMPACT_RE = re.compile(r"\b(compacta|compactar|memoria llena)\b", re.IGNORECASE)
+_DELETE_RE = re.compile(r"\b(borra|borrar|elimina|eliminar|quita|quitar)\b", re.IGNORECASE)
+_LIST_RE = re.compile(r"\b(lista|listar|listado|enumera|enumerar)\b|(qué|que) hay", re.IGNORECASE)
+_SKILL_RE = re.compile(r"\b(skill|skills|habilidad|habilidades|script|scripts)\b", re.IGNORECASE)
+_MEMORY_RE = re.compile(
+    r"\b(memoria|recuerda|recordar|recuerdas|olvida|olvidar|compacta|compactar)\b",
+    re.IGNORECASE,
+)
+
+# Atributos de configuración que ya usan objetos de larga vida (MemoryStore,
+# Journal, AuditLog, SkillLibrary). Un cambio en caliente dejaría a esos
+# objetos con la ruta vieja mientras el resto del runtime usaría la nueva.
+_SESSION_PATHS = (
+    "workspace",
+    "memory_dir",
+    "history_path",
+    "journal_dir",
+    "audit_path",
+    "skills_dir",
+    "global_skills_dir",
+    "system_md_path",
+    "tools_d_dir",
+)
 
 
 def select_tool_names(
@@ -87,26 +104,33 @@ def select_tool_names(
 ) -> list[str]:
     """Elige hasta 14 nombres para el prompt de este turno.
 
-    # DECISION: el documento fija 14 herramientas y la app ya usaba 14 solo
-    # para Herdr. Se consolida Herdr en ``delegate_to_agent`` y se cambia una
-    # herramienta por otra según la intención explícita del turno.
+    # DECISION: se parte de 5 herramientas base y cada intención *suma*
+    # capacidades; antes una intención sustituía a otra y una consulta de hora
+    # dejaba sin leer páginas o sin ejecutar skills (F16/F41).
     """
     names = list(BASE_TOOLS)
-    if not has_memory:
-        names.remove("recall")
+    if scripts_loaded:
+        names.append("run_skill_script")
     if _TIME_RE.search(text):
-        names[names.index("fetch_page")] = "get_datetime"
-    if _COPY_RE.search(text) and "create_dir" in names:
-        names[names.index("create_dir")] = "copy_path"
-    elif _OPEN_RE.search(text) and "create_dir" in names:
-        names[names.index("create_dir")] = "open_path"
-    if _FORGET_RE.search(text) and "remember" in names:
-        names[names.index("remember")] = "forget"
-    if _COMPACT_RE.search(text) and "web_search" in names:
-        names[names.index("web_search")] = "compact_memory"
-    if scripts_loaded and "fetch_page" in names:
-        names[names.index("fetch_page")] = "run_skill_script"
-    return names[:14]
+        names.append("get_datetime")
+    if _WRITE_RE.search(text):
+        names.extend(("write_file", "create_dir"))
+    if _COPY_RE.search(text):
+        names.append("copy_path")
+    if _OPEN_RE.search(text):
+        names.append("open_path")
+    if _DELETE_RE.search(text):
+        names.append("delete_path")
+    if _LIST_RE.search(text):
+        names.append("list_dir")
+    if _SKILL_RE.search(text):
+        names.extend(("load_skill", "run_skill_script"))
+    if _MEMORY_RE.search(text) and has_memory:
+        names.extend(("remember", "recall", "forget", "compact_memory"))
+    unique = list(dict.fromkeys(names))
+    if not has_memory:
+        unique = [name for name in unique if name != "recall"]
+    return unique[:14]
 
 
 @dataclass
@@ -125,7 +149,9 @@ class RuntimeCallbacks:
     prewarm_chain: Callable[[dict[str, Any]], None] = lambda spec: None
     async_launch: bool = False
     pending_tasks: Callable[[], str] = lambda: ""
-    on_confirm_ask: Callable[[str, bool], None] | None = None
+    on_confirm_ask: Callable[[str, bool], None] | Callable[[str, bool, str | None], None] | None = (
+        None
+    )
     on_confirm_done: Callable[[], None] | None = None
     on_warn: Callable[[str], None] | None = None
 
@@ -186,6 +212,10 @@ class AgentRuntime:
         )
         self.registry = ToolRegistry()
         self._rebuild_tools()
+        try:
+            self._permissions_mtime = float(self.config.permissions_path.stat().st_mtime)
+        except OSError:
+            self._permissions_mtime = 0.0
 
     # ------------------------------------------------------------- ciclo
     def _make_confirm(self) -> ConfirmationManager:
@@ -193,8 +223,24 @@ class AgentRuntime:
             accept=self.config.confirm.accept,
             reject=self.config.confirm.reject,
             timeout_s=self.config.general.confirm_timeout_s,
-            on_ask=self.callbacks.on_confirm_ask,
+            on_ask=self._confirm_ask if self.callbacks.on_confirm_ask is not None else None,
         )
+
+    def _confirm_ask(self, summary: str, strong: bool) -> None:
+        """Avisa a la UI con el token de la confirmación cuando lo soporta.
+
+        # DECISION: los callbacks de 2 argumentos siguen funcionando; el
+        # tercer argumento permite que app vincule la respuesta a este aviso
+        # (F02). TypeError cubre también una UI antigua.
+        """
+        callback = self.callbacks.on_confirm_ask
+        if callback is None:
+            return
+        token = self.pending_confirmation_token
+        try:
+            callback(summary, strong, token)  # type: ignore[call-arg]
+        except TypeError:
+            callback(summary, strong)
 
     def _rebuild_tools(self) -> None:
         registry = ToolRegistry()
@@ -312,17 +358,40 @@ class AgentRuntime:
             return value
         return self._last_user_text
 
+    def _preserve_session_paths(self, config: AgentConfig) -> AgentConfig:
+        """Conserva las rutas que ya usan los objetos de larga vida (F27)."""
+        changed = [
+            name for name in _SESSION_PATHS if getattr(config, name) != getattr(self.config, name)
+        ]
+        updates: dict[str, Any] = {name: getattr(self.config, name) for name in changed}
+        if config.paths.read_roots != self.config.paths.read_roots:
+            updates["paths"] = replace(config.paths, read_roots=list(self.config.paths.read_roots))
+            changed.append("paths.read_roots")
+        if not changed:
+            return config
+        message = (
+            "Cambiaron rutas de permissions.toml ("
+            + ", ".join(changed)
+            + "), pero esta sesión sigue usando las anteriores; "
+            "reinicia EzAgent para aplicarlas."
+        )
+        self._audit_warn(message)
+        self._warn(message)
+        return replace(config, **updates)
+
     def refresh(self) -> None:
-        """Relee permisos, skills y tools.d al inicio de cada turno."""
+        """Relee permisos y skills solo cuando cambiaron en disco (F26/F27)."""
         try:
             mtime = float(self.config.permissions_path.stat().st_mtime)
         except OSError:
             mtime = 0.0
-        if mtime != self._permissions_mtime:
+        permissions_changed = mtime != self._permissions_mtime
+        if permissions_changed:
             self._permissions_mtime = mtime
             try:
-                self.config = AgentConfig.load(self.config.permissions_path)
-                self.config.ensure_dirs()
+                config = AgentConfig.load(self.config.permissions_path)
+                config.ensure_dirs()
+                self.config = self._preserve_session_paths(config)
                 self.prompt = SystemPromptBuilder(
                     self.config,
                     memory_block=self._memory_and_tasks,
@@ -335,11 +404,13 @@ class AgentRuntime:
                 self.confirm = self._make_confirm()
             except Exception as exc:  # noqa: BLE001
                 self._audit_warn(f"No pude recargar permissions.toml: {exc}")
+        skills_changed = False
         try:
-            self.skills.refresh()
+            skills_changed = bool(self.skills.refresh())
         except Exception:
             pass
-        self._rebuild_tools()
+        if permissions_changed or skills_changed:
+            self._rebuild_tools()
 
     def begin_turn(self, text: str) -> None:
         self.turn_id = uuid.uuid4().hex
@@ -347,7 +418,8 @@ class AgentRuntime:
         self.tainted = False
         self._calls_this_turn = 0
         self._level1_writes = 0
-        self._loaded_skills.clear()
+        # F41: una skill cargada sigue disponible en el seguimiento. Solo se
+        # pierde al reiniciar el runtime, no en cada turno.
         self.refresh()
         try:
             self.memory.record("user", text, session=self.session_id)
@@ -367,6 +439,13 @@ class AgentRuntime:
             return self.prompt.build()
         except Exception:
             return "Eres EzAgent, un agente autónomo para Windows. Responde corto y directo, en español neutro latinoamericano."
+
+    def prompt_parts(self) -> tuple[str, str]:
+        """Prefijo estable y datos volátiles para no invalidar la caché en cada turno."""
+        try:
+            return self.prompt.build_parts()
+        except Exception:
+            return self.system_prompt(), ""
 
     def close(self) -> None:
         try:
@@ -502,6 +581,7 @@ class AgentRuntime:
             "confirm_yes" if decision.action in ("confirm", "confirm_strong") else "allow",
             result.ok,
             elapsed,
+            error_kind=result.error_kind,
         )
         return result
 
@@ -546,6 +626,8 @@ class AgentRuntime:
         decision: str,
         ok: bool,
         ms: float,
+        *,
+        error_kind: str | None = None,
     ) -> None:
         try:
             self.audit.log(
@@ -557,6 +639,7 @@ class AgentRuntime:
                 taint=self.tainted,
                 result_ok=bool(ok),
                 ms=float(ms),
+                error_kind=error_kind,
             )
         except Exception:
             pass
@@ -569,10 +652,30 @@ class AgentRuntime:
     def confirm_pending(self) -> bool:
         return bool(self.confirm is not None and self.confirm.pending)
 
-    def submit_confirmation(self, text: str) -> bool | None:
+    @property
+    def pending_confirmation_token(self) -> str | None:
+        """Token de la confirmación vigente (None si no hay o no lo soporta)."""
         if self.confirm is None:
             return None
-        return self.confirm.submit_text(text)
+        return getattr(self.confirm, "pending_token", None)
+
+    def arm_confirmation(self) -> None:
+        """Rearma el plazo de la confirmación pendiente (F48)."""
+        if self.confirm is None:
+            return
+        arm = getattr(self.confirm, "arm", None)
+        if callable(arm):
+            arm()
+
+    def submit_confirmation(self, text: str, token: str | None = None) -> bool | None:
+        if self.confirm is None:
+            return None
+        if token is None:
+            return self.confirm.submit_text(text)
+        try:
+            return self.confirm.submit_text(text, token=token)
+        except TypeError:
+            return self.confirm.submit_text(text)
 
     def submit_confirmation_click(self, yes: bool) -> None:
         if self.confirm is not None:

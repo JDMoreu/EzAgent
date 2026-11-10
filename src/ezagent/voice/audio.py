@@ -18,6 +18,7 @@ from concurrent.futures import Future
 
 import numpy as np
 import pyaudio
+from loguru import logger
 
 CHUNK_SECS = 0.03
 # Smart Turn mira como mucho los últimos 8 s.
@@ -195,7 +196,8 @@ class Segmenter:
 
     Con ``end_probe`` (Smart Turn), tras ``quick_silence_secs`` de silencio se
     pregunta si la frase terminó: si sí, el turno se cierra ya; si no, se
-    espera ``silence_secs`` como siempre.
+    vuelve a preguntar cada ``probe_interval_secs`` durante la misma pausa
+    (F46) y, si ninguna responde que sí, se espera ``silence_secs``.
     """
 
     def __init__(
@@ -210,6 +212,7 @@ class Segmenter:
         end_probe: EndProbe | None = None,
         quick_silence_secs: float = 0.35,
         min_voiced_secs: float = 0.15,
+        probe_interval_secs: float = 0.3,
     ):
         self.min_rms = min_rms
         # Segundos de chunks por encima del umbral de arranque que debe tener
@@ -218,8 +221,10 @@ class Segmenter:
         self._voiced_secs = 0.0
         self.end_probe = end_probe
         self.quick_silence_secs = quick_silence_secs
+        self.probe_interval_secs = probe_interval_secs
         self._pending: Future[bool] | None = None
-        self._probed = False
+        # Silencio acumulado (segundos) en el que toca la próxima sonda.
+        self._next_probe_at = 0.0
         # Motivo del último cierre: «silence», «turn» o «max».
         self.last_close_reason = ""
         self.silence_secs = silence_secs
@@ -313,7 +318,7 @@ class Segmenter:
             self._speech_end_at = None
             # Sigue hablando: la evaluación de esta pausa ya no vale.
             self._pending = None
-            self._probed = False
+            self._next_probe_at = 0.0
 
         reason = ""
         if self._silence_run >= self.silence_secs:
@@ -341,21 +346,29 @@ class Segmenter:
         """True si Smart Turn ya dijo que la frase terminó en esta pausa."""
         if self.end_probe is None or self._silence_run < self.quick_silence_secs:
             return False
-        if not self._probed:
-            self._probed = True
-            try:
-                self._pending = self.end_probe(b"".join(self._buf[-_PROBE_CHUNKS:]))
-            except Exception:  # noqa: BLE001 - sin modelo, manda el silencio
-                self._pending = None
-            return False
         pending = self._pending
-        if pending is None or not pending.done():
+        if pending is not None:
+            if not pending.done():
+                return False
+            self._pending = None
+            try:
+                if pending.result():
+                    return True
+            except Exception:  # noqa: BLE001
+                pass
+            self._schedule_probe()
             return False
-        self._pending = None
+        if self._silence_run < self._next_probe_at:
+            return False
+        self._schedule_probe()
         try:
-            return bool(pending.result())
-        except Exception:  # noqa: BLE001
-            return False
+            self._pending = self.end_probe(b"".join(self._buf[-_PROBE_CHUNKS:]))
+        except Exception:  # noqa: BLE001 - sin modelo, manda el silencio
+            self._pending = None
+        return False
+
+    def _schedule_probe(self) -> None:
+        self._next_probe_at = self._silence_run + self.probe_interval_secs
 
     def thresholds(self) -> tuple[float, float]:
         start = max(self.min_rms, self.noise * self.noise_multiplier)
@@ -383,7 +396,7 @@ class Segmenter:
         self._voiced_secs = 0.0
         self._speech_end_at = None
         self._pending = None
-        self._probed = False
+        self._next_probe_at = 0.0
         self._pre.clear()
 
 
@@ -504,16 +517,17 @@ class MicCapture:
     ) -> None:
         if started:
             start_thr, end_thr = segmenter.thresholds()
-            print(
-                "[ezagent-voice] VAD start: "
-                f"level={level:.4f} noise={segmenter.noise:.4f} "
-                f"start={start_thr:.4f} end={end_thr:.4f}",
-                flush=True,
+            logger.debug(
+                "VAD start: level={:.4f} noise={:.4f} start={:.4f} end={:.4f}",
+                level,
+                segmenter.noise,
+                start_thr,
+                end_thr,
             )
             if on_speech_start is not None:
                 on_speech_start(level)
         if pcm == b"":
-            print("[ezagent-voice] VAD end: descartado (sin voz sostenida)", flush=True)
+            logger.debug("VAD end: descartado (sin voz sostenida)")
             if on_utterance is not None:
                 on_utterance(b"", self.rate)
         elif pcm:
@@ -522,10 +536,7 @@ class MicCapture:
                 "turn": " (fin de turno detectado)",
                 "max": " (duración máxima)",
             }.get(segmenter.last_close_reason, "")
-            print(
-                f"[ezagent-voice] VAD end: {len(pcm) / 2 / self.rate:.2f}s{reason}",
-                flush=True,
-            )
+            logger.debug("VAD end: {:.2f}s{}", len(pcm) / 2 / self.rate, reason)
             if on_utterance is not None:
                 on_utterance(pcm, self.rate)
 

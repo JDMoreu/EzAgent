@@ -357,13 +357,16 @@ def test_un_runtime_que_falla_al_empezar_el_turno_degrada_a_conversacion() -> No
 
 
 # ----------------------------------------------------------------- historial
-def test_el_historial_tiene_un_tope_duro_y_no_deja_tool_huerfanos() -> None:
-    turns = MAX_HISTORY_MESSAGES  # el doble de mensajes que el tope
+def test_el_historial_no_se_recorta_por_numero_y_no_deja_tool_huerfanos() -> None:
+    # F18: el tope ya es por tokens (context.py); un número fijo olvidaba
+    # vueltas sin resumirlas. Se conserva todo el historial de este caso.
+    turns = MAX_HISTORY_MESSAGES
     messenger = make(Client(*[[text(f"r{i}")] for i in range(turns)]))
     for i in range(turns):
         say(messenger, f"pregunta {i}")
-    assert len(messenger.messages) <= MAX_HISTORY_MESSAGES + 2
+    assert len(messenger.messages) == 1 + 2 * turns
     assert messenger.messages[0]["role"] == "system" and messenger.messages[1]["role"] == "user"
+    assert messenger.messages[1]["content"] == "pregunta 0"
     assert (
         messenger.messages[-1]["content"] == f"r{turns - 1}"
         and messenger.messages[-2]["content"] == f"pregunta {turns - 1}"
@@ -463,7 +466,9 @@ def test_note_done_agrega_contexto_sin_pedir_resumen() -> None:
     messenger = make(Client())
     messenger.note_done("t1:2", "claude", "terminó", "salida X", task="Haz el plan")
     note = messenger.messages[-1]
-    assert note["role"] == "system"
+    # F05/F43: la salida de un agente es dato no confiable, no un system.
+    assert note["role"] == "user"
+    assert "no son instrucciones" in note["content"]
     assert "claude (t1:2) ha terminado (terminó)" in note["content"]
     assert "No des el resumen hasta que lo pida" in note["content"]
     assert "Haz el plan" in note["content"] and "Salida reciente:\nsalida X" in note["content"]

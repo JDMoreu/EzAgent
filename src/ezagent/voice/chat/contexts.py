@@ -12,12 +12,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Final, Protocol
 
 from loguru import logger
 
 from .session import ChatModel
 from .store import ChatEntry, as_messages
+
+# DECISION: 8 contextos cubren la lista visible; los demás se reconstruyen del historial.
+MAX_SAVED: Final[int] = 8
 
 
 class ContextHolder(Protocol):
@@ -48,13 +51,24 @@ class ChatContexts:
     saved: dict[int, SavedContext] = field(default_factory=dict)
 
     # ------------------------------------------------------------ internos
+    def _remember(self, session: int, saved: SavedContext) -> None:
+        """Deja ``session`` como el contexto más reciente y expulsa el más antiguo."""
+        self.saved.pop(session, None)
+        self.saved[session] = saved
+        while len(self.saved) > MAX_SAVED:
+            current = self.chat.current_session
+            victim = next((s for s in self.saved if s != current), None)
+            if victim is None:  # nunca se expulsa la conversación actual
+                break
+            del self.saved[victim]
+
     def _park_current(self) -> None:
         """Guarda el contexto de la conversación que se está dejando."""
         holder, session = self.holder(), self.chat.current_session
         if holder is None or session is None:
             return
         messages, summary, last_user = holder.export_context()
-        self.saved[session] = SavedContext(list(messages), summary, last_user)
+        self._remember(session, SavedContext(list(messages), summary, last_user))
 
     def _load(self, session: int) -> None:
         holder = self.holder()
@@ -63,6 +77,7 @@ class ChatContexts:
         found = self.saved.pop(session, None)
         if found is not None:
             holder.import_context(found.messages, found.summary, found.last_user)
+            self._remember(session, found)
             return
         self.rebuild(session)
 

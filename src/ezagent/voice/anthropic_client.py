@@ -15,12 +15,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from threading import Lock
 from types import SimpleNamespace
 from typing import Any
 
 import httpx
 
 ANTHROPIC_VERSION = "2023-06-01"
+STOP_REASONS = {"end_turn": "stop", "max_tokens": "length", "tool_use": "tool_calls"}
 
 
 def messages_url(base_url: str) -> str:
@@ -120,9 +122,18 @@ def convert_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
 
 
 # ------------------------------------------------------------- streaming
-def _chunk(content: str | None = None, tool_calls: list[Any] | None = None) -> Any:
+def _chunk(
+    content: str | None = None,
+    tool_calls: list[Any] | None = None,
+    *,
+    finish_reason: str | None = None,
+    usage: dict[str, Any] | None = None,
+) -> Any:
     delta = SimpleNamespace(content=content, tool_calls=tool_calls)
-    return SimpleNamespace(choices=[SimpleNamespace(delta=delta)])
+    chunk = SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=finish_reason)])
+    if usage is not None:
+        chunk.usage = usage
+    return chunk
 
 
 def _tool_delta(index: int, *, call_id: str | None, name: str | None, arguments: str) -> Any:
@@ -130,21 +141,45 @@ def _tool_delta(index: int, *, call_id: str | None, name: str | None, arguments:
     return _chunk(tool_calls=[SimpleNamespace(index=index, id=call_id, function=function)])
 
 
+def _sse_event(data: str) -> dict[str, Any] | None:
+    text = data.strip()
+    if not text or text == "[DONE]":
+        return None
+    try:
+        event = json.loads(text)
+    except ValueError:
+        return None
+    return event if isinstance(event, dict) else None
+
+
+def _sse_events(lines: list[str]) -> Iterator[dict[str, Any]]:
+    """Un bloque SSE: ``data:`` multilínea o, si no es JSON, varias líneas sueltas."""
+    if not lines:
+        return
+    joined = _sse_event("\n".join(lines))
+    if joined is not None:
+        yield joined
+        return
+    # DECISION: hay servidores que mandan varios eventos sin línea en blanco;
+    # se intentan por separado antes de descartar el bloque entero.
+    for line in lines:
+        event = _sse_event(line)
+        if event is not None:
+            yield event
+
+
 def iter_sse(lines: Iterator[str]) -> Iterator[dict[str, Any]]:
-    """Eventos ``data:`` de un flujo SSE ya decodificado en líneas."""
+    """Eventos ``data:`` de un flujo SSE; un evento termina en la línea en blanco."""
+    buffer: list[str] = []
     for raw in lines:
         line = raw.strip()
-        if not line.startswith("data:"):
-            continue
-        data = line[5:].strip()
-        if not data or data == "[DONE]":
-            continue
-        try:
-            event = json.loads(data)
-        except ValueError:
-            continue
-        if isinstance(event, dict):
-            yield event
+        if not line:
+            yield from _sse_events(buffer)
+            buffer = []
+        elif line.startswith("data:"):
+            buffer.append(line[5:].strip())
+        # ``event:``, ``id:`` y comentarios (``:``) no llevan datos.
+    yield from _sse_events(buffer)
 
 
 def translate_events(events: Iterator[dict[str, Any]]) -> Iterator[Any]:
@@ -184,6 +219,13 @@ def translate_events(events: Iterator[dict[str, Any]]) -> Iterator[Any]:
             if block_index in tool_index and block_index not in got_args:
                 # Herramienta sin argumentos: el bucle espera un JSON válido.
                 yield _tool_delta(tool_index[block_index], call_id=None, name=None, arguments="{}")
+        elif kind == "message_delta":
+            # El bucle necesita saber por qué terminó (límite, herramientas, fin normal).
+            stop = (event.get("delta") or {}).get("stop_reason")
+            usage = event.get("usage")
+            if stop or usage:
+                reason = STOP_REASONS.get(str(stop), "stop") if stop else None
+                yield _chunk(finish_reason=reason, usage=usage)
         elif kind == "message_stop":
             return
 
@@ -192,11 +234,10 @@ class _Stream:
     """Iterable de trozos con ``close()``, como el stream del SDK de OpenAI."""
 
     def __init__(self, client: httpx.Client, request: httpx.Request) -> None:
-        self._client = client
         self._response = client.send(request, stream=True)
         if self._response.status_code >= 400:
             body = self._response.read().decode("utf-8", "replace")[:300]
-            self.close()
+            self._response.close()
             raise RuntimeError(
                 f"La API compatible con Anthropic respondió {self._response.status_code}: {body}"
             )
@@ -205,10 +246,8 @@ class _Stream:
         return translate_events(iter_sse(self._response.iter_lines()))
 
     def close(self) -> None:
-        try:
-            self._response.close()
-        finally:
-            self._client.close()
+        # Solo la respuesta: el cliente HTTP es compartido entre peticiones.
+        self._response.close()
 
 
 class _Completions:
@@ -230,6 +269,7 @@ class AnthropicChatClient:
         default_headers: dict[str, str] | None = None,
         timeout: float = 60.0,
         transport: httpx.BaseTransport | None = None,
+        prompt_cache: bool = False,
     ) -> None:
         self._url = messages_url(base_url)
         self._transport = transport  # solo para pruebas
@@ -240,6 +280,9 @@ class AnthropicChatClient:
             "content-type": "application/json",
         }
         self._timeout = timeout
+        self._prompt_cache = bool(prompt_cache)
+        self._client: httpx.Client | None = None
+        self._lock = Lock()
         self.chat = SimpleNamespace(completions=_Completions(self))
 
     def build_body(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -251,22 +294,43 @@ class AnthropicChatClient:
             "stream": True,
         }
         if system:
-            body["system"] = system
+            if self._prompt_cache:
+                body["system"] = [
+                    {
+                        "type": "text",
+                        "text": system,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ]
+            else:
+                body["system"] = system
         if request.get("temperature") is not None:
             body["temperature"] = float(request["temperature"])
         tools = convert_tools(request.get("tools"))
         if tools:
+            if self._prompt_cache:
+                tools[-1]["cache_control"] = {"type": "ephemeral"}
             body["tools"] = tools
             body["tool_choice"] = {"type": "auto"}
         return body
 
-    def stream(self, request: dict[str, Any]) -> _Stream:
-        client = httpx.Client(timeout=self._timeout, transport=self._transport)
-        try:
-            prepared = client.build_request(
-                "POST", self._url, headers=self._headers, json=self.build_body(request)
-            )
-            return _Stream(client, prepared)
-        except Exception:
+    def _http(self) -> httpx.Client:
+        """Cliente HTTP compartido, creado en la primera petición."""
+        with self._lock:
+            if self._client is None:
+                self._client = httpx.Client(timeout=self._timeout, transport=self._transport)
+            return self._client
+
+    def close(self) -> None:
+        """Cierra el cliente compartido; una petición posterior lo recrea."""
+        with self._lock:
+            client, self._client = self._client, None
+        if client is not None:
             client.close()
-            raise
+
+    def stream(self, request: dict[str, Any]) -> _Stream:
+        client = self._http()
+        prepared = client.build_request(
+            "POST", self._url, headers=self._headers, json=self.build_body(request)
+        )
+        return _Stream(client, prepared)

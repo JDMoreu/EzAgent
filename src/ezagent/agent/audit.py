@@ -10,24 +10,21 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ..voice.redact import redact
+
 logger = logging.getLogger(__name__)
 
 _CONTENT_KEYS = {"content", "text", "data", "output"}
 _SECRET_KEY_PARTS = ("api_key", "apikey", "token", "password", "passwd", "secret")
-_SK_PATTERN = re.compile(r"\bsk-[A-Za-z0-9][A-Za-z0-9_-]{2,}")
-_BEARER_PATTERN = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
 
 
 def _redact_text(text: str) -> str:
-    text = _SK_PATTERN.sub("[REDACTED]", text)
-    text = _BEARER_PATTERN.sub("Bearer [REDACTED]", text)
-    return text
+    return redact(text)
 
 
 def _content_size(value: Any) -> int:
@@ -69,6 +66,7 @@ class AuditLog:
         taint: bool,
         result_ok: bool,
         ms: float,
+        error_kind: str | None = None,
     ) -> None:
         record = {
             "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
@@ -81,6 +79,8 @@ class AuditLog:
             "result_ok": bool(result_ok),
             "ms": round(float(ms), 1),
         }
+        if error_kind is not None:
+            record["error_kind"] = redact(str(error_kind))
         line = json.dumps(record, ensure_ascii=False, default=str) + "\n"
         with self._lock:
             self._rotate_if_needed(len(line.encode("utf-8")))

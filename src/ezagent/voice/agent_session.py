@@ -43,6 +43,8 @@ SETTLE_S = 0.5
 SHELL_PROMPT_TIMEOUT_S = 4.0
 CHECK_TRIES = 4
 SCREEN_LINES = 40
+CONFIRM_WINDOW_S = 4.0
+CONFIRM_POLL_S = 0.5
 
 
 @dataclass
@@ -128,13 +130,12 @@ class AgentSession:
 
     def wait_shell_prompt(self, address: str) -> bool:
         """Espera (sin pausa fija) a que la shell recién abierta dibuje su prompt."""
-        waited = 0.0
-        while waited < SHELL_PROMPT_TIMEOUT_S:
+        deadline = time.monotonic() + SHELL_PROMPT_TIMEOUT_S
+        while time.monotonic() < deadline:
             lines = [ln.strip() for ln in self._screen(address).splitlines() if ln.strip()]
             if lines and _PS_PROMPT.match(lines[-1]):
                 return True
             self._sleep(0.15)
-            waited += 0.15
         return False
 
     def _screen_shows_program(self, address: str) -> bool:
@@ -142,9 +143,13 @@ class AgentSession:
         return len(lines) >= 3 and not _PS_PROMPT.match(lines[-1])
 
     def wait_ready(self, address: str, timeout: float = READY_TIMEOUT_S) -> bool:
-        """Espera a que en la terminal corra un agente (no la shell) y repose."""
-        waited = 0.0
-        while waited <= timeout:
+        """Espera a que en la terminal corra un agente (no la shell) y repose.
+
+        El plazo es monotónico e incluye lo que tarden `get_agent` y la lectura
+        de pantalla, no solo las pausas.
+        """
+        deadline = time.monotonic() + timeout
+        while time.monotonic() <= deadline:
             try:
                 info = self.get_agent(address)
             except Exception:  # noqa: BLE001 - la terminal puede no estar lista
@@ -161,15 +166,23 @@ class AgentSession:
                 self._sleep(SETTLE_S)
                 return True
             self._sleep(POLL_S)
-            waited += POLL_S
         return False
 
-    def _screen(self, address: str) -> str:
+    def _try_screen(self, address: str) -> str | None:
+        """Pantalla visible, o None si la lectura falló.
+
+        None (fallo de lectura) es distinto de "" (pantalla vacía): quien
+        confirma una entrega no puede tratar un fallo como «no hay nada
+        pendiente».
+        """
         try:
             text = self.read_agent(address, SCREEN_LINES)
         except Exception:  # noqa: BLE001 - leer es best-effort
-            return ""
+            return None
         return "\n".join(str(text).splitlines()[-SCREEN_LINES:])
+
+    def _screen(self, address: str) -> str:
+        return self._try_screen(address) or ""
 
     def _check_screen(self, address: str, step: dict[str, Any], values: dict[str, str]) -> str:
         """Comprueba ``expect``/``fail`` en pantalla; devuelve el fallo o ''."""
@@ -226,8 +239,11 @@ class AgentSession:
             sent = self.send_agent(address, label, confirmed=True)
         if not sent.get("ok"):
             return "", f"no pude escribir «{label}»"
-        self._sleep(STEP_PAUSE_S)
-        return label, self._check_screen(address, step, values)
+        if step.get("expect") or step.get("fail"):
+            # Hay una condición observable: `_check_screen` espera y reintenta.
+            return label, self._check_screen(address, step, values)
+        self._sleep(STEP_PAUSE_S)  # respaldo: nada que observar en pantalla
+        return label, ""
 
     def _apply_in_session(
         self, address: str, key: str, values: dict[str, str]
@@ -289,24 +305,33 @@ class AgentSession:
         """Comprueba que el agente tomó la tarea; si quedó sin enviar, Enter una vez.
 
         Con la máquina cargada el Enter del pegado puede perderse y la tarea se
-        queda escrita en la caja. Se mira el estado y la caja de entrada.
+        queda escrita en la caja. Se mira el estado y la caja de entrada. Si la
+        pantalla no se pudo leer no hay evidencia: nunca se confirma.
         """
-        for attempt in range(2):
-            waited = 0.0
-            while waited < 4.0:
-                try:
-                    state = str(self.get_agent(address).get("state") or "").lower()
-                except Exception:  # noqa: BLE001
-                    state = ""
-                if state == "working":
-                    return True
-                if not self._unsent_in_input(self._screen(address), task):
-                    return True
-                self._sleep(0.5)
-                waited += 0.5
-            if attempt == 0:
-                self.keys_agent(address, ["enter"])
-        return False
+        deadline = time.monotonic() + CONFIRM_WINDOW_S
+        presses = 0
+        while True:
+            try:
+                state = str(self.get_agent(address).get("state") or "").lower()
+            except Exception:  # noqa: BLE001
+                state = ""
+            if state == "working":
+                return True
+            screen = self._try_screen(address)
+            if screen is None or not screen.strip():
+                # DECISION: sin pantalla legible no hay evidencia de entrega;
+                # pulsar Enter a ciegas podría enviar otra cosa. Nunca True.
+                return False
+            if not self._unsent_in_input(screen, task):
+                return True
+            if time.monotonic() < deadline:
+                self._sleep(CONFIRM_POLL_S)
+                continue
+            if presses:
+                return False
+            presses += 1
+            self.keys_agent(address, ["enter"])
+            deadline = time.monotonic() + CONFIRM_WINDOW_S
 
     def send_task(self, address: str, task: str) -> dict[str, Any]:
         """Pega la tarea y confirma que el agente la recibió."""

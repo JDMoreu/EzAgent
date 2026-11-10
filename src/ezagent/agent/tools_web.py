@@ -17,7 +17,7 @@ import re
 import socket
 import time
 from typing import Any
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 
@@ -127,13 +127,24 @@ def run_web_search(
                 "web_search",
                 _format_search_results(normalized_query, results),
             ),
+            # Una búsqueda sin coincidencias no es un fallo, pero se marca para
+            # poder distinguirla de un proveedor caído (F47).
+            error_kind="empty" if not results else None,
         )
     except WebToolError as exc:
         return ToolResult(ok=False, error=str(exc))
     except SearchError as exc:
-        return ToolResult(ok=False, error=str(exc))
+        return ToolResult(
+            ok=False,
+            error=str(exc),
+            error_kind=getattr(exc, "kind", "provider"),
+        )
     except Exception as exc:  # noqa: BLE001 - una herramienta nunca tumba el bucle
-        return ToolResult(ok=False, error=f"La búsqueda web falló: {exc}")
+        return ToolResult(
+            ok=False,
+            error=f"La búsqueda web falló: {exc}",
+            error_kind="provider",
+        )
 
 
 def run_fetch_page(
@@ -418,8 +429,20 @@ def _resolve_ips(
     return addresses
 
 
-def _validate_public_url(url: str, config: AgentConfig) -> str:
-    """Valida esquema y destino; resuelve DNS y rechaza IPs no globales (ST-21)."""
+def _validate_public_target(
+    url: str,
+    config: AgentConfig,
+) -> tuple[
+    str,
+    str | None,
+    int,
+    list[ipaddress.IPv4Address | ipaddress.IPv6Address],
+]:
+    """Valida esquema y destino y devuelve (url, host, puerto, IPs validadas).
+
+    ``host`` es None cuando no hay que fijar destino: filtro desactivado o la
+    URL ya usa una IP literal.
+    """
     if not isinstance(url, str):
         raise UnsafeUrlError("La URL debe ser una cadena de texto.")
     raw_url = url.strip()
@@ -454,7 +477,7 @@ def _validate_public_url(url: str, config: AgentConfig) -> str:
     if not _blocks_private_ips(config):
         # DECISION: WebConfig.block_private_ips permite desactivar el filtro
         # de hosts; el esquema http(s) se sigue exigiendo siempre.
-        return raw_url
+        return raw_url, None, effective_port, []
 
     host_clean = host.rstrip(".").lower()
     if host_clean == "localhost" or host_clean.endswith(".localhost"):
@@ -467,11 +490,53 @@ def _validate_public_url(url: str, config: AgentConfig) -> str:
         literal_ip = None
     if literal_ip is not None:
         _ensure_public_ip(literal_ip, host)
-        return raw_url
+        return raw_url, None, effective_port, [literal_ip]
 
-    for resolved_ip in _resolve_ips(host_clean, effective_port):
+    resolved = _resolve_ips(host_clean, effective_port)
+    for resolved_ip in resolved:
         _ensure_public_ip(resolved_ip, host)
-    return raw_url
+    return raw_url, host_clean, effective_port, resolved
+
+
+def _validate_public_url(url: str, config: AgentConfig) -> str:
+    """Valida esquema y destino; resuelve DNS y rechaza IPs no globales (ST-21)."""
+    return _validate_public_target(url, config)[0]
+
+
+def _pinned_request_target(
+    url: str,
+    config: AgentConfig,
+) -> tuple[str, dict[str, str], dict[str, Any]]:
+    """Fija la conexión a una IP ya validada conservando Host y SNI (F36).
+
+    Devuelve ``(connect_url, headers, extensions)``. Si el filtro está
+    desactivado o la URL usa una IP literal, no hay nada que fijar y se
+    devuelve la URL original sin cabeceras ni extensiones extra.
+    """
+    validated, host, port, addresses = _validate_public_target(url, config)
+    if host is None or not addresses:
+        return validated, {}, {}
+
+    # DECISION: se prefiere una IPv4 validada para no perder conectividad en
+    # equipos sin IPv6; cualquiera de la lista ya pasó el filtro.
+    address = next((item for item in addresses if item.version == 4), addresses[0])
+    parts = urlsplit(validated)
+    scheme = parts.scheme.lower()
+    default_port = 443 if scheme == "https" else 80
+    netloc = f"[{address}]" if address.version == 6 else str(address)
+    if port != default_port:
+        netloc = f"{netloc}:{port}"
+    connect_url = urlunsplit((scheme, netloc, parts.path or "/", parts.query, ""))
+
+    # El Host y el SNI deben ser ASCII; los dominios internacionalizados se
+    # envían en punycode, igual que hacía httpx con la URL original.
+    try:
+        ascii_host = host.encode("idna").decode("ascii")
+    except UnicodeError:
+        ascii_host = host
+    headers = {"Host": ascii_host if port == default_port else f"{ascii_host}:{port}"}
+    extensions: dict[str, Any] = {"sni_hostname": ascii_host} if scheme == "https" else {}
+    return connect_url, headers, extensions
 
 
 def _extract_text(page_html: str) -> str:
@@ -517,6 +582,9 @@ def _download_page_text(
         follow_redirects=False,
         timeout=timeout,
         transport=guarded_transport,
+        # F36: con IP fijada no se reutiliza la conexión entre saltos; dos
+        # hosts distintos pueden compartir IP y no deben compartir el SNI.
+        limits=httpx.Limits(max_keepalive_connections=0),
         # DECISION: ignorar proxies del entorno evita que un HTTP_PROXY
         # inesperado se salte la validación de destino.
         trust_env=False,
@@ -527,7 +595,16 @@ def _download_page_text(
     ) as client:
         while True:
             try:
-                current_url = _validate_public_url(current_url, config)
+                # F36: en producción se conecta a la IP recién validada,
+                # conservando Host y SNI; el transporte de pruebas no se toca.
+                if transport is None and _blocks_private_ips(config):
+                    connect_url, extra_headers, extensions = _pinned_request_target(
+                        current_url, config
+                    )
+                else:
+                    current_url = _validate_public_url(current_url, config)
+                    connect_url = current_url
+                    extra_headers, extensions = {}, {}
             except UnsafeUrlError as exc:
                 if redirects:
                     raise UnsafeUrlError(f"Redirección bloqueada: {exc}") from exc
@@ -541,7 +618,9 @@ def _download_page_text(
 
             with client.stream(
                 "GET",
-                current_url,
+                connect_url,
+                headers=extra_headers or None,
+                extensions=extensions or None,
                 timeout=httpx.Timeout(remaining),
             ) as response:
                 if response.is_redirect:
