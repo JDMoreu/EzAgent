@@ -8,7 +8,13 @@ from types import SimpleNamespace
 import pytest
 
 from ezagent.agent.registry import ToolResult
-from ezagent.voice.llm import ACK_FILLERS, Messenger, friendly_llm_error
+from ezagent.voice.llm import (
+    ACK_FILLERS,
+    MAX_HISTORY_MESSAGES,
+    TOOL_MAX_TOKENS,
+    Messenger,
+    friendly_llm_error,
+)
 
 
 # ------------------------------------------------------------- dobles
@@ -171,9 +177,9 @@ def test_la_peticion_lleva_modelo_temperatura_y_herramientas() -> None:
     client = Client([text("ok")])
     make(client).ask("hola")
     (request,) = client.requests
-    assert (
-        request["model"] == "gpt-x" and request["max_tokens"] == 150 and request["stream"] is True
-    )
+    # Con herramientas hay holgura: una llamada con argumentos largos no puede cortarse a medias.
+    assert request["model"] == "gpt-x" and request["stream"] is True
+    assert request["max_tokens"] == TOOL_MAX_TOKENS
     assert request["temperature"] == 0.3
     assert (
         request["tools"][0]["function"]["name"] == "get_datetime"
@@ -346,16 +352,26 @@ def test_un_runtime_que_falla_al_empezar_el_turno_degrada_a_conversacion() -> No
 
 
 # ----------------------------------------------------------------- historial
-def test_el_historial_se_recorta_sin_dejar_tool_huerfanos() -> None:
+def test_el_historial_tiene_un_tope_duro_y_no_deja_tool_huerfanos() -> None:
+    turns = MAX_HISTORY_MESSAGES  # el doble de mensajes que el tope
+    messenger = make(Client(*[[text(f"r{i}")] for i in range(turns)]))
+    for i in range(turns):
+        say(messenger, f"pregunta {i}")
+    assert len(messenger.messages) <= MAX_HISTORY_MESSAGES + 2
+    assert messenger.messages[0]["role"] == "system" and messenger.messages[1]["role"] == "user"
+    assert (
+        messenger.messages[-1]["content"] == f"r{turns - 1}"
+        and messenger.messages[-2]["content"] == f"pregunta {turns - 1}"
+    )
+
+
+def test_una_conversacion_normal_ya_no_olvida_las_primeras_vueltas() -> None:
     messenger = make(Client(*[[text(f"r{i}")] for i in range(12)]))
     for i in range(12):
         say(messenger, f"pregunta {i}")
-    assert len(messenger.messages) <= 14 and messenger.messages[0]["role"] == "system"
-    assert messenger.messages[1]["role"] == "user"
-    assert (
-        messenger.messages[-1]["content"] == "r11"
-        and messenger.messages[-2]["content"] == "pregunta 11"
-    )
+    texts = [m["content"] for m in messenger.messages[1:]]
+    assert "pregunta 0" in texts and "r0" in texts  # antes se perdían con solo 6 vueltas
+    assert len(messenger.messages) == 1 + 24
 
 
 def test_trim_nunca_empieza_con_un_resultado_de_herramienta() -> None:
@@ -524,12 +540,14 @@ def test_el_modo_chat_permite_markdown_y_respuestas_largas() -> None:
 def test_el_modo_voz_no_cambia_ni_el_prompt_ni_los_tokens() -> None:
     from ezagent.voice.llm import CHAT_MODE_PROMPT
 
-    client = Client([text("Hola.")])
-    say(make(client), "hola")
-    request = client.requests[0]
-    assert request["max_tokens"] == 150
-    assert request["messages"][0]["content"] == "PROMPT-SISTEMA"
-    assert CHAT_MODE_PROMPT not in request["messages"][0]["content"]
+    client = Client([text("Hola.")], [text("Hola otra vez.")])
+    say(make(client, Runtime(tools=[])), "hola")  # sin herramientas: el tope configurado
+    say(make(client), "hola")  # con herramientas: holgura para llamadas largas
+    sin, con = client.requests
+    assert sin["max_tokens"] == 150 and con["max_tokens"] == TOOL_MAX_TOKENS
+    for request in (sin, con):
+        assert request["messages"][0]["content"] == "PROMPT-SISTEMA"
+        assert CHAT_MODE_PROMPT not in request["messages"][0]["content"]
 
 
 def test_el_bloque_del_chat_no_se_arrastra_al_turno_de_voz_siguiente() -> None:
@@ -541,7 +559,7 @@ def test_el_bloque_del_chat_no_se_arrastra_al_turno_de_voz_siguiente() -> None:
     messenger.client = Client([text("Dos.")])
     say(messenger, "b")
     assert CHAT_MODE_PROMPT not in messenger.client.requests[0]["messages"][0]["content"]
-    assert messenger.client.requests[0]["max_tokens"] == 150
+    assert messenger.client.requests[0]["max_tokens"] == TOOL_MAX_TOKENS
 
 
 def test_el_chat_no_dice_acuses_de_relleno() -> None:

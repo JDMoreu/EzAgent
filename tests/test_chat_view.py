@@ -198,7 +198,9 @@ def test_clicking_the_input_places_the_caret(tmp_path: Path) -> None:
 def test_assistant_messages_can_be_copied_as_plain_text(tmp_path: Path) -> None:
     model, view = make(tmp_path)
     reply(model, "hola", "Un **resumen** con `código`")
-    assert click(view, "copy_msg") == Action("copy", "Un resumen con código")
+    assert click(view, "copy_msg", "Un resumen con código") == Action(
+        "copy", "Un resumen con código"
+    )
 
 
 def test_code_blocks_documents_and_images_give_actions(tmp_path: Path) -> None:
@@ -423,3 +425,79 @@ def test_changing_size_or_theme_rebuilds_the_messages(tmp_path: Path) -> None:
     view.render(1.0)
     view.configure(W + 40, H, 1.0, "dark", card_palette("dark"))
     assert view._cache  # sin cambios no se tira la caché
+
+
+# ------------------------------------------------- copiar lo escrito y las notas
+def test_what_the_user_typed_can_be_copied_exactly_as_typed(tmp_path: Path) -> None:
+    model, view = make(tmp_path)
+    typed = "Compara **A** con `B`\ny también C"
+    model.add_user(typed)
+    assert click(view, "copy_msg", typed) == Action("copy", typed)  # sin interpretar el markdown
+
+
+def test_every_message_shows_a_visible_copy_label(tmp_path: Path, monkeypatch) -> None:
+    model, view = make(tmp_path)
+    reply(model, "hola", "respuesta")
+    labels: list[str] = []
+    original = view._text
+    monkeypatch.setattr(
+        view,
+        "_text",
+        lambda buf, text, *a, **k: (labels.append(text), original(buf, text, *a, **k))[1],
+    )
+    view.render(1.0)
+    assert labels.count("COPIAR") == 2  # el del usuario y el del asistente: antes era invisible
+
+
+def test_the_copy_label_confirms_for_a_moment(tmp_path: Path, monkeypatch) -> None:
+    model, view = make(tmp_path)
+    reply(model, "hola", "respuesta")
+    labels: list[str] = []
+    original = view._text
+    monkeypatch.setattr(
+        view,
+        "_text",
+        lambda buf, text, *a, **k: (labels.append(text), original(buf, text, *a, **k))[1],
+    )
+    view.flash_copied("hola", now=10.0)
+    view.render(10.5)
+    assert labels.count("COPIADO") == 1 and labels.count("COPIAR") == 1  # solo el copiado
+    labels.clear()
+    view.render(12.0)  # pasó el aviso
+    assert "COPIADO" not in labels and labels.count("COPIAR") == 2
+    assert view.animating(10.5) and not view.animating(12.0)
+
+
+def test_voice_messages_say_so_next_to_copy(tmp_path: Path, monkeypatch) -> None:
+    model, view = make(tmp_path)
+    model.add_user("dicho en voz alta", "voice")
+    labels: list[str] = []
+    original = view._text
+    monkeypatch.setattr(
+        view,
+        "_text",
+        lambda buf, text, *a, **k: (labels.append(text), original(buf, text, *a, **k))[1],
+    )
+    view.render(1.0)
+    assert "POR VOZ ·" in labels and "COPIAR" in labels
+
+
+def test_context_notes_are_drawn_centred_without_copy_or_caption(tmp_path: Path) -> None:
+    model, view = make(tmp_path)
+    reply(model, "hola", "respuesta")
+    model.add_note("Conversación compactada: lo anterior queda resumido.")
+    _, messages = model.snapshot()
+    note = view._entry(messages[-1], 1.0)
+    assert note.caption_hit is None and note.arr[..., 3].max() > 0
+    assert note.height < 40
+    view.render(1.0)
+    assert [d for _r, k, d in view._hits if k == "copy_msg"] == ["hola", "respuesta"]  # la nota no
+
+
+def test_a_note_that_wraps_stays_inside_the_column(tmp_path: Path) -> None:
+    model, view = make(tmp_path)
+    model.add_note("Conversación compactada. " * 12)
+    _, (msg,) = model.snapshot()
+    entry = view._entry(msg, 1.0)
+    assert entry.height > 30
+    assert entry.x + entry.arr.shape[1] / view.g.scale <= W

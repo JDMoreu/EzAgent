@@ -1002,6 +1002,7 @@ class DropUI:
         self.chat_roots = None
         self.chat_base_dirs = ()
         self.chat_hotkey = ""
+        self.chat_size: tuple[float, float] | None = None  # tamaño recordado (px lógicos)
         self.on_chat_send = lambda text: None
         self.on_chat_voice = lambda enabled: None
         self.on_chat_new = lambda: None
@@ -1377,6 +1378,23 @@ class DropUI:
     def form_size(self) -> tuple[float, float]:
         """Tamaño lógico de la forma de color (esfera o píldora)."""
         return _form_dims(self.layout)
+
+    def chat_pose(self) -> str:
+        """Pose actual de la barra (idle, listen, think, speak…): la voz del orbe del chat."""
+        return str(self.model.pose)
+
+    def remember_chat_size(self, width: float, height: float) -> None:
+        """Guarda el tamaño del chat tras redimensionarlo."""
+        self.chat_size = (float(width), float(height))
+        if self.cfg is None:
+            return
+        try:
+            # También en memoria: un «Guardar» de Ajustes vuelca todo el objeto de configuración.
+            self.cfg.chat_width, self.cfg.chat_height = round(width, 1), round(height, 1)
+            self.cfg.save_key("chat_width", self.cfg.chat_width)
+            self.cfg.save_key("chat_height", self.cfg.chat_height)
+        except Exception:
+            pass
 
     def chat_body_rgb(self) -> tuple[int, int, int]:
         return tuple(card_palette(self._theme_name())["BODY"][:3])  # type: ignore[return-value]

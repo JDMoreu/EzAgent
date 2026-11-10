@@ -469,6 +469,8 @@ class VoiceApp:
             mic_mute=self._llm_mic_mute,
             runtime=self.agent,
         )
+        # Cuando la conversación se compacta, el chat lo cuenta con una nota.
+        self.messenger.on_context_event = lambda text: self.chat.add_note(text)
         # Lista real de modelos del proveedor activo: llena el menú y corrige
         # un id guardado sin prefijo antes del primer turno.
         self._fetch_llm_models(
@@ -495,6 +497,8 @@ class VoiceApp:
         self.notch.menu_settings_provider = self._notch_menu_settings
         self.notch.chat_model = self.chat
         self.notch.chat_hotkey = cfg.chat_hotkey
+        if cfg.chat_width > 0 and cfg.chat_height > 0:
+            self.notch.chat_size = (float(cfg.chat_width), float(cfg.chat_height))
         self.notch.chat_roots, self.notch.chat_base_dirs = self._chat_media_roots()
         self.notch.on_chat_new = lambda: self.events.put(("chat_new",))
         self.notch.on_chat_stop = lambda: self.events.put(("chat_stop",))
@@ -2452,6 +2456,8 @@ class VoiceApp:
                 self.cfg.llm_temperature = float(value)
             elif key == "llm_max_tokens":
                 self.cfg.llm_max_tokens = int(round(float(value)))
+            elif key == "llm_context_tokens":
+                self.cfg.llm_context_tokens = int(round(float(value)))
             elif key == "llm_reasoning_effort":
                 self.cfg.llm_reasoning_effort = str(value)
             elif key in ("smart_turn", "turn_threshold"):
@@ -2705,6 +2711,9 @@ class VoiceApp:
         )
         self.cfg.llm_temperature = number("llm_temperature", self.cfg.llm_temperature)
         self.cfg.llm_max_tokens = int(round(number("llm_max_tokens", self.cfg.llm_max_tokens)))
+        self.cfg.llm_context_tokens = int(
+            round(number("llm_context_tokens", self.cfg.llm_context_tokens))
+        )
         self.cfg.llm_reasoning_effort = str(
             values.get("llm_reasoning_effort", self.cfg.llm_reasoning_effort)
         )

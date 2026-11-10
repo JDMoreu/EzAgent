@@ -81,6 +81,13 @@ class ChatModel:
             self._bump()
             return message
 
+    def add_note(self, text: str) -> ChatMessage:
+        """Una nota de la propia app («conversación compactada»): se ve, pero no se guarda."""
+        with self._lock:
+            message = self._push("system", text, "agent")
+            self._bump()
+            return message
+
     def begin_assistant(self, source: Source = "chat") -> ChatMessage:
         """Empieza una respuesta vacía que irá llenándose."""
         with self._lock:

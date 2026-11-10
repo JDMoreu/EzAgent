@@ -12,9 +12,11 @@ from typing import Any
 from loguru import logger
 from openai import OpenAI
 
+from . import context as ctx_mgr
 from .anthropic_client import AnthropicChatClient
 from .config import VoiceConfig
 from .herdr import Herdr
+from .tool_json import is_tool_json_error, repair_arguments, sanitize_history
 
 # Acuse que dice el código si el modelo pide una herramienta sin haber dicho
 # nada en el turno: así no queda un silencio mientras trabaja.
@@ -43,6 +45,11 @@ CHAT_MODE_PROMPT = (
     "- No uses HTML. No pegues enlaces de imágenes de la web."
 )
 CHAT_MAX_TOKENS = 2400
+# Con herramientas disponibles, la respuesta puede ser una llamada con argumentos largos (el
+# prompt de un agente). Con el tope de voz (~320) se cortaba a mitad y quedaba JSON roto.
+TOOL_MAX_TOKENS = 1500
+# Tope duro de mensajes en el historial; el límite real lo pone la ventana de contexto.
+MAX_HISTORY_MESSAGES = 60
 
 
 def _status_of(exc: BaseException) -> int | None:
@@ -75,6 +82,12 @@ def friendly_llm_error(exc: BaseException, label: str, model: str) -> str:
         return (
             f"La petición es más grande de lo que permite tu plan de {label} por "
             "minuto. Usa otro proveedor o un plan con más tokens."
+        )
+    text = str(exc).lower()
+    if status == 500 and "tool call" in text and ("parse" in text or "json" in text):
+        return (
+            f"{label} cortó una llamada a herramienta a la mitad y no pudo leerla. "
+            "Ya limpié el historial; vuelve a intentarlo."
         )
     if status == 404:
         return f"{label} no reconoce el modelo {model}. Revisa el nombre en ajustes."
@@ -112,6 +125,10 @@ class Messenger:
         self._last_user_text = ""
         self._last_agent_address: str | None = None
         self._filler_index = 0
+        # Resumen de lo que ya salió del historial por la ventana de contexto.
+        self.summary = ""
+        # Aviso de contexto («conversación compactada») para el chat; la app lo conecta.
+        self.on_context_event: Callable[[str], None] | None = None
         # Desglose del último turno: una entrada por llamada al LLM.
         self.last_rounds: list[str] = []
 
@@ -254,15 +271,16 @@ class Messenger:
         """Olvida la conversación (conserva solo el mensaje de sistema)."""
         self.messages = self.messages[:1]
         self._last_user_text = ""
+        self.summary = ""
 
     # ------------------------------------------------------------- tool loop
-    def _trim_history(self) -> None:
+    def _trim_history(self, keep: int = 12) -> None:
         """Recorta por grupos completos, nunca entre assistant y tool."""
-        if len(self.messages) <= 14:
+        if len(self.messages) <= keep + 2:
             return
         system = self.messages[0]
         history = self.messages[1:]
-        while len(history) > 12:
+        while len(history) > keep:
             history.pop(0)
         # El primer mensaje del historial debe ser del usuario: así no queda
         # un assistant.tool_calls sin sus resultados tool ni un tool huérfano.
@@ -299,11 +317,15 @@ class Messenger:
         if runtime is None:
             # Sin núcleo agéntico el prompt es fijo: se rehace para no arrastrar el del chat.
             self.messages[0] = {"role": "system", "content": self._system_prompt()}
+        core = str(self.messages[0].get("content") or "")
+        sanitize_history(self.messages)  # nunca se manda JSON roto de una llamada anterior
+        self._manage_context()  # puede resumir lo viejo: el prompt se arma después, con el resumen
+        base = ctx_mgr.with_summary(core, self.summary) if self.summary else core
         if chat:
-            base = str(self.messages[0].get("content") or "")
-            self.messages[0] = {"role": "system", "content": f"{base}\n\n{CHAT_MODE_PROMPT}"}
+            base = f"{base}\n\n{CHAT_MODE_PROMPT}"
+        self.messages[0] = {"role": "system", "content": base}
         self.messages.append({"role": "user", "content": text})
-        self._trim_history()
+        self._trim_history(MAX_HISTORY_MESSAGES)
         self.last_rounds = []
         spoke = chat  # el acuse de relleno es para la voz; en el chat no hace falta
         for _ in range(4):
@@ -323,11 +345,7 @@ class Messenger:
                     if self.cfg.llm_provider == "anthropic" and not self._anthropic_style()
                     else self.cfg.llm_temperature
                 ),
-                "max_tokens": (
-                    max(int(self.cfg.llm_max_tokens), CHAT_MAX_TOKENS)
-                    if chat
-                    else self.cfg.llm_max_tokens
-                ),
+                "max_tokens": self._max_tokens(chat, bool(tools)),
                 "stream": True,
             }
             if tools:
@@ -344,7 +362,8 @@ class Messenger:
                 request["extra_body"] = {"reasoning_effort": effort}
             began = time.monotonic()
             first_chunk: float | None = None
-            stream = self.client.chat.completions.create(**request)
+            stream = self._open_stream(request)
+            finish_reason: str | None = None
             tool_calls: dict[int, dict[str, Any]] = {}
             content_parts: list[str] = []
             try:
@@ -352,6 +371,9 @@ class Messenger:
                     if not chunk.choices:
                         continue
                     delta = chunk.choices[0].delta
+                    finish_reason = (
+                        getattr(chunk.choices[0], "finish_reason", None) or finish_reason
+                    )
                     if first_chunk is None and (delta.content or delta.tool_calls):
                         first_chunk = time.monotonic() - began
                     if delta.content:
@@ -394,6 +416,7 @@ class Messenger:
                 if content_parts:
                     yield " "  # separa el acuse del modelo de lo que siga
                 ordered = [tool_calls[i] for i in sorted(tool_calls)]
+                complete = self._seal_tool_calls(ordered, finish_reason)
                 self.messages.append(
                     {
                         "role": "assistant",
@@ -401,15 +424,28 @@ class Messenger:
                         "tool_calls": ordered,
                     }
                 )
-                for call in ordered:
+                for number, call in enumerate(ordered):
                     name = call["function"]["name"]
                     tool_began = time.monotonic()
                     try:
                         if runtime is None:
                             raise RuntimeError("el núcleo agéntico no está disponible")
-                        content = runtime.render_result(
-                            runtime.execute(name, call["function"]["arguments"])
-                        )
+                        if not complete[number]:
+                            # Respuesta cortada a mitad de los argumentos: no se ejecuta con medio dato.
+                            content = json.dumps(
+                                {
+                                    "ok": False,
+                                    "error": (
+                                        "Los argumentos de la herramienta llegaron incompletos "
+                                        "(la respuesta se cortó). Repite la llamada con menos texto."
+                                    ),
+                                },
+                                ensure_ascii=False,
+                            )
+                        else:
+                            content = runtime.render_result(
+                                runtime.execute(name, call["function"]["arguments"])
+                            )
                     except Exception as exc:  # noqa: BLE001
                         logger.warning("Herramienta {}: {}", name, exc)
                         # El aviso sale por voz, no solo al log.
@@ -444,6 +480,145 @@ class Messenger:
                     pass
             return
         yield "Me he quedado dando vueltas con las herramientas; prueba a preguntar de otra forma."
+
+    # ------------------------------------------------- JSON, contexto y recuperación
+    def _max_tokens(self, chat: bool, has_tools: bool) -> int:
+        """Tope de la respuesta: el configurado, más holgura si habrá un documento o una herramienta."""
+        limit = int(self.cfg.llm_max_tokens)
+        if chat:
+            return max(limit, CHAT_MAX_TOKENS)
+        return max(limit, TOOL_MAX_TOKENS) if has_tools else limit
+
+    @staticmethod
+    def _seal_tool_calls(ordered: list[dict[str, Any]], finish_reason: str | None) -> list[bool]:
+        """Deja válidos los argumentos que se guardan y dice cuáles llegaron completos."""
+        complete: list[bool] = []
+        for item in ordered:
+            fixed, ok = repair_arguments(item["function"]["arguments"])
+            if not ok:
+                logger.warning(
+                    "Argumentos de {} incompletos (fin: {}); se reparan para el historial.",
+                    item["function"]["name"],
+                    finish_reason or "?",
+                )
+            item["function"]["arguments"] = fixed
+            complete.append(ok)
+        return complete
+
+    def _open_stream(self, request: dict[str, Any]) -> Any:
+        """Abre la petición; si el servidor rechaza JSON de herramientas del historial, lo arregla.
+
+        Primero reintenta con los argumentos reparados y, si aun así falla, sin las llamadas a
+        herramientas anteriores: la conversación nunca se queda atascada.
+        """
+        try:
+            return self.client.chat.completions.create(**request)
+        except Exception as exc:  # noqa: BLE001
+            if not is_tool_json_error(exc):
+                raise
+            logger.warning("El servidor rechazó argumentos de herramienta del historial: {}", exc)
+        fixed = sanitize_history(self.messages)
+        try:
+            logger.info("Reparé {} llamada(s) del historial y reintento.", fixed)
+            return self.client.chat.completions.create(**request)
+        except Exception as exc:  # noqa: BLE001
+            if not is_tool_json_error(exc):
+                raise
+        self._strip_tool_history()
+        logger.warning("Último recurso: reintento sin las llamadas a herramientas anteriores.")
+        return self.client.chat.completions.create(**request)
+
+    def _strip_tool_history(self) -> None:
+        """Quita las llamadas a herramientas y sus resultados del historial (queda lo conversado)."""
+        kept: list[dict[str, Any]] = [self.messages[0]]
+        for message in self.messages[1:]:
+            if message.get("role") == "tool":
+                continue
+            if message.get("tool_calls"):
+                if str(message.get("content") or "").strip():
+                    kept.append({"role": "assistant", "content": message["content"]})
+                continue
+            kept.append(message)
+        self.messages[:] = kept
+
+    def _notify_context(self, text: str) -> None:
+        if self.on_context_event is not None:
+            try:
+                self.on_context_event(text)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _manage_context(self) -> None:
+        """Mantiene la conversación dentro de la ventana de contexto configurada.
+
+        Primero recorta resultados de herramientas viejos (lo que más gasta) y, al acercarse al
+        límite, resume lo antiguo en vez de olvidarlo.
+        """
+        budget = ctx_mgr.budget_tokens(getattr(self.cfg, "llm_context_tokens", 32_000))
+        reserve = 3_000 + int(self.cfg.llm_max_tokens)  # esquemas de herramientas + respuesta
+        if ctx_mgr.needs_clipping(self.messages, budget):
+            ctx_mgr.clip_old_tool_results(self.messages)
+        if ctx_mgr.needs_compaction(self.messages, budget, reserve):
+            self._compact(budget)
+
+    def _compact(self, budget: int) -> None:
+        reserve = 3_000 + int(self.cfg.llm_max_tokens)
+        old, recent = ctx_mgr.fit_recent(self.messages, budget, reserve)
+        if not old:
+            # Una sola vuelta (enorme): no hay nada que resumir; como último recurso se recortan
+            # incluso los resultados de herramientas recientes.
+            ctx_mgr.clip_old_tool_results(self.messages, protect_last_turns=0)
+            return
+        before = ctx_mgr.estimate_tokens(self.messages)
+        self._notify_context("Compactando la conversación para no llenar el contexto…")
+        try:
+            summary = self._summarize(old)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("No pude resumir la conversación: {}", exc)
+            summary = ""
+        if summary:
+            self.summary = summary
+        self.messages = [self.messages[0]] + recent
+        after = ctx_mgr.estimate_tokens(self.messages)
+        logger.info(
+            "Contexto compactado: {} -> {}",
+            ctx_mgr.describe(before, budget),
+            ctx_mgr.describe(after, budget),
+        )
+        self._notify_context(
+            "Conversación compactada: lo anterior queda resumido."
+            if summary
+            else "No pude resumir lo anterior; lo más antiguo se olvidó para seguir."
+        )
+
+    def _summarize(self, old: list[dict[str, Any]]) -> str:
+        """Pide al propio modelo un resumen de ``old`` (integrando el resumen previo)."""
+        messages = ctx_mgr.summary_messages(old, self.summary)
+        return self._complete_text(messages, ctx_mgr.SUMMARY_TOKENS).strip()[:6000]
+
+    def _complete_text(self, messages: list[dict[str, Any]], max_tokens: int) -> str:
+        """Una respuesta de texto sin herramientas (se lee el streaming entero)."""
+        request: dict[str, Any] = {
+            "model": self.cfg.llm_model,
+            "messages": messages,
+            "temperature": (
+                1.0 if self.cfg.llm_provider == "anthropic" and not self._anthropic_style() else 0.2
+            ),
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        stream = self.client.chat.completions.create(**request)
+        parts: list[str] = []
+        try:
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    parts.append(chunk.choices[0].delta.content)
+        finally:
+            try:
+                stream.close()
+            except Exception:  # noqa: BLE001
+                pass
+        return "".join(parts)
 
     # --------------------------------------------------------------- avisos
     def note_done(

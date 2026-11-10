@@ -232,3 +232,20 @@ def test_empty_input_says_nothing() -> None:
     assert spoken_version("") == ""
     assert spoken_version("   \n\n") == ""
     assert spoken_version("---") == ""
+
+
+def test_notes_are_visible_but_never_saved(store: ChatStore) -> None:
+    model = ChatModel(store)
+    model.add_user("hola")
+    note = model.add_note("Conversación compactada.")
+    version = model.version
+    _, messages = model.snapshot()
+    assert [(m.role, m.text) for m in messages] == [
+        ("user", "hola"),
+        ("system", "Conversación compactada."),
+    ]
+    assert note.role == "system" and note.source == "agent"
+    assert [e.role for e in store.entries()] == ["user"]  # no entra en el historial
+    again = ChatModel(ChatStore(store.path))
+    assert [m.role for m in again.snapshot()[1]] == ["user"]
+    assert not model.busy and model.version == version

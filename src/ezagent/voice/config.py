@@ -362,6 +362,9 @@ class VoiceConfig:
     llm_api_style: str = ""
     llm_temperature: float = 0.3
     llm_max_tokens: int = 320
+    # Ventana de contexto que se le permite usar a la conversación (tokens). Al acercarse,
+    # lo antiguo se resume. Ponla según tu modelo (p. ej. 160000 para uno local de 200 k).
+    llm_context_tokens: int = 32000
     llm_reasoning_effort: str = "none"
     # True cuando el usuario elige proveedor/modelo desde el menú del notch.
     # A partir de ahí voice.json manda sobre LLM_PROVIDER del .env, para que
@@ -387,6 +390,9 @@ class VoiceConfig:
     drop_y: int | None = None
     drop_layout: str = ""  # disposición con la que se guardó drop_x/drop_y
     drop_dock: str = ""  # lado de los botones con el que se guardó drop_x/drop_y
+    # Tamaño del chat escrito (px lógicos) tras redimensionarlo; 0 = el de fábrica.
+    chat_width: float = 0.0
+    chat_height: float = 0.0
     # Forma de la barra: «pill» (cápsula) o «circle» (círculo sobre los botones).
     # Los colores siguen al tema (claro u oscuro) y los botones solo aparecen al
     # acercar el puntero; «ui_palette» y «ui_buttons» antiguos se ignoran al cargar.

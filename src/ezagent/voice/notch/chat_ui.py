@@ -1,14 +1,19 @@
 """La ventana del chat: la forma de la barra (esfera o píldora) se transforma en el panel.
 
-``ChatPanel`` lleva el ciclo de vida (abrir, animar, cerrar), la geometría y el reparto del ratón
-y del teclado; ``ChatWindow`` es la ventana *layered* que lo pinta. El contenido (cabecera,
+``ChatPanel`` lleva el ciclo de vida (abrir, animar, cerrar), el redimensionado y el reparto del
+ratón y del teclado; ``ChatWindow`` es la ventana *layered* que lo pinta. El contenido (cabecera,
 mensajes, entrada) lo dibuja ``ChatView``; aquí solo se compone con la transformación:
 
-* al abrir, un rectángulo redondeado pasa del tamaño de la forma al del panel, con el fluido
-  Marea como relleno que se funde al fondo del panel, y el contenido aparece al final;
-* al cerrar, el recorrido es el inverso y la barra recupera su forma.
+* al abrir, un rectángulo redondeado pasa del tamaño de la forma al del panel (con un pequeño
+  rebote al asentarse), con el fluido Marea de relleno que se funde al fondo; el contenido aparece
+  de arriba abajo mientras sube unos píxeles;
+* al cerrar, el recorrido es el inverso y más corto, y el contenido se va antes que la forma;
+* el orbe de la cabecera y la línea bajo ella son el mismo fluido de la barra y siguen su estado
+  (escuchando, pensando, hablando): es la retroalimentación de qué está haciendo EzAgent.
 
-Con movimiento reducido no hay transformación: solo un fundido.
+La geometría del panel es *local a la ventana*: siempre está a ``MARGIN`` del borde, así que
+mover o redimensionar la ventana nunca lo saca del lienzo. Con movimiento reducido no hay
+transformación: solo un fundido.
 """
 
 from __future__ import annotations
@@ -25,78 +30,43 @@ from ..chat.session import ChatModel
 from . import hotkey_field as hk
 from . import layered as _shell
 from .bar_theme import card_palette
+from .chat_geometry import (
+    FADE_SECS,
+    GRIP,
+    MARGIN,
+    MIN_H,
+    MIN_W,
+    MORPH_SECS,
+    PANEL_H,
+    PANEL_RADIUS,
+    PANEL_W,
+    SCREEN_PAD,
+    Edges,
+    Rect,
+    ease,
+    edge_cursor,
+    edges_at,
+    lerp,
+    lerp_rect,
+    panel_limits,
+    panel_rect,
+    panel_size,
+    resize_rect,
+    rounded_coverage,
+    smoothstep,
+)
+from .chat_paint import PaintMixin, row_reveal, shape_progress
 from .chat_view import Action, ChatView
 
-PANEL_W: Final[float] = 440.0
-PANEL_H: Final[float] = 640.0
-MARGIN: Final[float] = 16.0  # aire alrededor del panel para la sombra (px lógicos)
-SCREEN_PAD: Final[float] = 12.0  # separación mínima al borde de la pantalla
-PANEL_RADIUS: Final[float] = 22.0
-MORPH_SECS: Final[float] = 0.36
-FADE_SECS: Final[float] = 0.14  # con movimiento reducido
-
-Rect = tuple[float, float, float, float]
-
-
-# ---------------------------------------------------------------- geometría
-def smoothstep(x: float) -> float:
-    x = max(0.0, min(1.0, x))
-    return x * x * (3.0 - 2.0 * x)
-
-
-def ease(x: float) -> float:
-    """Aceleración y frenado suaves (cúbica): la forma arranca con calma y se asienta sin golpe."""
-    x = max(0.0, min(1.0, x))
-    return 4 * x**3 if x < 0.5 else 1.0 - (-2 * x + 2) ** 3 / 2
-
-
-def lerp(a: float, b: float, k: float) -> float:
-    return a + (b - a) * k
-
-
-def lerp_rect(a: Rect, b: Rect, k: float) -> Rect:
-    return (lerp(a[0], b[0], k), lerp(a[1], b[1], k), lerp(a[2], b[2], k), lerp(a[3], b[3], k))
-
-
-def panel_size(work: tuple[int, int, int, int], scale: float) -> tuple[float, float]:
-    """Tamaño lógico del panel: el de fábrica, recortado si la pantalla es pequeña."""
-    avail_w = (work[2] - work[0]) / scale - 2 * SCREEN_PAD
-    avail_h = (work[3] - work[1]) / scale - 2 * SCREEN_PAD
-    return (max(320.0, min(PANEL_W, avail_w)), max(360.0, min(PANEL_H, avail_h)))
-
-
-def panel_rect(form: Rect, work: tuple[int, int, int, int], scale: float) -> Rect:
-    """Rectángulo físico del panel: crece desde la forma hacia donde haya más espacio.
-
-    Centrado en la forma y pegado a ella por el lado que mira al centro de la pantalla (una
-    barra abajo despliega hacia arriba, una arriba hacia abajo); siempre dentro de la pantalla.
-    """
-    pw, ph = (v * scale for v in panel_size(work, scale))
-    pad = SCREEN_PAD * scale
-    cx = (form[0] + form[2]) / 2
-    x0 = max(work[0] + pad, min(cx - pw / 2, work[2] - pad - pw))
-    mid = (work[1] + work[3]) / 2
-    if (form[1] + form[3]) / 2 > mid:  # barra en la mitad de abajo: crece hacia arriba
-        y1 = min(form[3], work[3] - pad)
-        y0 = max(work[1] + pad, y1 - ph)
-        y1 = y0 + ph
-    else:
-        y0 = max(work[1] + pad, form[1])
-        y1 = min(work[3] - pad, y0 + ph)
-        y0 = y1 - ph
-    return (x0, y0, x0 + pw, y0 + ph)
-
-
-def rounded_coverage(w: int, h: int, radius: float, inset: float = 0.0) -> np.ndarray:
-    """Cobertura (0..1) suave de un rectángulo redondeado ``w``×``h`` (distancia con signo)."""
-    w, h = max(2, w), max(2, h)
-    r = max(0.0, min(radius, min(w, h) / 2.0)) - inset
-    xs = np.abs(np.arange(w, dtype=np.float32) + 0.5 - w / 2)[None, :]
-    ys = np.abs(np.arange(h, dtype=np.float32) + 0.5 - h / 2)[:, None]
-    dx = np.maximum(xs - (w / 2 - inset - r), 0.0)
-    dy = np.maximum(ys - (h / 2 - inset - r), 0.0)
-    dist = np.sqrt(dx * dx + dy * dy) - r
-    return np.clip(0.5 - dist, 0.0, 1.0)
+CLOSE_SECS: Final[float] = 0.30  # cerrar es más rápido que abrir
+STATUS_TEXT: Final[dict[str, str]] = {
+    "listen": "Escuchando…",
+    "think": "Pensando…",
+    "speak": "Hablando…",
+    "ask": "Esperando tu respuesta",
+    "error": "Algo salió mal",
+}
+ACTIVE_POSES: Final[frozenset[str]] = frozenset({"listen", "think", "speak", "ask"})
 
 
 @dataclass(slots=True)
@@ -104,6 +74,13 @@ class _Anim:
     state: str = "closed"  # closed | opening | open | closing
     t0: float = 0.0
     p: float = 0.0  # 0 = forma, 1 = panel
+
+
+@dataclass(slots=True)
+class _Resize:
+    edges: Edges
+    cursor: tuple[int, int]  # posición del puntero al empezar (pantalla)
+    rect: Rect  # rectángulo físico del panel al empezar (pantalla)
 
 
 # ------------------------------------------------------------------ ventana
@@ -132,13 +109,16 @@ class ChatWindow(_shell.LayeredWindow):
         return self.panel.pointer_down(x, y)
 
     def on_pointer_move(self, x: int, y: int) -> bool:
-        return self.panel.hover(x, y)
+        return self.panel.pointer_move(x, y)
 
     def on_pointer_up(self, x: int, y: int) -> bool:
-        return True
+        return self.panel.pointer_up()
 
     def cursor_hand(self, x: int, y: int) -> bool:
         return self.panel.hover(x, y)
+
+    def cursor_ident(self, x: int, y: int) -> int:
+        return self.panel.cursor_ident(x, y)
 
     def on_wheel(self, x: int, y: int, delta: int) -> bool:
         return self.panel.wheel(delta)
@@ -164,7 +144,7 @@ class ChatWindow(_shell.LayeredWindow):
 
 
 # -------------------------------------------------------------------- panel
-class ChatPanel:
+class ChatPanel(PaintMixin):
     """Abre, anima y cierra el chat; reparte las entradas y ejecuta las acciones de la vista."""
 
     def __init__(self, ui) -> None:
@@ -172,11 +152,46 @@ class ChatPanel:
         self.anim = _Anim()
         self.view: ChatView | None = None
         self.window: ChatWindow | None = None
-        self._form: Rect = (0.0, 0.0, 0.0, 0.0)
-        self._panel: Rect = (0.0, 0.0, 0.0, 0.0)
+        self._form: Rect = (0.0, 0.0, 0.0, 0.0)  # la forma de la barra (pantalla, px físicos)
         self._cache: tuple[tuple, np.ndarray] | None = None
-        self._shadow: tuple[tuple, np.ndarray] | None = None
+        self._base: tuple[tuple, np.ndarray] | None = None  # cuadro estable sin la parte viva
         self._finished = False
+        self._resize: _Resize | None = None
+        self._act = 0.0  # 0 = en reposo, 1 = trabajando: suaviza el orbe y la línea
+        self._last = 0.0
+
+    # ------------------------------------------------------------ geometría
+    @property
+    def _margin(self) -> int:
+        return round(MARGIN * self.ui.s)
+
+    @property
+    def _panel(self) -> Rect:
+        """Rectángulo físico del panel *en pantalla*: sigue a la ventana donde esté."""
+        w = self.window
+        if w is None:
+            return (0.0, 0.0, 0.0, 0.0)
+        m = self._margin
+        return (float(w.x + m), float(w.y + m), float(w.x + w.w - m), float(w.y + w.h - m))
+
+    def _panel_local(self) -> Rect:
+        """El panel dentro del lienzo de la ventana: siempre a ``MARGIN`` del borde."""
+        w, m = self.window, self._margin
+        return (float(m), float(m), float(w.w - m), float(w.h - m)) if w else (0.0,) * 4
+
+    def _form_local(self) -> Rect | None:
+        """La forma de la barra en el lienzo, o ``None`` si queda fuera (el panel se movió lejos)."""
+        w = self.window
+        if w is None:
+            return None
+        x0, y0, x1, y1 = self._form
+        form = (x0 - w.x, y0 - w.y, x1 - w.x, y1 - w.y)
+        cx, cy = (form[0] + form[2]) / 2, (form[1] + form[3]) / 2
+        return form if (0 <= cx <= w.w and 0 <= cy <= w.h) else None
+
+    def _logical_size(self) -> tuple[float, float]:
+        r = self._panel
+        return ((r[2] - r[0]) / self.ui.s, (r[3] - r[1]) / self.ui.s)
 
     # ------------------------------------------------------------ ciclo de vida
     @property
@@ -197,7 +212,9 @@ class ChatPanel:
             return False
         if self.anim.state == "closing":  # reabrir a mitad de cierre: vuelve desde donde iba
             self.anim = _Anim(
-                "opening", time.monotonic() - self._elapsed_for(self.anim.p), self.anim.p
+                "opening",
+                time.monotonic() - self._elapsed_for(self.anim.p, MORPH_SECS),
+                self.anim.p,
             )
             return True
         s, bs = self.ui.s, self.ui.bs
@@ -209,26 +226,27 @@ class ChatPanel:
             anchor[1] + fh * bs / 2,
         )
         work = _shell.work_area()
-        self._panel = panel_rect(self._form, work, s)
-        pw, ph = panel_size(work, s)
+        saved = getattr(self.ui, "chat_size", None)
+        panel = panel_rect(self._form, work, s, saved)
         self.view = ChatView(
             model,
             roots=getattr(self.ui, "chat_roots", None),
             base_dirs=getattr(self.ui, "chat_base_dirs", ()),
             hotkey_label=_hotkey_label(getattr(self.ui, "chat_hotkey", "")),
         )
-        self._configure_view(pw, ph)
+        self._configure_view((panel[2] - panel[0]) / s, (panel[3] - panel[1]) / s)
         m = round(MARGIN * s)
         self.window = ChatWindow(
             self,
-            round(self._panel[0]) - m,
-            round(self._panel[1]) - m,
-            round(self._panel[2] - self._panel[0]) + 2 * m,
-            round(self._panel[3] - self._panel[1]) + 2 * m,
+            round(panel[0]) - m,
+            round(panel[1]) - m,
+            round(panel[2] - panel[0]) + 2 * m,
+            round(panel[3] - panel[1]) + 2 * m,
         )
         self.anim = _Anim("opening", time.monotonic(), 0.0)
         self._finished = False
-        self._cache = None
+        self._cache = self._base = self._resize = None
+        self._act, self._last = 0.0, time.monotonic()
         self.ui.set_chat_open(True)
         if not self.window.start():
             self._teardown()
@@ -240,11 +258,21 @@ class ChatPanel:
     def close(self) -> None:
         if self.anim.state in ("closed", "closing"):
             return
+        self._end_resize()
+        anchor = self.ui._form_anchor() if hasattr(self.ui, "_form_anchor") else None
+        if anchor is not None:  # la barra pudo moverse mientras tanto
+            fw, fh = self.ui.form_size()
+            bs = self.ui.bs
+            self._form = (
+                anchor[0] - fw * bs / 2,
+                anchor[1] - fh * bs / 2,
+                anchor[0] + fw * bs / 2,
+                anchor[1] + fh * bs / 2,
+            )
         now = time.monotonic()
-        self.anim = _Anim("closing", now - self._elapsed_for(1.0 - self.anim.p), self.anim.p)
-        self.ui.set_form_hidden(
-            False
-        )  # la forma vuelve debajo mientras el panel se encoge hacia ella
+        elapsed = self._elapsed_for(1.0 - self.anim.p, CLOSE_SECS)
+        self.anim = _Anim("closing", now - elapsed, self.anim.p)
+        self.ui.set_form_hidden(False)  # la forma vuelve debajo mientras el panel se encoge
         if self.window is not None:
             self.window.set_keyboard_enabled(False)
 
@@ -262,28 +290,31 @@ class ChatPanel:
         self.view = None
         self.anim = _Anim()
         self._finished = False
-        self._cache = None
+        self._cache = self._base = self._resize = None
         if window is not None:
             window.stop()
         self.ui.set_chat_open(False)
         self.ui.set_form_hidden(False)
 
-    def _duration(self) -> float:
-        return FADE_SECS if self.ui._reduced else MORPH_SECS
+    def _duration(self, closing: bool = False) -> float:
+        if self.ui._reduced:
+            return FADE_SECS
+        return CLOSE_SECS if closing else MORPH_SECS
 
-    def _elapsed_for(self, p: float) -> float:
+    def _elapsed_for(self, p: float, duration: float) -> float:
         """Tiempo que corresponde a un progreso eased ``p`` (para reanudar sin saltos)."""
+        duration = FADE_SECS if self.ui._reduced else duration
         lo, hi = 0.0, 1.0
         for _ in range(24):
             mid = (lo + hi) / 2
             lo, hi = (mid, hi) if ease(mid) < p else (lo, mid)
-        return lo * self._duration()
+        return lo * duration
 
     def _step(self, now: float) -> float:
         a = self.anim
         if a.state not in ("opening", "closing"):
             return 1.0 if a.state == "open" else 0.0
-        raw = (now - a.t0) / self._duration()
+        raw = (now - a.t0) / self._duration(a.state == "closing")
         if a.state == "opening":
             a.p = ease(raw)
             if raw >= 1.0:
@@ -301,6 +332,29 @@ class ChatPanel:
         theme = self.ui._theme_name()
         self.view.configure(pw, ph, self.ui.s, theme, card_palette(theme))
 
+    # --------------------------------------------------------------- estado vivo
+    def _pose(self) -> str:
+        pose = str(self.ui.chat_pose()) if hasattr(self.ui, "chat_pose") else "idle"
+        view = self.view
+        if view is not None and (view.model.busy or view.model.confirm is not None):
+            if pose in ("idle", "sleep", "mute"):
+                pose = "ask" if view.model.confirm is not None else "think"
+        return pose
+
+    def _update_live(self, now: float) -> None:
+        """Pone el rótulo de estado y suaviza cuánto «trabaja» el orbe."""
+        view = self.view
+        if view is None:
+            return
+        pose = self._pose()
+        view.status = STATUS_TEXT.get(pose, "")
+        dt = max(0.0, min(0.1, now - self._last))
+        self._last = now
+        target = 1.0 if pose in ACTIVE_POSES else 0.0
+        self._act += (target - self._act) * min(1.0, dt * 7.0)
+        if abs(target - self._act) < 0.004:
+            self._act = target
+
     # ------------------------------------------------------------------ dibujo
     def render(self) -> np.ndarray:
         window, view = self.window, self.view
@@ -308,151 +362,67 @@ class ChatPanel:
             return np.zeros((1, 1, 4), np.uint8)
         now = time.monotonic()
         p = self._step(now)
+        self._update_live(now)
         if self.anim.state in ("opening", "open"):
             self.ui.set_form_hidden(True)  # recién con el primer cuadro pintado: sin parpadeo
-        window._interval = 1.0 / (
-            60.0 if (self.anim.state in ("opening", "closing") or view.animating(now)) else 30.0
-        )
-        out = self._compose(window, view, p, now)
-        return out
-
-    def _sig(self, view: ChatView, now: float) -> tuple:
-        m = view.model
-        return (
-            m.version,
-            round(view.scroll, 1),
-            view.hover,
-            view.input.text,
-            view.input.cursor,
-            view.input.anchor,
-            view.mode,
-            int(now * 2),
-            int(now * 30) if view.animating(now) else 0,
-            view.g.theme,
-            round(view.g.width),
-        )
-
-    def _content(self, view: ChatView, now: float) -> np.ndarray:
-        sig = self._sig(view, now)
-        if self._cache is None or self._cache[0] != sig:
-            self._cache = (sig, view.render(now))
-        return self._cache[1]
-
-    def _compose(self, window: ChatWindow, view: ChatView, p: float, now: float) -> np.ndarray:
-        s = self.ui.s
-        ww, wh = window.w, window.h
-        canvas = np.zeros((wh, ww, 4), np.float32)
-        ox, oy = window.x, window.y
-        panel = (self._panel[0] - ox, self._panel[1] - oy, self._panel[2] - ox, self._panel[3] - oy)
-        form = (self._form[0] - ox, self._form[1] - oy, self._form[2] - ox, self._form[3] - oy)
-        reduced = self.ui._reduced
-        rect = panel if reduced else lerp_rect(form, panel, p)
-        form_r = (
-            min(form[2] - form[0], form[3] - form[1]) / 2
-            if self.ui.layout == "circle"
-            else (form[3] - form[1]) / 2
-        )
-        radius = PANEL_RADIUS * s if reduced else lerp(form_r, PANEL_RADIUS * s, p)
-        self._paint_shape(canvas, rect, radius, p, now, reduced)
-        reveal = p if reduced else smoothstep((p - 0.68) / 0.32)
-        if reveal > 0.01:
-            self._paint_content(canvas, view, rect, radius, reveal, now)
-        return (np.clip(canvas, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)[..., [2, 1, 0, 3]]
-
-    def _paint_shape(
-        self, canvas, rect: Rect, radius: float, p: float, now: float, reduced: bool
-    ) -> None:
-        x0, y0, x1, y1 = (round(v) for v in rect)
-        w, h = x1 - x0, y1 - y0
-        if w < 2 or h < 2:
-            return
-        cov = rounded_coverage(w, h, radius)
-        solid = (
-            p if reduced else smoothstep((p - 0.4) / 0.55)
-        )  # cuánto del relleno es ya el fondo del panel
-        body = np.asarray(self.ui.chat_body_rgb(), np.float32) / 255.0
-        fluid = self.ui.chat_fluid(w, h, now)  # RGB float 0..1 de tamaño (h, w) o None
-        rgb = body[None, None, :] * solid + (
-            fluid if fluid is not None else body[None, None, :]
-        ) * (1.0 - solid)
-        alpha = cov * (p if reduced else 1.0)
-        self._shadow_under(canvas, rect, radius, p)
-        self._composite(
-            canvas, np.concatenate([rgb * alpha[..., None], alpha[..., None]], axis=2), x0, y0
-        )
-        ring = np.clip(cov - rounded_coverage(w, h, radius, inset=max(1.0, self.ui.s)), 0.0, 1.0)
-        line = np.asarray(card_palette(self.ui._theme_name())["LINE"], np.float32) / 255.0
-        la = ring * line[3] * 2.2 * solid
-        self._composite(
-            canvas,
-            np.concatenate([line[None, None, :3] * la[..., None], la[..., None]], axis=2),
-            x0,
-            y0,
-        )
-
-    def _shadow_under(self, canvas, rect: Rect, radius: float, p: float) -> None:
-        k = smoothstep((p - 0.68) / 0.32) * 0.55
-        if k <= 0.01:
-            return
-        x0, y0, x1, y1 = (round(v) for v in rect)
-        w, h = x1 - x0, y1 - y0
-        grow = round(MARGIN * self.ui.s * 0.8)
-        for step in range(3):
-            g = grow * (step + 1) // 3
-            cov = rounded_coverage(w + 2 * g, h + 2 * g, radius + g)
-            a = cov * (k * 0.10)
-            layer = np.zeros(cov.shape + (4,), np.float32)
-            layer[..., 3] = a
-            self._composite(canvas, layer, x0 - g, y0 - g + round(self.ui.s * 5))
-
-    def _paint_content(
-        self, canvas, view: ChatView, rect: Rect, radius: float, reveal: float, now: float
-    ) -> None:
-        content = self._content(view, now)
-        x0, y0, x1, y1 = (round(v) for v in rect)
-        w, h = x1 - x0, y1 - y0
-        cov = rounded_coverage(w, h, radius)
-        part = content[:h, :w]
-        mask = cov[: part.shape[0], : part.shape[1], None] * reveal
-        self._composite(canvas, part * mask, x0, y0)
-
-    @staticmethod
-    def _composite(canvas: np.ndarray, src: np.ndarray, x0: int, y0: int) -> None:
-        """``src`` (premultiplicado) sobre ``canvas``, recortado a sus límites."""
-        sx0, sy0 = max(0, -x0), max(0, -y0)
-        dx0, dy0 = max(0, x0), max(0, y0)
-        w = min(src.shape[1] - sx0, canvas.shape[1] - dx0)
-        h = min(src.shape[0] - sy0, canvas.shape[0] - dy0)
-        if w <= 0 or h <= 0:
-            return
-        top = src[sy0 : sy0 + h, sx0 : sx0 + w]
-        region = canvas[dy0 : dy0 + h, dx0 : dx0 + w]
-        region[...] = top + region * (1.0 - top[..., 3:4])
+        moving = self.anim.state in ("opening", "closing") or view.animating(now)
+        window._interval = 1.0 / (60.0 if moving else (40.0 if self._act > 0.02 else 20.0))
+        if self.anim.state == "open":
+            return self._stable(window, view, now)
+        return self._compose(window, view, p, now, live=True)
 
     # ------------------------------------------------------------------ entradas
     def _local(self, x: int, y: int) -> tuple[float, float] | None:
-        """Punto de la ventana → punto lógico del panel (``None`` fuera del panel o animando)."""
+        """Punto de la ventana → punto lógico del panel (``None`` si no está quieto y abierto)."""
         if self.anim.state != "open" or self.window is None:
             return None
-        s = self.ui.s
-        px, py = x - (self._panel[0] - self.window.x), y - (self._panel[1] - self.window.y)
-        return (px / s, py / s)
+        s, m = self.ui.s, self._margin
+        return ((x - m) / s, (y - m) / s)
+
+    def _edges(self, x: int, y: int) -> Edges | None:
+        local = self._local(x, y)
+        if local is None:
+            return None
+        pw, ph = self._logical_size()
+        return edges_at(local[0], local[1], pw, ph, GRIP)
 
     def pointer_down(self, x: int, y: int) -> bool:
         local = self._local(x, y)
         if local is None or self.view is None:
             return True  # durante la animación no se arrastra ni se pulsa
+        edges = self._edges(x, y)
+        if edges is not None and self.window is not None:
+            self._begin_resize(edges)
+            return True
         if self.view._at(*local) is None:
             return False  # zona sin controles: arrastra la ventana
         self._perform(self.view.pointer_down(*local))
+        return True
+
+    def pointer_move(self, x: int, y: int) -> bool:
+        """Movimiento con el botón pulsado dentro de la ventana (redimensionar)."""
+        if self._resize is not None:
+            self._drag_resize()
+            return True
+        return self.hover(x, y)
+
+    def pointer_up(self) -> bool:
+        self._end_resize()
         return True
 
     def hover(self, x: int, y: int) -> bool:
         local = self._local(x, y)
         if local is None or self.view is None:
             return False
+        if self._edges(x, y) is not None:
+            self.view.pointer_move(-1.0, -1.0)  # sobre el borde no hay nada «caliente»
+            return False
         self.view.pointer_move(*local)
         return self.view.cursor_is_hand(*local)
+
+    def cursor_ident(self, x: int, y: int) -> int:
+        edges = self._resize.edges if self._resize is not None else self._edges(x, y)
+        return edge_cursor(edges) if edges is not None else 0
 
     def wheel(self, delta: int) -> bool:
         if self.view is None or self.anim.state != "open":
@@ -482,10 +452,53 @@ class ChatPanel:
             self.view.add_files(paths)
 
     def clamp(self, x: int, y: int) -> tuple[int, int]:
+        """Posición permitida de la ventana: el panel entero en pantalla (la sombra puede salirse)."""
         wa = _shell.work_area()
         w = self.window.w if self.window else 0
         h = self.window.h if self.window else 0
-        return (max(wa[0], min(x, wa[2] - w)), max(wa[1], min(y, wa[3] - h)))
+        m = self._margin
+        return (
+            max(wa[0] - m, min(x, wa[2] - w + m)),
+            max(wa[1] - m, min(y, wa[3] - h + m)),
+        )
+
+    # ------------------------------------------------------------- redimensionar
+    def _begin_resize(self, edges: Edges) -> None:
+        window = self.window
+        if window is None:
+            return
+        try:
+            cursor = window._screen_cursor()
+        except Exception:
+            return
+        self._resize = _Resize(edges, cursor, self._panel)
+
+    def _drag_resize(self) -> None:
+        window, view, rz = self.window, self.view, self._resize
+        if window is None or view is None or rz is None:
+            return
+        try:
+            cx, cy = window._screen_cursor()
+        except Exception:
+            return
+        s, m = self.ui.s, self._margin
+        rect = resize_rect(
+            rz.edges, rz.rect, cx - rz.cursor[0], cy - rz.cursor[1], _shell.work_area(), s
+        )
+        pw, ph = round(rect[2] - rect[0]), round(rect[3] - rect[1])
+        window.x, window.y = round(rect[0]) - m, round(rect[1]) - m
+        window.resize(pw + 2 * m, ph + 2 * m)
+        self._configure_view(pw / s, ph / s)
+        self._cache = self._base = None
+
+    def _end_resize(self) -> None:
+        if self._resize is None:
+            return
+        self._resize = None
+        remember = getattr(self.ui, "remember_chat_size", None)
+        if remember is not None and self.window is not None:
+            pw, ph = self._logical_size()
+            remember(pw, ph)
 
     # ------------------------------------------------------------------ acciones
     def _perform(self, action: Action | None) -> None:
@@ -514,6 +527,8 @@ class ChatPanel:
     def _copy(self, text: str) -> None:
         if self.window is not None and text:
             self.window.copy_text(text)
+            if self.view is not None:
+                self.view.flash_copied(text)  # «COPIAR» → «COPIADO» un momento
 
 
 def _hotkey_label(spec: str) -> str:
@@ -529,4 +544,26 @@ def fluid_array(rgb: np.ndarray | None, w: int, h: int) -> np.ndarray | None:
     return np.asarray(img, np.float32) / 255.0
 
 
-__all__ = ["ChatPanel", "ChatWindow", "ease", "panel_rect", "panel_size", "rounded_coverage"]
+__all__ = [
+    "FADE_SECS",
+    "MARGIN",
+    "MIN_H",
+    "MIN_W",
+    "MORPH_SECS",
+    "PANEL_H",
+    "PANEL_RADIUS",
+    "PANEL_W",
+    "SCREEN_PAD",
+    "ChatPanel",
+    "ChatWindow",
+    "ease",
+    "lerp",
+    "lerp_rect",
+    "panel_limits",
+    "panel_rect",
+    "panel_size",
+    "rounded_coverage",
+    "row_reveal",
+    "shape_progress",
+    "smoothstep",
+]

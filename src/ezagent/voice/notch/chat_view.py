@@ -18,7 +18,7 @@ from PIL import Image
 
 from ..chat import markdown as md
 from ..chat.render import render_message
-from ..chat.render_base import Ctx, Hit, round_rect, wrap
+from ..chat.render_base import Ctx, Hit, paint_lines, round_rect, wrap
 from ..chat.session import ChatMessage, ChatModel
 from ..chat.text_input import TextInput
 from .chat_footer import (
@@ -31,16 +31,14 @@ from .chat_footer import (
     FooterMixin,
     _break,
 )
-from .icons import draw_icon
+from .chat_header import HEADER_H, HeaderMixin
 from .menu import _fill_circle, _fill_round_rect
 from .settings_window import composite_over
 from .text import draw_text
-from .tokens import FS_MICRO, FS_ROW, FS_SECONDARY, FS_TITLE
+from .tokens import FS_MICRO
 
-HEADER_H = 56.0
 GAP = 14.0
 SCROLL_STEP = 56.0
-_MONTHS = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +59,9 @@ class _Entry:
     hits: tuple[Hit, ...] = ()
     caption_hit: tuple[float, float, float, float] | None = None
     plain: str = ""
+    caption_x: float = PAD  # dónde empieza la zona «Copiar» (los del usuario, a la derecha)
+    label_y: float = 0.0  # altura (relativa al mensaje) del rótulo «Copiar»
+    copy_align: str = "left"
 
 
 @dataclass(slots=True)
@@ -79,18 +80,13 @@ class _Geometry:
     pal: dict = field(default_factory=dict)
 
 
-def _date(t: float) -> str:
-    lt = time.localtime(t)
-    return f"{lt.tm_mday} {_MONTHS[lt.tm_mon - 1]} {lt.tm_year}"
-
-
 def _premult(img: Image.Image) -> np.ndarray:
     arr = np.asarray(img.convert("RGBA"), np.float32) / 255.0
     arr[..., :3] *= arr[..., 3:4]
     return arr
 
 
-class ChatView(FooterMixin):
+class ChatView(HeaderMixin, FooterMixin):
     """Estado y dibujo de la ventana del chat (sin Win32)."""
 
     def __init__(
@@ -115,13 +111,18 @@ class ChatView(FooterMixin):
         self._input_box = (0.0, 0.0, 0.0, 0.0)
         self._max_scroll = 0.0
         self._focus_t0 = time.monotonic()
+        self._flash: tuple[str, float] | None = None  # (texto copiado, hasta cuándo se avisa)
+        # Lo que el panel anima por encima de la imagen cacheada: el orbe vivo de la cabecera.
+        self.status = ""  # «Escuchando», «Pensando»…: lo escribe el panel según la pose de la barra
+        self.orb: tuple[float, float, float] | None = None  # (cx, cy, diámetro) lógicos
 
     # ---------------------------------------------------------- configuración
     def configure(self, width: float, height: float, scale: float, theme: str, pal: dict) -> None:
         """Tamaño, escala y colores; si cambian se rehacen los mensajes."""
-        key = (round(width, 1), round(height, 1), round(scale, 3), theme)
+        # Los mensajes dependen del ancho, no del alto: estirar hacia arriba o abajo no los rehace.
+        key = (round(width, 1), round(scale, 3), theme)
         old = self.g
-        if (round(old.width, 1), round(old.height, 1), round(old.scale, 3), old.theme) != key:
+        if (round(old.width, 1), round(old.scale, 3), old.theme) != key:
             self._cache.clear()
         self.g = _Geometry(width, height, scale, theme, pal)
 
@@ -151,7 +152,23 @@ class ChatView(FooterMixin):
     def _build_entry(self, msg: ChatMessage) -> _Entry:
         if msg.role == "user":
             return self._user_entry(msg)
+        if msg.role == "system":
+            return self._note_entry(msg)
         return self._assistant_entry(msg)
+
+    def _note_entry(self, msg: ChatMessage) -> _Entry:
+        """Una nota de la app («conversación compactada»): una línea tenue, centrada."""
+        ctx = self._ctx(self.content_w * 0.92)
+        lines = wrap(ctx, md.parse_inline(msg.text), "small", ctx.width)
+        for runs in lines:  # centradas
+            used = max((r.x + r.width for r in runs), default=0.0)
+            for run in runs:
+                run.x += (ctx.width - used) / 2
+        height = len(lines) * ctx.size("small") * 1.5 + 8
+        sc = self.g.scale
+        img = Image.new("RGBA", (round(ctx.width * sc), round(height * sc)), (0, 0, 0, 0))
+        paint_lines(img, ctx, lines, "small", 0.0, 4.0, ctx.color("TEXT_3"))
+        return _Entry(height, _premult(img), PAD + self.content_w * 0.04, plain=msg.text)
 
     def _user_entry(self, msg: ChatMessage) -> _Entry:
         blocks = md.parse(msg.text)
@@ -174,9 +191,17 @@ class ChatView(FooterMixin):
         round_rect(img, ctx, (0, 0, bw, bh), 16.0, ctx.color("MINT", 0.15), ctx.color("MINT", 0.34))
         img.alpha_composite(rendered.image, (round(12 * sc), round(9 * sc)))
         hits = tuple(_shift(h, 12.0, 9.0) for h in rendered.hits)
-        extra = 16.0 if msg.source == "voice" else 0.0
+        extra = 20.0  # fila de «Copiar» (y «por voz») bajo la burbuja
         return _Entry(
-            bh + extra, _premult(img), self.g.width - PAD - bw, hits, plain=rendered.plain
+            bh + extra,
+            _premult(img),
+            self.g.width - PAD - bw,
+            hits,
+            caption_hit=(0.0, bh, 64.0, bh + extra),
+            plain=msg.text,  # lo escrito, tal cual (sin interpretar markdown)
+            caption_x=self.g.width - PAD - 64.0,
+            label_y=bh + 4.0,
+            copy_align="right",
         )
 
     def _assistant_entry(self, msg: ChatMessage) -> _Entry:
@@ -196,7 +221,7 @@ class ChatView(FooterMixin):
         hits = tuple(_shift(h, 0.0, caption) for h in rendered.hits)
         arr = _premult(img)
         copy_rect = (0.0, height - copy_h, 64.0, height) if copy_h > 5 else None
-        return _Entry(height, arr, PAD, hits, copy_rect, rendered.plain)
+        return _Entry(height, arr, PAD, hits, copy_rect, rendered.plain, PAD, height - copy_h + 5.0)
 
     # -------------------------------------------------------------- dibujo
     def render(self, now: float) -> np.ndarray:
@@ -215,7 +240,18 @@ class ChatView(FooterMixin):
         return buf
 
     def animating(self, now: float) -> bool:
-        return self.model.busy or self.model.confirm is not None
+        flashing = self._flash is not None and now < self._flash[1]
+        return self.model.busy or self.model.confirm is not None or flashing
+
+    def flash_copied(self, text: str, now: float | None = None) -> None:
+        """Avisa un momento de que se copió ``text`` («COPIADO» donde estaba «COPIAR»)."""
+        self._flash = (text, (time.monotonic() if now is None else now) + 1.6)
+
+    @property
+    def flash_token(self) -> tuple[str, bool]:
+        """Huella del aviso de copiado para la caché de imagen."""
+        flash = self._flash
+        return (flash[0][:20], time.monotonic() < flash[1]) if flash else ("", False)
 
     def _text(self, buf, text, style, color, x, y, align="left") -> None:
         draw_text(buf, text, style, color, x, y, self.g.scale, align=align)
@@ -261,17 +297,34 @@ class ChatView(FooterMixin):
             self._text(buf, label, FS_MICRO, self._color("TEXT_3"), PAD, y + 2)
             if msg.streaming and not msg.text and y + 34 <= bottom:
                 self._draw_dots(buf, PAD, y + 28, now)
-        elif msg.source == "voice" and y + entry.height - 12 >= top and y + entry.height <= bottom:
-            self._text(
-                buf,
-                "POR VOZ",
-                FS_MICRO,
-                self._color("TEXT_3"),
-                self.g.width - PAD,
-                y + entry.height - 12,
-                align="right",
-            )
+        self._draw_copy_label(buf, msg, entry, y, top, bottom, now)
         self._register_message_hits(msg, entry, y, top, bottom)
+
+    def _draw_copy_label(self, buf, msg, entry: _Entry, y: float, top, bottom, now: float) -> None:
+        """«COPIAR» bajo cada mensaje (y «POR VOZ» en los hablados); «COPIADO» un momento después."""
+        if entry.caption_hit is None or y + entry.label_y < top or y + entry.label_y + 12 > bottom:
+            return
+        copied = self._flash is not None and self._flash[0] == entry.plain and now < self._flash[1]
+        hovered = self.hover == "copy_msg"
+        tone = "TEXT_2" if copied else ("MINT" if not hovered else "TEXT")
+        label = "COPIADO" if copied else "COPIAR"
+        ly = y + entry.label_y
+        if entry.copy_align == "right":
+            self._text(
+                buf, label, FS_MICRO, self._color(tone), self.g.width - PAD, ly, align="right"
+            )
+            if msg.source == "voice":
+                self._text(
+                    buf,
+                    "POR VOZ ·",
+                    FS_MICRO,
+                    self._color("TEXT_3"),
+                    self.g.width - PAD - 58,
+                    ly,
+                    align="right",
+                )
+        else:
+            self._text(buf, label, FS_MICRO, self._color(tone), PAD, ly)
 
     def _register_message_hits(self, msg, entry: _Entry, y: float, top, bottom) -> None:
         for h in entry.hits:
@@ -282,7 +335,11 @@ class ChatView(FooterMixin):
         if entry.caption_hit is not None:
             x0, y0, x1, y1 = entry.caption_hit
             if y + y1 > top and y + y0 < bottom:
-                self._hit((PAD + x0, y + y0, PAD + x1, y + y1), "copy_msg", entry.plain)
+                self._hit(
+                    (entry.caption_x + x0, y + y0, entry.caption_x + x1, y + y1),
+                    "copy_msg",
+                    entry.plain,
+                )
 
     def _draw_dots(self, buf, x: float, y: float, now: float) -> None:
         for i in range(3):
@@ -298,105 +355,6 @@ class ChatView(FooterMixin):
         _fill_round_rect(
             buf, x, pos, x + 3, pos + thumb, 1.5, self._color("TEXT_3")[:3], self.g.scale, 0.55
         )
-
-    def _draw_empty(self, buf, top: float, bottom: float) -> None:
-        mid = (top + bottom) / 2 - 18
-        cx = self.g.width / 2
-        self._text(
-            buf, "¿En qué te ayudo?", FS_TITLE, self._color("TEXT"), cx, mid - 14, align="center"
-        )
-        lines = (
-            "Escribe aquí lo que necesites.",
-            "Puedo resumir, comparar y mostrarte",
-            "documentos e imágenes.",
-        )
-        for i, line in enumerate(lines):
-            self._text(
-                buf,
-                line,
-                FS_SECONDARY,
-                self._color("TEXT_3"),
-                cx,
-                mid + 14 + i * 18,
-                align="center",
-            )
-        hint = f"{self.hotkey_label} abre y cierra el chat"
-        self._text(buf, hint, FS_MICRO, self._color("TEXT_3", 0.8), cx, mid + 82, align="center")
-
-    # -------------------------------------------------------------- historial
-    def _draw_history(self, buf, top: float, bottom: float) -> None:
-        sessions = self.model.sessions()
-        if not sessions:
-            self._text(
-                buf,
-                "Aún no hay conversaciones guardadas.",
-                FS_ROW,
-                self._color("TEXT_3"),
-                PAD,
-                top + 24,
-            )
-            return
-        y = top + 8 - self.scroll
-        total = 8.0
-        for info in sessions:
-            rect = (8.0, y, self.g.width - 8, y + 58)
-            total += 60
-            if rect[3] > top and rect[1] < bottom:
-                if self.hover == f"session:{info.session}":
-                    _fill_round_rect(buf, *rect, 12.0, self._color("GROUP_HOVER")[:3], self.g.scale)
-                title = info.title if len(info.title) < 44 else info.title[:43] + "…"
-                self._text(buf, title, FS_ROW, self._color("TEXT"), 20, y + 11)
-                meta = f"{_date(info.started)} · {info.messages} mensajes"
-                self._text(buf, meta, FS_MICRO, self._color("TEXT_3"), 20, y + 35)
-                self._hit(rect, "session", info.session)
-            y += 60
-        self._max_scroll = max(0.0, total - (bottom - top))
-        self.scroll = max(0.0, min(self.scroll, self._max_scroll))
-
-    # ------------------------------------------------------------- cabecera
-    def _draw_header(self, buf) -> None:
-        g, sc = self.g, self.g.scale
-        cy = HEADER_H / 2
-        viewing = self.model.viewing is not None
-        back = self.mode == "history" or viewing
-        x = PAD
-        if back:
-            self._icon_button(buf, "chevron-left", PAD + BTN / 2 - 6, cy, "back")
-            x = PAD + BTN + 2
-        title = (
-            "Historial"
-            if self.mode == "history"
-            else ("Conversación anterior" if viewing else "Chat")
-        )
-        self._text(buf, title, FS_TITLE, self._color("TEXT"), x, cy - 9)
-        right = g.width - PAD - BTN / 2 + 6
-        for name, key, active in (
-            ("close", "close", False),
-            ("plus", "new", False),
-            ("clock", "history", self.mode == "history"),
-            ("speaker", "voice", self.model.voice_replies),
-        ):
-            self._icon_button(buf, name, right, cy, key, active)
-            right -= BTN + 2
-        line = np.asarray(self._color("LINE"), np.float32) / 255.0
-        buf[
-            round((HEADER_H - 1) * sc) : round(HEADER_H * sc),
-            round(PAD * sc) : round((g.width - PAD) * sc),
-        ] = np.concatenate([line[:3] * line[3], [line[3]]])
-
-    def _icon_button(
-        self, buf, name: str, cx: float, cy: float, key: str, active: bool = False
-    ) -> None:
-        rect = (cx - BTN / 2, cy - BTN / 2, cx + BTN / 2, cy + BTN / 2)
-        hovered = self.hover == key
-        if hovered or active:
-            tone = "MINT" if active else "GROUP_HOVER"
-            _fill_circle(
-                buf, cx, cy, BTN, self._color(tone)[:3], self.g.scale, 0.18 if active else 1.0
-            )
-        color = self._color("MINT" if active else ("TEXT" if hovered else "TEXT_2"))[:3]
-        draw_icon(buf, name, cx, cy, 18.0, color, self.g.scale)
-        self._hit(rect, key)
 
     # --------------------------------------------------------- interacción
     def _at(self, x: float, y: float) -> tuple[str, object] | None:

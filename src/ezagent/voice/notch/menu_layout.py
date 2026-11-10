@@ -190,6 +190,7 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("llm_model_pick", "select"),
             ("llm_temperature", "slider"),
             ("llm_max_tokens", "slider"),
+            ("llm_context_tokens", "slider"),
             ("llm_reasoning_effort", "select"),
         ),
     ),
@@ -239,6 +240,7 @@ ADVANCED_ROWS = frozenset(
         "llm_model_pick",
         "llm_temperature",
         "llm_max_tokens",
+        "llm_context_tokens",
         "llm_reasoning_effort",
     }
 )

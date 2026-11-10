@@ -43,6 +43,15 @@ class FakeWindow:
         self.copied.append(text)
         return True
 
+    def resize(self, w: int, h: int) -> None:
+        self.w, self.h = int(w), int(h)
+
+    def _screen_cursor(self) -> tuple[int, int]:
+        return CURSOR[0]
+
+
+CURSOR: list[tuple[int, int]] = [(0, 0)]  # dónde está el puntero del sistema en las pruebas
+
 
 class FakeUI:
     def __init__(self, model: ChatModel | None, anchor=(959.0, 999.0)) -> None:
@@ -57,6 +66,15 @@ class FakeUI:
         self.calls: list[tuple] = []
         self.hidden: list[bool] = []
         self.open_flags: list[bool] = []
+        self.pose = "idle"
+        self.chat_size: tuple[float, float] | None = None
+        self.remembered: list[tuple[float, float]] = []
+
+    def chat_pose(self) -> str:
+        return self.pose
+
+    def remember_chat_size(self, width: float, height: float) -> None:
+        self.remembered.append((round(width), round(height)))
 
     def _form_anchor(self):
         return self._anchor
@@ -294,7 +312,9 @@ def test_the_shape_grows_continuously_during_the_morph(panel, clock) -> None:
         box = alpha_box(frame)
         widths.append(box[2] - box[0])
         clock[0] += cu.MORPH_SECS / 8
-    assert widths == sorted(widths) and widths[-1] > widths[0] * 3
+    # crece sin saltos y, al final, se pasa un poco del tamaño y se asienta (no más de un 6 %)
+    assert widths[:5] == sorted(widths[:5]) and widths[-1] > widths[0] * 3
+    assert max(widths) <= panel_size(WORK, 1.0)[0] * 1.06
 
 
 def test_the_fluid_fades_into_the_panel_background(panel, clock) -> None:
@@ -343,7 +363,7 @@ def test_the_render_asks_for_60_fps_only_while_something_moves(panel, clock) -> 
     assert panel.window._interval == pytest.approx(1 / 60)
     settle(panel, clock)
     panel.render()
-    assert panel.window._interval == pytest.approx(1 / 30)
+    assert panel.window._interval == pytest.approx(1 / 20)
     panel.view.model.add_user("hola")
     panel.view.model.begin_assistant()
     panel.render()
@@ -374,10 +394,10 @@ def local_to_window(panel: ChatPanel, lx: float, ly: float) -> tuple[int, int]:
     )
 
 
-def spot(panel: ChatPanel, kind: str) -> tuple[int, int]:
+def spot(panel: ChatPanel, kind: str, data=None) -> tuple[int, int]:
     panel.view.render(1.0)
-    for (x0, y0, x1, y1), k, _ in panel.view._hits:
-        if k == kind:
+    for (x0, y0, x1, y1), k, d in panel.view._hits:
+        if k == kind and (data is None or d == data):
             return local_to_window(panel, (x0 + x1) / 2, (y0 + y1) / 2)
     raise AssertionError(kind)
 
@@ -456,8 +476,10 @@ def test_copy_goes_to_the_window_clipboard(panel, clock) -> None:
     reply = model.begin_assistant()
     model.append(reply.id, "Un **resumen**")
     model.finish(reply.id)
-    panel.pointer_down(*spot(panel, "copy_msg"))
+    panel.pointer_down(*spot(panel, "copy_msg", "Un resumen"))
     assert panel.window.copied == ["Un resumen"]
+    panel.pointer_down(*spot(panel, "copy_msg", "hola"))  # también lo que escribió el usuario
+    assert panel.window.copied == ["Un resumen", "hola"]
 
 
 def test_open_actions_use_the_safe_media_helpers(panel, clock, monkeypatch) -> None:
@@ -495,8 +517,9 @@ def test_hover_reports_the_hand_cursor_over_controls(panel, clock) -> None:
 def test_the_window_stays_inside_the_work_area_when_dragged(panel, clock) -> None:
     panel.open()
     w, h = panel.window.w, panel.window.h
-    assert panel.clamp(-500, -500) == (0, 0)
-    assert panel.clamp(5000, 5000) == (WORK[2] - w, WORK[3] - h)
+    m = round(cu.MARGIN)  # solo la sombra puede salirse; el panel no
+    assert panel.clamp(-500, -500) == (-m, -m)
+    assert panel.clamp(5000, 5000) == (WORK[2] - w + m, WORK[3] - h + m)
     assert panel.clamp(300, 100) == (300, 100)
 
 

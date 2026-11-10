@@ -61,6 +61,7 @@ EDITABLE_KEYS: Final[tuple[str, ...]] = (
     "api_key",
     "llm_temperature",
     "llm_max_tokens",
+    "llm_context_tokens",
     "llm_reasoning_effort",
     # Conversación.
     "barge_in",
@@ -118,6 +119,7 @@ SLIDER_KEYS: Final[tuple[str, ...]] = (
     "stt_timeout_secs",
     "llm_temperature",
     "llm_max_tokens",
+    "llm_context_tokens",
 )
 SELECT_KEYS: Final[tuple[str, ...]] = (
     "input_device_index",
@@ -226,6 +228,7 @@ LABELS: Final[dict[str, str]] = {
     "api_key": "Clave API",
     "llm_temperature": "Temperatura",
     "llm_max_tokens": "Máximo de tokens",
+    "llm_context_tokens": "Ventana de contexto",
     "llm_reasoning_effort": "Razonamiento",
     "barge_in": "Interrupción activa",
     "confirm_actions": "Confirmar acciones",
@@ -283,6 +286,7 @@ DEFAULT_VALUES: Final[dict[str, Any]] = {
     "api_key": "",
     "llm_temperature": 0.3,
     "llm_max_tokens": 320,
+    "llm_context_tokens": 32000,
     "llm_reasoning_effort": "none",
     "stt_engine": "auto",
     "barge_in": True,
@@ -363,6 +367,7 @@ SLIDERS: Final[dict[str, SliderSpec]] = {
     "stt_timeout_secs": SliderSpec(5.0, 180.0, 5.0, 0, " s"),
     "llm_temperature": SliderSpec(0.0, 1.5, 0.05, 2),
     "llm_max_tokens": SliderSpec(80.0, 1200.0, 20.0, 0),
+    "llm_context_tokens": SliderSpec(8000.0, 200000.0, 4000.0, 0, " tok"),
 }
 
 
