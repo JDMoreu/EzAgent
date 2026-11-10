@@ -29,3 +29,8 @@ dist/
 # Salidas de herramientas de diseño y automatización
 .impeccable/
 .cua-work/
+
+# Evals de promptfoo
+evals/node_modules/
+evals/output/
+evals/.promptfoo/

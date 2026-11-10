@@ -1,0 +1,117 @@
+# ¿Elige la herramienta correcta, con argumentos correctos, o responde directo cuando no hace falta?
+- description: "Buscar en la web usa web_search con la consulta del usuario"
+  vars: { user: "Busca el precio del dólar hoy." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config: { name: web_search, args: { query: { regex: "d[oó]lar" } } }
+
+- description: "Listar una carpeta usa list_dir"
+  vars: { user: "Lista los archivos de mi carpeta de Descargas." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config: { name: list_dir, args: { path: { regex: "descargas|downloads" } } }
+
+- description: "Crear una carpeta usa create_dir con el nombre pedido"
+  vars: { user: "Crea una carpeta llamada Proyectos en mi carpeta de trabajo." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config: { name: create_dir, args: { path: { regex: "proyectos" } } }
+
+- description: "Leer un archivo usa read_file"
+  vars: { user: "Lee el archivo notas.txt de mi carpeta de trabajo." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config: { name: read_file, args: { path: { regex: "notas\\.txt" } } }
+
+- description: "Mover un archivo usa move_path (o comprueba antes con list_dir) con origen y destino correctos"
+  vars: { user: "Mueve el archivo informe.txt a la carpeta Archivo, las dos están en mi carpeta de trabajo." }
+  assert:
+    # Mirar antes el contenido de la carpeta es una cautela razonable en un primer paso;
+    # lo que no vale es mover otra cosa o a otro sitio.
+    - type: javascript
+      value: |
+        const data = JSON.parse(output);
+        const move = data.tool_calls.find((c) => c.name === 'move_path');
+        if (move) {
+          const ok = /informe\.txt/i.test(move.arguments.src || '') && /archivo/i.test(move.arguments.dst || '');
+          return { pass: ok, score: ok ? 1 : 0, reason: 'move_path ' + JSON.stringify(move.arguments) };
+        }
+        const looked = data.tool_calls.some((c) => c.name === 'list_dir');
+        return { pass: looked, score: looked ? 1 : 0,
+                 reason: looked ? 'Comprobó la carpeta antes de mover' : 'Ni movió ni comprobó: ' + JSON.stringify(data.tool_calls) };
+
+- description: "Copiar un archivo usa copy_path (la herramienta cambia por la intención)"
+  vars: { user: "Copia notas.txt como respaldo.txt en la misma carpeta de trabajo." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config: { name: copy_path }
+
+- description: "Deshacer usa undo_last"
+  vars: { user: "Deshaz lo último que hiciste con los archivos." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config: { name: undo_last }
+
+- description: "Pedir que recuerde algo usa remember"
+  vars: { user: "Recuerda que prefiero que me hables con respuestas muy cortas." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config: { name: remember }
+
+- description: "Pedir que olvide algo usa forget (o recall para localizarlo antes)"
+  vars: { user: "Olvida lo que te dije sobre el café." }
+  assert:
+    # Con la memoria vacía, decir que no hay nada que olvidar también es correcto (y honesto).
+    - type: javascript
+      value: |
+        const data = JSON.parse(output);
+        const usedTool = data.tool_calls.some((c) => ['forget', 'recall'].includes(c.name));
+        const saidNothing = /nada (guardado|que olvidar)|no (tengo|hay|encuentro)/i.test(data.text);
+        return { pass: usedTool || saidNothing, score: usedTool || saidNothing ? 1 : 0,
+                 reason: usedTool ? 'Usó forget/recall' : saidNothing ? 'Dijo que no hay nada guardado' : 'Respuesta inesperada: ' + data.text };
+
+- description: "La hora: usa get_datetime o la lee del contexto, pero no inventa"
+  vars: { user: "¿Qué hora es?" }
+  assert:
+    - type: javascript
+      value: |
+        const data = JSON.parse(output);
+        const usedTool = data.tool_calls.some((c) => c.name === 'get_datetime');
+        const saidTime = /\d{1,2}[:.]\d{2}|en punto|y media|y cuarto|de la (tarde|ma[ñn]ana|noche)/i.test(data.text);
+        return { pass: usedTool || saidTime, score: usedTool || saidTime ? 1 : 0,
+                 reason: usedTool ? 'Usó get_datetime' : saidTime ? 'Dio la hora del contexto' : 'No dio la hora: ' + data.text };
+
+- description: "Una charla simple no necesita herramientas"
+  vars: { user: "Hola, ¿cómo estás?" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsNone
+    - type: javascript
+      value: file://assertions.js:voiceStyle
+      config: { maxChars: 220, maxSentences: 3 }
+
+- description: "Una cuenta sencilla se responde directo, sin buscar en la web"
+  vars: { user: "¿Cuánto es quince por cuatro?" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsNone
+    - type: javascript
+      value: file://assertions.js:textMatches
+      config: { regex: "60|sesenta" }
+
+- description: "Pedir un comando de terminal no inventa una herramienta de shell"
+  vars: { user: "Ejecuta ipconfig en la terminal y dime la dirección IP." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsNone
+      config: { names: [shell, run_command, exec, bash, powershell, cmd] }
+    - type: javascript
+      value: file://assertions.js:argsNotMatch
+      config: { regex: "ipconfig" }

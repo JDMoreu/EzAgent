@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+# Contrato del prompt y de las herramientas. No llama a ningún modelo: corre sin
+# red ni clave, así que cabe en CI. Cualquier cambio en system_prompt.py,
+# orchestration.py o las herramientas pasa por aquí.
+description: "EzAgent · contrato del prompt y las herramientas (offline)"
+
+prompts:
+  - "{{user}}"
+
+providers:
+  - id: file://provider.py:call_api
+    label: ezagent-contexto
+    config:
+      mode: context
+
+tests:
+  - file://tests/contract.yaml
+
+evaluateOptions:
+  maxConcurrency: 4
+  cache: false

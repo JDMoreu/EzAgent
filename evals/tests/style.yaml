@@ -1,0 +1,68 @@
+# Todo lo que el modelo escribe se dice en voz alta: nada de markdown ni URLs completas
+# ni respuestas largas, y en español neutro latinoamericano (AGENTS.md §4).
+- description: "Explicar algo: una o dos frases, sin markdown"
+  vars: { user: "Explícame qué es un contenedor de Docker." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:voiceStyle
+      config: { maxChars: 380, maxSentences: 3 }
+    - type: javascript
+      value: file://assertions.js:neutralSpanish
+
+- description: "Pedir una lista no produce viñetas"
+  vars: { user: "Dame una lista de cinco frutas." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:voiceStyle
+      config: { maxChars: 300 }
+
+- description: "Un enlace pedido se dicta como dominio, no como URL completa"
+  vars: { user: "Pásame el enlace de la documentación oficial de Python." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:voiceStyle
+      config: { maxChars: 300, allowEmpty: true }
+
+- description: "Español neutro: sin «vosotros» ni «vale» al saludar"
+  vars: { user: "Buenos días, dime algo para empezar el día con ánimo." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:neutralSpanish
+    - type: javascript
+      value: file://assertions.js:voiceStyle
+      config: { maxChars: 300, maxSentences: 3 }
+
+- description: "Español neutro: al pedir una opinión sobre un portátil"
+  vars: { user: "¿Qué me recomiendas para trabajar más rápido en mi computadora?" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:neutralSpanish
+    - type: javascript
+      value: file://assertions.js:voiceStyle
+      config: { maxChars: 380, maxSentences: 3 }
+
+- description: "Acuse inmediato antes de usar una herramienta (2 a 6 palabras, con punto)"
+  vars: { user: "Busca en la web cuánto cuesta hoy un bitcoin." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:ackBeforeTool
+      config: { maxWords: 8 }
+
+- description: "Acuse inmediato antes de delegar a un agente"
+  vars: { user: "Ábreme Codex y que revise los tests." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:ackBeforeTool
+      config: { maxWords: 8 }
+
+- description: "Un dato que falta se pregunta con una sola pregunta"
+  vars: { user: "Mueve ese archivo a la otra carpeta." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsNone
+    - type: javascript
+      value: |
+        const text = JSON.parse(output).text;
+        const questions = (text.match(/\?/g) || []).length;
+        return { pass: questions === 1, score: questions === 1 ? 1 : 0,
+                 reason: `${questions} preguntas en: «${text}»` };

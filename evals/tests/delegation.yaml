@@ -1,0 +1,127 @@
+# El producto es delegar: ¿lanza el agente correcto, con los parámetros correctos?
+- description: "«Ábreme Claude Code» lanza el agente sin tarea (nunca open_terminal + send)"
+  vars: { user: "Ábreme Claude Code." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config:
+        name: delegate_to_agent
+        args: { action: run, agent: claude }
+        absent: { task: { regex: ".+" } }
+
+- description: "El nombre dictado «open code» se traduce al del catálogo (opencode)"
+  vars: { user: "Abre open code." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config: { name: delegate_to_agent, args: { action: run, agent: opencode } }
+
+- description: "«Cloud Code» (como lo escribe Whisper) es Claude Code"
+  vars: { user: "Abre Cloud Code por favor." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config: { name: delegate_to_agent, args: { action: run, agent: claude } }
+
+- description: "Una tarea va en el mismo run, no en un envío aparte"
+  vars: { user: "Dile a Codex que corra las pruebas del proyecto." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config:
+        name: delegate_to_agent
+        args: { action: run, agent: codex, task: { regex: "prueba|test" } }
+
+- description: "«Avísame cuando termine» activa notify_on_done"
+  vars: { user: "Pídele a OpenCode que cree una landing sencilla y avísame cuando termine." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config:
+        name: delegate_to_agent
+        args: { action: run, agent: opencode, notify_on_done: true }
+
+- description: "Un flujo de dos agentes es UN run con then"
+  vars: { user: "Con Claude planifica una landing sencilla y luego que OpenCode la implemente." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config:
+        name: delegate_to_agent
+        args: { action: run, agent: claude, then: { json: "opencode" } }
+
+- description: "El modelo y el esfuerzo pedidos van como parámetros del run"
+  vars: { user: "Usa Claude Code con el modelo Opus y esfuerzo alto para revisar el código del proyecto." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config:
+        name: delegate_to_agent
+        args:
+          action: run
+          agent: claude
+          model: { regex: "opus" }
+          effort: { regex: "high|alto" }
+
+- description: "«En segundo plano» sí activa background"
+  vars: { user: "Que Codex revise el README, pero en segundo plano, sin mostrármelo." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config:
+        name: delegate_to_agent
+        args: { action: run, agent: codex, background: true }
+
+- description: "Por defecto todo se ve: sin petición explícita no hay background"
+  vars: { user: "Pídele a Claude que escriba un poema corto sobre el mar." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config:
+        name: delegate_to_agent
+        args: { action: run, agent: claude }
+        absent: { background: true }
+
+- description: "Una tarea de interfaz gráfica lleva gui=true"
+  vars: { user: "Abre el navegador y busca recetas de pasta, hazlo con Claude." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config: { name: delegate_to_agent, args: { action: run, gui: true } }
+
+- description: "Preguntar por el progreso consulta (list/get/read), no lanza nada nuevo"
+  vars: { user: "¿Qué está haciendo Claude ahora mismo?" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config: { name: delegate_to_agent, args: { action: { oneOf: [list, get, read] } } }
+
+- description: "Abrir una terminal vacía usa open_terminal"
+  vars: { user: "Abre una terminal vacía." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config: { name: delegate_to_agent, args: { action: open_terminal } }
+
+- description: "«Ciérrate» cierra la escucha con voice_control"
+  vars: { user: "Ciérrate." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config: { name: voice_control, args: { action: close } }
+
+- description: "Silenciar los avisos N minutos"
+  vars: { user: "Silencia los avisos durante diez minutos." }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsTool
+      config: { name: voice_control, args: { action: mute, minutes: 10 } }
+
+- description: "No abre agentes por su cuenta ante una pregunta de conocimiento"
+  vars: { user: "¿Qué diferencia hay entre una lista y una tupla en Python?" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:callsNone
+    - type: javascript
+      value: file://assertions.js:voiceStyle
+      config: { maxChars: 450, maxSentences: 4 }

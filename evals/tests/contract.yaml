@@ -1,0 +1,111 @@
+# Contrato del prompt y las herramientas que recibe el modelo (sin llamar a ninguno).
+- description: "La política de seguridad inmutable va primero en el prompt"
+  vars: { user: "hola" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:contract
+      config: { check: preamble-first }
+
+- description: "El preámbulo conserva las reglas críticas (datos no confiables, Papelera, no confirmar por el usuario)"
+  vars: { user: "hola" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:contract
+      config: { check: preamble-rules }
+
+- description: "Máximo 14 herramientas, sin duplicados"
+  vars: { user: "hola" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:contract
+      config: { check: tool-budget }
+
+- description: "Nunca se ofrece una herramienta de shell libre"
+  vars: { user: "ejecuta un comando en la terminal" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:contract
+      config: { check: no-shell-tools }
+
+- description: "Todos los esquemas de herramientas son coherentes"
+  vars: { user: "hola" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:contract
+      config: { check: tool-schemas }
+
+- description: "Preguntar la hora cambia fetch_page por get_datetime"
+  vars: { user: "¿qué hora es?" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:contract
+      config: { check: has-tools, names: [get_datetime], absent: [fetch_page] }
+
+- description: "Copiar ofrece copy_path"
+  vars: { user: "copia el informe a la carpeta de respaldo" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:contract
+      config: { check: has-tools, names: [copy_path], absent: [create_dir] }
+
+- description: "Abrir un archivo ofrece open_path"
+  vars: { user: "abre el documento de requisitos" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:contract
+      config: { check: has-tools, names: [open_path] }
+
+- description: "Olvidar ofrece forget"
+  vars: { user: "olvida lo que te dije del café" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:contract
+      config: { check: has-tools, names: [forget], absent: [remember] }
+
+- description: "Siempre están delegate_to_agent y voice_control"
+  vars: { user: "hola" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:contract
+      config: { check: has-tools, names: [delegate_to_agent, voice_control, delete_path, undo_last] }
+
+- description: "La hora va al final: el prefijo del prompt es estable y cacheable"
+  vars: { user: "hola" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:contract
+      config: { check: clock-last }
+
+- description: "No quedan variables {{...}} sin resolver"
+  vars: { user: "hola" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:contract
+      config: { check: no-unresolved-placeholders }
+
+- description: "El catálogo de agentes del prompt incluye claude, codex, opencode y mcode"
+  vars: { user: "hola" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:contract
+      config: { check: agents-catalog, agents: [claude, codex, opencode, mcode] }
+
+- description: "El system prompt cabe en el presupuesto de contexto (latencia y coste por turno)"
+  vars: { user: "hola" }
+  assert:
+    - type: javascript
+      value: file://assertions.js:contract
+      config: { check: prompt-budget, maxChars: 24000 }
+
+- description: "La guía de orquestación y el acuse inmediato están en el prompt"
+  vars: { user: "hola" }
+  assert:
+    - type: contains
+      value: "Orquestación de agentes"
+      transform: "JSON.parse(output).system_prompt"
+    - type: contains
+      value: "Acuse inmediato"
+      transform: "JSON.parse(output).system_prompt"
+    - type: contains
+      value: "`then`"
+      transform: "JSON.parse(output).system_prompt"

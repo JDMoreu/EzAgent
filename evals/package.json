@@ -1,0 +1,14 @@
+{
+  "name": "ezagent-evals",
+  "private": true,
+  "description": "Evals de promptfoo para el prompt y las herramientas de EzAgent",
+  "scripts": {
+    "export": "uv run --project .. python export_context.py",
+    "eval": "promptfoo eval -c promptfooconfig.yaml --no-cache",
+    "eval:offline": "promptfoo eval -c promptfooconfig.offline.yaml --no-cache",
+    "view": "promptfoo view"
+  },
+  "devDependencies": {
+    "promptfoo": "0.125.1"
+  }
+}
