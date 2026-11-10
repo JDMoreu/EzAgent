@@ -63,9 +63,7 @@ APP_STATE_TO_BASE = {
 }
 
 
-def display_state(
-    visible: bool, error_active: bool, base: str, muted: bool
-) -> str:
+def display_state(visible: bool, error_active: bool, base: str, muted: bool) -> str:
     """Función pura de la sección 9.2 / 12.5."""
     if not visible:
         return "off"
@@ -139,7 +137,6 @@ class UiState:
     def set_muted(self, muted: bool, now: float | None = None) -> None:
         now = self._now(now)
         self._push("muted", bool(muted), now)
-
 
     def set_base(self, base: str, now: float | None = None) -> None:
         """Cambia el estado base. Respeta la permanencia mínima de 120 ms."""
@@ -232,9 +229,7 @@ class UiState:
             elif kind == "error":
                 self.error_active = True
                 self._error_until = (
-                    float(at) + TRANSIENT_ERROR
-                    if str(value) == "transient"
-                    else None
+                    float(at) + TRANSIENT_ERROR if str(value) == "transient" else None
                 )
             elif kind == "error_clear":
                 self.error_active = False
@@ -246,11 +241,7 @@ class UiState:
         # AVISO tiene prioridad sobre el nivel del micrófono y sobre el
         # regreso a idle mientras dura su ventana. Sin esto, cada bloque de
         # audio llamaba a set_base('listen') y borraba el aviso en un frame.
-        if (
-            self.base == "notice"
-            and base in ("listen", "idle")
-            and self._notice_until is not None
-        ):
+        if self.base == "notice" and base in ("listen", "idle") and self._notice_until is not None:
             return
         if self.error_active and base not in ("idle",):
             # El error manda; el base se aplica igualmente para cuando se
@@ -274,10 +265,7 @@ class UiState:
                 # El AVISO no cae a idle hasta el deadline de 1500 ms sin
                 # TTS (T-11); los 1000 ms solo protegen la permanencia.
                 self._notice_until = None
-            if (
-                self._notice_tts_deadline is not None
-                and now >= self._notice_tts_deadline
-            ):
+            if self._notice_tts_deadline is not None and now >= self._notice_tts_deadline:
                 self._notice_tts_deadline = None
                 if self.base == "notice":
                     self.base = "idle"
@@ -288,9 +276,7 @@ class UiState:
             return self._displayed
 
     def _recompute(self, now: float) -> None:
-        target = display_state(
-            self.visible, self.error_active, self.base, self.muted
-        )
+        target = display_state(self.visible, self.error_active, self.base, self.muted)
         if target == self._displayed:
             return
         # Excepción de la spec: error y off no esperan permanencia.

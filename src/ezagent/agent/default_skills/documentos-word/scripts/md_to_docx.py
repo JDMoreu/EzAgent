@@ -132,9 +132,7 @@ def build_document(markdown: str, title: str | None = None):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Convierte Markdown sencillo a un archivo .docx."
-    )
+    parser = argparse.ArgumentParser(description="Convierte Markdown sencillo a un archivo .docx.")
     parser.add_argument("input", help="Archivo Markdown de entrada.")
     parser.add_argument("output", help="Archivo .docx de salida (no debe existir).")
     parser.add_argument("--title", default=None, help="Título opcional del documento.")
@@ -154,9 +152,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             markdown = source.read_text(encoding="utf-8-sig")
         except UnicodeDecodeError as exc:
-            raise ConversionError(
-                "El Markdown no está en UTF-8 válido."
-            ) from exc
+            raise ConversionError("El Markdown no está en UTF-8 válido.") from exc
         document = build_document(markdown, args.title)
         destination.parent.mkdir(parents=True, exist_ok=True)
         document.save(str(destination))

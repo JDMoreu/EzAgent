@@ -121,8 +121,12 @@ class Herdr(AgentDriver):
         # de Herdr; PowerShell recibe la orden como argumento (sin shell=True)
         # y nunca incluye texto del usuario ni del modelo.
         command = [
-            "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-            "-Command", f"$ProgressPreference = 'SilentlyContinue'; {script}",
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            f"$ProgressPreference = 'SilentlyContinue'; {script}",
         ]
         try:
             result = subprocess.run(
@@ -182,9 +186,7 @@ class Herdr(AgentDriver):
                     return self._exec([replacement, *command[1:]], timeout, env)
                 except FileNotFoundError:
                     pass
-            raise HerdrError(
-                f"No encuentro `{command[0]}`. Revisa voice.json."
-            ) from exc
+            raise HerdrError(f"No encuentro `{command[0]}`. Revisa voice.json.") from exc
 
     def _replacement_for(self, executable: str) -> str | None:
         name = Path(str(executable)).name.lower()
@@ -209,29 +211,20 @@ class Herdr(AgentDriver):
     @staticmethod
     def _anonymous_env() -> dict[str, str]:
         """Entorno sin la identidad de la terminal que ejecuta EzAgent."""
-        return {
-            key: value
-            for key, value in os.environ.items()
-            if key.upper() != "HC_TERMINAL_ID"
-        }
+        return {key: value for key, value in os.environ.items() if key.upper() != "HC_TERMINAL_ID"}
 
     def _run(self, args: list[str], timeout: float = 20.0) -> subprocess.CompletedProcess:
         return self._run_command([self.cfg.hc_path, *args], timeout)
-
 
     def _json_command(self, command: list[str], timeout: float) -> Any:
         result = self._run_command(command, timeout)
         output = (result.stdout or "").strip()
         if not output:
-            raise HerdrError(
-                (result.stderr or f"{command[0]} no devolvió nada").strip()
-            )
+            raise HerdrError((result.stderr or f"{command[0]} no devolvió nada").strip())
         try:
             data = json.loads(output)
         except json.JSONDecodeError as exc:
-            raise HerdrError(
-                f"{command[0]} devolvió algo que no es JSON: {output[:300]}"
-            ) from exc
+            raise HerdrError(f"{command[0]} devolvió algo que no es JSON: {output[:300]}") from exc
         if isinstance(data, dict) and data.get("error"):
             error = data["error"]
             message = error.get("message") if isinstance(error, dict) else str(error)
@@ -296,9 +289,7 @@ class Herdr(AgentDriver):
             "labels": data.get("labels") or {},
         }
 
-    def read_agent(
-        self, address: str, lines: int | None = None, limit: int = 6000
-    ) -> str:
+    def read_agent(self, address: str, lines: int | None = None, limit: int = 6000) -> str:
         lines = lines or self.cfg.max_read_lines
         result = self._run(["read", address, "--lines", str(lines)], timeout=20)
         text = strip_ansi(result.stdout or "")
@@ -315,9 +306,7 @@ class Herdr(AgentDriver):
         return self.read_agent(address, lines, limit=120_000)
 
     # --------------------------------------------------------------- acciones
-    def send_agent(
-        self, address: str, text: str, confirmed: bool = False
-    ) -> dict[str, Any]:
+    def send_agent(self, address: str, text: str, confirmed: bool = False) -> dict[str, Any]:
         if len(text) > LONG_TEXT_CHARS:
             staged = self._stage_long_text(address, text)
             if staged is None:
@@ -361,10 +350,7 @@ class Herdr(AgentDriver):
         cutoff = time.time() - 7 * 86400
         for old in folder.glob("*.md"):
             try:
-                if (
-                    old.name.startswith(("contexto-", "mensaje-"))
-                    and old.stat().st_mtime < cutoff
-                ):
+                if old.name.startswith(("contexto-", "mensaje-")) and old.stat().st_mtime < cutoff:
                     old.unlink()
             except OSError:
                 continue
@@ -418,10 +404,14 @@ class Herdr(AgentDriver):
         """Abre una terminal visible en una pestaña nueva de Herdr."""
         folder = cwd or self.cfg.default_cwd
         args = [
-            "do", "tab.new",
-            "--name", name,
-            "--folder", folder,
-            "--argv", json.dumps([shell]),
+            "do",
+            "tab.new",
+            "--name",
+            name,
+            "--folder",
+            folder,
+            "--argv",
+            json.dumps([shell]),
         ]
         if space:
             args += ["--space", space]
@@ -481,11 +471,18 @@ class Herdr(AgentDriver):
             )
             data = self._json(
                 [
-                    "run", "--json", "--bg", "--no-parent",
-                    "--cwd", folder,
-                    "--name", label,
-                    "--label", f"agent={key}",
-                    "--", *run_argv,
+                    "run",
+                    "--json",
+                    "--bg",
+                    "--no-parent",
+                    "--cwd",
+                    folder,
+                    "--name",
+                    label,
+                    "--label",
+                    f"agent={key}",
+                    "--",
+                    *run_argv,
                 ],
                 timeout=40,
             )
@@ -495,10 +492,14 @@ class Herdr(AgentDriver):
             where: dict[str, Any] = {"visible": False, "background": True}
         else:
             args = [
-                "do", "tab.new",
-                "--name", label,
-                "--folder", folder,
-                "--argv", json.dumps([DEFAULT_SHELL]),
+                "do",
+                "tab.new",
+                "--name",
+                label,
+                "--folder",
+                folder,
+                "--argv",
+                json.dumps([DEFAULT_SHELL]),
             ]
             if space:
                 args += ["--space", space]
@@ -507,9 +508,7 @@ class Herdr(AgentDriver):
             if not address:
                 return {"ok": False, "error": f"tab.new no devolvió terminal: {data}"}
             self.wait_shell_prompt(address)  # sin pausa fija
-            typed = self.send_agent(
-                address, command_line(argv, launch.env), confirmed=True
-            )
+            typed = self.send_agent(address, command_line(argv, launch.env), confirmed=True)
             if not typed.get("ok"):
                 return {
                     "ok": False,
@@ -567,9 +566,7 @@ class Herdr(AgentDriver):
         }
 
     def focus_agent(self, address: str) -> dict[str, Any]:
-        self._json_app(
-            ["do", "agent.focus", "--terminal", address], timeout=15
-        )
+        self._json_app(["do", "agent.focus", "--terminal", address], timeout=15)
         return {"ok": True, "address": address, "focused": True}
 
     def kill_agent(self, address: str, confirmed: bool = False) -> dict[str, Any]:

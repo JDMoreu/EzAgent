@@ -50,9 +50,7 @@ def _content_size(value: Any) -> int:
 class AuditLog:
     """Registro JSONL con cerrojo de hilos y rotación por tamaño."""
 
-    def __init__(
-        self, path: Path, *, max_bytes: int = 5_000_000, backups: int = 5
-    ) -> None:
+    def __init__(self, path: Path, *, max_bytes: int = 5_000_000, backups: int = 5) -> None:
         self.path = Path(path)
         self.max_bytes = max_bytes
         self.backups = backups
@@ -91,9 +89,7 @@ class AuditLog:
                 with self.path.open("a", encoding="utf-8", newline="\n") as handle:
                     handle.write(line)
             except OSError as exc:
-                logger.warning(
-                    "No se pudo escribir la auditoría en %s: %s", self.path, exc
-                )
+                logger.warning("No se pudo escribir la auditoría en %s: %s", self.path, exc)
 
     def redact(self, value: Any) -> Any:
         """Copia ``value`` sustituyendo contenidos y secretos."""

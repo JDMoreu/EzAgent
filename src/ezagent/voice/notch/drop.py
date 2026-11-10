@@ -53,27 +53,26 @@ from .tokens import FLARE, H_ISLAND, R_MENU
 from .tokens import palette as token_palette
 
 # ----------------------------------------------------------------- geometría
-BTN = 36.0              # diámetro de los botones redondos
-GAP = 8.0               # separación entre elementos de la fila
-CALL_GAP = 10.0         # respiro extra de «llamar» cuando el micro está plegado
-PAD = 12.0              # margen para sombras dentro de la ventana
+BTN = 36.0  # diámetro de los botones redondos
+GAP = 8.0  # separación entre elementos de la fila
+CALL_GAP = 10.0  # respiro extra de «llamar» cuando el micro está plegado
+PAD = 12.0  # margen para sombras dentro de la ventana
 PILL_W, PILL_H = 148.0, 38.0
 CIRCLE_D = 58.0
-ORB_GAP = 10.0          # separación entre el círculo y la fila de botones
-HOVER_MARGIN = 22.0     # el puntero «cerca» de la barra hace aparecer los botones
-DOUBLE_CLICK = 0.4      # s entre dos clics sobre la forma para cambiar pill ↔ circle
-HOVER_HOLD = 0.7        # s que los botones siguen tras retirar el puntero
-BUD_SS = 3              # supersampling de los sprites de los botones
-GRID_CELL = 2.0         # px lógicos por celda del fluido (se escala suavemente)
-SHADOW = 10.0           # margen de sombra de cada sprite
-FPS_BUSY = 60.0         # mientras algo se mueve: botones, voz, crecimiento, iconos
-FPS_CALM = 30.0         # en reposo; el fluido sigue fluyendo despacio
+ORB_GAP = 10.0  # separación entre el círculo y la fila de botones
+HOVER_MARGIN = 22.0  # el puntero «cerca» de la barra hace aparecer los botones
+DOUBLE_CLICK = 0.4  # s entre dos clics sobre la forma para cambiar pill ↔ circle
+HOVER_HOLD = 0.7  # s que los botones siguen tras retirar el puntero
+BUD_SS = 3  # supersampling de los sprites de los botones
+GRID_CELL = 2.0  # px lógicos por celda del fluido (se escala suavemente)
+SHADOW = 10.0  # margen de sombra de cada sprite
+FPS_BUSY = 60.0  # mientras algo se mueve: botones, voz, crecimiento, iconos
+FPS_CALM = 30.0  # en reposo; el fluido sigue fluyendo despacio
 
 # DECISION: tres botones (☰ menú, 🎤 micrófono, ✕ colgar). «Repetir» pasa al
 # menú y a la voz/atajo; «nueva conversación» vive en el menú con confirmación.
 # Sin llamada el micrófono se pliega y ✕ se convierte en «llamar» (mismo botón).
-NAMES = {"pill": ("gear", "pill", "mic", "hang"),
-         "circle": ("gear", "mic", "hang")}
+NAMES = {"pill": ("gear", "pill", "mic", "hang"), "circle": ("gear", "mic", "hang")}
 BUTTONS = ("gear", "mic", "hang")
 # Orden de salida por grupos: del hueco más cercano a la forma al más lejano.
 EMERGE_ORDER = {"pill": (("gear", "mic"), ("hang",)), "circle": (("mic",), ("gear", "hang"))}
@@ -107,10 +106,12 @@ def slots(layout: str, mic: float = 1.0) -> dict[str, tuple[float, float]]:
     widths = [PILL_W if n == "pill" else (BTN * mic if n == "mic" else BTN) for n in names]
     # Al plegarse el micro, su espacio se convierte en un respiro más ancho
     # (GAP + CALL_GAP): «llamar» no queda pegado a la forma ni a ☰.
-    gaps = [(GAP * mic + CALL_GAP * (1.0 - mic)) if a == "mic" else GAP
-            for a, b in zip(names, names[1:], strict=False)]
+    gaps = [
+        (GAP * mic + CALL_GAP * (1.0 - mic)) if a == "mic" else GAP
+        for a, b in zip(names, names[1:], strict=False)
+    ]
     x = PAD
-    if layout == "circle":                 # la fila se centra bajo el círculo
+    if layout == "circle":  # la fila se centra bajo el círculo
         x = w / 2 - (sum(widths) + sum(gaps)) / 2
     for i, (n, width) in enumerate(zip(names, widths, strict=True)):
         out[n] = (x + width / 2, cy)
@@ -128,22 +129,44 @@ def form_center(layout: str) -> tuple[float, float]:
 # --------------------------------------------------------------------- color
 # Estado visual (de UiState) -> pose de la barra.
 POSE_OF = {
-    "off": "idle", "idle": "idle", "listen": "listen", "think": "think",
-    "speak": "speak", "notice": "speak", "mute": "mute", "error": "error",
+    "off": "idle",
+    "idle": "idle",
+    "listen": "listen",
+    "think": "think",
+    "speak": "speak",
+    "notice": "speak",
+    "mute": "mute",
+    "error": "error",
 }
-BRIGHT = {"mute": .9, "sleep": .97}
+BRIGHT = {"mute": 0.9, "sleep": 0.97}
 
 # Botones por tema: las mismas superficies de Marea que la ventana de ajustes
 # (blanco / noche verde azulada).
 UI = {
-    "light": {"disc": (255, 255, 255, 245), "hover": (255, 255, 255, 255), "icon": (16, 34, 38),
-              "fault": (214, 51, 61), "hang": (16, 34, 38, 255), "hang_icon": (255, 255, 255),
-              "call": (12, 112, 117, 255), "call_icon": (255, 255, 255),
-              "ring": (255, 255, 255, 56), "shadow": (12, 60, 66, 64)},
-    "dark": {"disc": (20, 33, 38, 245), "hover": (28, 45, 51, 255), "icon": (228, 242, 240),
-             "fault": (255, 120, 118), "hang": (228, 242, 240, 255), "hang_icon": (13, 22, 26),
-             "call": (94, 226, 196, 255), "call_icon": (6, 34, 30),
-             "ring": (232, 238, 250, 30), "shadow": (0, 0, 0, 120)},
+    "light": {
+        "disc": (255, 255, 255, 245),
+        "hover": (255, 255, 255, 255),
+        "icon": (16, 34, 38),
+        "fault": (214, 51, 61),
+        "hang": (16, 34, 38, 255),
+        "hang_icon": (255, 255, 255),
+        "call": (12, 112, 117, 255),
+        "call_icon": (255, 255, 255),
+        "ring": (255, 255, 255, 56),
+        "shadow": (12, 60, 66, 64),
+    },
+    "dark": {
+        "disc": (20, 33, 38, 245),
+        "hover": (28, 45, 51, 255),
+        "icon": (228, 242, 240),
+        "fault": (255, 120, 118),
+        "hang": (228, 242, 240, 255),
+        "hang_icon": (13, 22, 26),
+        "call": (94, 226, 196, 255),
+        "call_icon": (6, 34, 30),
+        "ring": (232, 238, 250, 30),
+        "shadow": (0, 0, 0, 120),
+    },
 }
 # Color de «activo» (☰ con el menú abierto, ✓).
 SIGNAL = {"light": (12, 112, 117), "dark": (94, 226, 196)}
@@ -164,8 +187,8 @@ def _fluid_grid(layout: str) -> tuple[np.ndarray, np.ndarray]:
         w, h = _form_dims(layout)
         nx, ny = max(2, round(w / GRID_CELL)), max(2, round(h / GRID_CELL))
         unit = h / 2
-        xs = (((np.arange(nx) + .5) * (w / nx) - w / 2) / unit).astype(np.float32)
-        ys = (((np.arange(ny) + .5) * (h / ny) - h / 2) / unit).astype(np.float32)
+        xs = (((np.arange(nx) + 0.5) * (w / nx) - w / 2) / unit).astype(np.float32)
+        ys = (((np.arange(ny) + 0.5) * (h / ny) - h / 2) / unit).astype(np.float32)
         g = tuple(np.meshgrid(xs, ys))
         _GRIDS[layout] = g
     return g
@@ -188,21 +211,21 @@ def form_mask(layout: str, scale: float) -> Image.Image:
     if m is None:
         if layout == "circle":
             w = h = max(2, round(CIRCLE_D * scale))
-            xs = np.arange(w, dtype=np.float32) + .5 - w / 2
-            ys = np.arange(h, dtype=np.float32) + .5 - h / 2
+            xs = np.arange(w, dtype=np.float32) + 0.5 - w / 2
+            ys = np.arange(h, dtype=np.float32) + 0.5 - h / 2
             xx, yy = np.meshgrid(xs, ys)
             dist = np.sqrt(xx * xx + yy * yy) - w / 2
         else:
             w, h = max(2, round(PILL_W * scale)), max(2, round(PILL_H * scale))
-            xs = np.arange(w, dtype=np.float32) + .5 - w / 2
-            ys = np.arange(h, dtype=np.float32) + .5 - h / 2
+            xs = np.arange(w, dtype=np.float32) + 0.5 - w / 2
+            ys = np.arange(h, dtype=np.float32) + 0.5 - h / 2
             xx, yy = np.meshgrid(xs, ys)
             r = h / 2
             dx = np.maximum(np.abs(xx) - (w / 2 - r), 0.0)
             dist = np.sqrt(dx * dx + yy * yy) - r
-        alpha = np.clip(.5 - dist, 0.0, 1.0)
+        alpha = np.clip(0.5 - dist, 0.0, 1.0)
         m = Image.fromarray((alpha * 255).astype(np.uint8), "L")
-        if len(_MASKS) > 32:            # el crecimiento al acercar usa varias escalas
+        if len(_MASKS) > 32:  # el crecimiento al acercar usa varias escalas
             _MASKS.clear()
         _MASKS[key] = m
     return m
@@ -232,12 +255,12 @@ class DropModel:
         self.ts = 0.0
         self.reduced = False
         self.asking = False
-        self.choreo = Choreo(BUTTONS, shown=False)   # ocultos hasta acercar el puntero
-        self.appear = self.choreo.appear                               # aparición de cada botón
-        self.ask = Spring(0.0, 300.0, 26.0)                            # 🎤 → ✓ al preguntar
-        self.mute_p = Spring(0.0, 420.0, 41.0)                         # raya del micro en pausa
-        self.call = Spring(0.0, 300.0, 26.0)                           # ✕ → llamar al colgar
-        self.mic_space = Spring(1.0, 260.0, 32.0)                      # hueco del micro en la fila
+        self.choreo = Choreo(BUTTONS, shown=False)  # ocultos hasta acercar el puntero
+        self.appear = self.choreo.appear  # aparición de cada botón
+        self.ask = Spring(0.0, 300.0, 26.0)  # 🎤 → ✓ al preguntar
+        self.mute_p = Spring(0.0, 420.0, 41.0)  # raya del micro en pausa
+        self.call = Spring(0.0, 300.0, 26.0)  # ✕ → llamar al colgar
+        self.mic_space = Spring(1.0, 260.0, 32.0)  # hueco del micro en la fila
 
     @property
     def flow(self) -> float:
@@ -246,10 +269,23 @@ class DropModel:
 
     # ------------------------------------------------------------ entrada
     def update(
-        self, now: float, dt: float, pose: str, rms: float, theme: str,
-        hover: bool, asking: bool, menu_open: bool, reduced: bool, buttons: str = "hover",
-        *, muted: bool = False, hover_item: str | None = None, pressed: str | None = None,
-        in_call: bool = True, custom: np.ndarray | None = None,
+        self,
+        now: float,
+        dt: float,
+        pose: str,
+        rms: float,
+        theme: str,
+        hover: bool,
+        asking: bool,
+        menu_open: bool,
+        reduced: bool,
+        buttons: str = "hover",
+        *,
+        muted: bool = False,
+        hover_item: str | None = None,
+        pressed: str | None = None,
+        in_call: bool = True,
+        custom: np.ndarray | None = None,
     ) -> None:
         self.reduced = reduced
         self.asking = asking
@@ -266,8 +302,9 @@ class DropModel:
         live = in_call or asking
         want = {"gear": show and not asking, "mic": show and live, "hang": show}
         self.choreo.set_targets(want, EMERGE_ORDER[self.layout], now, reduced)
-        self.choreo.step(now, dt, reduced, grow=hover and not asking,
-                         hover_item=hover_item, pressed=pressed)
+        self.choreo.step(
+            now, dt, reduced, grow=hover and not asking, hover_item=hover_item, pressed=pressed
+        )
         self.ask.t = 1.0 if asking else 0.0
         self.mute_p.t = 1.0 if muted else 0.0
         self.call.t = 0.0 if live else 1.0
@@ -293,15 +330,17 @@ class DropModel:
 
         bright_t = BRIGHT.get(pose, 1.0)
         if pose == "done":
-            bright_t += max(0.0, 1 - self.ts * 2.2) * .2
-        self.bright += (bright_t - self.bright) * (1.0 if reduced else 1.0 - math.exp(-dt / .15))
+            bright_t += max(0.0, 1 - self.ts * 2.2) * 0.2
+        self.bright += (bright_t - self.bright) * (1.0 if reduced else 1.0 - math.exp(-dt / 0.15))
 
         self.theme = "light" if theme == "light" else "dark"
         # El primer fotograma ya sale con el color correcto (sin fundido desde el claro).
-        kc = 1.0 if not self._colored else 1.0 - math.exp(-dt / (.12 if reduced else .25))
+        kc = 1.0 if not self._colored else 1.0 - math.exp(-dt / (0.12 if reduced else 0.25))
         self._colored = True
         custom = getattr(self, "custom", None)
-        target = custom if custom is not None and pose in CUSTOM_POSES else colors_for(self.theme, pose)
+        target = (
+            custom if custom is not None and pose in CUSTOM_POSES else colors_for(self.theme, pose)
+        )
         self.cols += (target - self.cols) * kc
 
     def animating(self, now: float) -> bool:
@@ -331,7 +370,7 @@ class DropModel:
         pos = self.positions()
         for name in BUTTONS:
             cx, cy, sc, al = pos[name]
-            if sc > .6 and al > .5 and (x - cx) ** 2 + (y - cy) ** 2 <= (BTN / 2 * 1.05) ** 2:
+            if sc > 0.6 and al > 0.5 and (x - cx) ** 2 + (y - cy) ** 2 <= (BTN / 2 * 1.05) ** 2:
                 return name
         cx, cy, _, _ = pos["pill"]
         if self.layout == "circle":
@@ -349,13 +388,21 @@ class DropModel:
         xs, ys = [], []
         for name, (cx, cy) in slots(self.layout).items():
             if name == "pill":
-                half_w, half_h = ((PILL_W / 2, PILL_H / 2) if self.layout == "pill"
-                                  else (CIRCLE_D / 2, CIRCLE_D / 2))
+                half_w, half_h = (
+                    (PILL_W / 2, PILL_H / 2)
+                    if self.layout == "pill"
+                    else (CIRCLE_D / 2, CIRCLE_D / 2)
+                )
             else:
                 half_w = half_h = BTN / 2
             xs += [cx - half_w, cx + half_w]
             ys += [cy - half_h, cy + half_h]
-        return (min(xs) - HOVER_MARGIN, min(ys) - HOVER_MARGIN, max(xs) + HOVER_MARGIN, max(ys) + HOVER_MARGIN)
+        return (
+            min(xs) - HOVER_MARGIN,
+            min(ys) - HOVER_MARGIN,
+            max(xs) + HOVER_MARGIN,
+            max(ys) + HOVER_MARGIN,
+        )
 
     def near(self, x: float, y: float) -> bool:
         x0, y0, x1, y1 = self.bar_rect()
@@ -370,9 +417,19 @@ def _stroke(d: ImageDraw.ImageDraw, pts, width: float, fill) -> None:
         d.ellipse((x - r, y - r, x + r, y + r), fill=fill)
 
 
-def _glyph(d, name: str, cx: float, cy: float, u: float, color, width: float,
-           muted: float = 0.0, fault=None) -> None:
+def _glyph(
+    d,
+    name: str,
+    cx: float,
+    cy: float,
+    u: float,
+    color,
+    width: float,
+    muted: float = 0.0,
+    fault=None,
+) -> None:
     """Glifos en un cuadro de 24 unidades escalado por ``u`` px/unidad."""
+
     def P(px, py):
         return (cx + (px - 12) * u, cy + (py - 12) * u)
 
@@ -407,9 +464,17 @@ def _glyph(d, name: str, cx: float, cy: float, u: float, color, width: float,
 _SPRITES: dict[tuple, Image.Image] = {}
 
 
-def button_sprite(glyph: str, theme: str, scale: float, *, hang: bool = False,
-                  hover: bool = False, muted: float = 0.0, signal: bool = False,
-                  call: bool = False) -> Image.Image:
+def button_sprite(
+    glyph: str,
+    theme: str,
+    scale: float,
+    *,
+    hang: bool = False,
+    hover: bool = False,
+    muted: float = 0.0,
+    signal: bool = False,
+    call: bool = False,
+) -> Image.Image:
     """Botón redondo con sombra suave (RGBA recto). Se dibuja una vez y se reutiliza.
 
     ``muted`` (0..1) es el progreso de la raya de pausa; se cuantiza en 8 pasos
@@ -427,22 +492,35 @@ def button_sprite(glyph: str, theme: str, scale: float, *, hang: bool = False,
     big = size * q
     c, r = big / 2, BTN * scale * q / 2
     shadow = Image.new("RGBA", (big, big), (0, 0, 0, 0))
-    ImageDraw.Draw(shadow).ellipse((c - r, c - r + 3 * scale * q, c + r, c + r + 3 * scale * q), fill=ui["shadow"])
+    ImageDraw.Draw(shadow).ellipse(
+        (c - r, c - r + 3 * scale * q, c + r, c + r + 3 * scale * q), fill=ui["shadow"]
+    )
     shadow = shadow.filter(ImageFilter.GaussianBlur(4 * scale * q))
     disc = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     d = ImageDraw.Draw(disc)
     fill = ui["call"] if call else (ui["hang"] if hang else (ui["hover"] if hover else ui["disc"]))
     ring = ui["ring"] if (hang or call or theme == "dark") else None
-    d.ellipse((c - r, c - r, c + r, c + r), fill=fill, outline=ring, width=max(1, round(1.0 * scale * q)))
+    d.ellipse(
+        (c - r, c - r, c + r, c + r), fill=fill, outline=ring, width=max(1, round(1.0 * scale * q))
+    )
     if call:
         icon = ui["call_icon"]
     elif hang:
         icon = ui["hang_icon"]
     else:
-        icon = ui["fault"] if muted >= .5 else (SIGNAL[theme] if signal else ui["icon"])
+        icon = ui["fault"] if muted >= 0.5 else (SIGNAL[theme] if signal else ui["icon"])
     k = BTN / 46.0
-    _glyph(d, glyph, c, c, (20 / 24) * k * scale * q * 0.95, (*icon, 255), 1.8 * k * scale * q,
-           muted=muted, fault=(*ui["fault"], 255))
+    _glyph(
+        d,
+        glyph,
+        c,
+        c,
+        (20 / 24) * k * scale * q * 0.95,
+        (*icon, 255),
+        1.8 * k * scale * q,
+        muted=muted,
+        fault=(*ui["fault"], 255),
+    )
     out = Image.alpha_composite(shadow, disc).convert("RGBa").reduce(q).convert("RGBA")
     if len(_SPRITES) > 120:
         _SPRITES.clear()
@@ -456,12 +534,17 @@ class _Canvas:
     def __init__(self, w: int, h: int) -> None:
         self.img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
 
-    def paste(self, tile: Image.Image, cx: float, cy: float, scale: float = 1.0, alpha: float = 1.0) -> None:
+    def paste(
+        self, tile: Image.Image, cx: float, cy: float, scale: float = 1.0, alpha: float = 1.0
+    ) -> None:
         if alpha <= 0.01 or scale <= 0.02:
             return
-        if abs(scale - 1.0) > .02:
-            tile = tile.resize((max(1, round(tile.width * scale)), max(1, round(tile.height * scale))), Image.BILINEAR)
-        if alpha < .99:
+        if abs(scale - 1.0) > 0.02:
+            tile = tile.resize(
+                (max(1, round(tile.width * scale)), max(1, round(tile.height * scale))),
+                Image.BILINEAR,
+            )
+        if alpha < 0.99:
             a = tile.getchannel("A").point(lambda v, f=alpha: int(v * f))
             tile = tile.copy()
             tile.putalpha(a)
@@ -475,9 +558,18 @@ class _Canvas:
         self.img.alpha_composite(tile, (x0 + sx0, y0 + sy0))
 
 
-def render_model(model: DropModel, w: int, h: int, scale: float, theme: str,
-                 muted: bool, in_call: bool, menu_open: bool, now: float | None = None,
-                 hover_item: str | None = None) -> np.ndarray:
+def render_model(
+    model: DropModel,
+    w: int,
+    h: int,
+    scale: float,
+    theme: str,
+    muted: bool,
+    in_call: bool,
+    menu_open: bool,
+    now: float | None = None,
+    hover_item: str | None = None,
+) -> np.ndarray:
     """Dibuja un fotograma BGRA premultiplicado de ``w``×``h`` px físicos."""
     now = time.monotonic() if now is None else now
     cv = _Canvas(w, h)
@@ -492,18 +584,22 @@ def render_model(model: DropModel, w: int, h: int, scale: float, theme: str,
     draw_order = [n for group in reversed(EMERGE_ORDER[model.layout]) for n in group]
     for name in draw_order:
         cx, cy, sc, al = pos[name]
-        if sc <= .02 or al <= .01:
+        if sc <= 0.02 or al <= 0.01:
             continue
         hov = hover_item == name
         if name == "gear":
             tiles = [(button_sprite("gear", theme, s, hover=hov, signal=menu_open), 1.0)]
-        elif name == "hang":                # al preguntar, ✕ significa «no»
+        elif name == "hang":  # al preguntar, ✕ significa «no»
             call = 0.0 if model.asking else max(0.0, min(1.0, model.call.x))
-            tiles = [(button_sprite("hang", theme, s, hang=True, hover=hov), 1.0 - call),
-                     (button_sprite("call", theme, s, call=True, hover=hov), call)]
+            tiles = [
+                (button_sprite("hang", theme, s, hang=True, hover=hov), 1.0 - call),
+                (button_sprite("call", theme, s, call=True, hover=hov), call),
+            ]
         else:  # mic / ✓
-            tiles = [(button_sprite("mic", theme, s, hover=hov, muted=mute_progress), 1.0 - ask),
-                     (button_sprite("yes", theme, s, hover=hov, signal=True), ask)]
+            tiles = [
+                (button_sprite("mic", theme, s, hover=hov, muted=mute_progress), 1.0 - ask),
+                (button_sprite("yes", theme, s, hover=hov, signal=True), ask),
+            ]
         for tile, share in tiles:
             cv.paste(tile, cx * s, cy * s, sc, al * share)
 
@@ -536,15 +632,22 @@ def render_card_body(w: int, h: int, scale: float, theme: str, fresh: bool = Fal
     d = ImageDraw.Draw(img, "RGBA")
     x0 = FLARE * scale * ss
     radius = (CARD_RADIUS if fresh else R_MENU) * scale * ss
-    d.rounded_rectangle((x0, 0, w * ss - x0 - 1, h * ss - 1), radius=radius,
-                        fill=(*body, 255), outline=(*line[:3], int(line[3])), width=max(1, round(ss * scale)))
+    d.rounded_rectangle(
+        (x0, 0, w * ss - x0 - 1, h * ss - 1),
+        radius=radius,
+        fill=(*body, 255),
+        outline=(*line[:3], int(line[3])),
+        width=max(1, round(ss * scale)),
+    )
     arr = np.asarray(img.convert("RGBa").reduce(ss)).astype(np.float32) / 255.0
     if fresh:
         # Degradado muy suave: un poco más de cielo arriba (premultiplicado por el alfa).
         top = np.asarray(body_top(theme), np.float32) / 255.0
         bottom = np.asarray(body, np.float32) / 255.0
-        k = np.clip(np.arange(h, dtype=np.float32) / max(1.0, 160.0 * scale), 0.0, 1.0)[:, None, None]
-        shift = (top - bottom) * (1.0 - k)     # se suma: el borde conserva su línea
+        k = np.clip(np.arange(h, dtype=np.float32) / max(1.0, 160.0 * scale), 0.0, 1.0)[
+            :, None, None
+        ]
+        shift = (top - bottom) * (1.0 - k)  # se suma: el borde conserva su línea
         arr[..., :3] = np.clip(arr[..., :3] + shift * arr[..., 3:4], 0.0, 1.0)
     arr.setflags(write=False)
     return arr
@@ -793,7 +896,6 @@ class DropUI:
         self._reduced = self._motion_reduced()
         self._reduced_at = time.monotonic()
 
-
     def _ensure_window(self) -> bool:
         if self._win is None:
             w, h = self._size()
@@ -965,23 +1067,50 @@ class DropUI:
             self._hover_item = item if item not in (None, "pill") else None
         hover = now < self._hover_until
         pose = self._pose(now)
-        self.model.update(now, dt, pose, self._rms, self._theme_name(), hover, self._asking,
-                          self._menu_open, self._reduced, self.buttons, muted=self._muted,
-                          hover_item=self._hover_item, pressed=self._pressed,
-                          in_call=self._in_call, custom=self._custom_for_frame())
+        self.model.update(
+            now,
+            dt,
+            pose,
+            self._rms,
+            self._theme_name(),
+            hover,
+            self._asking,
+            self._menu_open,
+            self._reduced,
+            self.buttons,
+            muted=self._muted,
+            hover_item=self._hover_item,
+            pressed=self._pressed,
+            in_call=self._in_call,
+            custom=self._custom_for_frame(),
+        )
         if self._win is not None:
             self._win._interval = 1.0 / self.target_fps(pose, hover, now)
         if self._persist_pos_at and now >= self._persist_pos_at:
             self._persist_pos_at = 0.0
             self._save_bar_position()
         w, h = self._size()
-        return render_model(self.model, w, h, self.bs, self._theme_name(), self._muted,
-                            self._in_call, self._menu_open, now, self._hover_item)
+        return render_model(
+            self.model,
+            w,
+            h,
+            self.bs,
+            self._theme_name(),
+            self._muted,
+            self._in_call,
+            self._menu_open,
+            now,
+            self._hover_item,
+        )
 
     def target_fps(self, pose: str, hover: bool, now: float) -> float:
         """60 fps fijos mientras algo se mueve; 30 en reposo (el fluido sigue vivo)."""
-        busy = (pose not in ("idle", "sleep", "mute") or hover or self._asking
-                or self.model.animating(now))
+        busy = (
+            pose not in ("idle", "sleep", "mute")
+            or hover
+            or self._asking
+            or self.model.animating(now)
+        )
         return FPS_BUSY if busy else FPS_CALM
 
     # ------------------------------------------------------ forma: círculo ↔ píldora
@@ -999,7 +1128,9 @@ class DropUI:
         self.model.layout = layout
         if win is not None and anchor is not None:
             fx, fy = form_center(layout)
-            nx, ny = self.clamp_position(round(anchor[0] - fx * self.bs), round(anchor[1] - fy * self.bs))
+            nx, ny = self.clamp_position(
+                round(anchor[0] - fx * self.bs), round(anchor[1] - fy * self.bs)
+            )
             w, h = self._size()
             win.resize(w, h)
             win.set_pos(nx, ny)
@@ -1031,7 +1162,9 @@ class DropUI:
         self.bar_scale = new
         if win is not None and anchor is not None:
             fx, fy = form_center(self.layout)
-            nx, ny = self.clamp_position(round(anchor[0] - fx * self.bs), round(anchor[1] - fy * self.bs))
+            nx, ny = self.clamp_position(
+                round(anchor[0] - fx * self.bs), round(anchor[1] - fy * self.bs)
+            )
             w, h = self._size()
             win.resize(w, h)
             win.set_pos(nx, ny)
@@ -1077,12 +1210,12 @@ class DropUI:
             return False
         if name == "pill":
             now = time.monotonic()
-            if now - self._form_click < DOUBLE_CLICK:       # doble clic: cambia la forma
+            if now - self._form_click < DOUBLE_CLICK:  # doble clic: cambia la forma
                 self._form_click = 0.0
                 self.toggle_layout()
                 return True
             self._form_click = now
-            return False                    # un clic en la forma arrastra la ventana
+            return False  # un clic en la forma arrastra la ventana
         self._pressed = name
         return True
 
@@ -1113,7 +1246,7 @@ class DropUI:
                 elif self._in_call:
                     self.on_action("hangup")
                 else:
-                    self.on_action("listen")    # el mismo botón vuelve a llamar
+                    self.on_action("listen")  # el mismo botón vuelve a llamar
         except Exception:
             pass
 
@@ -1196,15 +1329,19 @@ class DropUI:
                 except Exception:
                     pass
                 self._menu = Menu(
-                    settings, scale=self.s, theme=self._theme_name(), screen_h=screen_h,
-                    on_live_change=self._live_setting, on_save=self._save_settings,
-                    on_test=self._test_voice, on_hide=self._hide_from_menu,
-                    on_close=self._menu_closed, on_text_edit=self._menu_text_edit,
+                    settings,
+                    scale=self.s,
+                    theme=self._theme_name(),
+                    screen_h=screen_h,
+                    on_live_change=self._live_setting,
+                    on_save=self._save_settings,
+                    on_test=self._test_voice,
+                    on_hide=self._hide_from_menu,
+                    on_close=self._menu_closed,
+                    on_text_edit=self._menu_text_edit,
                     on_action=self._menu_action,
                 )
-                self._menu.set_palette_overrides(
-                    card_overrides
-                )
+                self._menu.set_palette_overrides(card_overrides)
             except Exception:
                 self._menu = None
         return self._menu
@@ -1276,7 +1413,7 @@ class DropUI:
                 pass
 
     def card_moved(self) -> None:
-        self._header_click = 0.0        # un arrastre no cuenta como primer clic
+        self._header_click = 0.0  # un arrastre no cuenta como primer clic
         self._save_card_geometry()
 
     def _place_card(self, create: bool = False) -> None:
@@ -1442,22 +1579,33 @@ class DropUI:
             except Exception:
                 pass
         try:
-            menu.set_input_level(self._mic_level, muted=self._muted,
-                                 active=(self._in_call and self._state == "listening"))
+            menu.set_input_level(
+                self._mic_level,
+                muted=self._muted,
+                active=(self._in_call and self._state == "listening"),
+            )
             menu.update(now)
             mh = float(menu.height(now))
             vh = float(menu.viewport_height)
         except Exception:
             return np.zeros((h, w, 4), np.uint8)
-        if self._card is None:           # se cerró durante update()
+        if self._card is None:  # se cerró durante update()
             return np.zeros((h, w, 4), np.uint8)
         theme = self._theme_name()
         frame = np.array(render_card_body(w, h, s, theme, fresh=True), dtype=np.float32)
         if self._sidebar is None:
             self._sidebar = Sidebar()
         try:
-            self._sidebar.draw(frame, s, card_palette(theme), theme, self._section,
-                               self._sidebar_hover, now, self._reduced)
+            self._sidebar.draw(
+                frame,
+                s,
+                card_palette(theme),
+                theme,
+                self._section,
+                self._sidebar_hover,
+                now,
+                self._reduced,
+            )
         except Exception:
             pass
         cw = round(menu.width * s)
@@ -1467,7 +1615,7 @@ class DropUI:
             menu.draw(content, now)
         except Exception:
             return np.zeros((h, w, 4), np.uint8)
-        composite_over(frame, np.clip(content[y0:y0 + h], 0.0, 1.0), round(SIDEBAR_W * s), 0)
+        composite_over(frame, np.clip(content[y0 : y0 + h], 0.0, 1.0), round(SIDEBAR_W * s), 0)
         try:
             draw_grip(frame, s, card_palette(theme))
         except Exception:
@@ -1545,7 +1693,7 @@ class DropUI:
                     self.reset_card()
                     return True
                 self._header_click = now
-            return False                    # zona libre: arrastra la ventana
+            return False  # zona libre: arrastra la ventana
         except Exception as exc:  # noqa: BLE001
             # Un fallo aquí dejaba el menú sin responder en silencio: que conste.
             if kind != "move":

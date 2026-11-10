@@ -119,9 +119,7 @@ class RuntimeCallbacks:
     last_summary: Callable[[], str] = lambda: ""
     mute: Callable[[int], None] = lambda minutes: None
     get_last_user_text: Callable[[], str] = lambda: ""
-    remember_task: Callable[[str, str, str], None] = (
-        lambda address, agent, task: None
-    )
+    remember_task: Callable[[str, str, str], None] = lambda address, agent, task: None
     enqueue_chain: Callable[[dict[str, Any]], None] = lambda spec: None
     deliver_answer: Callable[[str], None] = lambda address: None
     prewarm_chain: Callable[[dict[str, Any]], None] = lambda spec: None
@@ -172,9 +170,7 @@ class AgentRuntime:
         self.session_id = uuid.uuid4().hex
         self.turn_id = ""
         self.tainted = False
-        self.confirm_nondestructive = bool(
-            getattr(voice_config, "confirm_actions", False)
-        )
+        self.confirm_nondestructive = bool(getattr(voice_config, "confirm_actions", False))
         self.last_agent_address: str | None = None
         self._loaded_skills: set[str] = set()
         self._calls_this_turn = 0
@@ -222,8 +218,7 @@ class AgentRuntime:
                 self.config,
                 self.memory,
                 confirm=lambda summary, strong: bool(
-                    self.confirm is not None
-                    and self.confirm.ask(summary, strong=strong)
+                    self.confirm is not None and self.confirm.ask(summary, strong=strong)
                 ),
             ),
             lambda: build_herdr_tools(
@@ -298,9 +293,7 @@ class AgentRuntime:
     def _launch_failed(self, address: str, agent: str, error: str) -> None:
         """Un lanzamiento asíncrono no llegó a buen puerto: se avisa al usuario."""
         self._audit_warn(f"El lanzamiento de {agent} ({address}) falló: {error}")
-        self._warn(
-            f"No pude terminar de abrir {agent}. {error}".strip()
-        )
+        self._warn(f"No pude terminar de abrir {agent}. {error}".strip())
 
     def _agents_catalog(self) -> str:
         """Catálogo de agentes para el prompt; vacío si Herdr no lo ofrece."""
@@ -416,9 +409,7 @@ class AgentRuntime:
 
     # -------------------------------------------------------- herramientas
     def tools_for(self, text: str) -> list[dict[str, Any]]:
-        scripts = any(
-            self._skill_has_scripts(name) for name in self._loaded_skills
-        )
+        scripts = any(self._skill_has_scripts(name) for name in self._loaded_skills)
         names = select_tool_names(
             text,
             scripts_loaded=scripts,
@@ -508,9 +499,7 @@ class AgentRuntime:
                 return ToolResult(ok=False, error="El usuario canceló la operación.")
         if info.level == 1 and name in WRITE_TOOLS:
             now = time.monotonic()
-            self._level1_times = [
-                moment for moment in self._level1_times if now - moment < 60.0
-            ]
+            self._level1_times = [moment for moment in self._level1_times if now - moment < 60.0]
             if len(self._level1_times) >= 20:
                 self._audit(name, info.level, args, "deny", False, 0.0)
                 return ToolResult(
@@ -520,9 +509,7 @@ class AgentRuntime:
             self._level1_times.append(now)
             self._level1_writes += 1
             if self._level1_writes == 4:
-                self._audit_warn(
-                    "Más de 3 escrituras de nivel 1 en un turno."
-                )
+                self._audit_warn("Más de 3 escrituras de nivel 1 en un turno.")
         started = time.monotonic()
         try:
             result = self.registry.run(name, args)
@@ -533,9 +520,7 @@ class AgentRuntime:
             # # DECISION: delegate_to_agent agrupa acciones de distinta
             # naturaleza. Solo leer el buffer de un agente aporta contenido
             # externo que deba marcar taint; lanzar, enfocar o matar no.
-            if name != "delegate_to_agent" or str(
-                args.get("action", "")
-            ).lower() == "read":
+            if name != "delegate_to_agent" or str(args.get("action", "")).lower() == "read":
                 self.tainted = True
         if name == "load_skill":
             skill_name = str(args.get("name") or "")
@@ -551,9 +536,7 @@ class AgentRuntime:
         )
         return result
 
-    def _validate_delegate_cwd(
-        self, name: str, args: dict[str, Any]
-    ) -> str | None:
+    def _validate_delegate_cwd(self, name: str, args: dict[str, Any]) -> str | None:
         """La carpeta de trabajo de Herdr también pasa por la política.
 
         # DECISION: el documento exige que ninguna herramienta toque disco sin

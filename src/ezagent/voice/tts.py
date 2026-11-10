@@ -114,7 +114,7 @@ class Speaker:
                 if not started and on_start is not None:
                     on_start()
                     started = True
-                chunk = pcm[start:start + chunk_bytes]
+                chunk = pcm[start : start + chunk_bytes]
                 stream.write(chunk, exception_on_underflow=False)
                 if on_level is not None:
                     on_level(pcm_rms(chunk))

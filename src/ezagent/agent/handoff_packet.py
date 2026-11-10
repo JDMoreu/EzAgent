@@ -80,9 +80,7 @@ def outline(text: str, limit: int = _OUTLINE_LINES) -> str:
     lines = [ln.strip() for ln in text.splitlines()]
     first = next((ln for ln in lines if ln), "")
     headings = [
-        ln
-        for ln in lines
-        if ln and len(ln) <= 90 and not ln.endswith(".") and _HEADING.match(ln)
+        ln for ln in lines if ln and len(ln) <= 90 and not ln.endswith(".") and _HEADING.match(ln)
     ]
     seen: set[str] = set()
     unique = [h for h in headings if not (h in seen or seen.add(h))]
@@ -151,8 +149,5 @@ def packet_text(packet: Packet) -> str:
     if packet.kind == "document":
         note = f"[Texto completo, léelo antes de empezar: {packet.saved_path}]"
     else:
-        note = (
-            "[Registro completo del trabajo, solo si lo necesitas: "
-            f"{packet.saved_path}]"
-        )
+        note = f"[Registro completo del trabajo, solo si lo necesitas: {packet.saved_path}]"
     return f"{packet.text}\n\n{note}"

@@ -41,14 +41,12 @@ _CACHE_LIMIT: Final[int] = 512
 class _TextBitmap:
     """Máscara de tinta recortada y sus dimensiones físicas."""
 
-    alpha: np.ndarray          # (h, w) uint8
-    width_px: int              # avance aunque no haya tinta (p. ej. espacios)
+    alpha: np.ndarray  # (h, w) uint8
+    width_px: int  # avance aunque no haya tinta (p. ej. espacios)
     line_h_px: int
 
 
-_CACHE: dict[
-    tuple[str, FontStyle, Color, float, float, str], _TextBitmap
-] = {}
+_CACHE: dict[tuple[str, FontStyle, Color, float, float, str], _TextBitmap] = {}
 _FONT_CACHE: dict[tuple[str, int, float], ImageFont.FreeTypeFont | ImageFont.ImageFont] = {}
 _FONT_PATH_CACHE: dict[tuple[str, int], object] = {}
 
@@ -141,9 +139,7 @@ def _render_bitmap(
         canvas_w = max(1, int(math.ceil(total)) + 2 * pad)
         canvas_h = line_h_px + 2 * pad
         image = Image.new("L", (canvas_w, canvas_h), 0)
-        ImageDraw.Draw(image).text(
-            (float(pad), float(pad)), text, font=font, fill=255
-        )
+        ImageDraw.Draw(image).text((float(pad), float(pad)), text, font=font, fill=255)
 
     mask = np.asarray(image, dtype=np.uint8)
     rows, cols = np.nonzero(mask)
@@ -243,9 +239,7 @@ def draw_text(
     if draw_alpha <= 0.0 or not display:
         return (0.0, 0.0)
 
-    bitmap = _bitmap_for(
-        display, resolved, tuple(color), scale, track, align
-    )
+    bitmap = _bitmap_for(display, resolved, tuple(color), scale, track, align)
     if bitmap.alpha.size == 0:
         width = bitmap.width_px / scale
         height = bitmap.line_h_px / scale
@@ -272,17 +266,12 @@ def draw_text(
     if copy_w <= 0 or copy_h <= 0:
         return (mask_w / scale, mask_h / scale)
 
-    src_alpha = (
-        bitmap.alpha[sy0 : sy0 + copy_h, sx0 : sx0 + copy_w].astype(np.float32)
-        / 255.0
-    )
+    src_alpha = bitmap.alpha[sy0 : sy0 + copy_h, sx0 : sx0 + copy_w].astype(np.float32) / 255.0
     a = src_alpha * draw_alpha
     rgb = np.asarray(color[:3], dtype=np.float32) / 255.0
     region = buf[dy0 : dy0 + copy_h, dx0 : dx0 + copy_w]
     one_minus = 1.0 - a
-    region[..., :3] = (
-        rgb[None, None, :] * a[..., None] + region[..., :3] * one_minus[..., None]
-    )
+    region[..., :3] = rgb[None, None, :] * a[..., None] + region[..., :3] * one_minus[..., None]
     region[..., 3] = a + region[..., 3] * one_minus
     return (mask_w / scale, mask_h / scale)
 

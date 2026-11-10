@@ -54,9 +54,7 @@ def prepare_opencode_state(model_ref: str, effort: str) -> dict[str, str]:
 
 # --------------------------------------------------------------------- mcode
 MCODE_EFFORTS = ("default", "low", "medium", "high", "xhigh", "max")
-_MCODE_EFFORT_RE = re.compile(
-    r"(?m)^(defaultModelThinking:[ \t]*\r?\n[ \t]+effort:[ \t]*)\S+"
-)
+_MCODE_EFFORT_RE = re.compile(r"(?m)^(defaultModelThinking:[ \t]*\r?\n[ \t]+effort:[ \t]*)\S+")
 
 
 def mcode_config_path() -> Path:
@@ -125,9 +123,7 @@ def discover_codex_models() -> dict[str, list[str]]:
     fiable de qué niveles admite cada modelo.
     """
     try:
-        data = json.loads(
-            (codex_home() / "models_cache.json").read_text(encoding="utf-8")
-        )
+        data = json.loads((codex_home() / "models_cache.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     table: dict[str, list[str]] = {}
@@ -178,18 +174,13 @@ def _strip_jsonc(text: str) -> str:
 def opencode_default_model() -> str:
     """Modelo por defecto de OpenCode (``proveedor/modelo``) o '' si no se sabe."""
     candidates = [os.environ.get("OPENCODE_CONFIG") or ""]
-    config_dir = Path(
-        os.environ.get("OPENCODE_CONFIG_DIR")
-        or Path.home() / ".config" / "opencode"
-    )
+    config_dir = Path(os.environ.get("OPENCODE_CONFIG_DIR") or Path.home() / ".config" / "opencode")
     candidates += [str(config_dir / "opencode.jsonc"), str(config_dir / "opencode.json")]
     for candidate in candidates:
         if not candidate:
             continue
         try:
-            data = json.loads(
-                _strip_jsonc(Path(candidate).read_text(encoding="utf-8"))
-            )
+            data = json.loads(_strip_jsonc(Path(candidate).read_text(encoding="utf-8")))
         except (OSError, ValueError):
             continue
         model = data.get("model") if isinstance(data, dict) else None

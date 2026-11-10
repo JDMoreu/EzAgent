@@ -105,15 +105,11 @@ class SkillLibrary:
 
         yaml_module = _import_yaml()
         if yaml_module is None:
-            self._warn(
-                "PyYAML no está instalado; el catálogo de skills queda vacío."
-            )
+            self._warn("PyYAML no está instalado; el catálogo de skills queda vacío.")
             return
 
         self._discover(Path(self._config.skills_dir), "local", yaml_module)
-        self._discover(
-            Path(self._config.global_skills_dir), "global", yaml_module
-        )
+        self._discover(Path(self._config.global_skills_dir), "global", yaml_module)
 
     @property
     def warnings(self) -> list[str]:
@@ -149,9 +145,7 @@ class SkillLibrary:
             return ""
         lines = ["<available_skills>"]
         for skill in skills:
-            description = _clip(
-                skill.description, MAX_CATALOG_DESCRIPTION_CHARS
-            )
+            description = _clip(skill.description, MAX_CATALOG_DESCRIPTION_CHARS)
             lines.append(f"- {skill.name}: {description} ({skill.path})")
         lines.append("</available_skills>")
         return "\n".join(lines)
@@ -192,30 +186,20 @@ class SkillLibrary:
                 deny_globs=[],
             )
         except PathDenied as exc:
-            raise SkillFileError(
-                f"No se puede leer ese archivo de la skill: {exc}"
-            ) from exc
+            raise SkillFileError(f"No se puede leer ese archivo de la skill: {exc}") from exc
 
         if resolved != skill_root and not resolved.is_relative_to(skill_root):
-            raise SkillFileError(
-                "El archivo pedido está fuera de la carpeta de la skill."
-            )
+            raise SkillFileError("El archivo pedido está fuera de la carpeta de la skill.")
         if not resolved.is_file():
-            raise SkillFileError(
-                f"No existe el archivo «{relative}» en la skill «{skill.name}»."
-            )
+            raise SkillFileError(f"No existe el archivo «{relative}» en la skill «{skill.name}».")
         try:
             raw = resolved.read_bytes()
         except OSError as exc:
-            raise SkillFileError(
-                f"No se pudo leer «{relative}»: {exc}"
-            ) from exc
+            raise SkillFileError(f"No se pudo leer «{relative}»: {exc}") from exc
         try:
             text = raw.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
-            raise SkillFileError(
-                f"El archivo «{relative}» no es texto UTF-8."
-            ) from exc
+            raise SkillFileError(f"El archivo «{relative}» no es texto UTF-8.") from exc
         # DECISION: los archivos editados en Windows pueden usar CRLF; el
         # contenido que ve el LLM usa siempre LF para no duplicar caracteres.
         text = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -240,9 +224,7 @@ class SkillLibrary:
         return hash_folder(skill.path)
 
     # ------------------------------------------------------------ interno
-    def _discover(
-        self, root: Path, source: str, yaml_module: Any
-    ) -> None:
+    def _discover(self, root: Path, source: str, yaml_module: Any) -> None:
         try:
             if not root.is_dir():
                 return
@@ -253,8 +235,7 @@ class SkillLibrary:
                 (
                     entry
                     for entry in root.iterdir()
-                    if entry.is_dir()
-                    and not entry.name.startswith((".", "_"))
+                    if entry.is_dir() and not entry.name.startswith((".", "_"))
                 ),
                 key=lambda entry: entry.name.lower(),
             )
@@ -271,8 +252,7 @@ class SkillLibrary:
             existing = self._skills.get(skill.name)
             if existing is not None:
                 message = (
-                    f"La skill «{skill.name}» de {folder} se ignora: ya existe "
-                    f"en {existing.path}."
+                    f"La skill «{skill.name}» de {folder} se ignora: ya existe en {existing.path}."
                 )
                 self._collisions.append(message)
                 self._warn(message)
@@ -287,9 +267,7 @@ class SkillLibrary:
                 f"las primeras {self._max_catalog}."
             )
 
-    def _read_skill(
-        self, folder: Path, source: str, yaml_module: Any
-    ) -> Skill | None:
+    def _read_skill(self, folder: Path, source: str, yaml_module: Any) -> Skill | None:
         skill_md = folder / "SKILL.md"
         try:
             raw = skill_md.read_bytes()
@@ -299,18 +277,14 @@ class SkillLibrary:
         try:
             text = raw.decode("utf-8-sig")
         except UnicodeDecodeError:
-            self._warn(
-                f"Skill «{folder.name}»: SKILL.md no es UTF-8 válido; se descarta."
-            )
+            self._warn(f"Skill «{folder.name}»: SKILL.md no es UTF-8 válido; se descarta.")
             return None
         # DECISION: se normalizan CRLF/CR a LF antes de leer el frontmatter.
         text = text.replace("\r\n", "\n").replace("\r", "\n")
 
         split = _split_frontmatter(text)
         if split is None:
-            self._warn(
-                f"Skill «{folder.name}»: frontmatter YAML ilegible; se descarta."
-            )
+            self._warn(f"Skill «{folder.name}»: frontmatter YAML ilegible; se descarta.")
             return None
         meta_text, body = split
 
@@ -323,25 +297,19 @@ class SkillLibrary:
             )
             return None
         if not isinstance(metadata, dict):
-            self._warn(
-                f"Skill «{folder.name}»: el frontmatter no es un mapa YAML; "
-                "se descarta."
-            )
+            self._warn(f"Skill «{folder.name}»: el frontmatter no es un mapa YAML; se descarta.")
             return None
 
         description = metadata.get("description")
         if not isinstance(description, str) or not description.strip():
-            self._warn(
-                f"Skill «{folder.name}»: falta «description»; se descarta."
-            )
+            self._warn(f"Skill «{folder.name}»: falta «description»; se descarta.")
             return None
         description = " ".join(description.split())
 
         warnings: list[str] = []
         if len(description) > MAX_DESCRIPTION_CHARS:
             warnings.append(
-                f"la descripción supera {MAX_DESCRIPTION_CHARS} caracteres; "
-                "se recorta."
+                f"la descripción supera {MAX_DESCRIPTION_CHARS} caracteres; se recorta."
             )
             description = description[:MAX_DESCRIPTION_CHARS].rstrip()
 
@@ -349,19 +317,15 @@ class SkillLibrary:
         declared = metadata.get("name")
         declared_name = declared.strip() if isinstance(declared, str) else ""
         if not declared_name:
-            warnings.append(
-                "no declara «name»; se usa el nombre de la carpeta."
-            )
+            warnings.append("no declara «name»; se usa el nombre de la carpeta.")
         else:
             if declared_name != folder_name:
                 warnings.append(
-                    f"el name «{declared_name}» no coincide con la carpeta "
-                    f"«{folder_name}»."
+                    f"el name «{declared_name}» no coincide con la carpeta «{folder_name}»."
                 )
             if not _valid_name(declared_name):
                 warnings.append(
-                    "el name no cumple 1-64 caracteres en minúsculas, "
-                    "números y guiones."
+                    "el name no cumple 1-64 caracteres en minúsculas, números y guiones."
                 )
         if not _valid_name(folder_name):
             warnings.append(
@@ -370,9 +334,7 @@ class SkillLibrary:
             )
 
         files = _list_files(folder)
-        scripts = tuple(
-            item for item in files if item.startswith("scripts/")
-        )
+        scripts = tuple(item for item in files if item.startswith("scripts/"))
         return Skill(
             name=folder_name,
             description=description,
@@ -402,11 +364,7 @@ def hash_folder(folder: Path) -> str:
     root = Path(folder)
     try:
         files = sorted(
-            (
-                path
-                for path in root.rglob("*")
-                if path.is_file() and not path.is_symlink()
-            ),
+            (path for path in root.rglob("*") if path.is_file() and not path.is_symlink()),
             key=lambda path: path.relative_to(root).as_posix(),
         )
     except OSError:
@@ -423,9 +381,7 @@ def hash_folder(folder: Path) -> str:
     return digest.hexdigest()
 
 
-def ensure_default_skills(
-    config: AgentConfig, *, source_dir: Path | None = None
-) -> list[str]:
+def ensure_default_skills(config: AgentConfig, *, source_dir: Path | None = None) -> list[str]:
     """Copia las skills empaquetadas a ``config.skills_dir`` si faltan.
 
     Nunca sobrescribe una carpeta existente: el usuario puede haber editado
@@ -504,9 +460,7 @@ def _split_frontmatter(text: str) -> tuple[str, str] | None:
 
 
 def _valid_name(name: str) -> bool:
-    return bool(
-        1 <= len(name) <= MAX_NAME_CHARS and _NAME_RE.fullmatch(name)
-    )
+    return bool(1 <= len(name) <= MAX_NAME_CHARS and _NAME_RE.fullmatch(name))
 
 
 def _list_files(folder: Path) -> list[str]:
@@ -514,9 +468,7 @@ def _list_files(folder: Path) -> list[str]:
         return sorted(
             path.relative_to(folder).as_posix()
             for path in folder.rglob("*")
-            if path.is_file()
-            and not path.is_symlink()
-            and path.name != "SKILL.md"
+            if path.is_file() and not path.is_symlink() and path.name != "SKILL.md"
         )
     except OSError:
         return []
@@ -527,12 +479,8 @@ def _safe_relative_file(raw: str) -> str:
     if not normalized:
         raise SkillFileError("Falta la ruta del archivo dentro de la skill.")
     if normalized.startswith("/") or _WINDOWS_DRIVE_RE.match(normalized):
-        raise SkillFileError(
-            "La ruta del archivo debe ser relativa a la carpeta de la skill."
-        )
-    parts = [
-        part for part in normalized.split("/") if part not in ("", ".")
-    ]
+        raise SkillFileError("La ruta del archivo debe ser relativa a la carpeta de la skill.")
+    parts = [part for part in normalized.split("/") if part not in ("", ".")]
     if not parts:
         raise SkillFileError("La ruta del archivo está vacía.")
     if any(part == ".." for part in parts):

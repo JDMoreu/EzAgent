@@ -30,15 +30,11 @@ def decide(
         return Decision("deny", 3, "Nivel 3: prohibido")
     if always_confirm:
         strong = bulk > bulk_threshold
-        return Decision(
-            "confirm_strong" if strong else "confirm", 2, "Operación destructiva"
-        )
+        return Decision("confirm_strong" if strong else "confirm", 2, "Operación destructiva")
     if bulk > bulk_threshold:
         return Decision("confirm_strong", 2, "Operación masiva")
     if tainted and tool_level >= 1:
         return Decision("confirm", tool_level, "Contenido no confiable en este turno")
     if tool_level == 2:
-        return Decision(
-            "confirm" if confirm_nondestructive else "allow", 2, "Nivel 2"
-        )
+        return Decision("confirm" if confirm_nondestructive else "allow", 2, "Nivel 2")
     return Decision("allow", tool_level, "Permitido")

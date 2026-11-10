@@ -82,7 +82,7 @@ _GLYPHS: Final[dict[str, int]] = {
     "microphone": 0xE720,
     "microphone-slash": 0xE720,
     "phone": 0xE717,
-    "hangup": 0xE717,       # el teléfono se gira 135° al dibujarlo
+    "hangup": 0xE717,  # el teléfono se gira 135° al dibujarlo
     "chevron-down": 0xE70D,
     "chevron-up": 0xE70E,
     "minus": 0xE738,
@@ -134,13 +134,9 @@ def _colorize(mask: np.ndarray, color: Color) -> np.ndarray:
     return sprite
 
 
-def _caps(
-    draw: ImageDraw.ImageDraw, points: Iterable[Point], radius: float
-) -> None:
+def _caps(draw: ImageDraw.ImageDraw, points: Iterable[Point], radius: float) -> None:
     for x, y in points:
-        draw.ellipse(
-            (x - radius, y - radius, x + radius, y + radius), fill=255
-        )
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=255)
 
 
 # ------------------------------------------------------- respaldo vectorial
@@ -197,9 +193,7 @@ def _mic(draw: ImageDraw.ImageDraw, width: float, k: float) -> None:
     _path(draw, ((8.8, 21.0), (15.2, 21.0)), width, k)
 
 
-def _mic_slash(
-    draw: ImageDraw.ImageDraw, width: float, k: float
-) -> None:
+def _mic_slash(draw: ImageDraw.ImageDraw, width: float, k: float) -> None:
     """Micrófono tachado con un hueco alrededor de la diagonal.
 
     El hueco separa la barra del propio micrófono; sin él, al pintar todo en
@@ -216,9 +210,7 @@ def _mic_slash(
         draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=255)
 
 
-def _phone(
-    draw: ImageDraw.ImageDraw, width: float, k: float, rotation: float = 0.0
-) -> None:
+def _phone(draw: ImageDraw.ImageDraw, width: float, k: float, rotation: float = 0.0) -> None:
     points: Points = _PHONE
     if rotation:
         a = math.radians(rotation)
@@ -233,9 +225,7 @@ def _phone(
     _path(draw, points, width, k, closed=True)
 
 
-def _draw_vector(
-    name: str, width: float, draw: ImageDraw.ImageDraw, k: float
-) -> None:
+def _draw_vector(name: str, width: float, draw: ImageDraw.ImageDraw, k: float) -> None:
     if name == "microphone":
         _mic(draw, width, k)
     elif name == "microphone-slash":
@@ -259,8 +249,14 @@ def _draw_vector(
         _path(
             draw,
             (
-                (12.0, 3.4), (14.1, 9.9), (20.6, 12.0), (14.1, 14.1),
-                (12.0, 20.6), (9.9, 14.1), (3.4, 12.0), (9.9, 9.9),
+                (12.0, 3.4),
+                (14.1, 9.9),
+                (20.6, 12.0),
+                (14.1, 14.1),
+                (12.0, 20.6),
+                (9.9, 14.1),
+                (3.4, 12.0),
+                (9.9, 9.9),
             ),
             width,
             k,
@@ -364,13 +360,9 @@ def _icon_font(path: Path, pixel_size: int) -> ImageFont.FreeTypeFont:
     return font
 
 
-def _optimal_stroke_width(
-    font_px: float, size: float, scale: float
-) -> int:
+def _optimal_stroke_width(font_px: float, size: float, scale: float) -> int:
     """Grosor extra en px de supermuestreo para acercarse al trazo nominal."""
-    stroke = (
-        ICON_STROKE_SMALL if size < ICON_SMALL_THRESHOLD else ICON_STROKE
-    )
+    stroke = ICON_STROKE_SMALL if size < ICON_SMALL_THRESHOLD else ICON_STROKE
     desired = stroke * scale * ICON_SSAA
     # El trazo nativo de Segoe Fluent es ~1,17 px a un tamaño de fuente de 24.
     native = 1.17 * (font_px / ICON_GRID)
@@ -405,9 +397,7 @@ def _font_mask(name: str, size: float, scale: float) -> np.ndarray | None:
     glyph = canvas.crop(bbox)
     if name == "hangup":
         # Pillow gira en sentido antihorario; -135 = 135° horarios.
-        glyph = glyph.rotate(
-            -135.0, resample=Image.Resampling.BICUBIC, expand=True
-        )
+        glyph = glyph.rotate(-135.0, resample=Image.Resampling.BICUBIC, expand=True)
         bbox = glyph.getbbox()
         if bbox is None:
             return None
@@ -435,21 +425,15 @@ def _font_mask(name: str, size: float, scale: float) -> np.ndarray | None:
         overlay = ImageDraw.Draw(final)
         start = int(round(pixels * 0.16))
         end = int(round(pixels * 0.84))
-        stroke = (
-            ICON_STROKE_SMALL if size < ICON_SMALL_THRESHOLD else ICON_STROKE
-        )
+        stroke = ICON_STROKE_SMALL if size < ICON_SMALL_THRESHOLD else ICON_STROKE
         width = max(1, int(round(stroke * scale * ICON_SSAA)))
         gap = max(1, int(round(width * 2.4)))
         overlay.line((start, start, end, end), fill=0, width=gap)
         overlay.line((start, start, end, end), fill=255, width=width)
         radius = width / 2.0
         for x, y in ((start, start), (end, end)):
-            overlay.ellipse(
-                (x - radius, y - radius, x + radius, y + radius), fill=255
-            )
-    small = final.resize(
-        (physical, physical), resample=Image.Resampling.BOX
-    )
+            overlay.ellipse((x - radius, y - radius, x + radius, y + radius), fill=255)
+    small = final.resize((physical, physical), resample=Image.Resampling.BOX)
     return np.asarray(small, dtype=np.float32) / 255.0
 
 

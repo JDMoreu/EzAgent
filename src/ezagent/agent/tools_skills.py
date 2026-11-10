@@ -37,11 +37,7 @@ def _python_interpreter() -> str | None:
     sistema. Si no existe, la herramienta devuelve un error claro.
     """
     if getattr(sys, "frozen", False):
-        return (
-            shutil.which("python")
-            or shutil.which("python3")
-            or shutil.which("py")
-        )
+        return shutil.which("python") or shutil.which("python3") or shutil.which("py")
     return sys.executable or shutil.which("python")
 
 
@@ -54,9 +50,7 @@ APPROVALS_FILENAME = "skills_approved.json"
 _SCRIPT_PREFIX = "scripts/"
 
 
-def build_skill_tools(
-    config: AgentConfig, library: SkillLibrary
-) -> list[ToolSpec]:
+def build_skill_tools(config: AgentConfig, library: SkillLibrary) -> list[ToolSpec]:
     """Devuelve las dos herramientas de skills."""
 
     def load_handler(args: dict[str, Any]) -> ToolResult:
@@ -100,8 +94,7 @@ def build_skill_tools(
             return ToolResult(
                 ok=False,
                 error=(
-                    "La ejecución de scripts de skills está deshabilitada "
-                    "(allow_scripts = false)."
+                    "La ejecución de scripts de skills está deshabilitada (allow_scripts = false)."
                 ),
             )
 
@@ -115,9 +108,7 @@ def build_skill_tools(
         raw_args = args.get("args", [])
         if raw_args is None:
             raw_args = []
-        if not isinstance(raw_args, list) or not all(
-            isinstance(item, str) for item in raw_args
-        ):
+        if not isinstance(raw_args, list) or not all(isinstance(item, str) for item in raw_args):
             return ToolResult(
                 ok=False,
                 error="«args» debe ser una lista de textos.",
@@ -130,10 +121,7 @@ def build_skill_tools(
         if any(len(item) > MAX_SCRIPT_ARG_CHARS for item in raw_args):
             return ToolResult(
                 ok=False,
-                error=(
-                    "Cada argumento debe tener como máximo "
-                    f"{MAX_SCRIPT_ARG_CHARS} caracteres."
-                ),
+                error=(f"Cada argumento debe tener como máximo {MAX_SCRIPT_ARG_CHARS} caracteres."),
             )
         if any("\x00" in item for item in raw_args):
             return ToolResult(ok=False, error="«args» contiene bytes nulos.")
@@ -202,10 +190,7 @@ def build_skill_tools(
             except OSError as exc:
                 return ToolResult(
                     ok=False,
-                    error=(
-                        "No se pudo guardar la aprobación del script; no se "
-                        f"ejecuta: {exc}"
-                    ),
+                    error=(f"No se pudo guardar la aprobación del script; no se ejecuta: {exc}"),
                 )
 
         interpreter = _python_interpreter()
@@ -243,10 +228,7 @@ def build_skill_tools(
                     "stdout": partial,
                     "stderr": "",
                 },
-                error=(
-                    "El script superó el tiempo máximo "
-                    f"({SCRIPT_TIMEOUT_S:g} s)."
-                ),
+                error=(f"El script superó el tiempo máximo ({SCRIPT_TIMEOUT_S:g} s)."),
             )
         except OSError as exc:
             return ToolResult(
@@ -260,10 +242,7 @@ def build_skill_tools(
         ok = returncode == 0
         error: str | None = None
         if not ok:
-            error = (
-                stderr.strip()[:2000]
-                or f"El script terminó con código {returncode}."
-            )
+            error = stderr.strip()[:2000] or f"El script terminó con código {returncode}."
         return ToolResult(
             ok=ok,
             data={
@@ -314,8 +293,7 @@ def build_skill_tools(
             "script": {
                 "type": "string",
                 "description": (
-                    "Ruta relativa dentro de la skill, por ejemplo "
-                    "scripts/md_to_docx.py."
+                    "Ruta relativa dentro de la skill, por ejemplo scripts/md_to_docx.py."
                 ),
             },
             "args": {
@@ -366,24 +344,16 @@ def _script_relative(raw: str) -> str:
     normalized = raw.strip().replace("\\", "/")
     if not normalized:
         raise SkillError("Falta la ruta del script.")
-    if normalized.startswith("/") or (
-        len(normalized) >= 2 and normalized[1] == ":"
-    ):
+    if normalized.startswith("/") or (len(normalized) >= 2 and normalized[1] == ":"):
         raise SkillError("El script debe ser una ruta relativa a la skill.")
-    parts = [
-        part for part in normalized.split("/") if part not in ("", ".")
-    ]
+    parts = [part for part in normalized.split("/") if part not in ("", ".")]
     if not parts:
         raise SkillError("La ruta del script está vacía.")
     if any(part == ".." for part in parts):
         raise SkillError("La ruta del script no puede contener «..».")
     relative = "/".join(parts)
-    if not relative.startswith(_SCRIPT_PREFIX) or len(relative) == len(
-        _SCRIPT_PREFIX
-    ):
-        raise SkillError(
-            "El script debe estar dentro de la carpeta scripts/ de la skill."
-        )
+    if not relative.startswith(_SCRIPT_PREFIX) or len(relative) == len(_SCRIPT_PREFIX):
+        raise SkillError("El script debe estar dentro de la carpeta scripts/ de la skill.")
     return relative
 
 
@@ -398,11 +368,7 @@ def _read_approvals(path: Path) -> dict[str, str]:
     if not isinstance(data, dict):
         logger.warning("%s no contiene un objeto JSON; se ignora", path)
         return {}
-    return {
-        str(key): str(value)
-        for key, value in data.items()
-        if isinstance(value, str)
-    }
+    return {str(key): str(value) for key, value in data.items() if isinstance(value, str)}
 
 
 def _write_approvals(path: Path, approvals: dict[str, str]) -> None:

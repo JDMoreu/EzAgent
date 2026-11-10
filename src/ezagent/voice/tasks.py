@@ -82,9 +82,7 @@ class TaskRegistry:
             spec["source"] = source
             spec["agent"] = agent
             try:
-                spec["created_at"] = float(
-                    item.get("created_at") or time.time()
-                )
+                spec["created_at"] = float(item.get("created_at") or time.time())
             except (TypeError, ValueError):
                 spec["created_at"] = time.time()
             chains.append(spec)
@@ -121,9 +119,7 @@ class TaskRegistry:
             "address": key,
             "agent": str(agent or ""),
             "task": str(task or "").strip(),
-            "created_at": float(
-                created_at if created_at is not None else time.time()
-            ),
+            "created_at": float(created_at if created_at is not None else time.time()),
         }
         with self._lock:
             self._tasks[key] = entry
@@ -160,9 +156,7 @@ class TaskRegistry:
         entry["agent"] = agent
         entry["task"] = str(spec.get("task") or "").strip()
         try:
-            entry["created_at"] = float(
-                spec.get("created_at") or time.time()
-            )
+            entry["created_at"] = float(spec.get("created_at") or time.time())
         except (TypeError, ValueError):
             entry["created_at"] = time.time()
         with self._lock:
@@ -179,25 +173,16 @@ class TaskRegistry:
         key = str(source or "").strip()
         if not key:
             return []
-        return [
-            item for item in self.chains()
-            if item.get("source") == key
-        ]
+        return [item for item in self.chains() if item.get("source") == key]
 
     def remove_chains_for(self, source: str) -> list[dict[str, Any]]:
         key = str(source or "").strip()
         if not key:
             return []
         with self._lock:
-            removed = [
-                dict(item) for item in self._chains
-                if item.get("source") == key
-            ]
+            removed = [dict(item) for item in self._chains if item.get("source") == key]
             if removed:
-                self._chains = [
-                    item for item in self._chains
-                    if item.get("source") != key
-                ]
+                self._chains = [item for item in self._chains if item.get("source") != key]
                 self._write_locked()
             return removed
 
@@ -226,11 +211,7 @@ class TaskRegistry:
             task = str(item.get("task") or "").strip()
             if len(task) > 220:
                 task = task[:219].rstrip() + "…"
-            task = (
-                task.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-            )
+            task = task.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             lines.append(f"- {address} · {agent} · «{task or 'tarea sin describir'}»")
         for chain in chains:
             source = chain.get("source") or "?"
@@ -238,14 +219,9 @@ class TaskRegistry:
             task = str(chain.get("task") or "").strip()
             if len(task) > 220:
                 task = task[:219].rstrip() + "…"
-            task = (
-                task.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-            )
+            task = task.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             lines.append(
-                f"- cadena: cuando termine {source} → {agent} · "
-                f"«{task or 'tarea sin describir'}»"
+                f"- cadena: cuando termine {source} → {agent} · «{task or 'tarea sin describir'}»"
             )
         lines.append("</pending_tasks>")
         return "\n".join(lines)

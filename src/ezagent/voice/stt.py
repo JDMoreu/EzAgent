@@ -54,9 +54,7 @@ def whisper_home() -> Path | None:
             root = Path(configured).expanduser()
             if root.is_dir():
                 return root
-        base = os.getenv("LOCALAPPDATA") or str(
-            Path.home() / "AppData" / "Local"
-        )
+        base = os.getenv("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
         default = Path(base) / "EzAgent" / "whisper"
         return default if default.is_dir() else None
     except Exception:  # noqa: BLE001 - la autodetección nunca debe romper
@@ -167,8 +165,7 @@ def transcribe(cfg: VoiceConfig, wav_bytes: bytes) -> str:
             continue
         if response.status_code >= 400:
             raise STTError(
-                f"whisper-server respondió {response.status_code}: "
-                f"{response.text[:200]}"
+                f"whisper-server respondió {response.status_code}: {response.text[:200]}"
             )
         try:
             text = response.json().get("text", "")
@@ -177,8 +174,7 @@ def transcribe(cfg: VoiceConfig, wav_bytes: bytes) -> str:
         return str(text).strip()
 
     raise STTError(
-        "No puedo conectar con whisper-server. Arranca "
-        "scripts\\start-whisper.ps1. " + last_error
+        "No puedo conectar con whisper-server. Arranca scripts\\start-whisper.ps1. " + last_error
     )
 
 

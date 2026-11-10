@@ -147,8 +147,7 @@ def _build_tool(
     if executable.casefold() not in allowed:
         _reject(
             filename,
-            f"el ejecutable «{executable}» no está en "
-            "[tools_d] allowed_executables",
+            f"el ejecutable «{executable}» no está en [tools_d] allowed_executables",
         )
         return None
 
@@ -191,8 +190,7 @@ def _build_tool(
             if match.group(1) not in params:
                 _reject(
                     filename,
-                    f"«command» usa un parámetro no declarado: "
-                    f"{{{match.group(1)}}}",
+                    f"«command» usa un parámetro no declarado: {{{match.group(1)}}}",
                 )
                 return None
 
@@ -255,9 +253,7 @@ def _build_tool(
 
 def _parse_params(
     params_data: dict[str, Any], filename: str
-) -> tuple[
-    dict[str, dict[str, Any]], dict[str, dict[str, Any]], list[str]
-] | None:
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], list[str]] | None:
     params: dict[str, dict[str, Any]] = {}
     properties: dict[str, dict[str, Any]] = {}
     required: list[str] = []
@@ -408,9 +404,7 @@ def _run_declarative_tool(
 
     argv: list[str] = []
     for element in command:
-        replaced = _PARAM_RE.sub(
-            lambda match: values.get(match.group(1), match.group(0)), element
-        )
+        replaced = _PARAM_RE.sub(lambda match: values.get(match.group(1), match.group(0)), element)
         unresolved = _PARAM_RE.search(replaced)
         if unresolved is not None:
             return ToolResult(
@@ -541,9 +535,7 @@ def _validate_value(
     if validator == "enum":
         choices = spec.get("choices") or ()
         if text not in choices:
-            raise ValueError(
-                f"«{name}» debe ser uno de: " + ", ".join(str(c) for c in choices)
-            )
+            raise ValueError(f"«{name}» debe ser uno de: " + ", ".join(str(c) for c in choices))
         return text
 
     return text

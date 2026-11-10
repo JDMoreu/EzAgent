@@ -24,9 +24,7 @@ from ezagent.agent.orchestration import ORCHESTRATION_HINT
 logger = logging.getLogger(__name__)
 
 MAX_SYSTEM_MD_CHARS = 6000
-SYSTEM_MD_ERROR_MESSAGE = (
-    "Mi archivo system.md tiene un error; sigo con la versión anterior."
-)
+SYSTEM_MD_ERROR_MESSAGE = "Mi archivo system.md tiene un error; sigo con la versión anterior."
 
 # Reglas de seguridad fijadas en código.  Es una tupla para que no se pueda
 # mutar por accidente desde otro módulo (ni desde el LLM).
@@ -168,9 +166,7 @@ def _split_clock_lines(text: str) -> tuple[str, str]:
     result: list[str] = []
     for index, line in enumerate(kept):
         if line.lstrip().startswith("#"):
-            following = next(
-                (rest for rest in kept[index + 1 :] if rest.strip()), None
-            )
+            following = next((rest for rest in kept[index + 1 :] if rest.strip()), None)
             if following is None or following.lstrip().startswith("#"):
                 continue
         result.append(line)
@@ -234,9 +230,7 @@ class SystemPromptBuilder:
         """Devuelve el prompt completo.  ``now`` permite fijar fecha y hora."""
         self.reload_if_changed()
         moment = now if now is not None else datetime.now()
-        stable, clock = _split_clock_lines(
-            self._last_valid_text or DEFAULT_SYSTEM_MD
-        )
+        stable, clock = _split_clock_lines(self._last_valid_text or DEFAULT_SYSTEM_MD)
         system_text = self._render_system_md(stable, moment)
 
         parts: list[str] = [SAFETY_PREAMBLE_TEXT, system_text, VOICE_FLOW_HINT]
@@ -252,9 +246,7 @@ class SystemPromptBuilder:
             parts.append(catalog)
             parts.append(SKILLS_HINT)
         if clock:
-            parts.append(
-                "# Momento actual\n" + self._render_system_md(clock, moment)
-            )
+            parts.append("# Momento actual\n" + self._render_system_md(clock, moment))
         return "\n\n".join(part.strip() for part in parts if part.strip())
 
     def reload_if_changed(self) -> bool:
@@ -292,9 +284,7 @@ class SystemPromptBuilder:
             return False
         if len(text) > MAX_SYSTEM_MD_CHARS:
             self._last_key = key
-            self._handle_invalid(
-                f"supera el máximo de {MAX_SYSTEM_MD_CHARS} caracteres"
-            )
+            self._handle_invalid(f"supera el máximo de {MAX_SYSTEM_MD_CHARS} caracteres")
             return False
 
         self._last_key = key
@@ -313,9 +303,7 @@ class SystemPromptBuilder:
             self._path.write_text(DEFAULT_SYSTEM_MD, encoding="utf-8")
         except OSError as exc:
             logger.warning("No se pudo crear system.md en %s: %s", self._path, exc)
-            self._audit(
-                "No se pudo crear system.md; se usa la plantilla en memoria."
-            )
+            self._audit("No se pudo crear system.md; se usa la plantilla en memoria.")
 
     def _stat_key(self) -> tuple[int, int] | None:
         try:
@@ -338,14 +326,9 @@ class SystemPromptBuilder:
     def _handle_invalid(self, reason: str) -> None:
         if self._last_valid_text is None:
             self._last_valid_text = DEFAULT_SYSTEM_MD
-            self._audit(
-                f"system.md no es válido ({reason}); uso la plantilla por defecto."
-            )
+            self._audit(f"system.md no es válido ({reason}); uso la plantilla por defecto.")
         else:
-            self._audit(
-                f"system.md no es válido ({reason}); conservo la última versión "
-                "válida."
-            )
+            self._audit(f"system.md no es válido ({reason}); conservo la última versión válida.")
         self._warn_once()
 
     def _warn_once(self) -> None:
@@ -368,16 +351,13 @@ class SystemPromptBuilder:
             if key not in self._logged_unknown:
                 self._logged_unknown.add(key)
                 self._audit(
-                    "system.md contiene una variable desconocida "
-                    f"{{{{{key}}}}}; se deja tal cual."
+                    f"system.md contiene una variable desconocida {{{{{key}}}}}; se deja tal cual."
                 )
             return match.group(0)
 
         return _PLACEHOLDER_RE.sub(replace, text)
 
-    def _detect_policy_bypass(
-        self, text: str, key: tuple[int, int]
-    ) -> None:
+    def _detect_policy_bypass(self, text: str, key: tuple[int, int]) -> None:
         if self._logged_contradiction_key == key:
             return
         normalized = _strip_accents(text).lower()
@@ -393,9 +373,7 @@ class SystemPromptBuilder:
         )
         logger.warning("system.md contiene frases que contradicen la política: %s", sample)
 
-    def _section(
-        self, source: Callable[[], str] | str | None
-    ) -> str:
+    def _section(self, source: Callable[[], str] | str | None) -> str:
         if source is None:
             return ""
         try:

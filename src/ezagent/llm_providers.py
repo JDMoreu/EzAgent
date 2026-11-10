@@ -18,9 +18,7 @@ from urllib.parse import urlsplit
 
 API_STYLES: Final[tuple[str, ...]] = ("openai", "anthropic")
 CUSTOM_PROVIDER: Final[str] = "custom"
-LOCAL_HOSTS: Final[frozenset[str]] = frozenset(
-    {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
-)
+LOCAL_HOSTS: Final[frozenset[str]] = frozenset({"127.0.0.1", "localhost", "::1", "0.0.0.0"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,49 +33,69 @@ class ProviderSpec:
 
 PROVIDERS: Final[dict[str, ProviderSpec]] = {
     "opencode": ProviderSpec(
-        "opencode", "OpenCode Go",
+        "opencode",
+        "OpenCode Go",
         "https://opencode.ai/inference/go/openai/v1",
-        "OPENCODE_API_KEY", "deepseek-v4.1-flash",
+        "OPENCODE_API_KEY",
+        "deepseek-v4.1-flash",
     ),
     "openai": ProviderSpec(
-        "openai", "OpenAI (GPT, Codex)",
+        "openai",
+        "OpenAI (GPT, Codex)",
         "https://api.openai.com/v1",
-        "OPENAI_API_KEY", "gpt-4.1-mini",
+        "OPENAI_API_KEY",
+        "gpt-4.1-mini",
     ),
     "anthropic": ProviderSpec(
-        "anthropic", "Claude (Anthropic)",
+        "anthropic",
+        "Claude (Anthropic)",
         "https://api.anthropic.com/v1",
-        "ANTHROPIC_API_KEY", "claude-sonnet-5-5",
+        "ANTHROPIC_API_KEY",
+        "claude-sonnet-5-5",
         api_style="anthropic",
     ),
     "gemini": ProviderSpec(
-        "gemini", "Gemini",
+        "gemini",
+        "Gemini",
         "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "GEMINI_API_KEY", "gemini-2.5-flash",
+        "GEMINI_API_KEY",
+        "gemini-2.5-flash",
     ),
     "groq": ProviderSpec(
-        "groq", "Groq",
+        "groq",
+        "Groq",
         "https://api.groq.com/openai/v1",
-        "GROQ_API_KEY", "llama-3.3-70b-versatile",
+        "GROQ_API_KEY",
+        "llama-3.3-70b-versatile",
     ),
     "cerebras": ProviderSpec(
-        "cerebras", "Cerebras",
+        "cerebras",
+        "Cerebras",
         "https://api.cerebras.ai/v1",
-        "CEREBRAS_API_KEY", "gpt-oss-120b",
+        "CEREBRAS_API_KEY",
+        "gpt-oss-120b",
     ),
     "deepseek": ProviderSpec(
-        "deepseek", "DeepSeek",
+        "deepseek",
+        "DeepSeek",
         "https://api.deepseek.com/v1",
-        "DEEPSEEK_API_KEY", "deepseek-chat",
+        "DEEPSEEK_API_KEY",
+        "deepseek-chat",
     ),
     "openrouter": ProviderSpec(
-        "openrouter", "OpenRouter",
+        "openrouter",
+        "OpenRouter",
         "https://openrouter.ai/api/v1",
-        "OPENROUTER_API_KEY", "openai/gpt-4.1-mini",
+        "OPENROUTER_API_KEY",
+        "openai/gpt-4.1-mini",
     ),
     # Cualquier otro servicio: el usuario pone URL, clave, modelo y formato.
     CUSTOM_PROVIDER: ProviderSpec(
-        CUSTOM_PROVIDER, "Personalizado", "", "LLM_API_KEY", "",
+        CUSTOM_PROVIDER,
+        "Personalizado",
+        "",
+        "LLM_API_KEY",
+        "",
     ),
 }
 
@@ -85,6 +103,7 @@ PROVIDERS: Final[dict[str, ProviderSpec]] = {
 def normalize_api_style(value: str | None) -> str:
     text = str(value or "").strip().lower()
     return text if text in API_STYLES else "openai"
+
 
 OPENCODE_BASE_URL: Final[str] = "https://opencode.ai/inference/go/openai/v1"
 DEFAULT_LLM_MODEL: Final[str] = "deepseek-v4.1-flash"
@@ -139,7 +158,6 @@ def provider_models(provider: str | None) -> tuple[tuple[str, str], ...]:
     return MODEL_CATALOG.get(normalize_provider(provider), ())
 
 
-
 ALIASES: Final[dict[str, str]] = {
     "claude": "anthropic",
     "google": "gemini",
@@ -157,9 +175,7 @@ def config_path() -> Path:
     explicit = os.getenv("EZ_LLM_CONFIG")
     if explicit:
         return Path(explicit).expanduser()
-    base = os.getenv("APPDATA") or os.getenv("XDG_CONFIG_HOME") or str(
-        Path.home() / ".config"
-    )
+    base = os.getenv("APPDATA") or os.getenv("XDG_CONFIG_HOME") or str(Path.home() / ".config")
     return Path(base) / "EzAgent" / "llm.json"
 
 
@@ -211,10 +227,7 @@ def _profile_for(profiles: dict, selected: str) -> dict:
     if isinstance(direct, dict):
         return direct
     for raw_name, raw in profiles.items():
-        if (
-            isinstance(raw, dict)
-            and normalize_provider(str(raw_name or "")) == selected
-        ):
+        if isinstance(raw, dict) and normalize_provider(str(raw_name or "")) == selected:
             return raw
     return {}
 
@@ -265,13 +278,8 @@ def load_provider_catalog(
         catalog[name] = {
             # Los presets conservan su nombre de fábrica; los perfiles
             # personalizados, el que eligió el usuario.
-            "label": str(
-                (spec.label if builtin else raw.get("label"))
-                or name.title()
-            ),
-            "api_style": normalize_api_style(
-                raw.get("api_style") or base.get("api_style")
-            ),
+            "label": str((spec.label if builtin else raw.get("label")) or name.title()),
+            "api_style": normalize_api_style(raw.get("api_style") or base.get("api_style")),
             "base_url": str(raw.get("base_url") or base.get("base_url") or ""),
             "model": str(
                 raw.get("model")
@@ -368,9 +376,7 @@ def resolve_llm(
     profile = _profile_for(profiles, selected)
     # Un proveedor desconocido se trata como endpoint compatible personalizado.
     if spec is None:
-        spec = ProviderSpec(
-            selected, selected.title(), "", "LLM_API_KEY", ""
-        )
+        spec = ProviderSpec(selected, selected.title(), "", "LLM_API_KEY", "")
 
     env_base = env.get("LLM_BASE_URL")
     env_model = env.get("LLM_MODEL")
@@ -382,18 +388,10 @@ def resolve_llm(
         if env_model == "deepseek-v4.1-flash":
             env_model = None
     resolved_base = (
-        base_url
-        or env_base
-        or profile.get("base_url")
-        or data.get("base_url")
-        or spec.base_url
+        base_url or env_base or profile.get("base_url") or data.get("base_url") or spec.base_url
     )
     resolved_model = (
-        model
-        or env_model
-        or profile.get("model")
-        or data.get("model")
-        or spec.default_model
+        model or env_model or profile.get("model") or data.get("model") or spec.default_model
     )
     resolved_key = (
         api_key
@@ -404,14 +402,13 @@ def resolve_llm(
         or ""
     )
     if not str(resolved_base).strip():
-        raise ValueError(
-            f"El proveedor {selected!r} necesita LLM_BASE_URL o base_url en llm.json."
-        )
+        raise ValueError(f"El proveedor {selected!r} necesita LLM_BASE_URL o base_url en llm.json.")
     source = (
-        "env" if any(
-            env.get(name)
-            for name in ("LLM_PROVIDER", "LLM_MODEL", "LLM_BASE_URL", "LLM_API_KEY")
-        ) else ("file" if data else "defaults")
+        "env"
+        if any(
+            env.get(name) for name in ("LLM_PROVIDER", "LLM_MODEL", "LLM_BASE_URL", "LLM_API_KEY")
+        )
+        else ("file" if data else "defaults")
     )
     return LLMConfig(
         provider=selected,
@@ -420,18 +417,26 @@ def resolve_llm(
         api_key=str(resolved_key).strip(),
         source=source,
         api_style=normalize_api_style(
-            api_style
-            or env.get("LLM_API_STYLE")
-            or profile.get("api_style")
-            or spec.api_style
+            api_style or env.get("LLM_API_STYLE") or profile.get("api_style") or spec.api_style
         ),
     )
 
 
 # Modelos que no sirven para conversar (audio, imágenes, embeddings…).
 _NON_CHAT_HINTS: Final[tuple[str, ...]] = (
-    "embed", "whisper", "tts", "dall-e", "moderation", "transcribe",
-    "image", "audio", "realtime", "guard", "rerank", "search", "sora",
+    "embed",
+    "whisper",
+    "tts",
+    "dall-e",
+    "moderation",
+    "transcribe",
+    "image",
+    "audio",
+    "realtime",
+    "guard",
+    "rerank",
+    "search",
+    "sora",
     "orpheus",
 )
 

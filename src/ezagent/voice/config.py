@@ -296,9 +296,7 @@ def merge_agent_profiles(
 
 
 def config_path() -> Path:
-    base = os.getenv("APPDATA") or os.getenv("XDG_CONFIG_HOME") or str(
-        Path.home() / ".config"
-    )
+    base = os.getenv("APPDATA") or os.getenv("XDG_CONFIG_HOME") or str(Path.home() / ".config")
     return Path(base) / "EzAgent" / "voice.json"
 
 
@@ -384,7 +382,7 @@ class VoiceConfig:
     # La barra guarda su propia posición física al terminar un arrastre.
     drop_x: int | None = None
     drop_y: int | None = None
-    drop_layout: str = ""      # disposición con la que se guardó drop_x/drop_y
+    drop_layout: str = ""  # disposición con la que se guardó drop_x/drop_y
     # Forma de la barra: «pill» (cápsula) o «circle» (círculo sobre los botones).
     # Los colores siguen al tema (claro u oscuro) y los botones solo aparecen al
     # acercar el puntero; «ui_palette» y «ui_buttons» antiguos se ignoran al cargar.
@@ -526,7 +524,6 @@ class VoiceConfig:
                     profile[key] = copy.deepcopy(default[key])
                 else:
                     profile.pop(key, None)
-
 
     @staticmethod
     def _read_json(path: Path) -> dict:

@@ -105,9 +105,7 @@ class Journal:
             self._sequence += 1
             # El nombre ordena por tiempo y, dentro del mismo instante, por
             # secuencia de esta instancia.
-            entry_id = (
-                f"{time.time_ns():020d}-{self._sequence:08d}-{uuid.uuid4().hex[:12]}"
-            )
+            entry_id = f"{time.time_ns():020d}-{self._sequence:08d}-{uuid.uuid4().hex[:12]}"
             entry = {
                 "version": 1,
                 "id": entry_id,
@@ -230,7 +228,9 @@ class Journal:
         summary = str(entry.get("summary", ""))
         steps = entry.get("steps")
         if not isinstance(steps, list) or not steps:
-            return UndoOutcome(entry_id, kind, summary, False, "La entrada no tiene pasos inversos.")
+            return UndoOutcome(
+                entry_id, kind, summary, False, "La entrada no tiene pasos inversos."
+            )
         try:
             for step in steps:
                 self._run_step(step, validate)

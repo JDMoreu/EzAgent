@@ -36,8 +36,7 @@ class Condenser:
         offset = max(0, len(lines) - MAX_LINES)
         shown = lines[offset:]
         body = "\n".join(
-            f"{index + 1}: {line[:MAX_LINE_CHARS]}"
-            for index, line in enumerate(shown)
+            f"{index + 1}: {line[:MAX_LINE_CHARS]}" for index, line in enumerate(shown)
         )
         request: dict[str, Any] = {
             "model": self.cfg.llm_model,

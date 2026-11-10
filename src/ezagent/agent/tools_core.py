@@ -181,13 +181,8 @@ def _read_file(config: AgentConfig, args: dict[str, Any]) -> ToolResult:
         return ToolResult(ok=False, error=f"No se pudo leer el archivo: {exc}")
     source = str(target).replace("'", "&#39;")
     # El contenido es dato no confiable: no puede cerrar la etiqueta.
-    safe_content = content.replace(
-        "</untrusted_content>", "&lt;/untrusted_content&gt;"
-    )
-    wrapped = (
-        f"<untrusted_content source='{source}'>\n{safe_content}\n"
-        "</untrusted_content>"
-    )
+    safe_content = content.replace("</untrusted_content>", "&lt;/untrusted_content&gt;")
+    wrapped = f"<untrusted_content source='{source}'>\n{safe_content}\n</untrusted_content>"
     return ToolResult(ok=True, data=wrapped)
 
 
@@ -224,8 +219,7 @@ def build_core_tools(config: AgentConfig) -> list[ToolSpec]:
         ToolSpec(
             name="list_dir",
             description=(
-                "Lista hasta 200 entradas de una carpeta dentro de las rutas "
-                "de lectura permitidas."
+                "Lista hasta 200 entradas de una carpeta dentro de las rutas de lectura permitidas."
             ),
             parameters={
                 "type": "object",
@@ -257,9 +251,7 @@ def build_core_tools(config: AgentConfig) -> list[ToolSpec]:
                         "type": "integer",
                         "minimum": 1,
                         "maximum": _MAX_READ_CHARS,
-                        "description": (
-                            "Máximo de caracteres a leer (por defecto 8000)."
-                        ),
+                        "description": ("Máximo de caracteres a leer (por defecto 8000)."),
                     },
                 },
                 "required": ["path"],

@@ -49,7 +49,6 @@ _SAFE_VALUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/#@+-]{0,80}$")
 class AgentDriver(AgentSession):
     """Mixin de ``Herdr``: requiere ``cfg``, ``get_agent`` y ``send_agent``."""
 
-
     # ------------------------------------------------------------ perfiles
     def resolve_agent(self, name: str) -> str | None:
         """Clave canónica de un agente a partir de cómo se dictó."""
@@ -70,7 +69,6 @@ class AgentDriver(AgentSession):
         if not isinstance(value, list):
             return []
         return [str(part) for part in value]
-
 
     def _check_value(self, key: str, kind: str, value: str) -> str:
         """Valida modelo/esfuerzo; devuelve el error o una cadena vacía."""
@@ -175,21 +173,13 @@ class AgentDriver(AgentSession):
 
         argv = self._text_list(profile.get("command")) or list(self.cfg.agents[key])
         flag_args = {
-            "model": self._text_list(
-                profile.get("model_args", ["--model", "{model}"])
-            ),
-            "effort": self._text_list(
-                profile.get("effort_args", ["--effort", "{effort}"])
-            ),
+            "model": self._text_list(profile.get("model_args", ["--model", "{model}"])),
+            "effort": self._text_list(profile.get("effort_args", ["--effort", "{effort}"])),
         }
         launch = AgentLaunch(argv=list(argv))
         model_value, effort_value = wanted["model"], wanted["effort"]
         prefix = str(profile.get("model_prefix") or "")
-        model_ref = (
-            model_value
-            if "/" in model_value or not model_value
-            else prefix + model_value
-        )
+        model_ref = model_value if "/" in model_value or not model_value else prefix + model_value
         consumed: set[str] = set()
         env_tpl = profile.get("env")
         if model_value and isinstance(env_tpl, dict) and env_tpl:
@@ -198,15 +188,11 @@ class AgentDriver(AgentSession):
             variant = f"#{effort_value}" if effort_value else ""
             for name, tpl in env_tpl.items():
                 launch.env[str(name)] = (
-                    str(tpl)
-                    .replace("{model_ref}", model_ref)
-                    .replace("{variant}", variant)
+                    str(tpl).replace("{model_ref}", model_ref).replace("{variant}", variant)
                 )
             launch.argv += self._text_list(profile.get("env_args"))
             if profile.get("prelaunch") == "opencode_state":
-                launch.env.update(
-                    prepare_opencode_state(model_ref, effort_value)
-                )
+                launch.env.update(prepare_opencode_state(model_ref, effort_value))
             consumed = {"model", "effort"} if effort_value else {"model"}
         elif model_value and flag_args["model"]:
             # «{variant}» deja pegar el esfuerzo al modelo (mcode: modelo#var).
@@ -226,9 +212,7 @@ class AgentDriver(AgentSession):
             if not value or kind in consumed:
                 continue
             if kind == "effort" and flag_args["effort"]:
-                launch.argv += [
-                    p.replace("{effort}", value) for p in flag_args["effort"]
-                ]
+                launch.argv += [p.replace("{effort}", value) for p in flag_args["effort"]]
             elif self._session_steps(key, kind):
                 launch.pending[kind] = value
             else:
@@ -248,10 +232,7 @@ class AgentDriver(AgentSession):
         if model:
             slug = next((s for s in table if s.lower() == model.lower()), None)
             if slug is None:
-                return (
-                    f"Codex no tiene el modelo {model!r}. "
-                    f"Modelos: {', '.join(table)}."
-                )
+                return f"Codex no tiene el modelo {model!r}. Modelos: {', '.join(table)}."
             wanted["model"] = slug
             levels = table[slug]
         else:
@@ -275,38 +256,20 @@ class AgentDriver(AgentSession):
 
     # -------------------------------------------------------------- sesión
 
-
-
-
-
-
-
-
-
-
-
-
-
-
     # ------------------------------------------------------------ catálogo
     def agents_catalog(self) -> list[dict[str, Any]]:
         """Qué agentes hay y qué se puede decidir de cada uno."""
         catalog: list[dict[str, Any]] = []
         for key in sorted(self.cfg.agents):
             profile = self._profile(key)
-            command = self._text_list(profile.get("command")) or list(
-                self.cfg.agents[key]
-            )
+            command = self._text_list(profile.get("command")) or list(self.cfg.agents[key])
             flags = {
                 kind: bool(self._text_list(profile.get(f"{kind}_args")))
                 for kind in ("model", "effort")
             }
             if isinstance(profile.get("env"), dict) and profile.get("env"):
                 flags = {"model": True, "effort": True}
-            elif any(
-                "{variant}" in p
-                for p in self._text_list(profile.get("model_args"))
-            ):
+            elif any("{variant}" in p for p in self._text_list(profile.get("model_args"))):
                 flags["effort"] = True
             catalog.append(
                 {

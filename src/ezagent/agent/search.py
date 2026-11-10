@@ -132,10 +132,7 @@ class DdgsSearchProvider:
             title = str(item.get("title") or "").strip()
             url = str(item.get("href") or item.get("url") or "").strip()
             snippet = str(
-                item.get("body")
-                or item.get("snippet")
-                or item.get("description")
-                or ""
+                item.get("body") or item.get("snippet") or item.get("description") or ""
             ).strip()
             if not title and not url:
                 continue

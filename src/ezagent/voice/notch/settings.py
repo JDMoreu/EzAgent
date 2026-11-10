@@ -552,9 +552,7 @@ def _normalize_names(
             elif isinstance(item, Mapping):
                 ident = item.get("value") or item.get("id") or item.get("model")
                 if ident:
-                    pairs.append(
-                        (str(ident), str(item.get("label", ident)))
-                    )
+                    pairs.append((str(ident), str(item.get("label", ident))))
     seen: set[str] = set()
     out: list[SelectOption] = []
     for ident, label in pairs:
@@ -599,9 +597,7 @@ def _normalize_providers(
         else:
             label = str(getattr(raw, "label", name))
             base_url = str(getattr(raw, "base_url", ""))
-            model = str(
-                getattr(raw, "default_model", "") or getattr(raw, "model", "")
-            )
+            model = str(getattr(raw, "default_model", "") or getattr(raw, "model", ""))
             api_key = str(getattr(raw, "api_key", ""))
             provider = str(getattr(raw, "provider", name) or name)
             api_style = str(getattr(raw, "api_style", "openai") or "openai")
@@ -654,9 +650,7 @@ class MenuSettings:
         self._devices = _normalize_devices(devices)
         self._voices = _normalize_voices(voices, current_voice)
         self._providers = _normalize_providers(providers)
-        self._stt_models = _normalize_names(
-            stt_models, str(_read(values, "stt_model", "") or "")
-        )
+        self._stt_models = _normalize_names(stt_models, str(_read(values, "stt_model", "") or ""))
         self._llm_models: dict[str, tuple[SelectOption, ...]] = {}
         # La lista real de modelos llega desde un hilo de red (set_llm_models).
         self._models_lock = threading.Lock()
@@ -666,16 +660,12 @@ class MenuSettings:
         self._values: dict[str, Any] = {}
         for key in ALL_KEYS:
             default = DEFAULT_VALUES[key]
-            self._values[key] = self._normalize_value(
-                key, _read(values, key, default)
-            )
+            self._values[key] = self._normalize_value(key, _read(values, key, default))
         # El selector de perfiles arranca en el proveedor activo.
         current_provider = str(self._values.get("llm_provider") or "")
         if current_provider:
             self._values["llm_profile"] = current_provider
-        self._saved: dict[str, Any] = {
-            key: self._values[key] for key in EDITABLE_KEYS
-        }
+        self._saved: dict[str, Any] = {key: self._values[key] for key in EDITABLE_KEYS}
 
     # ---- construcción -----------------------------------------------------
     @classmethod
@@ -697,10 +687,7 @@ class MenuSettings:
         if isinstance(values, Mapping):
             data = dict(values)
         else:
-            data = {
-                key: getattr(values, key, DEFAULT_VALUES[key])
-                for key in ALL_KEYS
-            }
+            data = {key: getattr(values, key, DEFAULT_VALUES[key]) for key in ALL_KEYS}
         return cls(data, devices, voices, providers, stt_models, llm_models)
 
     # ---- normalización ----------------------------------------------------
@@ -723,18 +710,12 @@ class MenuSettings:
         if key == "voice":
             text = str(value or DEFAULT_VALUES["voice"])
             if text not in self._voice_ids():
-                self._voices = self._voices + (
-                    SelectOption(text, VOICE_LABELS.get(text, text)),
-                )
+                self._voices = self._voices + (SelectOption(text, VOICE_LABELS.get(text, text)),)
             return text
         if key == "tts_model_variant":
             text = str(value or DEFAULT_VALUES["tts_model_variant"])
             valid = {option.value for option in TTS_VARIANTS}
-            return (
-                text
-                if text in valid
-                else str(DEFAULT_VALUES["tts_model_variant"])
-            )
+            return text if text in valid else str(DEFAULT_VALUES["tts_model_variant"])
         if key == "stt_engine":
             text = str(value or "auto")
             valid = {option.value for option in STT_ENGINE_OPTIONS}
@@ -773,7 +754,6 @@ class MenuSettings:
     def providers(self) -> dict[str, dict[str, str]]:
         """Perfiles disponibles, ya normalizados (copia defensiva)."""
         return {name: dict(values) for name, values in self._providers.items()}
-
 
     def value(self, key: str) -> Any:
         self._require(key)
@@ -849,9 +829,6 @@ class MenuSettings:
         for key, value in values.items():
             self._values[key] = self._normalize_value(key, value)
 
-
-
-
     # ---- guardado ---------------------------------------------------------
     def dirty(self) -> bool:
         """True si algún valor editable difiere de la copia guardada.
@@ -863,10 +840,7 @@ class MenuSettings:
             current = self._values[key]
             saved = self._saved[key]
             if key in SLIDERS:
-                if abs(
-                    _quantize(current, SLIDERS[key])
-                    - _quantize(saved, SLIDERS[key])
-                ) > 1e-9:
+                if abs(_quantize(current, SLIDERS[key]) - _quantize(saved, SLIDERS[key])) > 1e-9:
                     return True
             elif current != saved:
                 return True
@@ -909,11 +883,7 @@ class MenuSettings:
         if key == "tts_model_variant":
             text = str(value or DEFAULT_VALUES["tts_model_variant"])
             valid = {option.value for option in TTS_VARIANTS}
-            return (
-                text
-                if text in valid
-                else str(DEFAULT_VALUES["tts_model_variant"])
-            )
+            return text if text in valid else str(DEFAULT_VALUES["tts_model_variant"])
         if key == "stt_engine":
             text = str(value or "auto")
             valid = {option.value for option in STT_ENGINE_OPTIONS}
@@ -986,18 +956,10 @@ class MenuSettings:
             return _PRESET_LABELS.get(str(value), "Elegir paleta")
         if key == "llm_profile":
             profile = self._providers.get(str(value))
-            return (
-                str(profile.get("label"))
-                if profile
-                else str(value or "Sin perfiles")
-            )
+            return str(profile.get("label")) if profile else str(value or "Sin perfiles")
         if key == "llm_provider":
             profile = self._providers.get(str(value))
-            return (
-                str(profile.get("label"))
-                if profile
-                else str(value or "Sin proveedor")
-            )
+            return str(profile.get("label")) if profile else str(value or "Sin proveedor")
         if key in SECRET_KEYS:
             return mask_secret(value)
         if key in TOGGLE_KEYS:
@@ -1083,7 +1045,6 @@ class MenuSettings:
         if key == "llm_profile":
             return bool(self._providers)
         return False
-
 
 
 def normalize_setting(key: str, value: Any) -> Any:

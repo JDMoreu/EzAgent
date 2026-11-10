@@ -113,9 +113,7 @@ def clean_tail(screen: str) -> str:
     kept = [
         line.strip()
         for line in _lines(screen)
-        if line.strip()
-        and not _FOOTER.match(line.strip())
-        and not _THINKING.match(line.strip())
+        if line.strip() and not _FOOTER.match(line.strip()) and not _THINKING.match(line.strip())
     ]
     return "\n".join(kept[-_TAIL_LINES:])[-MAX_ANSWER_CHARS:]
 

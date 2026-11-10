@@ -46,9 +46,7 @@ def _check_input(path: Path) -> None:
 
 def _check_output(path: Path) -> None:
     if path.exists():
-        raise ToolError(
-            f"El archivo de salida ya existe: {path}. Usa otro nombre."
-        )
+        raise ToolError(f"El archivo de salida ya existe: {path}. Usa otro nombre.")
 
 
 def _read_json(path: Path):
@@ -71,26 +69,18 @@ def _normalise_rows(data) -> list[list[object]]:
             return rows
         for item in data:
             if not isinstance(item, list):
-                raise ToolError(
-                    "Cada fila del JSON debe ser una lista o un objeto."
-                )
+                raise ToolError("Cada fila del JSON debe ser una lista o un objeto.")
             rows.append(list(item))
         return rows
-    raise ToolError(
-        "El JSON debe ser una lista de filas o un objeto {hoja: filas}."
-    )
+    raise ToolError("El JSON debe ser una lista de filas o un objeto {hoja: filas}.")
 
 
 def _validate_rows(rows: list[list[object]], sheet: str) -> None:
     if len(rows) > MAX_ROWS:
-        raise ToolError(
-            f"La hoja «{sheet}» supera el máximo de {MAX_ROWS} filas."
-        )
+        raise ToolError(f"La hoja «{sheet}» supera el máximo de {MAX_ROWS} filas.")
     for row in rows:
         if len(row) > MAX_COLUMNS:
-            raise ToolError(
-                f"La hoja «{sheet}» supera el máximo de {MAX_COLUMNS} columnas."
-            )
+            raise ToolError(f"La hoja «{sheet}» supera el máximo de {MAX_COLUMNS} columnas.")
 
 
 def _collect_sheets(data) -> dict[str, list[list[object]]]:
@@ -118,10 +108,7 @@ def command_summary(args: argparse.Namespace) -> int:
     try:
         print(f"Archivo: {path}")
         for sheet in workbook.worksheets:
-            print(
-                f"- {sheet.title}: {sheet.max_row or 0} filas x "
-                f"{sheet.max_column or 0} columnas"
-            )
+            print(f"- {sheet.title}: {sheet.max_row or 0} filas x {sheet.max_column or 0} columnas")
             first_row = []
             for cell in next(sheet.iter_rows(min_row=1, max_row=1), ()):
                 value = getattr(cell, "value", None)
@@ -218,9 +205,7 @@ def _json_value(value):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Herramientas para hojas de cálculo .xlsx."
-    )
+    parser = argparse.ArgumentParser(description="Herramientas para hojas de cálculo .xlsx.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     summary = subparsers.add_parser("summary", help="Resume hojas y tamaños.")

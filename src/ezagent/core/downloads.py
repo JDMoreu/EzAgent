@@ -101,9 +101,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _fetch(
-    asset: Asset, part: Path, client: httpx.Client, progress: ProgressFn | None
-) -> None:
+def _fetch(asset: Asset, part: Path, client: httpx.Client, progress: ProgressFn | None) -> None:
     start = part.stat().st_size if part.exists() else 0
     if start >= asset.size:  # parte inválida o completa: se descarta y se re-verifica
         part.unlink(missing_ok=True)
@@ -133,14 +131,12 @@ def _extract(asset: Asset, archive: Path, root: Path | None) -> None:
             if asset.strip_prefix:
                 if not name.startswith(asset.strip_prefix):
                     continue
-                name = name[len(asset.strip_prefix):]
+                name = name[len(asset.strip_prefix) :]
             if not name or name.endswith("/"):
                 continue
             out = (target / name).resolve()
             if base not in out.parents:
-                raise DownloadError(
-                    f"{asset.id}: ruta insegura en el zip: {info.filename}"
-                )
+                raise DownloadError(f"{asset.id}: ruta insegura en el zip: {info.filename}")
             out.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(info) as src, out.open("wb") as dst:
                 shutil.copyfileobj(src, dst)
@@ -175,9 +171,7 @@ def download(
             part.unlink(missing_ok=True)
             logger.warning(f"{asset.id}: hash incorrecto (intento {attempt})")
             if attempt == 2:
-                raise DownloadError(
-                    f"{asset.id}: el hash no coincide; descarga descartada"
-                )
+                raise DownloadError(f"{asset.id}: el hash no coincide; descarga descartada")
         part.replace(final)
         if asset.unzip:
             try:
@@ -236,9 +230,7 @@ def main(argv: list[str] | None = None) -> int:
             extra = " (opcional)" if a.optional else ""
             print(f"{a.id:22} {state:10} {a.size / 1e6:8.1f} MB  {a.label}{extra}")
         return 0
-    wanted = args.ids or [
-        a.id for a in assets.values() if args.with_optional or not a.optional
-    ]
+    wanted = args.ids or [a.id for a in assets.values() if args.with_optional or not a.optional]
     last = {"pct": -1}
 
     def show(asset_id: str, done: int, total: int) -> None:

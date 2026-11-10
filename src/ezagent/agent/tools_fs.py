@@ -180,7 +180,9 @@ def _atomic_copy(src: Path, dst: Path) -> None:
 def _startfile(target: str) -> None:
     opener = getattr(os, "startfile", None)
     if opener is None:  # pragma: no cover - Windows siempre lo tiene
-        raise OSError("Abrir archivos con la aplicación predeterminada solo está disponible en Windows.")
+        raise OSError(
+            "Abrir archivos con la aplicación predeterminada solo está disponible en Windows."
+        )
     opener(target)
 
 
@@ -273,8 +275,7 @@ def build_fs_tools(config: AgentConfig, journal: Journal) -> list[ToolSpec]:
                 return ToolResult(
                     ok=False,
                     error=(
-                        f"El archivo «{target}» ya existe. "
-                        "Usa overwrite=true para sobrescribirlo."
+                        f"El archivo «{target}» ya existe. Usa overwrite=true para sobrescribirlo."
                     ),
                 )
             created_parent: Path | None = None
@@ -320,7 +321,9 @@ def build_fs_tools(config: AgentConfig, journal: Journal) -> list[ToolSpec]:
             if src == dst:
                 return ToolResult(ok=False, error="El origen y el destino son iguales.")
             if src.is_dir() and dst.is_relative_to(src):
-                return ToolResult(ok=False, error="No se puede copiar una carpeta dentro de sí misma.")
+                return ToolResult(
+                    ok=False, error="No se puede copiar una carpeta dentro de sí misma."
+                )
             # DECISION: dst es la ruta exacta de destino; no se interpreta
             # como una carpeta contenedora donde copiar el origen.
             backup: Path | None = None
@@ -378,7 +381,9 @@ def build_fs_tools(config: AgentConfig, journal: Journal) -> list[ToolSpec]:
             if src == dst:
                 return ToolResult(ok=False, error="El origen y el destino son iguales.")
             if src.is_dir() and dst.is_relative_to(src):
-                return ToolResult(ok=False, error="No se puede mover una carpeta dentro de sí misma.")
+                return ToolResult(
+                    ok=False, error="No se puede mover una carpeta dentro de sí misma."
+                )
             # DECISION: dst es la ruta exacta de destino; no se interpreta
             # como una carpeta contenedora donde mover el origen.
             backup: Path | None = None
@@ -500,9 +505,7 @@ def build_fs_tools(config: AgentConfig, journal: Journal) -> list[ToolSpec]:
             failed = [outcome for outcome in outcomes if not outcome.ok]
             error = None
             if failed:
-                reasons = "; ".join(
-                    f"{outcome.summary}: {outcome.error}" for outcome in failed
-                )
+                reasons = "; ".join(f"{outcome.summary}: {outcome.error}" for outcome in failed)
                 error = f"No se pudieron deshacer todas las operaciones. {reasons}"
             return ToolResult(
                 ok=not failed,
@@ -561,8 +564,7 @@ def build_fs_tools(config: AgentConfig, journal: Journal) -> list[ToolSpec]:
                 return ToolInfo(
                     level=1,
                     summary=(
-                        f"El archivo «{target}» ya existe; no se sobrescribirá "
-                        "sin overwrite=true."
+                        f"El archivo «{target}» ya existe; no se sobrescribirá sin overwrite=true."
                     ),
                 )
             parent = target.parent
@@ -704,10 +706,7 @@ def build_fs_tools(config: AgentConfig, journal: Journal) -> list[ToolSpec]:
             if target.is_dir():
                 count = _count_items(target)
                 if count == 0:
-                    summary = (
-                        f"Voy a enviar a la Papelera la carpeta «{target}», "
-                        "que está vacía."
-                    )
+                    summary = f"Voy a enviar a la Papelera la carpeta «{target}», que está vacía."
                 else:
                     summary = (
                         f"Voy a enviar a la Papelera la carpeta «{target}», "

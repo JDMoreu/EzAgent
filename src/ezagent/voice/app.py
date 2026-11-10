@@ -99,11 +99,8 @@ INSTANT_SETTINGS = (
 
 def _hotkey_key(spec: str) -> str:
     """Normaliza un atajo para comparar duplicados."""
-    return "+".join(
-        part.strip().lower()
-        for part in str(spec or "").split("+")
-        if part.strip()
-    )
+    return "+".join(part.strip().lower() for part in str(spec or "").split("+") if part.strip())
+
 
 MENU_VOICES = (
     ("em_alex", "Álex · masculina"),
@@ -176,8 +173,23 @@ RESUME_SECS = 3.0
 # Cortesías que se quitan al principio antes de buscar un atajo local:
 # «Ok, gracias. Mutéate» debe silenciar igual que «mutéate».
 _COURTESY_WORDS = frozenset(
-    {"ok", "okay", "oki", "bueno", "listo", "perfecto", "dale", "genial",
-     "gracias", "muchas", "mil", "eh", "este", "pues", "va"}
+    {
+        "ok",
+        "okay",
+        "oki",
+        "bueno",
+        "listo",
+        "perfecto",
+        "dale",
+        "genial",
+        "gracias",
+        "muchas",
+        "mil",
+        "eh",
+        "este",
+        "pues",
+        "va",
+    }
 )
 
 
@@ -240,9 +252,7 @@ def _whisper_ready(url: str, timeout: float = 1.0) -> bool:
         return False
 
 
-def ensure_whisper(
-    cfg: VoiceConfig, wait_secs: float = 25.0
-) -> subprocess.Popen | None:
+def ensure_whisper(cfg: VoiceConfig, wait_secs: float = 25.0) -> subprocess.Popen | None:
     """Si whisper-server no responde, lo arranca y devuelve el proceso dueño."""
     if _whisper_ready(cfg.whisper_url):
         return None
@@ -269,10 +279,7 @@ def ensure_whisper(
     if not has_server and model_path is None:
         # DECISION: app.py usa log() propio (sin niveles); el aviso hablado lo
         # emite la capa que trata el estado "error" del notch.
-        log(
-            "No encuentro whisper. Descárgalo con: "
-            "uv run python -m ezagent.core.downloads --all"
-        )
+        log("No encuentro whisper. Descárgalo con: uv run python -m ezagent.core.downloads --all")
         return None
     port = _free_local_port()
     cfg.whisper_url = urlunsplit(
@@ -282,10 +289,16 @@ def ensure_whisper(
     log("whisper-server no responde; arrancándolo…")
     try:
         command = [
-            "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-            "-File", str(script),
-            "-Port", str(port),
-            "-Engine", str(cfg.stt_engine or "auto"),
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+            "-Port",
+            str(port),
+            "-Engine",
+            str(cfg.stt_engine or "auto"),
         ]
         if home is not None:
             command.extend(["-WhisperHome", str(home)])
@@ -323,9 +336,7 @@ class VoiceApp:
         self.state = IDLE
         self.in_call = False
         self.muted = False
-        self.tasks = TaskRegistry(
-            tasks_path or config_path().with_name("tasks.json")
-        )
+        self.tasks = TaskRegistry(tasks_path or config_path().with_name("tasks.json"))
         self._user_speaking = False
         self._ignore_utterance = False
         # Unión de frases (hilo de audio): si el turno se cerró en una pausa y
@@ -342,7 +353,7 @@ class VoiceApp:
         # Avisos de agentes en orden: nunca se pisan entre sí.
         self._announce_queue: list[tuple[str, bool]] = []
         self._close_after_answer = False
-        self._close_mode = ""           # "", "pause" o "hangup" ("" = ajuste)
+        self._close_mode = ""  # "", "pause" o "hangup" ("" = ajuste)
         self._wake_lock = threading.Lock()
         self._reset_capture = threading.Event()
         self._post_tts_until = 0.0
@@ -356,9 +367,7 @@ class VoiceApp:
         self._turn_gen = 0
         self._turn_started = 0.0
         self._turn_timing: TurnTimings | None = None
-        self._latency = LatencyStats(
-            jsonl_path=config_path().parent / "logs" / "latency.jsonl"
-        )
+        self._latency = LatencyStats(jsonl_path=config_path().parent / "logs" / "latency.jsonl")
         self._notch_hidden = bool(cfg.notch_hidden)
         self._restarting = False
         self._shutdown_done = False
@@ -402,8 +411,7 @@ class VoiceApp:
             self.events.put(
                 (
                     "error",
-                    "No encuentro whisper. Revisa la carpeta de whisper "
-                    "en la configuración.",
+                    "No encuentro whisper. Revisa la carpeta de whisper en la configuración.",
                 )
             )
         log("Cargando Kokoro…")
@@ -428,7 +436,8 @@ class VoiceApp:
         self.turn_detector = self._create_turn_detector(cfg)
         turn = (
             f"fin de turno a {cfg.turn_quick_secs}s si la frase está completa"
-            if self.turn_detector is not None else "sin Smart Turn"
+            if self.turn_detector is not None
+            else "sin Smart Turn"
         )
         log(
             f"VAD: silencio={cfg.silence_secs}s, {turn}, min_rms={cfg.min_rms}, "
@@ -472,9 +481,7 @@ class VoiceApp:
         for hotkey in self.hotkeys:
             hotkey.start()
         self.notch.on_action = self._on_notch_action
-        self.notch.on_menu_action = lambda action: self.events.put(
-            ("menu_action", action)
-        )
+        self.notch.on_menu_action = lambda action: self.events.put(("menu_action", action))
         self.notch.menu_settings_provider = self._notch_menu_settings
         self.notch.on_live_setting = self._notch_live_setting
         self.notch.on_save_settings = self._notch_save_settings
@@ -511,11 +518,11 @@ class VoiceApp:
                 mic_mute=self._llm_mic_mute,
                 last_summary=lambda: self.last_summary,
                 mute=self._mute,
-                get_last_user_text=lambda: getattr(
-                    self.messenger, "_last_user_text", ""
-                )
-                if hasattr(self, "messenger")
-                else "",
+                get_last_user_text=lambda: (
+                    getattr(self.messenger, "_last_user_text", "")
+                    if hasattr(self, "messenger")
+                    else ""
+                ),
                 remember_task=self._remember_task,
                 enqueue_chain=self._enqueue_chain,
                 deliver_answer=self._deliver_answer,
@@ -526,9 +533,7 @@ class VoiceApp:
                     ("confirm_ask", summary, strong)
                 ),
                 on_confirm_done=lambda: self.events.put(("confirm_done",)),
-                on_warn=lambda message: self.events.put(
-                    ("agent_warn", message)
-                ),
+                on_warn=lambda message: self.events.put(("agent_warn", message)),
             )
             runtime = AgentRuntime(cfg, self.herdr, callbacks)
             log("Núcleo agéntico disponible.")
@@ -660,8 +665,7 @@ class VoiceApp:
                     from ezagent.agent.system_prompt import DEFAULT_SYSTEM_MD
                 except Exception:
                     DEFAULT_SYSTEM_MD = (
-                        "# Identidad\n"
-                        "Eres EzAgent, un asistente de voz local para Windows.\n"
+                        "# Identidad\nEres EzAgent, un asistente de voz local para Windows.\n"
                     )
                 path.write_text(DEFAULT_SYSTEM_MD, encoding="utf-8")
             os.startfile(str(path))
@@ -672,9 +676,7 @@ class VoiceApp:
     def _open_voice_json(self) -> None:
         """Abre voice.json para editar perfiles de agente, rutas o atajos."""
         try:
-            path = Path(
-                getattr(self, "config_file", None) or config_path()
-            )
+            path = Path(getattr(self, "config_file", None) or config_path())
             if not path.exists():
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("{}\n", encoding="utf-8")
@@ -723,9 +725,9 @@ class VoiceApp:
                 cwd = str(Path.cwd())
             flags = 0
             if os.name == "nt":
-                flags = getattr(
-                    subprocess, "CREATE_NEW_PROCESS_GROUP", 0
-                ) | getattr(subprocess, "DETACHED_PROCESS", 0)
+                flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(
+                    subprocess, "DETACHED_PROCESS", 0
+                )
             subprocess.Popen(
                 command,
                 cwd=cwd,
@@ -765,9 +767,7 @@ class VoiceApp:
             if not normalized:
                 continue
             if normalized in seen:
-                raise ValueError(
-                    f"Los atajos {seen[normalized]} y {key} son el mismo."
-                )
+                raise ValueError(f"Los atajos {seen[normalized]} y {key} son el mismo.")
             seen[normalized] = key
 
     def _build_hotkeys(self) -> list[GlobalHotkey]:
@@ -783,10 +783,7 @@ class VoiceApp:
             if (
                 spec
                 and spec not in cancel_specs
-                and (
-                    spec == self.cfg.cancel_hotkey
-                    or _hotkey_key(spec) not in cancel_used
-                )
+                and (spec == self.cfg.cancel_hotkey or _hotkey_key(spec) not in cancel_used)
             ):
                 cancel_specs.append(spec)
         repeat_specs: list[str] = []
@@ -800,35 +797,16 @@ class VoiceApp:
             if (
                 spec
                 and spec not in repeat_specs
-                and (
-                    spec == self.cfg.repeat_hotkey
-                    or _hotkey_key(spec) not in repeat_used
-                )
+                and (spec == self.cfg.repeat_hotkey or _hotkey_key(spec) not in repeat_used)
             ):
                 repeat_specs.append(spec)
-        hotkeys = [
-            GlobalHotkey(
-                self.cfg.hotkey, "toggle", self.hotkey_events, 47201
-            )
-        ]
+        hotkeys = [GlobalHotkey(self.cfg.hotkey, "toggle", self.hotkey_events, 47201)]
         for index, spec in enumerate(cancel_specs[:4]):
-            hotkeys.append(
-                GlobalHotkey(spec, "cancel", self.hotkey_events, 47202 + index)
-            )
+            hotkeys.append(GlobalHotkey(spec, "cancel", self.hotkey_events, 47202 + index))
         for index, spec in enumerate(repeat_specs[:4]):
-            hotkeys.append(
-                GlobalHotkey(spec, "repeat", self.hotkey_events, 47210 + index)
-            )
-        hotkeys.append(
-            GlobalHotkey(
-                self.cfg.mute_hotkey, "mute", self.hotkey_events, 47220
-            )
-        )
-        hotkeys.append(
-            GlobalHotkey(
-                self.cfg.menu_hotkey, "menu", self.hotkey_events, 47221
-            )
-        )
+            hotkeys.append(GlobalHotkey(spec, "repeat", self.hotkey_events, 47210 + index))
+        hotkeys.append(GlobalHotkey(self.cfg.mute_hotkey, "mute", self.hotkey_events, 47220))
+        hotkeys.append(GlobalHotkey(self.cfg.menu_hotkey, "menu", self.hotkey_events, 47221))
         return hotkeys
 
     def _reload_hotkeys(self) -> None:
@@ -906,8 +884,11 @@ class VoiceApp:
             try:
                 subprocess.run(
                     [
-                        "taskkill", "/PID", str(self._whisper_proc.pid),
-                        "/T", "/F",
+                        "taskkill",
+                        "/PID",
+                        str(self._whisper_proc.pid),
+                        "/T",
+                        "/F",
                     ],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -1035,9 +1016,7 @@ class VoiceApp:
                 log(f"Comando local: {handled_ms:.0f} ms")
                 return
             self._set_state(THINKING)
-            threading.Thread(
-                target=self._answer_worker, args=(text, gen), daemon=True
-            ).start()
+            threading.Thread(target=self._answer_worker, args=(text, gen), daemon=True).start()
         elif kind == "speaking":
             gen = event[1]
             if gen == self._turn_gen:
@@ -1176,7 +1155,6 @@ class VoiceApp:
         if self.muted:
             self._set_mic_muted(False, source="llamada nueva")
 
-
     def _hang_up(self) -> None:
         agent = getattr(self, "agent", None)
         if agent is not None:
@@ -1266,11 +1244,7 @@ class VoiceApp:
             return
         agent = getattr(self, "agent", None)
         if agent is not None and agent.confirm_pending:
-            if (
-                self.state == SPEAKING
-                and self.cfg.barge_in
-                and self.cfg.barge_in_rms > 0
-            ):
+            if self.state == SPEAKING and self.cfg.barge_in and self.cfg.barge_in_rms > 0:
                 # La pregunta aún suena: un arranque de voz puede ser eco o un
                 # golpe. Corta BargeInDetector si es voz sostenida (_on_barge_in).
                 self._ignore_utterance = True
@@ -1470,11 +1444,7 @@ class VoiceApp:
             )
         except Exception as exc:  # noqa: BLE001
             log(f"No pude mostrar la confirmación: {exc}")
-        hint = (
-            " Di «confirmo» y el número para aceptar."
-            if strong
-            else " ¿Confirmas?"
-        )
+        hint = " Di «confirmo» y el número para aceptar." if strong else " ¿Confirmas?"
         self._speak_same_turn(summary + hint)
 
     def _announcements(self) -> list[tuple[str, bool]]:
@@ -1508,9 +1478,7 @@ class VoiceApp:
         self._speak(text, "announce")
 
     # --------------------------------------------------------------- workers
-    def _stt_worker(
-        self, pcm: bytes, rate: int, gen: int, timing: TurnTimings
-    ) -> None:
+    def _stt_worker(self, pcm: bytes, rate: int, gen: int, timing: TurnTimings) -> None:
         try:
             text = transcribe(self.cfg, pcm_to_wav(pcm, rate))
             timing.mark("stt_ready")
@@ -1601,9 +1569,7 @@ class VoiceApp:
                 speech.abort()
             self.events.put(("answer_done", gen))
 
-    def _speech_queue(
-        self, stop_event: threading.Event, timing: TurnTimings | None
-    ) -> SpeechQueue:
+    def _speech_queue(self, stop_event: threading.Event, timing: TurnTimings | None) -> SpeechQueue:
         """Cola de voz del turno: sintetiza en el hilo del LLM y suena aparte."""
 
         def first_sound() -> None:
@@ -1623,18 +1589,14 @@ class VoiceApp:
             stop_event,
             on_sound=first_sound,
             on_synth=(
-                (lambda secs: timing.add_span("tts_synth", secs))
-                if timing is not None else None
+                (lambda secs: timing.add_span("tts_synth", secs)) if timing is not None else None
             ),
             on_play=(
-                (lambda secs: timing.add_span("tts_play", secs))
-                if timing is not None else None
+                (lambda secs: timing.add_span("tts_play", secs)) if timing is not None else None
             ),
         )
 
-    def _tts_worker(
-        self, text: str, stop_event: threading.Event, generation: int
-    ) -> None:
+    def _tts_worker(self, text: str, stop_event: threading.Event, generation: int) -> None:
         try:
             self.speaker.speak(
                 text,
@@ -1652,9 +1614,7 @@ class VoiceApp:
             return False
         return self.cfg.announce_all or address in self.watched
 
-    def _on_watcher_event(
-        self, address: str, agent: str, state: str, reason: str
-    ) -> None:
+    def _on_watcher_event(self, address: str, agent: str, state: str, reason: str) -> None:
         if address not in self.watched:
             return
         has_chains = bool(self.tasks.chains_for(address))
@@ -1669,9 +1629,7 @@ class VoiceApp:
             task = info.get("task") or (
                 "La cadena sigue pendiente: el agente de origen está bloqueado."
             )
-            self.events.put(
-                ("done_prompt", address, agent, reason, output, task)
-            )
+            self.events.put(("done_prompt", address, agent, reason, output, task))
             return
         if has_chains and reason != "done":
             self.tasks.remove_chains_for(address)
@@ -1679,9 +1637,7 @@ class VoiceApp:
         launched = self._launch_chains(address) if has_chains and reason == "done" else 0
         info = self.tasks.get(address) or {}
         if has_chains and reason != "done" and not info.get("task"):
-            info["task"] = (
-                "La cadena no se lanzó porque el agente de origen falló."
-            )
+            info["task"] = "La cadena no se lanzó porque el agente de origen falló."
         self.tasks.remove(address)
         if launched:
             # La cadena ya tiene su propio aviso al terminar el destino.
@@ -1746,9 +1702,7 @@ class VoiceApp:
             if not hasattr(self, "_condenser"):
                 self._condenser = Condenser(client, self.cfg)
             select = self._condenser.conclusion_start
-        return build_packet(
-            answer, select=select, save=getattr(self.herdr, "save_context", None)
-        )
+        return build_packet(answer, select=select, save=getattr(self.herdr, "save_context", None))
 
     def _sent_map(self) -> dict[str, str]:
         """Texto exacto que se pegó a cada agente (ancla para recortar su respuesta)."""
@@ -1849,34 +1803,60 @@ class VoiceApp:
         # los alucina con ruido y se dicen al hablar con otras personas. Solo una
         # orden explícita que nombre el micrófono silencia por voz.
         mute_words = {
-            "silencia el micro", "silencia el microfono", "silencio el micro",
-            "silencio el microfono", "mutea el micro", "mutea el microfono",
-            "silencia mi micro", "silencia mi microfono", "apaga el micro",
-            "apaga el microfono", "mutea", "muteate",
+            "silencia el micro",
+            "silencia el microfono",
+            "silencio el micro",
+            "silencio el microfono",
+            "mutea el micro",
+            "mutea el microfono",
+            "silencia mi micro",
+            "silencia mi microfono",
+            "apaga el micro",
+            "apaga el microfono",
+            "mutea",
+            "muteate",
         }
         unmute_words = {
-            "desmute", "desmutea", "unmute", "activa el micro",
-            "reactiva el micro", "activa el microfono",
+            "desmute",
+            "desmutea",
+            "unmute",
+            "activa el micro",
+            "reactiva el micro",
+            "activa el microfono",
         }
         # «Cierra la escucha» sigue el ajuste close_action (pausa o colgar);
         # despedirse o pedir colgar cuelga siempre.
         close_words = {
-            "cierra", "cierrate", "cierra la escucha", "cierra el micro",
-            "deja de escuchar", "callate", "pausa", "pausa la escucha",
-            "pon pausa", "pausate",
+            "cierra",
+            "cierrate",
+            "cierra la escucha",
+            "cierra el micro",
+            "deja de escuchar",
+            "callate",
+            "pausa",
+            "pausa la escucha",
+            "pon pausa",
+            "pausate",
         }
         hangup_words = {"adios", "cuelga", "termina la llamada", "colgar"}
         repeat_words = {"repite", "repitelo", "otra vez"}
         greet_words = {"hola", "buenas", "hola ezagent", "buenas ezagent"}
         agent_words = {
-            "que agentes hay", "que agentes tengo", "lista los agentes",
-            "agentes vivos", "cuantos agentes hay",
+            "que agentes hay",
+            "que agentes tengo",
+            "lista los agentes",
+            "agentes vivos",
+            "cuantos agentes hay",
         }
         task_words = {
-            "que tareas tienes", "que tareas pendientes",
-            "que tareas pendientes tengo", "que tareas tengo pendientes",
-            "que estas vigilando", "que tareas estas vigilando",
-            "tareas pendientes", "que tareas sigues",
+            "que tareas tienes",
+            "que tareas pendientes",
+            "que tareas pendientes tengo",
+            "que tareas tengo pendientes",
+            "que estas vigilando",
+            "que tareas estas vigilando",
+            "tareas pendientes",
+            "que tareas sigues",
             "que tareas hay pendientes",
         }
         if key in greet_words:
@@ -1895,8 +1875,10 @@ class VoiceApp:
                 self._speak("No hay agentes vivos.", "answer")
                 return True
             state_names = {
-                "working": "trabajando", "done": "terminado",
-                "blocked": "bloqueado", "idle": "inactivo",
+                "working": "trabajando",
+                "done": "terminado",
+                "blocked": "bloqueado",
+                "idle": "inactivo",
             }
             parts = []
             for agent in agents[:4]:
@@ -1927,16 +1909,11 @@ class VoiceApp:
                 task = " ".join(str(item.get("task") or "").split())
                 if len(task) > 100:
                     task = task[:99].rstrip() + "…"
-                parts.append(
-                    f"{agent} en {address}: {task or 'sin descripción'}"
-                )
+                parts.append(f"{agent} en {address}: {task or 'sin descripción'}")
             extra = len(tasks) - len(parts)
             suffix = f"; y {extra} más" if extra > 0 else ""
             self._speak(
-                f"Tengo {len(tasks)} tareas pendientes: "
-                + "; ".join(parts)
-                + suffix
-                + ".",
+                f"Tengo {len(tasks)} tareas pendientes: " + "; ".join(parts) + suffix + ".",
                 "answer",
             )
             return True
@@ -1959,9 +1936,7 @@ class VoiceApp:
             return True
         if key in repeat_words:
             log("Atajo local: repetir.")
-            self._speak(
-                self.last_summary or "No hay nada que repetir todavía.", "answer"
-            )
+            self._speak(self.last_summary or "No hay nada que repetir todavía.", "answer")
             return True
         return False
 
@@ -2020,10 +1995,7 @@ class VoiceApp:
             # hasta que termine.
             threading.Thread(target=self._refresh_devices, daemon=True).start()
 
-        values = {
-            key: getattr(self.cfg, key, None)
-            for key in (*EDITABLE_KEYS, *INSTANT_SETTINGS)
-        }
+        values = {key: getattr(self.cfg, key, None) for key in (*EDITABLE_KEYS, *INSTANT_SETTINGS)}
         values["input_device_index"] = self.mic.device_index
         values["llm_profile"] = self.cfg.llm_provider
 
@@ -2039,9 +2011,7 @@ class VoiceApp:
         profile["model"] = self.cfg.llm_model or profile.get("model", "")
         if self.cfg.api_key:
             profile["api_key"] = self.cfg.api_key
-        profile["api_style"] = self.cfg.llm_api_style or profile.get(
-            "api_style", "openai"
-        )
+        profile["api_style"] = self.cfg.llm_api_style or profile.get("api_style", "openai")
 
         try:
             stt_models = available_whisper_models(self.cfg.stt_model)
@@ -2049,9 +2019,7 @@ class VoiceApp:
             stt_models = ()
         with self._llm_models_lock:
             cached = dict(self._llm_models_cache)
-        llm_models = {
-            name: cached.get(name) or provider_models(name) for name in providers
-        }
+        llm_models = {name: cached.get(name) or provider_models(name) for name in providers}
         self._fetch_llm_models(
             current,
             self.cfg.llm_base_url,
@@ -2224,7 +2192,7 @@ class VoiceApp:
                 self.mic.max_utterance_secs = float(value)
             elif key == "barge_in_rms":
                 self.cfg.barge_in_rms = float(value)
-                self.mic.barge_in_rms = float(value)      # en vivo, sin colgar
+                self.mic.barge_in_rms = float(value)  # en vivo, sin colgar
             elif key == "voice":
                 self.cfg.voice = str(value)
                 self.speaker.set_voice(self.cfg.voice)
@@ -2283,10 +2251,7 @@ class VoiceApp:
             elif key in HOTKEY_KEYS:
                 spec = str(value or "").strip()
                 parse_hotkey(spec)
-                candidate = {
-                    item: str(getattr(self.cfg, item, "") or "")
-                    for item in HOTKEY_KEYS
-                }
+                candidate = {item: str(getattr(self.cfg, item, "") or "") for item in HOTKEY_KEYS}
                 candidate[key] = spec
                 self._check_hotkey_duplicates(candidate)
                 setattr(self.cfg, key, spec)
@@ -2462,16 +2427,12 @@ class VoiceApp:
         was_in_call = self.in_call
         device_changed = False
         restarted = False
-        old_hotkeys = tuple(
-            str(getattr(self.cfg, key, "") or "") for key in HOTKEY_KEYS
-        )
+        old_hotkeys = tuple(str(getattr(self.cfg, key, "") or "") for key in HOTKEY_KEYS)
         hotkey_values: dict[str, str] = {}
         # Valida los atajos antes de tocar la configuración: un spec inválido
         # no debe dejar el resto de ajustes a medio aplicar.
         for key in HOTKEY_KEYS:
-            spec = str(
-                values.get(key, getattr(self.cfg, key, "")) or ""
-            ).strip()
+            spec = str(values.get(key, getattr(self.cfg, key, "")) or "").strip()
             try:
                 parse_hotkey(spec)
             except ValueError as exc:
@@ -2490,29 +2451,15 @@ class VoiceApp:
 
         self.cfg.min_rms = number("min_rms", self.cfg.min_rms)
         self.cfg.silence_secs = number("silence_secs", self.cfg.silence_secs)
-        self.cfg.noise_multiplier = number(
-            "noise_multiplier", self.cfg.noise_multiplier
-        )
-        self.cfg.pre_roll_secs = number(
-            "pre_roll_secs", self.cfg.pre_roll_secs
-        )
-        self.cfg.min_speech_secs = number(
-            "min_speech_secs", self.cfg.min_speech_secs
-        )
-        self.cfg.max_utterance_secs = number(
-            "max_utterance_secs", self.cfg.max_utterance_secs
-        )
-        self.cfg.barge_in_rms = number(
-            "barge_in_rms", self.cfg.barge_in_rms
-        )
+        self.cfg.noise_multiplier = number("noise_multiplier", self.cfg.noise_multiplier)
+        self.cfg.pre_roll_secs = number("pre_roll_secs", self.cfg.pre_roll_secs)
+        self.cfg.min_speech_secs = number("min_speech_secs", self.cfg.min_speech_secs)
+        self.cfg.max_utterance_secs = number("max_utterance_secs", self.cfg.max_utterance_secs)
+        self.cfg.barge_in_rms = number("barge_in_rms", self.cfg.barge_in_rms)
         self.cfg.voice = str(values.get("voice", self.cfg.voice))
         self.cfg.speed = number("speed", self.cfg.speed)
-        self.cfg.tts_sentence_pause = number(
-            "tts_sentence_pause", self.cfg.tts_sentence_pause
-        )
-        self.cfg.tts_clause_pause = number(
-            "tts_clause_pause", self.cfg.tts_clause_pause
-        )
+        self.cfg.tts_sentence_pause = number("tts_sentence_pause", self.cfg.tts_sentence_pause)
+        self.cfg.tts_clause_pause = number("tts_clause_pause", self.cfg.tts_clause_pause)
         self.cfg.tts_model_variant = str(
             values.get("tts_model_variant", self.cfg.tts_model_variant)
         )
@@ -2522,53 +2469,33 @@ class VoiceApp:
         self.cfg.kokoro_voices_path = str(
             values.get("kokoro_voices_path", self.cfg.kokoro_voices_path)
         )
-        self.cfg.whisper_url = str(
-            values.get("whisper_url", self.cfg.whisper_url)
-        )
+        self.cfg.whisper_url = str(values.get("whisper_url", self.cfg.whisper_url))
         self.cfg.stt_model = str(values.get("stt_model", self.cfg.stt_model))
-        self.cfg.stt_engine = str(
-            values.get("stt_engine", self.cfg.stt_engine)
-        )
-        self.cfg.stt_prompt = str(
-            values.get("stt_prompt", self.cfg.stt_prompt)
-        )
-        self.cfg.stt_timeout_secs = number(
-            "stt_timeout_secs", self.cfg.stt_timeout_secs
-        )
+        self.cfg.stt_engine = str(values.get("stt_engine", self.cfg.stt_engine))
+        self.cfg.stt_prompt = str(values.get("stt_prompt", self.cfg.stt_prompt))
+        self.cfg.stt_timeout_secs = number("stt_timeout_secs", self.cfg.stt_timeout_secs)
         self.cfg.auto_start_whisper = bool(
             values.get("auto_start_whisper", self.cfg.auto_start_whisper)
         )
         self.cfg.llm_provider = normalize_provider(
             str(values.get("llm_provider", self.cfg.llm_provider))
         )
-        self.cfg.llm_model = str(
-            values.get("llm_model", self.cfg.llm_model)
-        ).strip()
-        self.cfg.llm_base_url = str(
-            values.get("llm_base_url", self.cfg.llm_base_url)
-        ).strip()
+        self.cfg.llm_model = str(values.get("llm_model", self.cfg.llm_model)).strip()
+        self.cfg.llm_base_url = str(values.get("llm_base_url", self.cfg.llm_base_url)).strip()
         self.cfg.api_key = str(values.get("api_key", self.cfg.api_key)).strip()
         self.cfg.llm_api_style = str(
             values.get("llm_api_style", self.cfg.llm_api_style) or "openai"
         )
-        self.cfg.llm_temperature = number(
-            "llm_temperature", self.cfg.llm_temperature
-        )
-        self.cfg.llm_max_tokens = int(
-            round(number("llm_max_tokens", self.cfg.llm_max_tokens))
-        )
+        self.cfg.llm_temperature = number("llm_temperature", self.cfg.llm_temperature)
+        self.cfg.llm_max_tokens = int(round(number("llm_max_tokens", self.cfg.llm_max_tokens)))
         self.cfg.llm_reasoning_effort = str(
-            values.get(
-                "llm_reasoning_effort", self.cfg.llm_reasoning_effort
-            )
+            values.get("llm_reasoning_effort", self.cfg.llm_reasoning_effort)
         )
         self.cfg.barge_in = bool(values.get("barge_in", self.cfg.barge_in))
         self.cfg.smart_turn = bool(values.get("smart_turn", self.cfg.smart_turn))
         self.cfg.turn_threshold = number("turn_threshold", self.cfg.turn_threshold)
         self._apply_turn_settings()
-        self.cfg.confirm_actions = bool(
-            values.get("confirm_actions", self.cfg.confirm_actions)
-        )
+        self.cfg.confirm_actions = bool(values.get("confirm_actions", self.cfg.confirm_actions))
 
         new_llm = (
             self.cfg.llm_provider,
@@ -2644,9 +2571,7 @@ class VoiceApp:
         for key, spec in hotkey_values.items():
             setattr(self.cfg, key, spec)
         self.cfg.save()
-        if tuple(
-            str(getattr(self.cfg, key, "") or "") for key in HOTKEY_KEYS
-        ) != old_hotkeys:
+        if tuple(str(getattr(self.cfg, key, "") or "") for key in HOTKEY_KEYS) != old_hotkeys:
             self._reload_hotkeys()
         self._saved_llm = new_llm
         if (
@@ -2672,10 +2597,7 @@ class VoiceApp:
         """Aplica el modelo elegido si el whisper-server lo arrancó esta app."""
         proc = self._whisper_proc
         if proc is None:
-            log(
-                "Modelo de Whisper guardado; se aplicará al reiniciar "
-                "whisper-server."
-            )
+            log("Modelo de Whisper guardado; se aplicará al reiniciar whisper-server.")
             return
 
         def run() -> None:
@@ -2685,9 +2607,7 @@ class VoiceApp:
                         ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
-                        creationflags=getattr(
-                            subprocess, "CREATE_NO_WINDOW", 0
-                        ),
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                     )
             except Exception:
                 pass
@@ -2756,10 +2676,8 @@ class VoiceApp:
             return
         lock = self._wake_guard()
         if not lock.acquire(blocking=False):
-            return                      # ya hay una comprobación en curso
-        threading.Thread(
-            target=self._wake_worker, args=(pcm, rate, lock), daemon=True
-        ).start()
+            return  # ya hay una comprobación en curso
+        threading.Thread(target=self._wake_worker, args=(pcm, rate, lock), daemon=True).start()
 
     def _wake_worker(self, pcm: bytes, rate: int, lock: threading.Lock) -> None:
         try:
@@ -2792,9 +2710,7 @@ class VoiceApp:
             log(f"Micrófono activo ({source or 'sin origen'}).")
         self._update_tray_title()
 
-    def _remember_task(
-        self, address: str, agent: str = "", task: str = ""
-    ) -> None:
+    def _remember_task(self, address: str, agent: str = "", task: str = "") -> None:
         try:
             self.tasks.add(address, agent, task)
         except Exception as exc:  # noqa: BLE001
@@ -2831,9 +2747,7 @@ class VoiceApp:
                     kwargs["effort"] = str(spec.get("effort"))
                 result = self.herdr.run_agent(agent, "", **kwargs)
                 if result.get("ok"):
-                    entry["address"] = str(
-                        result.get("address") or result.get("terminal") or ""
-                    )
+                    entry["address"] = str(result.get("address") or result.get("terminal") or "")
                 else:
                     log(f"No pude abrir {agent} por adelantado: {result.get('error')}")
             except Exception as exc:  # noqa: BLE001
@@ -2924,14 +2838,9 @@ class VoiceApp:
                 log(f"No pude lanzar la cadena {source} → {agent}: {exc}")
                 continue
             if not result.get("ok"):
-                log(
-                    f"La cadena {source} → {agent} falló: "
-                    f"{result.get('error')}"
-                )
+                log(f"La cadena {source} → {agent} falló: {result.get('error')}")
                 continue
-            address = str(
-                result.get("address") or result.get("terminal") or ""
-            ).strip()
+            address = str(result.get("address") or result.get("terminal") or "").strip()
             if address:
                 self._sent_map()[address] = handoff
             launched += 1
@@ -2950,16 +2859,11 @@ class VoiceApp:
                 )
             if address and spec.get("deliver_answer"):
                 self._deliver_answer(address)
-            if address and (
-                spec.get("notify_on_done") or spec.get("deliver_answer")
-            ):
+            if address and (spec.get("notify_on_done") or spec.get("deliver_answer")):
                 shown = task.replace("{output}", "").strip(" :")
                 self._remember_task(address, agent, shown or task)
                 self._watch(address)
-                log(
-                    f"Cadena lanzada: {source} → {agent} ({address}); "
-                    "avisaré al terminar."
-                )
+                log(f"Cadena lanzada: {source} → {agent} ({address}); avisaré al terminar.")
             else:
                 log(f"Cadena lanzada: {source} → {agent}.")
         return launched
@@ -3004,10 +2908,8 @@ class VoiceApp:
                         agent.get("agent") or info.get("agent") or "agente",
                         "blocked",
                         output,
-                        info.get("task") or (
-                            "La cadena sigue pendiente: el agente de origen "
-                            "está bloqueado."
-                        ),
+                        info.get("task")
+                        or ("La cadena sigue pendiente: el agente de origen está bloqueado."),
                     )
                 )
                 return
@@ -3020,12 +2922,7 @@ class VoiceApp:
         info = self.tasks.get(address)
         if info is None:
             if state == "error" and had_chains:
-                info = {
-                    "task": (
-                        "La cadena no se lanzó porque el agente de origen "
-                        "falló."
-                    )
-                }
+                info = {"task": ("La cadena no se lanzó porque el agente de origen falló.")}
             else:
                 self.watched.discard(address)
                 return
@@ -3052,9 +2949,7 @@ class VoiceApp:
             user_text = ""
             messenger = getattr(self, "messenger", None)
             if messenger is not None:
-                user_text = str(
-                    getattr(messenger, "_last_user_text", "") or ""
-                )
+                user_text = str(getattr(messenger, "_last_user_text", "") or "")
             self._remember_task(address, "", user_text)
         self._check_task_now(address)
 
@@ -3261,7 +3156,9 @@ def main() -> None:
         return
 
     if not cfg.api_key and needs_api_key(cfg.llm_provider, cfg.llm_base_url):
-        log(f"Falta la API key del proveedor {cfg.llm_provider}. Configura LLM_API_KEY o la variable del proveedor en .env o llm.json.")
+        log(
+            f"Falta la API key del proveedor {cfg.llm_provider}. Configura LLM_API_KEY o la variable del proveedor en .env o llm.json."
+        )
         raise SystemExit(1)
 
     if args.ask:
@@ -3281,9 +3178,7 @@ def main() -> None:
         return
 
     log(f"Configuración: {args.config or config_path()}")
-    tasks_path = (
-        args.config.with_name("tasks.json") if args.config else None
-    )
+    tasks_path = args.config.with_name("tasks.json") if args.config else None
     app = VoiceApp(
         cfg,
         tasks_path=tasks_path,

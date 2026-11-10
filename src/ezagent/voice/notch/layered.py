@@ -31,11 +31,11 @@ import numpy as np
 
 # ------------------------------------------------------------------ geometría
 # Unidades lógicas (se escalan por DPI): 1 u = 1 px a 96 ppp.
-EDGE_MARGIN = 18               # separación al borde del área de trabajo
+EDGE_MARGIN = 18  # separación al borde del área de trabajo
 
 # Tokens de DESIGN.md
-_ACCENT_DARK = (91, 157, 255)      # #5B9DFF
-_ACCENT_LIGHT = (0, 102, 204)      # #0066CC
+_ACCENT_DARK = (91, 157, 255)  # #5B9DFF
+_ACCENT_LIGHT = (0, 102, 204)  # #0066CC
 
 # Degradado de la onda: teal -> azul -> violeta (igual que la barra).
 
@@ -50,27 +50,29 @@ if _IS_WIN:
     _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
     try:
         _sh32 = ctypes.WinDLL("shell32", use_last_error=True)
-    except OSError:                                   # pragma: no cover
+    except OSError:  # pragma: no cover
         _sh32 = None
 
-    WNDPROC = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, ctypes.c_void_p,
-                                 ctypes.c_uint, ctypes.c_size_t,
-                                 ctypes.c_ssize_t)
+    WNDPROC = ctypes.WINFUNCTYPE(
+        ctypes.c_ssize_t, ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t
+    )
     HWND = ctypes.c_void_p
 
     class _WNDCLASSEXW(ctypes.Structure):
-        _fields_ = [("cbSize", wintypes.UINT),
-                    ("style", wintypes.UINT),
-                    ("lpfnWndProc", WNDPROC),
-                    ("cbClsExtra", ctypes.c_int),
-                    ("cbWndExtra", ctypes.c_int),
-                    ("hInstance", ctypes.c_void_p),
-                    ("hIcon", ctypes.c_void_p),
-                    ("hCursor", ctypes.c_void_p),
-                    ("hbrBackground", ctypes.c_void_p),
-                    ("lpszMenuName", ctypes.c_wchar_p),
-                    ("lpszClassName", ctypes.c_wchar_p),
-                    ("hIconSm", ctypes.c_void_p)]
+        _fields_ = [
+            ("cbSize", wintypes.UINT),
+            ("style", wintypes.UINT),
+            ("lpfnWndProc", WNDPROC),
+            ("cbClsExtra", ctypes.c_int),
+            ("cbWndExtra", ctypes.c_int),
+            ("hInstance", ctypes.c_void_p),
+            ("hIcon", ctypes.c_void_p),
+            ("hCursor", ctypes.c_void_p),
+            ("hbrBackground", ctypes.c_void_p),
+            ("lpszMenuName", ctypes.c_wchar_p),
+            ("lpszClassName", ctypes.c_wchar_p),
+            ("hIconSm", ctypes.c_void_p),
+        ]
 
     class _POINT(ctypes.Structure):
         _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
@@ -79,51 +81,76 @@ if _IS_WIN:
         _fields_ = [("cx", ctypes.c_long), ("cy", ctypes.c_long)]
 
     class _RECT(ctypes.Structure):
-        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
-                    ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+        _fields_ = [
+            ("left", ctypes.c_long),
+            ("top", ctypes.c_long),
+            ("right", ctypes.c_long),
+            ("bottom", ctypes.c_long),
+        ]
 
     class _MONITORINFO(ctypes.Structure):
-        _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", _RECT),
-                    ("rcWork", _RECT), ("dwFlags", wintypes.DWORD)]
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("rcMonitor", _RECT),
+            ("rcWork", _RECT),
+            ("dwFlags", wintypes.DWORD),
+        ]
 
     class _BLENDFUNCTION(ctypes.Structure):
-        _fields_ = [("BlendOp", ctypes.c_byte), ("BlendFlags", ctypes.c_byte),
-                    ("SrcConstantAlpha", ctypes.c_byte),
-                    ("AlphaFormat", ctypes.c_byte)]
+        _fields_ = [
+            ("BlendOp", ctypes.c_byte),
+            ("BlendFlags", ctypes.c_byte),
+            ("SrcConstantAlpha", ctypes.c_byte),
+            ("AlphaFormat", ctypes.c_byte),
+        ]
 
     class _BITMAPINFOHEADER(ctypes.Structure):
-        _fields_ = [("biSize", ctypes.c_ulong), ("biWidth", ctypes.c_long),
-                    ("biHeight", ctypes.c_long),
-                    ("biPlanes", ctypes.c_ushort),
-                    ("biBitCount", ctypes.c_ushort),
-                    ("biCompression", ctypes.c_ulong),
-                    ("biSizeImage", ctypes.c_ulong),
-                    ("biXPelsPerMeter", ctypes.c_long),
-                    ("biYPelsPerMeter", ctypes.c_long),
-                    ("biClrUsed", ctypes.c_ulong),
-                    ("biClrImportant", ctypes.c_ulong)]
+        _fields_ = [
+            ("biSize", ctypes.c_ulong),
+            ("biWidth", ctypes.c_long),
+            ("biHeight", ctypes.c_long),
+            ("biPlanes", ctypes.c_ushort),
+            ("biBitCount", ctypes.c_ushort),
+            ("biCompression", ctypes.c_ulong),
+            ("biSizeImage", ctypes.c_ulong),
+            ("biXPelsPerMeter", ctypes.c_long),
+            ("biYPelsPerMeter", ctypes.c_long),
+            ("biClrUsed", ctypes.c_ulong),
+            ("biClrImportant", ctypes.c_ulong),
+        ]
 
     class _CREATESTRUCTW(ctypes.Structure):
-        _fields_ = [("lpCreateParams", ctypes.c_void_p),
-                    ("hInstance", ctypes.c_void_p),
-                    ("hMenu", ctypes.c_void_p),
-                    ("hwndParent", ctypes.c_void_p),
-                    ("cy", ctypes.c_int), ("cx", ctypes.c_int),
-                    ("y", ctypes.c_int), ("x", ctypes.c_int),
-                    ("style", ctypes.c_long),
-                    ("lpszName", ctypes.c_wchar_p),
-                    ("lpszClass", ctypes.c_wchar_p),
-                    ("dwExStyle", ctypes.c_ulong)]
+        _fields_ = [
+            ("lpCreateParams", ctypes.c_void_p),
+            ("hInstance", ctypes.c_void_p),
+            ("hMenu", ctypes.c_void_p),
+            ("hwndParent", ctypes.c_void_p),
+            ("cy", ctypes.c_int),
+            ("cx", ctypes.c_int),
+            ("y", ctypes.c_int),
+            ("x", ctypes.c_int),
+            ("style", ctypes.c_long),
+            ("lpszName", ctypes.c_wchar_p),
+            ("lpszClass", ctypes.c_wchar_p),
+            ("dwExStyle", ctypes.c_ulong),
+        ]
 
     class _TRACKMOUSEEVENT(ctypes.Structure):
-        _fields_ = [("cbSize", wintypes.DWORD), ("dwFlags", wintypes.DWORD),
-                    ("hwndTrack", ctypes.c_void_p),
-                    ("dwHoverTime", wintypes.DWORD)]
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("dwFlags", wintypes.DWORD),
+            ("hwndTrack", ctypes.c_void_p),
+            ("dwHoverTime", wintypes.DWORD),
+        ]
 
     class _MSLLHOOKSTRUCT(ctypes.Structure):
-        _fields_ = [("pt", _POINT), ("mouseData", wintypes.DWORD),
-                    ("flags", wintypes.DWORD), ("time", wintypes.DWORD),
-                    ("dwExtraInfo", ctypes.c_size_t)]
+        _fields_ = [
+            ("pt", _POINT),
+            ("mouseData", wintypes.DWORD),
+            ("flags", wintypes.DWORD),
+            ("time", wintypes.DWORD),
+            ("dwExtraInfo", ctypes.c_size_t),
+        ]
 
     _HOOKPROC = ctypes.WINFUNCTYPE(
         ctypes.c_ssize_t, ctypes.c_int, ctypes.c_size_t, ctypes.c_ssize_t
@@ -138,13 +165,26 @@ if _IS_WIN:
         u.RegisterClassExW.restype = ctypes.c_ushort
         u.UnregisterClassW.argtypes = [ctypes.c_wchar_p, ctypes.c_void_p]
         u.CreateWindowExW.argtypes = [
-            wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
-            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
-            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
-            ctypes.c_void_p]
+            wintypes.DWORD,
+            wintypes.LPCWSTR,
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
         u.CreateWindowExW.restype = ctypes.c_void_p
-        u.DefWindowProcW.argtypes = [ctypes.c_void_p, ctypes.c_uint,
-                                     ctypes.c_size_t, ctypes.c_ssize_t]
+        u.DefWindowProcW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint,
+            ctypes.c_size_t,
+            ctypes.c_ssize_t,
+        ]
         u.DefWindowProcW.restype = ctypes.c_ssize_t
         u.DestroyWindow.argtypes = [ctypes.c_void_p]
         u.DestroyWindow.restype = wintypes.BOOL
@@ -153,8 +193,14 @@ if _IS_WIN:
         u.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
         u.ShowWindow.restype = wintypes.BOOL
         u.SetWindowPos.argtypes = [
-            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int,
-            ctypes.c_int, ctypes.c_int, wintypes.UINT]
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            wintypes.UINT,
+        ]
         u.SetWindowPos.restype = wintypes.BOOL
         u.LoadCursorW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
         u.LoadCursorW.restype = ctypes.c_void_p
@@ -170,19 +216,31 @@ if _IS_WIN:
         u.ReleaseCapture.restype = wintypes.BOOL
         u.TrackMouseEvent.argtypes = [ctypes.POINTER(_TRACKMOUSEEVENT)]
         u.TrackMouseEvent.restype = wintypes.BOOL
-        u.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint,
-                                   ctypes.c_size_t, ctypes.c_ssize_t]
+        u.PostMessageW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint,
+            ctypes.c_size_t,
+            ctypes.c_ssize_t,
+        ]
         u.PostMessageW.restype = wintypes.BOOL
-        u.PeekMessageW.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
-                                   wintypes.UINT, wintypes.UINT,
-                                   wintypes.UINT]
+        u.PeekMessageW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            wintypes.UINT,
+            wintypes.UINT,
+            wintypes.UINT,
+        ]
         u.PeekMessageW.restype = wintypes.BOOL
         u.TranslateMessage.argtypes = [ctypes.c_void_p]
         u.TranslateMessage.restype = wintypes.BOOL
         u.DispatchMessageW.argtypes = [ctypes.c_void_p]
         u.DispatchMessageW.restype = ctypes.c_ssize_t
         u.SystemParametersInfoW.argtypes = [
-            wintypes.UINT, wintypes.UINT, ctypes.c_void_p, wintypes.UINT]
+            wintypes.UINT,
+            wintypes.UINT,
+            ctypes.c_void_p,
+            wintypes.UINT,
+        ]
         u.SystemParametersInfoW.restype = wintypes.BOOL
         u.GetSystemMetrics.argtypes = [ctypes.c_int]
         u.GetSystemMetrics.restype = ctypes.c_int
@@ -190,9 +248,7 @@ if _IS_WIN:
         u.FindWindowW.restype = ctypes.c_void_p
         u.MonitorFromPoint.argtypes = [_POINT, wintypes.DWORD]
         u.MonitorFromPoint.restype = ctypes.c_void_p
-        u.GetMonitorInfoW.argtypes = [
-            ctypes.c_void_p, ctypes.POINTER(_MONITORINFO)
-        ]
+        u.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(_MONITORINFO)]
         u.GetMonitorInfoW.restype = wintypes.BOOL
         u.GetWindowRect.argtypes = [ctypes.c_void_p, ctypes.POINTER(_RECT)]
         u.GetWindowRect.restype = wintypes.BOOL
@@ -206,9 +262,7 @@ if _IS_WIN:
         u.GetFocus.restype = ctypes.c_void_p
         u.GetWindowLongPtrW.argtypes = [ctypes.c_void_p, ctypes.c_int]
         u.GetWindowLongPtrW.restype = ctypes.c_ssize_t
-        u.SetWindowLongPtrW.argtypes = [
-            ctypes.c_void_p, ctypes.c_int, ctypes.c_ssize_t
-        ]
+        u.SetWindowLongPtrW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_ssize_t]
         u.SetWindowLongPtrW.restype = ctypes.c_ssize_t
         u.OpenClipboard.argtypes = [ctypes.c_void_p]
         u.OpenClipboard.restype = wintypes.BOOL
@@ -222,21 +276,28 @@ if _IS_WIN:
         k.GlobalLock.restype = ctypes.c_void_p
         k.GlobalUnlock.argtypes = [ctypes.c_void_p]
         k.GlobalUnlock.restype = wintypes.BOOL
-        u.SetWindowsHookExW.argtypes = [
-            ctypes.c_int, _HOOKPROC, ctypes.c_void_p, wintypes.DWORD
-        ]
+        u.SetWindowsHookExW.argtypes = [ctypes.c_int, _HOOKPROC, ctypes.c_void_p, wintypes.DWORD]
         u.SetWindowsHookExW.restype = ctypes.c_void_p
         u.UnhookWindowsHookEx.argtypes = [ctypes.c_void_p]
         u.UnhookWindowsHookEx.restype = wintypes.BOOL
         u.CallNextHookEx.argtypes = [
-            ctypes.c_void_p, ctypes.c_int, ctypes.c_size_t, ctypes.c_ssize_t
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_size_t,
+            ctypes.c_ssize_t,
         ]
         u.CallNextHookEx.restype = ctypes.c_ssize_t
         u.UpdateLayeredWindow.argtypes = [
-            ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(_POINT),
-            ctypes.POINTER(_SIZE), ctypes.c_void_p,
-            ctypes.POINTER(_POINT), wintypes.DWORD,
-            ctypes.POINTER(_BLENDFUNCTION), wintypes.DWORD]
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(_POINT),
+            ctypes.POINTER(_SIZE),
+            ctypes.c_void_p,
+            ctypes.POINTER(_POINT),
+            wintypes.DWORD,
+            ctypes.POINTER(_BLENDFUNCTION),
+            wintypes.DWORD,
+        ]
         u.UpdateLayeredWindow.restype = wintypes.BOOL
         if hasattr(u, "GetDpiForSystem"):
             u.GetDpiForSystem.argtypes = []
@@ -245,8 +306,13 @@ if _IS_WIN:
         g.CreateCompatibleDC.argtypes = [ctypes.c_void_p]
         g.CreateCompatibleDC.restype = ctypes.c_void_p
         g.CreateDIBSection.argtypes = [
-            ctypes.c_void_p, ctypes.POINTER(_BITMAPINFOHEADER), wintypes.UINT,
-            ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD]
+            ctypes.c_void_p,
+            ctypes.POINTER(_BITMAPINFOHEADER),
+            wintypes.UINT,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+        ]
         g.CreateDIBSection.restype = ctypes.c_void_p
         g.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
         g.SelectObject.restype = ctypes.c_void_p
@@ -258,8 +324,12 @@ if _IS_WIN:
         if _sh32 is not None:
             _sh32.DragAcceptFiles.argtypes = [ctypes.c_void_p, wintypes.BOOL]
             _sh32.DragAcceptFiles.restype = None
-            _sh32.DragQueryFileW.argtypes = [ctypes.c_void_p, wintypes.UINT,
-                                             wintypes.LPWSTR, wintypes.UINT]
+            _sh32.DragQueryFileW.argtypes = [
+                ctypes.c_void_p,
+                wintypes.UINT,
+                wintypes.LPWSTR,
+                wintypes.UINT,
+            ]
             _sh32.DragQueryFileW.restype = wintypes.UINT
             _sh32.DragFinish.argtypes = [ctypes.c_void_p]
             _sh32.DragFinish.restype = None
@@ -267,9 +337,9 @@ if _IS_WIN:
     try:
         _prototypes()
         _PROTO_OK = True
-    except Exception:                                  # pragma: no cover
+    except Exception:  # pragma: no cover
         _PROTO_OK = False
-else:                                                  # pragma: no cover
+else:  # pragma: no cover
     _PROTO_OK = False
 
 # HWND_TOPMOST = (HWND)-1
@@ -382,21 +452,21 @@ def clamp_pos(x, y, size):
     y = min(max(int(y), wa[1] + m), max(wa[1] + m, wa[3] - int(size) - m))
     tb = taskbar_rect()
     if tb and tb[1] > wa[1] + (wa[3] - wa[1]) // 2:
-        y = min(y, tb[1] - int(size) - m)       # por encima de la barra
+        y = min(y, tb[1] - int(size) - m)  # por encima de la barra
     return (x, y)
 
 
 def _lbutton_down():
     """Estado REAL del botón izquierdo (no la cola de eventos)."""
     try:
-        return bool(_u32.GetAsyncKeyState(0x01) & 0x8000)     # VK_LBUTTON
+        return bool(_u32.GetAsyncKeyState(0x01) & 0x8000)  # VK_LBUTTON
     except Exception:
         return True
 
 
 # ----------------------------------------------------------- ventana layered
-_WINDOWS = {}                       # wm_id -> instancia
-_BY_HWND = {}                       # hwnd   -> instancia
+_WINDOWS = {}  # wm_id -> instancia
+_BY_HWND = {}  # hwnd   -> instancia
 _WM_SEQ = [0]
 _CLASS_ATOM = [None]
 _CLASS_LOCK = threading.Lock()
@@ -435,7 +505,7 @@ def _ensure_class():
             return True
         wc = _WNDCLASSEXW()
         wc.cbSize = ctypes.sizeof(_WNDCLASSEXW)
-        wc.style = 0x0002 | 0x0001                # CS_HREDRAW | CS_VREDRAW
+        wc.style = 0x0002 | 0x0001  # CS_HREDRAW | CS_VREDRAW
         wc.lpfnWndProc = _wndproc
         wc.hInstance = _instance()
         wc.hCursor = _u32.LoadCursorW(None, ctypes.c_void_p(32512))  # IDC_ARROW
@@ -443,7 +513,7 @@ def _ensure_class():
         atom = _u32.RegisterClassExW(ctypes.byref(wc))
         if not atom:
             err = ctypes.get_last_error()
-            if err == 1410:                       # ERROR_CLASS_ALREADY_EXISTS
+            if err == 1410:  # ERROR_CLASS_ALREADY_EXISTS
                 _CLASS_ATOM[0] = 1
                 return True
             return False
@@ -526,6 +596,7 @@ def _registry_readable() -> bool:
     except Exception:
         return False
 
+
 # Margen del reloj: Windows despierta en milisegundos enteros. Sin margen, un
 # despertar a los 16,4 ms con un intervalo de 16,7 ms (60 fps) saltaba el
 # fotograma y lo pintaba a los 33 ms: un tirón cada pocos cuadros.
@@ -571,14 +642,14 @@ class LayeredWindow:
         self._wid = _WM_SEQ[0] = _WM_SEQ[0] + 1
         self._stop = threading.Event()
         self._thread = None
-        self._lock = threading.RLock()          # protege DIB y hwnd
+        self._lock = threading.RLock()  # protege DIB y hwnd
         self._dc = None
         self._bmp = None
         self._old = None
         self._bits = None
-        self._frame = None                      # último BGRA (para hit-test)
-        self._img = None                        # último PIL RGBA (depuración)
-        self._dib_size = (0, 0)                 # tamaño real del DIB actual
+        self._frame = None  # último BGRA (para hit-test)
+        self._img = None  # último PIL RGBA (depuración)
+        self._dib_size = (0, 0)  # tamaño real del DIB actual
         self._visible = False
         self._keyboard = False
         self._previous_foreground = 0
@@ -590,7 +661,7 @@ class LayeredWindow:
         self._last_paint = 0.0
         self._interval = 1.0 / 20.0
         self._hover = None
-        self._hits = []                         # [(x1,y1,x2,y2,accion)]
+        self._hits = []  # [(x1,y1,x2,y2,accion)]
         self._dragging = False
         self._pointer_active = False
         self._drag_off = (0, 0)
@@ -598,8 +669,8 @@ class LayeredWindow:
         self._tracking = False
         self._created = threading.Event()
         self._ok = False
-        self.max_height = 0                     # alto máximo reservado (px físicos)
-        self.diag = ""                          # motivo real si algo falla
+        self.max_height = 0  # alto máximo reservado (px físicos)
+        self.diag = ""  # motivo real si algo falla
 
     # ---- API pública
     def start(self):
@@ -613,8 +684,7 @@ class LayeredWindow:
             self.show()
             return True
         self._stop.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True,
-                                        name=f"ezagent-{self.title}")
+        self._thread = threading.Thread(target=self._run, daemon=True, name=f"ezagent-{self.title}")
         self._thread.start()
         self._created.wait(timeout=4.0)
         return self._ok
@@ -642,12 +712,12 @@ class LayeredWindow:
             hwnd = self.hwnd
         if hwnd:
             try:
-                _u32.ShowWindow(hwnd, 4)          # SW_SHOWNOACTIVATE
+                _u32.ShowWindow(hwnd, 4)  # SW_SHOWNOACTIVATE
                 # Sin SWP_NOZORDER: el notch se reafirma por encima de la
                 # barra de tareas (también es topmost) al mostrarse.
-                _u32.SetWindowPos(hwnd, _HWND_TOPMOST, self.x, self.y,
-                                  self.w, self.h,
-                                  _SWP_NOACTIVATE)
+                _u32.SetWindowPos(
+                    hwnd, _HWND_TOPMOST, self.x, self.y, self.w, self.h, _SWP_NOACTIVATE
+                )
             except Exception:
                 pass
 
@@ -658,10 +728,9 @@ class LayeredWindow:
             hwnd = self.hwnd
         if hwnd:
             try:
-                _u32.ShowWindow(hwnd, 0)          # SW_HIDE
+                _u32.ShowWindow(hwnd, 0)  # SW_HIDE
             except Exception:
                 pass
-
 
     def set_pos(self, x, y):
         self.x, self.y = int(x), int(y)
@@ -672,11 +741,11 @@ class LayeredWindow:
             try:
                 # Sin SWP_NOZORDER: cada movimiento reafirma el topmost para
                 # que la píldora siga visible aunque esté sobre la taskbar.
-                _u32.SetWindowPos(hwnd, _HWND_TOPMOST, self.x, self.y, 0, 0,
-                                  _SWP_NOSIZE | _SWP_NOACTIVATE)
+                _u32.SetWindowPos(
+                    hwnd, _HWND_TOPMOST, self.x, self.y, 0, 0, _SWP_NOSIZE | _SWP_NOACTIVATE
+                )
             except Exception:
                 pass
-
 
     def resize(self, w, h):
         """Cambia el tamaño (recrea el DIB dentro del hilo de dibujo)."""
@@ -686,15 +755,14 @@ class LayeredWindow:
         self._pending_resize = True
         self._dirty = True
 
-
     # ---- a sobrescribir
-    def render(self):                                  # pragma: no cover
+    def render(self):  # pragma: no cover
         return np.zeros((self.h, self.w, 4), np.uint8)
 
-    def on_click(self, action):                        # pragma: no cover
+    def on_click(self, action):  # pragma: no cover
         pass
 
-    def on_files(self, paths):                         # pragma: no cover
+    def on_files(self, paths):  # pragma: no cover
         pass
 
     # ---- teclado (solo mientras se edita un campo de texto)
@@ -742,12 +810,8 @@ class LayeredWindow:
     def _on_mouse_hook(self, code, wparam, lparam):
         try:
             if code >= 0 and int(wparam) == _WM_MOUSEWHEEL:
-                data = ctypes.cast(
-                    lparam, ctypes.POINTER(_MSLLHOOKSTRUCT)
-                ).contents
-                delta = ctypes.c_short(
-                    (int(data.mouseData) >> 16) & 0xFFFF
-                ).value
+                data = ctypes.cast(lparam, ctypes.POINTER(_MSLLHOOKSTRUCT)).contents
+                delta = ctypes.c_short((int(data.mouseData) >> 16) & 0xFFFF).value
                 if self.on_global_wheel(int(data.pt.x), int(data.pt.y), delta):
                     return 1
         except Exception:
@@ -766,9 +830,7 @@ class LayeredWindow:
                 self._restore_foreground_at = 0.0
                 self._restore_foreground_hwnd = 0
                 try:
-                    self._previous_foreground = int(
-                        _u32.GetForegroundWindow() or 0
-                    )
+                    self._previous_foreground = int(_u32.GetForegroundWindow() or 0)
                 except Exception:
                     self._previous_foreground = 0
             style = int(_u32.GetWindowLongPtrW(hwnd, _GWL_EXSTYLE))
@@ -778,7 +840,7 @@ class LayeredWindow:
                 style |= _WS_EX_NOACTIVATE
             _u32.SetWindowLongPtrW(hwnd, _GWL_EXSTYLE, style)
             if enabled:
-                _u32.ShowWindow(hwnd, 4)      # SW_SHOWNOACTIVATE
+                _u32.ShowWindow(hwnd, 4)  # SW_SHOWNOACTIVATE
                 _u32.SetForegroundWindow(hwnd)
                 _u32.SetFocus(hwnd)
             else:
@@ -882,19 +944,28 @@ class LayeredWindow:
             if not _ensure_class():
                 return
             hwnd = _u32.CreateWindowExW(
-                0x00080000 |          # WS_EX_LAYERED
-                0x00000200 |          # WS_EX_TOOLWINDOW
-                0x00000008 |          # WS_EX_TOPMOST
-                0x08000000 |          # WS_EX_NOACTIVATE
-                (0x00000020 if self.click_through else 0),   # WS_EX_TRANSPARENT
-                _CLASS_NAME, self.title, 0x80000000,          # WS_POPUP
-                self.x, self.y, self.w, self.h, None, None,
-                _instance(), ctypes.c_void_p(self._wid))
+                0x00080000  # WS_EX_LAYERED
+                | 0x00000200  # WS_EX_TOOLWINDOW
+                | 0x00000008  # WS_EX_TOPMOST
+                | 0x08000000  # WS_EX_NOACTIVATE
+                | (0x00000020 if self.click_through else 0),  # WS_EX_TRANSPARENT
+                _CLASS_NAME,
+                self.title,
+                0x80000000,  # WS_POPUP
+                self.x,
+                self.y,
+                self.w,
+                self.h,
+                None,
+                None,
+                _instance(),
+                ctypes.c_void_p(self._wid),
+            )
             if not hwnd:
                 return
             self.hwnd = int(hwnd)
             _BY_HWND[self.hwnd] = self
-            _WINDOWS[self._wid] = self      # el WndProc busca aqui su instancia
+            _WINDOWS[self._wid] = self  # el WndProc busca aqui su instancia
             if _sh32 is not None:
                 try:
                     _sh32.DragAcceptFiles(hwnd, True)
@@ -917,13 +988,15 @@ class LayeredWindow:
             _u32.ShowWindow(self.hwnd, 4)
             # Reafirma TOPMOST sin SWP_NOZORDER: recien creada, la ventana
             # puede quedarse por debajo de otra topmost y parecer invisible.
-            _u32.SetWindowPos(self.hwnd, _HWND_TOPMOST, self.x, self.y,
-                              self.w, self.h, _SWP_NOACTIVATE)
+            _u32.SetWindowPos(
+                self.hwnd, _HWND_TOPMOST, self.x, self.y, self.w, self.h, _SWP_NOACTIVATE
+            )
         else:
             _u32.ShowWindow(self.hwnd, 0)
 
         try:
             import ctypes as _ct
+
             if hasattr(_ct, "windll") and hasattr(_ct.windll, "winmm"):
                 _ct.windll.winmm.timeBeginPeriod(1)
         except Exception:
@@ -935,8 +1008,7 @@ class LayeredWindow:
                 self._restore_focus_if_due()
                 now = time.monotonic()
                 interval = self._interval
-                if self._visible and (self._dirty
-                                      or frame_due(now, self._last_paint, interval)):
+                if self._visible and (self._dirty or frame_due(now, self._last_paint, interval)):
                     mark = paint_mark(now, self._last_paint, interval)
                     self._paint(now)
                     self._last_paint = mark
@@ -959,6 +1031,7 @@ class LayeredWindow:
             self._dib_release()
             try:
                 import ctypes as _ct
+
                 _ct.windll.winmm.timeEndPeriod(1)
             except Exception:
                 pass
@@ -976,15 +1049,20 @@ class LayeredWindow:
     def _pump(self):
         """Extrae y despacha mensajes de ESTE hilo (no bloqueante)."""
         if self._MSG is None:
+
             class _M(ctypes.Structure):
-                _fields_ = [("hwnd", ctypes.c_void_p), ("message", ctypes.c_uint),
-                            ("wParam", ctypes.c_size_t),
-                            ("lParam", ctypes.c_ssize_t),
-                            ("time", ctypes.c_ulong),
-                            ("pt", _POINT)]
+                _fields_ = [
+                    ("hwnd", ctypes.c_void_p),
+                    ("message", ctypes.c_uint),
+                    ("wParam", ctypes.c_size_t),
+                    ("lParam", ctypes.c_ssize_t),
+                    ("time", ctypes.c_ulong),
+                    ("pt", _POINT),
+                ]
+
             LayeredWindow._MSG = _M
         msg = self._MSG()
-        while _u32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):   # PM_REMOVE
+        while _u32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):  # PM_REMOVE
             _u32.TranslateMessage(ctypes.byref(msg))
             _u32.DispatchMessageW(ctypes.byref(msg))
 
@@ -1001,8 +1079,8 @@ class LayeredWindow:
             self._dc = _g32.CreateCompatibleDC(None)
             self._bits = ctypes.c_void_p()
             self._bmp = _g32.CreateDIBSection(
-                self._dc, ctypes.byref(bi), 0, ctypes.byref(self._bits),
-                None, 0)
+                self._dc, ctypes.byref(bi), 0, ctypes.byref(self._bits), None, 0
+            )
             if not self._bmp or not self._bits:
                 self._dib_release_locked()
                 return False
@@ -1059,8 +1137,7 @@ class LayeredWindow:
             target_h = max(fh, int(getattr(self, "max_height", 0) or 0))
             if not self._bits or dib_w != fw or dib_h < fh:
                 if not self._dib_create(fw, max(target_h, fh)):
-                    self.diag = ("CreateDIBSection fallo "
-                                 f"({ctypes.get_last_error()})")
+                    self.diag = f"CreateDIBSection fallo ({ctypes.get_last_error()})"
                     self._dirty = False
                     return
                 dib_w, dib_h = self._dib_size
@@ -1081,20 +1158,25 @@ class LayeredWindow:
             self.w, self.h = fw, fh
             self._frame = frame
         if window_resized and hwnd:
-            _u32.SetWindowPos(hwnd, _HWND_TOPMOST, self.x, self.y, fw, fh,
-                              _SWP_NOACTIVATE)
+            _u32.SetWindowPos(hwnd, _HWND_TOPMOST, self.x, self.y, fw, fh, _SWP_NOACTIVATE)
         pt_src = _POINT(0, 0)
         pt_dst = _POINT(self.x, self.y)
         size = _SIZE(fw, fh)
         blend = _BLENDFUNCTION(0, 0, 255, 1)
-        if not _u32.UpdateLayeredWindow(hwnd, None, ctypes.byref(pt_dst),
-                                       ctypes.byref(size), dc,
-                                       ctypes.byref(pt_src), 0,
-                                       ctypes.byref(blend), 2):
+        if not _u32.UpdateLayeredWindow(
+            hwnd,
+            None,
+            ctypes.byref(pt_dst),
+            ctypes.byref(size),
+            dc,
+            ctypes.byref(pt_src),
+            0,
+            ctypes.byref(blend),
+            2,
+        ):
             # Un fallo aqui es invisible salvo por esto: la ventana existe pero
             # se queda vacia y parece que "no funciona el chrome".
-            self.diag = ("UpdateLayeredWindow fallo "
-                         f"({ctypes.get_last_error()})")
+            self.diag = f"UpdateLayeredWindow fallo ({ctypes.get_last_error()})"
         else:
             self.diag = ""
         self._dirty = False
@@ -1111,7 +1193,7 @@ class LayeredWindow:
             return 0
 
     def _hit_at(self, x, y):
-        for (x1, y1, x2, y2, act) in self._hits:
+        for x1, y1, x2, y2, act in self._hits:
             if x1 <= x <= x2 and y1 <= y <= y2:
                 return act
         return None
@@ -1146,7 +1228,7 @@ class LayeredWindow:
             lx, ly = cx - self.x, cy - self.y
             if self._alpha_at(lx, ly) <= 0:
                 return _HTTRANSPARENT
-            return 1                                  # HTCLIENT
+            return 1  # HTCLIENT
         if msg == _WM_PAINT:
             return 0
         if msg == _WM_DPICHANGED:
@@ -1159,7 +1241,7 @@ class LayeredWindow:
         if msg == _WM_KEYDOWN and self._keyboard:
             vk = int(wparam or 0) & 0xFFFF
             ctrl = bool(_u32.GetAsyncKeyState(0x11) & 0x8000)
-            if vk == 86 and ctrl:          # Ctrl+V
+            if vk == 86 and ctrl:  # Ctrl+V
                 try:
                     if self.on_paste(self._clipboard_text()):
                         return 0
@@ -1208,8 +1290,7 @@ class LayeredWindow:
                     paths.append(buf.value)
                 _sh32.DragFinish(wparam)
                 if paths:
-                    threading.Thread(target=self.on_files, args=(paths,),
-                                     daemon=True).start()
+                    threading.Thread(target=self.on_files, args=(paths,), daemon=True).start()
             except Exception:
                 pass
             return 0
@@ -1257,8 +1338,9 @@ class LayeredWindow:
                         pass
             elif not self.click_through:
                 if not self._tracking:
-                    tme = _TRACKMOUSEEVENT(ctypes.sizeof(_TRACKMOUSEEVENT),
-                                           0x00000002, hwnd, 0)  # TME_LEAVE
+                    tme = _TRACKMOUSEEVENT(
+                        ctypes.sizeof(_TRACKMOUSEEVENT), 0x00000002, hwnd, 0
+                    )  # TME_LEAVE
                     _u32.TrackMouseEvent(ctypes.byref(tme))
                     self._tracking = True
                 try:
@@ -1327,8 +1409,7 @@ class LayeredWindow:
             if not was_drag:
                 act = self._hit_at(x, y)
                 if act:
-                    threading.Thread(target=self.on_click, args=(act,),
-                                     daemon=True).start()
+                    threading.Thread(target=self.on_click, args=(act,), daemon=True).start()
             else:
                 try:
                     self.on_window_drag_end(self.x, self.y)

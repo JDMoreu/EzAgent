@@ -145,11 +145,11 @@ from .tokens import (
 # estos márgenes horizontales; se nombran aquí para no dejar números sueltos.
 # --------------------------------------------------------------------------
 
-GROUP_X0: Final[float] = 19.0       # contenedor de grupo (7.2)
+GROUP_X0: Final[float] = 19.0  # contenedor de grupo (7.2)
 GROUP_X1: Final[float] = 301.0
-ROW_X0: Final[float] = 31.0         # contenido de fila (7.2)
+ROW_X0: Final[float] = 31.0  # contenido de fila (7.2)
 ROW_X1: Final[float] = 289.0
-LABEL_X: Final[float] = 23.0        # etiquetas de sección y cabecera
+LABEL_X: Final[float] = 23.0  # etiquetas de sección y cabecera
 
 # C-04 · selector en línea y lista desplegada.
 SELECT_VALUE_X1: Final[float] = 267.0
@@ -268,7 +268,7 @@ SAVE_CHECK_MS: Final[float] = 600.0
 SAVE_FLASH_MS: Final[float] = 800.0
 SAVE_ERROR_MS: Final[float] = 2000.0
 SAVE_FADE_MS: Final[float] = 120.0
-SAVE_COLOR_MS: Final[float] = 180.0   # A-10: color del botón Guardar
+SAVE_COLOR_MS: Final[float] = 180.0  # A-10: color del botón Guardar
 FOOTER_FADE_MS: Final[float] = 180.0  # A-11: fundido cruzado del pie
 
 # C-11 · scroll.
@@ -462,9 +462,7 @@ def _round_mask(
         - radius
     )
     if stroke:
-        coverage = np.clip(
-            0.5 - (np.abs(distance) - 0.5) / AA_RAMP, 0.0, 1.0
-        )
+        coverage = np.clip(0.5 - (np.abs(distance) - 0.5) / AA_RAMP, 0.0, 1.0)
     else:
         coverage = np.clip(0.5 - distance / AA_RAMP, 0.0, 1.0)
     result = (py0, py1, px0, px1, coverage)
@@ -506,9 +504,7 @@ def _fill_round_rect(
     if data is None:
         return
     py0, py1, px0, px1, coverage = data
-    _paint_mask(
-        layer, py0, py1, px0, px1, coverage, color, alpha, replace=replace
-    )
+    _paint_mask(layer, py0, py1, px0, px1, coverage, color, alpha, replace=replace)
 
 
 def _fill_round_gradient(
@@ -652,9 +648,7 @@ def _composite_band(
 
 
 @lru_cache(maxsize=512)
-def _fit_text(
-    text: str, style: FontStyle, max_width: float, scale: float
-) -> str:
+def _fit_text(text: str, style: FontStyle, max_width: float, scale: float) -> str:
     """Trunca con «…» usando el ancho real de la tinta."""
     if not text or max_width <= 0:
         return ""
@@ -734,9 +728,7 @@ class Menu:
         self._now = 0.0
         self._height = Tween(0.0)
         self._content_alpha = Tween(0.0)
-        self._blocks: dict[str, Tween] = {
-            name: Tween(0.0) for name in BLOCK_DELAYS_MS
-        }
+        self._blocks: dict[str, Tween] = {name: Tween(0.0) for name in BLOCK_DELAYS_MS}
 
         # Selector abierto. Solo puede haber uno.
         self._selector_key: str | None = None
@@ -745,14 +737,11 @@ class Menu:
         self._selector_item_start = 0.0
         self._list_scroll = 0.0
         self._list_scroll_target = 0.0
-        self._chevron: dict[str, Tween] = {
-            key: Tween(0.0) for key in SELECT_KEYS
-        }
+        self._chevron: dict[str, Tween] = {key: Tween(0.0) for key in SELECT_KEYS}
 
         # Hover, pulsación y arrastre.
         self._row_hover: dict[str, Tween] = {
-            key: Tween(0.0)
-            for key in (*ALL_KEYS, "input_meter", "theme_preview", *ACTION_KEYS)
+            key: Tween(0.0) for key in (*ALL_KEYS, "input_meter", "theme_preview", *ACTION_KEYS)
         }
         self._button_hover: dict[str, Tween] = {
             "hide": Tween(0.0),
@@ -774,22 +763,14 @@ class Menu:
         self._slider_changed = False
 
         # Apariencia dinámica de sliders e interruptores.
-        self._thumb: dict[str, Tween] = {
-            key: Tween(SLIDER_THUMB_REST) for key in SLIDER_KEYS
-        }
-        self._thumb_target: dict[str, float] = {
-            key: SLIDER_THUMB_REST for key in SLIDER_KEYS
-        }
-        self._slider_color: dict[str, Tween] = {
-            key: Tween(0.0) for key in SLIDER_KEYS
-        }
+        self._thumb: dict[str, Tween] = {key: Tween(SLIDER_THUMB_REST) for key in SLIDER_KEYS}
+        self._thumb_target: dict[str, float] = {key: SLIDER_THUMB_REST for key in SLIDER_KEYS}
+        self._slider_color: dict[str, Tween] = {key: Tween(0.0) for key in SLIDER_KEYS}
         self._toggle_pos: dict[str, Tween] = {
-            key: Tween(1.0 if settings.get(key) else 0.0)
-            for key in TOGGLE_KEYS
+            key: Tween(1.0 if settings.get(key) else 0.0) for key in TOGGLE_KEYS
         }
         self._toggle_color: dict[str, Tween] = {
-            key: Tween(1.0 if settings.get(key) else 0.0)
-            for key in TOGGLE_KEYS
+            key: Tween(1.0 if settings.get(key) else 0.0) for key in TOGGLE_KEYS
         }
 
         # Edición de texto en línea. Solo una fila a la vez; la ventana
@@ -932,10 +913,7 @@ class Menu:
 
     def set_available_height(self, height: float | None) -> None:
         """Limita el menú al espacio real arriba/abajo de la barra flotante."""
-        self._available_h = (
-            None if height is None else max(1.0, float(height))
-        )
-
+        self._available_h = None if height is None else max(1.0, float(height))
 
     def is_open(self) -> bool:
         """Intención lógica: False en cuanto se pide cerrar."""
@@ -954,9 +932,7 @@ class Menu:
             groups=self._shown_groups(),
         )
 
-    def _nominal_layout(
-        self, extra: dict[str, float] | None = None
-    ) -> dict[str, LayoutRect]:
+    def _nominal_layout(self, extra: dict[str, float] | None = None) -> dict[str, LayoutRect]:
         """Layout completo sin recortar; sirve para calcular el scroll máximo."""
         return layout_menu(
             self._extra() if extra is None else extra, None, groups=self._shown_groups()
@@ -1008,9 +984,7 @@ class Menu:
             self._scroll.to(0.0, now, 0.0, EASE_OUT)
             self._scroll_target = 0.0
             self._reset_interaction(now)
-            self._content_alpha.to(
-                1.0, now, 0.0 if not self._reduced_motion else 120.0, EASE_OUT
-            )
+            self._content_alpha.to(1.0, now, 0.0 if not self._reduced_motion else 120.0, EASE_OUT)
             for name in self._blocks:
                 self._blocks[name] = Tween(0.0)
             if self._reduced_motion:
@@ -1026,9 +1000,7 @@ class Menu:
                     )
         else:
             # Inversión a mitad de cierre: el contenido vuelve sin escalonado.
-            self._content_alpha.to(
-                1.0, now, CONTENT_CLOSE_MS, EASE_OUT
-            )
+            self._content_alpha.to(1.0, now, CONTENT_CLOSE_MS, EASE_OUT)
         duration = 0.0 if self._reduced_motion else T_SLOW
         self._height.to(self.viewport_height, now, duration, EASE_OUT)
 
@@ -1047,9 +1019,7 @@ class Menu:
         self._finish_slider_drag(now, emit=True)
         self._pressed_hit = None
         self._clear_press(now)
-        self._content_alpha.to(
-            0.0, now, CONTENT_CLOSE_MS, EASE_OUT
-        )
+        self._content_alpha.to(0.0, now, CONTENT_CLOSE_MS, EASE_OUT)
         duration = 0.0 if self._reduced_motion else T_CLOSE_RETRACT
         delay = 0.0 if self._reduced_motion else CLOSE_HEIGHT_DELAY_MS / 1000.0
         self._height.to(0.0, now + delay, duration, EASE_IN)
@@ -1070,11 +1040,7 @@ class Menu:
         now = float(now)
         self._now = now
         self._advance(now)
-        if (
-            not self._open
-            and not self._closed_notified
-            and float(self._height.value) <= 0.01
-        ):
+        if not self._open and not self._closed_notified and float(self._height.value) <= 0.01:
             self._height.value = 0.0
             self._content_alpha.value = 0.0
             self._selector_key = None
@@ -1131,9 +1097,7 @@ class Menu:
         if self._scroll_target > max_scroll:
             self._scroll_target = max_scroll
             if not self._scroll.active:
-                self._scroll.to(
-                    max_scroll, now, SCROLL_TWEEN_MS, EASE_OUT
-                )
+                self._scroll.to(max_scroll, now, SCROLL_TWEEN_MS, EASE_OUT)
         if self._scroll.value > max_scroll and not self._scroll.active:
             self._scroll.value = max_scroll
         # Balística del medidor: ataque rápido, caída suave.
@@ -1177,20 +1141,14 @@ class Menu:
         if self._editing_key is not None:
             return True
         if self._open and (
-            self._meter_active
-            or abs(self._meter_target - self._meter_level) > 1e-6
+            self._meter_active or abs(self._meter_target - self._meter_level) > 1e-6
         ):
             return True
         # Timers sin tween: confirmación de guardado, error y desvanecido del
         # indicador de scroll. Mantienen vivo el repintado mientras se ven.
-        if now < max(
-            self._check_until, self._saved_flash_until, self._error_until
-        ):
+        if now < max(self._check_until, self._saved_flash_until, self._error_until):
             return True
-        if (
-            self._footer_prev is not None
-            and now - self._footer_state_at < FOOTER_FADE_MS / 1000.0
-        ):
+        if self._footer_prev is not None and now - self._footer_state_at < FOOTER_FADE_MS / 1000.0:
             return True
         if (
             self._save_prev_fill is not None
@@ -1216,12 +1174,8 @@ class Menu:
         self.settings = settings
         for key in TOGGLE_KEYS:
             desired = 1.0 if settings.get(key) else 0.0
-            self._toggle_pos[key].to(
-                desired, moment, TOGGLE_MS, EASE_SPRING
-            )
-            self._toggle_color[key].to(
-                desired, moment, TOGGLE_MS, EASE_OUT
-            )
+            self._toggle_pos[key].to(desired, moment, TOGGLE_MS, EASE_SPRING)
+            self._toggle_color[key].to(desired, moment, TOGGLE_MS, EASE_OUT)
         self._clamp_list_scroll()
 
     def set_theme(self, theme: str) -> None:
@@ -1231,9 +1185,7 @@ class Menu:
         """¿El botón de una acción destructiva espera la confirmación?"""
         return self._armed.get(key, -1.0) > now
 
-    def set_palette_overrides(
-        self, provider: Callable[[str], dict[str, Color]] | None
-    ) -> None:
+    def set_palette_overrides(self, provider: Callable[[str], dict[str, Color]] | None) -> None:
         """``provider(theme)`` devuelve colores que sustituyen a los tokens."""
         self._palette_overrides = provider
 
@@ -1251,7 +1203,6 @@ class Menu:
         if scale <= 0:
             raise ValueError("scale debe ser mayor que cero")
         self._scale = float(scale)
-
 
     def set_reduced_motion(self, reduced: bool) -> None:
         self._reduced_motion = bool(reduced)
@@ -1310,9 +1261,7 @@ class Menu:
         for key in SELECT_KEYS:
             self._chevron[key].to(0.0, now, 0.0, EASE_OUT)
         for key in SLIDER_KEYS:
-            self._thumb[key].to(
-                SLIDER_THUMB_REST, now, 0.0, EASE_OUT
-            )
+            self._thumb[key].to(SLIDER_THUMB_REST, now, 0.0, EASE_OUT)
             self._thumb_target[key] = SLIDER_THUMB_REST
             self._slider_color[key].to(0.0, now, 0.0, EASE_OUT)
 
@@ -1326,9 +1275,7 @@ class Menu:
         except Exception:
             options = ()
         maximum = max(0.0, len(options) * LIST_ITEM_H - LIST_VIEW_H)
-        self._list_scroll_target = max(
-            0.0, min(self._list_scroll_target, maximum)
-        )
+        self._list_scroll_target = max(0.0, min(self._list_scroll_target, maximum))
         self._list_scroll = max(0.0, min(self._list_scroll, maximum))
 
     def _indicator_activity(self, now: float) -> None:
@@ -1343,14 +1290,11 @@ class Menu:
         if now <= self._indicator_until:
             return min(
                 1.0,
-                (now - self._indicator_last)
-                / (_INDICATOR_SHOW_MS / 1000.0),
+                (now - self._indicator_last) / (_INDICATOR_SHOW_MS / 1000.0),
             )
         return max(
             0.0,
-            1.0
-            - (now - self._indicator_until)
-            / (SCROLL_INDICATOR_FADE_MS / 1000.0),
+            1.0 - (now - self._indicator_until) / (SCROLL_INDICATOR_FADE_MS / 1000.0),
         )
 
     # ------------------------------------------------------------------
@@ -1370,9 +1314,7 @@ class Menu:
             return
         old = self._selector_key
         if old is not None and old != key:
-            self._chevron[old].to(
-                0.0, now, CHEVRON_MS, EASE_OUT
-            )
+            self._chevron[old].to(0.0, now, CHEVRON_MS, EASE_OUT)
         options = self._selector_options(key)
         if not options:
             return
@@ -1380,9 +1322,7 @@ class Menu:
         self._selector_closing = False
         self._selector_item_start = now + SELECTOR_START_DELAY_MS / 1000.0
         target = min(len(options), LIST_MAX_VISIBLE) * LIST_ITEM_H
-        self._selector_extra.to(
-            float(target), now, SELECTOR_OPEN_MS, EASE_OUT
-        )
+        self._selector_extra.to(float(target), now, SELECTOR_OPEN_MS, EASE_OUT)
         self._chevron[key].to(1.0, now, CHEVRON_MS, EASE_OUT)
         self._list_scroll = 0.0
         self._list_scroll_target = 0.0
@@ -1393,12 +1333,8 @@ class Menu:
         if self._selector_key is None:
             return
         self._selector_closing = True
-        self._chevron[self._selector_key].to(
-            0.0, now, CHEVRON_MS, EASE_OUT
-        )
-        self._selector_extra.to(
-            0.0, now, SELECTOR_CLOSE_MS, EASE_IN
-        )
+        self._chevron[self._selector_key].to(0.0, now, CHEVRON_MS, EASE_OUT)
+        self._selector_extra.to(0.0, now, SELECTOR_CLOSE_MS, EASE_IN)
         self._list_scroll = 0.0
         self._list_scroll_target = 0.0
         self._hover_option = None
@@ -1434,10 +1370,7 @@ class Menu:
     ) -> float:
         if self._selector_closing:
             return 1.0
-        elapsed = (
-            (now - self._selector_item_start) * 1000.0
-            - index * SELECTOR_ITEM_STAGGER_MS
-        )
+        elapsed = (now - self._selector_item_start) * 1000.0 - index * SELECTOR_ITEM_STAGGER_MS
         k = max(0.0, min(1.0, elapsed / SELECTOR_ITEM_FADE_MS))
         return EASE_OUT(k)
 
@@ -1448,7 +1381,9 @@ class Menu:
         header = layout["header"]
         cy = (header.y0 + header.y1) / 2.0
         radius = HIDE_SIZE / 2.0
-        return Rect((HIDE_CX + self._dx) - radius, cy - radius, (HIDE_CX + self._dx) + radius, cy + radius)
+        return Rect(
+            (HIDE_CX + self._dx) - radius, cy - radius, (HIDE_CX + self._dx) + radius, cy + radius
+        )
 
     def _save_rect(self, layout: dict[str, LayoutRect]) -> Rect:
         footer = layout["footer"]
@@ -1461,10 +1396,7 @@ class Menu:
         )
 
     def _test_content_width(self) -> float:
-        wave = (
-            TEST_WAVE_BARS * TEST_WAVE_BAR_W
-            + (TEST_WAVE_BARS - 1) * TEST_WAVE_GAP
-        )
+        wave = TEST_WAVE_BARS * TEST_WAVE_BAR_W + (TEST_WAVE_BARS - 1) * TEST_WAVE_GAP
         talk = text_size("Hablando…", FS_SECONDARY, self._scale)[0]
         return wave + TEST_WAVE_GAP_TEXT + talk
 
@@ -1491,9 +1423,7 @@ class Menu:
             cy + BUTTON_H / 2.0,
         )
 
-    def _action_rect(
-        self, layout: dict[str, LayoutRect], key: str, scroll: float
-    ) -> Rect:
+    def _action_rect(self, layout: dict[str, LayoutRect], key: str, scroll: float) -> Rect:
         row = layout[key]
         cy = ((row.y0 + row.y1) / 2.0) - scroll
         return Rect(
@@ -1543,10 +1473,7 @@ class Menu:
                 geometry = self._selector_geometry(layout, scroll)
                 if geometry is not None:
                     top, visible, options, list_scroll = geometry
-                    if (
-                        GROUP_X0 <= x <= (GROUP_X1 + self._dx)
-                        and top <= y <= top + visible
-                    ):
+                    if GROUP_X0 <= x <= (GROUP_X1 + self._dx) and top <= y <= top + visible:
                         for index, option in enumerate(options):
                             item_y0 = top + index * LIST_ITEM_H - list_scroll
                             item_y1 = item_y0 + LIST_ITEM_H
@@ -1572,10 +1499,7 @@ class Menu:
                     base_h = float(ROW[kind])
                     y0 = row.y0 - scroll
                     y1 = y0 + base_h
-                    disabled = (
-                        kind == "select"
-                        and not self.settings.selector_enabled(key)
-                    )
+                    disabled = kind == "select" and not self.settings.selector_enabled(key)
                     if disabled and not include_disabled:
                         continue
                     rect = Rect(GROUP_X0, y0, (GROUP_X1 + self._dx), y1)
@@ -1586,14 +1510,10 @@ class Menu:
                             SLIDER_TRACK_X0 <= x <= (SLIDER_TRACK_X1 + self._dx)
                             and cy - half <= y <= cy + half
                         ):
-                            return MenuHit(
-                                "slider", key, rect, disabled=disabled
-                            )
+                            return MenuHit("slider", key, rect, disabled=disabled)
                     elif kind == "select":
                         if rect.x0 <= x <= rect.x1 and y0 <= y <= y1:
-                            return MenuHit(
-                                "select", key, rect, disabled=disabled
-                            )
+                            return MenuHit("select", key, rect, disabled=disabled)
                     elif kind == "toggle":
                         if rect.x0 <= x <= rect.x1 and y0 <= y <= y1:
                             return MenuHit(
@@ -1628,10 +1548,7 @@ class Menu:
                             disabled = False
                         if disabled and not include_disabled:
                             continue
-                        if (
-                            button.x0 <= x <= button.x1
-                            and button.y0 <= y <= button.y1
-                        ):
+                        if button.x0 <= x <= button.x1 and button.y0 <= y <= button.y1:
                             return MenuHit(
                                 "action",
                                 key,
@@ -1656,11 +1573,7 @@ class Menu:
     def _same_hit(first: MenuHit | None, second: MenuHit | None) -> bool:
         if first is None or second is None:
             return False
-        return (
-            first.kind == second.kind
-            and first.key == second.key
-            and first.index == second.index
-        )
+        return first.kind == second.kind and first.key == second.key and first.index == second.index
 
     def _row_at(
         self, x: float, y: float, layout: dict[str, LayoutRect], scroll: float
@@ -1677,10 +1590,7 @@ class Menu:
                 y0 = row.y0 - scroll
                 y1 = y0 + base_h
                 if GROUP_X0 <= x <= (GROUP_X1 + self._dx) and y0 <= y <= y1:
-                    disabled = (
-                        kind == "select"
-                        and not self.settings.selector_enabled(key)
-                    )
+                    disabled = kind == "select" and not self.settings.selector_enabled(key)
                     return (key, kind, disabled)
         return None
 
@@ -1701,8 +1611,7 @@ class Menu:
             header.y0 <= y <= header.y1
             and hide.x0 <= x <= hide.x1
             and hide.y0 <= y <= hide.y1
-            and math.hypot(x - hide.center[0], y - hide.center[1])
-            <= HIDE_SIZE / 2.0
+            and math.hypot(x - hide.center[0], y - hide.center[1]) <= HIDE_SIZE / 2.0
         ):
             new_id = "btn:hide"
         elif (
@@ -1722,10 +1631,7 @@ class Menu:
             geometry = self._selector_geometry(layout, scroll)
             if geometry is not None:
                 top, visible, options, list_scroll = geometry
-                if (
-                    GROUP_X0 <= x <= (GROUP_X1 + self._dx)
-                    and top <= y <= top + visible
-                ):
+                if GROUP_X0 <= x <= (GROUP_X1 + self._dx) and top <= y <= top + visible:
                     for index in range(len(options)):
                         item_y0 = top + index * LIST_ITEM_H - list_scroll
                         item_y1 = item_y0 + LIST_ITEM_H
@@ -1761,9 +1667,7 @@ class Menu:
             target = SLIDER_THUMB_HOVER if hovering else SLIDER_THUMB_REST
             if self._thumb_target[key] != target:
                 self._thumb_target[key] = target
-                self._thumb[key].to(
-                    target, now, SLIDER_HOVER_MS, EASE_OUT
-                )
+                self._thumb[key].to(target, now, SLIDER_HOVER_MS, EASE_OUT)
 
     def _hover_state(self, hover_id: str) -> Tween | None:
         if hover_id.startswith("row:"):
@@ -1791,13 +1695,8 @@ class Menu:
         self._indicator_activity(now)
         self._sync_hover(x, y, now)
         hit = self.hit(x, y, now)
-        if (
-            self._editing_key is not None
-            and not (
-                hit is not None
-                and hit.kind == "text"
-                and hit.key == self._editing_key
-            )
+        if self._editing_key is not None and not (
+            hit is not None and hit.kind == "text" and hit.key == self._editing_key
         ):
             self._finish_text_edit(commit=True)
         if hit is not None and hit.kind == "meter":
@@ -1812,12 +1711,8 @@ class Menu:
             self._slider_changed = False
             self._slider_pending = None
             self._thumb_target[hit.key] = SLIDER_THUMB_DRAG
-            self._thumb[hit.key].to(
-                SLIDER_THUMB_DRAG, now, SLIDER_DRAG_MS, EASE_OUT
-            )
-            self._slider_color[hit.key].to(
-                1.0, now, T_MICRO, EASE_OUT
-            )
+            self._thumb[hit.key].to(SLIDER_THUMB_DRAG, now, SLIDER_DRAG_MS, EASE_OUT)
+            self._slider_color[hit.key].to(1.0, now, T_MICRO, EASE_OUT)
             self._set_slider_from_x(hit.key, x, now)
             return True
         self._pressed_hit = hit
@@ -1870,9 +1765,7 @@ class Menu:
             hovering = hit is not None and hit.kind == "slider" and hit.key == key
             target = SLIDER_THUMB_HOVER if hovering else SLIDER_THUMB_REST
             self._thumb_target[key] = target
-            self._thumb[key].to(
-                target, now, SLIDER_RELEASE_MS, EASE_SPRING
-            )
+            self._thumb[key].to(target, now, SLIDER_RELEASE_MS, EASE_SPRING)
             self._sync_hover(x, y, now)
             return True
         pressed = self._pressed_hit
@@ -1917,12 +1810,8 @@ class Menu:
 
     def _animate_toggle(self, key: str, now: float) -> None:
         target = 1.0 if self.settings.get(key) else 0.0
-        self._toggle_pos[key].to(
-            target, now, TOGGLE_MS, EASE_SPRING
-        )
-        self._toggle_color[key].to(
-            target, now, TOGGLE_MS, EASE_OUT
-        )
+        self._toggle_pos[key].to(target, now, TOGGLE_MS, EASE_SPRING)
+        self._toggle_color[key].to(target, now, TOGGLE_MS, EASE_OUT)
 
     # ------------------------------------------------------------------
     # Sliders
@@ -1996,9 +1885,7 @@ class Menu:
         self._slider_pending = None
         self._slider_changed = False
         self._slider_drag = None
-        self._slider_color[key].to(
-            0.0, now, T_MICRO, EASE_OUT
-        )
+        self._slider_color[key].to(0.0, now, T_MICRO, EASE_OUT)
 
     # ------------------------------------------------------------------
     # Rueda
@@ -2068,9 +1955,7 @@ class Menu:
             if new != old:
                 self._notify(self.on_live_change, hit.key, new)
             self._thumb_target[hit.key] = SLIDER_THUMB_HOVER
-            self._thumb[hit.key].to(
-                SLIDER_THUMB_HOVER, now, SLIDER_HOVER_MS, EASE_OUT
-            )
+            self._thumb[hit.key].to(SLIDER_THUMB_HOVER, now, SLIDER_HOVER_MS, EASE_OUT)
             return True
         return False
 
@@ -2200,9 +2085,7 @@ class Menu:
             self._edit_buffer = ""
             self._edit_select_all = False
         cursor = max(0, min(len(self._edit_buffer), self._edit_cursor))
-        self._edit_buffer = (
-            self._edit_buffer[:cursor] + text + self._edit_buffer[cursor:]
-        )
+        self._edit_buffer = self._edit_buffer[:cursor] + text + self._edit_buffer[cursor:]
         self._edit_cursor = cursor + len(text)
 
     def _backspace(self) -> None:
@@ -2214,9 +2097,7 @@ class Menu:
         cursor = max(0, min(len(self._edit_buffer), self._edit_cursor))
         if cursor <= 0:
             return
-        self._edit_buffer = (
-            self._edit_buffer[: cursor - 1] + self._edit_buffer[cursor:]
-        )
+        self._edit_buffer = self._edit_buffer[: cursor - 1] + self._edit_buffer[cursor:]
         self._edit_cursor = cursor - 1
 
     def _delete(self) -> None:
@@ -2228,9 +2109,7 @@ class Menu:
         cursor = max(0, min(len(self._edit_buffer), self._edit_cursor))
         if cursor >= len(self._edit_buffer):
             return
-        self._edit_buffer = (
-            self._edit_buffer[:cursor] + self._edit_buffer[cursor + 1 :]
-        )
+        self._edit_buffer = self._edit_buffer[:cursor] + self._edit_buffer[cursor + 1 :]
 
     # ------------------------------------------------------------------
     # Prueba de voz y guardado
@@ -2247,11 +2126,7 @@ class Menu:
         self._save_backup = self.settings.saved_snapshot()
         self._save_snapshot = self.settings.snapshot()
         try:
-            result = (
-                self.on_save(self._save_snapshot)
-                if self.on_save is not None
-                else True
-            )
+            result = self.on_save(self._save_snapshot) if self.on_save is not None else True
         except Exception:
             result = False
         if result is False:
@@ -2361,9 +2236,7 @@ class Menu:
                 ) / 1000.0
                 if now - self._selector_item_start < end:
                     return False
-        if now < max(
-            self._check_until, self._saved_flash_until, self._error_until
-        ):
+        if now < max(self._check_until, self._saved_flash_until, self._error_until):
             return False
         if self._footer_prev is not None or self._save_prev_fill is not None:
             return False
@@ -2376,13 +2249,9 @@ class Menu:
             for key, value in self.settings.snapshot().items()
         )
         devices = tuple(
-            (int(device["index"]), str(device["name"]))
-            for device in self.settings.devices
+            (int(device["index"]), str(device["name"])) for device in self.settings.devices
         )
-        voices = tuple(
-            (str(option.value), str(option.label))
-            for option in self.settings.voices
-        )
+        voices = tuple((str(option.value), str(option.label)) for option in self.settings.voices)
         return (
             self._theme,
             round(self._scale, 4),
@@ -2422,11 +2291,7 @@ class Menu:
 
     def draw(self, buf: np.ndarray, now: float) -> None:
         """Dibuja el menú sobre ``buf`` (float32 RGBA premultiplicado)."""
-        if (
-            buf.ndim != 3
-            or buf.shape[2] != 4
-            or buf.dtype != np.float32
-        ):
+        if buf.ndim != 3 or buf.shape[2] != 4 or buf.dtype != np.float32:
             raise TypeError("buf debe ser float32 con forma (H, W, 4)")
         now = float(now)
         self.update(now)
@@ -2463,9 +2328,7 @@ class Menu:
                 layer.fill(0.0)
             self._draw_header(header_layer, layout, pal, now)
             for group_name, rows in self._shown_groups():
-                self._draw_group(
-                    content_layer, group_name, rows, layout, pal, now, scroll
-                )
+                self._draw_group(content_layer, group_name, rows, layout, pal, now, scroll)
             self._draw_footer(footer_layer, layout, pal, now)
             self._layer_signature = self._layer_signature_value(now)
 
@@ -2543,9 +2406,7 @@ class Menu:
             return
         header = layout["header"]
         cy = (header.y0 + header.y1) / 2.0 + dy
-        self._text_at(
-            layer, self._title, FS_TITLE, pal["TEXT"], LABEL_X, cy, alpha
-        )
+        self._text_at(layer, self._title, FS_TITLE, pal["TEXT"], LABEL_X, cy, alpha)
         hover = max(0.0, min(1.0, float(self._button_hover["hide"].value)))
         press = max(0.0, min(1.0, float(self._press["hide"].value)))
         if hover > 0.001 or press > 0.001:
@@ -2602,7 +2463,7 @@ class Menu:
         )
         group = layout["group_" + group_name]
         gx0 = GROUP_X0
-        gx1 = (GROUP_X1 + self._dx)
+        gx1 = GROUP_X1 + self._dx
         gy0 = group.y0 + y_offset
         gy1 = group.y1 + y_offset
         _fill_round_rect(
@@ -2624,9 +2485,7 @@ class Menu:
             base_h = float(ROW[kind])
             row_y0 = row.y0 + y_offset
             row_y1 = row_y0 + base_h
-            disabled = (
-                kind == "select" and not self.settings.selector_enabled(key)
-            )
+            disabled = kind == "select" and not self.settings.selector_enabled(key)
             hover = 0.0
             if not disabled:
                 hover = max(
@@ -2635,7 +2494,9 @@ class Menu:
                 )
             if hover > 0.001:
                 fill = lerp_rgb(
-                    pal["GROUP"], pal["GROUP_HOVER"], hover  # type: ignore[arg-type]
+                    pal["GROUP"],
+                    pal["GROUP_HOVER"],
+                    hover,  # type: ignore[arg-type]
                 )
                 _fill_round_rect(
                     layer,
@@ -2663,9 +2524,7 @@ class Menu:
                 alpha,
             )
             if key == self._selector_key:
-                self._draw_selector_list(
-                    layer, key, row_y0, layout, pal, now, alpha
-                )
+                self._draw_selector_list(layer, key, row_y0, layout, pal, now, alpha)
             if index < last:
                 boundary = row.y1 + y_offset
                 _fill_round_rect(
@@ -2706,16 +2565,12 @@ class Menu:
         scroll: float,
         alpha: float,
     ) -> None:
-        disabled = (
-            kind == "select" and not self.settings.selector_enabled(key)
-        )
+        disabled = kind == "select" and not self.settings.selector_enabled(key)
         center_y = row_y0 + float(ROW[kind]) / 2.0
         if kind == "slider":
             self._draw_slider_row(layer, key, row_y0, pal, alpha)
         elif kind == "select":
-            self._draw_select_row(
-                layer, key, row_y0, center_y, pal, alpha, disabled
-            )
+            self._draw_select_row(layer, key, row_y0, center_y, pal, alpha, disabled)
         elif kind == "toggle":
             self._draw_toggle_row(layer, key, center_y, pal, alpha)
         elif kind == "text":
@@ -2725,9 +2580,7 @@ class Menu:
         elif kind == "palette":
             self._draw_palette_row(layer, row_y0, pal, alpha)
         elif kind == "action":
-            self._draw_action_row(
-                layer, key, row_y0, center_y, layout, pal, now, scroll, alpha
-            )
+            self._draw_action_row(layer, key, row_y0, center_y, layout, pal, now, scroll, alpha)
 
     _PALETTES = (("light", "Claro"), ("dark", "Oscuro"), ("custom", "Personalizado"))
 
@@ -2760,19 +2613,39 @@ class Menu:
         active = str(self.settings.get("theme") or "")
         for value, label, pill in self._palette_pills(row_y0):
             _fill_round_gradient(
-                layer, pill.x0, pill.y0, pill.x1, pill.y1, 12.0,
-                self._palette_stops(value), self._scale, alpha,
+                layer,
+                pill.x0,
+                pill.y0,
+                pill.x1,
+                pill.y1,
+                12.0,
+                self._palette_stops(value),
+                self._scale,
+                alpha,
             )
             if value == active:
                 for inset in (-3.0, -2.0):
                     _stroke_round_rect(
-                        layer, pill.x0 + inset, pill.y0 + inset, pill.x1 - inset,
-                        pill.y1 - inset, 12.0 - inset, pal["MINT"], self._scale, alpha,
+                        layer,
+                        pill.x0 + inset,
+                        pill.y0 + inset,
+                        pill.x1 - inset,
+                        pill.y1 - inset,
+                        12.0 - inset,
+                        pal["MINT"],
+                        self._scale,
+                        alpha,
                     )
             color = pal["MINT"] if value == active else pal["TEXT_2"]
             self._text_at(
-                layer, label, FS_SECONDARY, color, (pill.x0 + pill.x1) / 2.0,
-                row_y0 + 52.0, alpha, align="center",
+                layer,
+                label,
+                FS_SECONDARY,
+                color,
+                (pill.x0 + pill.x1) / 2.0,
+                row_y0 + 52.0,
+                alpha,
+                align="center",
             )
 
     def _draw_color_swatch(
@@ -2816,9 +2689,7 @@ class Menu:
         else:
             value_color = pal["TEXT_2"]
             value_alpha = alpha * (DISABLED_OPACITY if disabled else 1.0)
-        fitted = _fit_text(
-            value, FS_BODY, (SELECT_VALUE_MAX_W + self._dx), self._scale
-        )
+        fitted = _fit_text(value, FS_BODY, (SELECT_VALUE_MAX_W + self._dx), self._scale)
         self._text_at(
             layer,
             fitted,
@@ -2831,9 +2702,7 @@ class Menu:
         )
         fraction = 0.0
         if key == self._selector_key:
-            fraction = max(
-                0.0, min(1.0, float(self._chevron[key].value))
-            )
+            fraction = max(0.0, min(1.0, float(self._chevron[key].value)))
         chevron_alpha = alpha * (DISABLED_OPACITY if disabled else 1.0)
         if fraction < 0.999:
             draw_icon(
@@ -2892,11 +2761,7 @@ class Menu:
         abajo, como el resto del menú.
         """
         threshold = float(self.settings.get("min_rms") or 0.0)
-        threshold_db = (
-            20.0 * math.log10(threshold)
-            if threshold > 0.0
-            else METER_DB_FLOOR
-        )
+        threshold_db = 20.0 * math.log10(threshold) if threshold > 0.0 else METER_DB_FLOOR
         self._text_at(
             layer,
             LABELS["input_meter"],
@@ -2918,7 +2783,7 @@ class Menu:
         )
 
         x0 = SLIDER_TRACK_X0
-        x1 = (SLIDER_TRACK_X1 + self._dx)
+        x1 = SLIDER_TRACK_X1 + self._dx
         cy = row_y0 + METER_TRACK_Y + METER_TRACK_H / 2.0
         _fill_round_rect(
             layer,
@@ -2946,9 +2811,7 @@ class Menu:
             )
         threshold_fraction = self._meter_fraction(threshold)
         thumb_cx = x0 + (x1 - x0) * threshold_fraction
-        thumb_color: Color = (
-            (255, 255, 255) if self._theme == "light" else pal["TEXT"]
-        )
+        thumb_color: Color = (255, 255, 255) if self._theme == "light" else pal["TEXT"]
         _fill_circle(
             layer,
             thumb_cx,
@@ -3071,11 +2934,11 @@ class Menu:
             line_cy,
             alpha,
         )
-        active = max(
-            0.0, min(1.0, float(self._slider_color[key].value))
-        )
+        active = max(0.0, min(1.0, float(self._slider_color[key].value)))
         value_color = lerp_rgb(
-            pal["TEXT_2"], pal["MINT"], active  # type: ignore[arg-type]
+            pal["TEXT_2"],
+            pal["MINT"],
+            active,  # type: ignore[arg-type]
         )
         self._text_at(
             layer,
@@ -3125,9 +2988,7 @@ class Menu:
         )
         radius = diameter / 2.0
         thumb_color: Color = (255, 255, 255) if self._theme == "light" else pal["TEXT"]
-        _fill_circle(
-            layer, thumb_cx, track_cy, diameter, thumb_color, self._scale, alpha
-        )
+        _fill_circle(layer, thumb_cx, track_cy, diameter, thumb_color, self._scale, alpha)
         if self._theme == "light":
             _stroke_round_rect(
                 layer,
@@ -3158,12 +3019,12 @@ class Menu:
             center_y,
             alpha,
         )
-        color_k = max(
-            0.0, min(1.0, float(self._toggle_color[key].value))
-        )
+        color_k = max(0.0, min(1.0, float(self._toggle_color[key].value)))
         pos = max(0.0, min(1.0, float(self._toggle_pos[key].value)))
         track_color = lerp_rgb(
-            pal["TRACK"], pal["MINT_BTN"], color_k  # type: ignore[arg-type]
+            pal["TRACK"],
+            pal["MINT_BTN"],
+            color_k,  # type: ignore[arg-type]
         )
         track_y0 = center_y - TOGGLE_H / 2.0
         _fill_round_rect(
@@ -3178,15 +3039,12 @@ class Menu:
             alpha,
         )
         thumb_color = lerp_rgb(
-            pal["TEXT_2"], pal["MINT_INK"], color_k  # type: ignore[arg-type]
+            pal["TEXT_2"],
+            pal["MINT_INK"],
+            color_k,  # type: ignore[arg-type]
         )
         travel = TOGGLE_W - TOGGLE_PAD * 2.0 - TOGGLE_THUMB
-        thumb_cx = (
-            (TOGGLE_X0 + self._dx)
-            + TOGGLE_PAD
-            + TOGGLE_THUMB / 2.0
-            + pos * travel
-        )
+        thumb_cx = (TOGGLE_X0 + self._dx) + TOGGLE_PAD + TOGGLE_THUMB / 2.0 + pos * travel
         _fill_circle(
             layer,
             thumb_cx,
@@ -3231,9 +3089,7 @@ class Menu:
             (TEST_BUTTON_X1 + self._dx),
             center_y + BUTTON_H / 2.0,
         )
-        hover = max(
-            0.0, min(1.0, float(self._button_hover["test"].value))
-        )
+        hover = max(0.0, min(1.0, float(self._button_hover["test"].value)))
         press = max(0.0, min(1.0, float(self._press["test"].value)))
         hover *= 1.0 - testing
         variant = "disabled" if testing > 0.01 else "secondary"
@@ -3280,18 +3136,13 @@ class Menu:
             )
         if testing > 0.001:
             content_w = self._test_content_width()
-            wave_w = (
-                TEST_WAVE_BARS * TEST_WAVE_BAR_W
-                + (TEST_WAVE_BARS - 1) * TEST_WAVE_GAP
-            )
+            wave_w = TEST_WAVE_BARS * TEST_WAVE_BAR_W + (TEST_WAVE_BARS - 1) * TEST_WAVE_GAP
             start_x = draw_rect.center[0] - content_w / 2.0
             bar_cy = draw_rect.center[1]
             for index in range(TEST_WAVE_BARS):
                 phase = now * TEST_WAVE_PHASE_SPEED + index * TEST_WAVE_PHASE_STEP
                 level = TEST_WAVE_LEVEL_BASE + TEST_WAVE_LEVEL_SPAN * abs(math.sin(phase))
-                height = TEST_WAVE_MIN_H + (
-                    TEST_WAVE_MAX_H - TEST_WAVE_MIN_H
-                ) * level
+                height = TEST_WAVE_MIN_H + (TEST_WAVE_MAX_H - TEST_WAVE_MIN_H) * level
                 bar_x = start_x + index * (TEST_WAVE_BAR_W + TEST_WAVE_GAP)
                 _fill_round_rect(
                     layer,
@@ -3339,16 +3190,10 @@ class Menu:
             (TEST_BUTTON_X1 + self._dx),
             center_y + BUTTON_H / 2.0,
         )
-        hover = max(
-            0.0, min(1.0, float(self._row_hover[key].value))
-        )
-        fill, text_color = self._button_colors(
-            "amber" if armed else "secondary", pal
-        )
+        hover = max(0.0, min(1.0, float(self._row_hover[key].value)))
+        fill, text_color = self._button_colors("amber" if armed else "secondary", pal)
         if hover > 0.001:
-            target: Color = (
-                (255, 255, 255) if self._theme != "light" else (0, 0, 0)
-            )
+            target: Color = (255, 255, 255) if self._theme != "light" else (0, 0, 0)
             fill = lerp_rgb(fill, target, BUTTON_HOVER_MIX * hover)  # type: ignore[arg-type]
         _fill_round_rect(
             layer,
@@ -3420,9 +3265,7 @@ class Menu:
             item_y1 = item_y0 + LIST_ITEM_H
             if item_y0 < top - 0.5 or item_y1 > top + visible + 0.5:
                 continue
-            item_alpha = alpha * self._selector_item_alpha(
-                index, options, now
-            )
+            item_alpha = alpha * self._selector_item_alpha(index, options, now)
             if item_alpha <= 0.001:
                 continue
             center_y = (item_y0 + item_y1) / 2.0
@@ -3451,9 +3294,7 @@ class Menu:
                     self._scale,
                     item_alpha * 0.10,
                 )
-            label = _fit_text(
-                option.label, FS_BODY, (LIST_TEXT_MAX_W + self._dx), self._scale
-            )
+            label = _fit_text(option.label, FS_BODY, (LIST_TEXT_MAX_W + self._dx), self._scale)
             self._text_at(
                 layer,
                 label,
@@ -3475,9 +3316,7 @@ class Menu:
                     alpha=item_alpha,
                 )
 
-    def _button_colors(
-        self, variant: str, pal: dict[str, Color]
-    ) -> tuple[Color, Color]:
+    def _button_colors(self, variant: str, pal: dict[str, Color]) -> tuple[Color, Color]:
         """Colores de fondo y texto de las variantes de C-07."""
         fill_key, text_key = BUTTON_VARIANTS[variant]
         return pal[fill_key], pal[text_key]
@@ -3517,9 +3356,7 @@ class Menu:
             self._footer_state_at = now
         fade = 1.0
         if self._footer_prev is not None:
-            progress = max(
-                0.0, min(1.0, (now - self._footer_state_at) / (FOOTER_FADE_MS / 1000.0))
-            )
+            progress = max(0.0, min(1.0, (now - self._footer_state_at) / (FOOTER_FADE_MS / 1000.0)))
             fade = EASE_OUT(progress)
             if progress >= 1.0:
                 self._footer_prev = None
@@ -3531,9 +3368,7 @@ class Menu:
                     center_y,
                     alpha * (1.0 - fade),
                 )
-        self._draw_footer_state(
-            layer, state, pal, center_y, alpha * fade
-        )
+        self._draw_footer_state(layer, state, pal, center_y, alpha * fade)
 
         rect = self._save_rect(layout)
         rect = Rect(rect.x0, rect.y0 + dy, rect.x1, rect.y1 + dy)
@@ -3565,16 +3400,16 @@ class Menu:
             else:
                 k = EASE_OUT(progress)
                 base = lerp_rgb(
-                    self._save_prev_fill, base, k  # type: ignore[arg-type]
+                    self._save_prev_fill,
+                    base,
+                    k,  # type: ignore[arg-type]
                 )
                 text_color = lerp_rgb(
-                    self._save_prev_text, text_color, k  # type: ignore[arg-type]
+                    self._save_prev_text,
+                    text_color,
+                    k,  # type: ignore[arg-type]
                 )
-        hover = (
-            max(0.0, min(1.0, float(self._button_hover["save"].value)))
-            if enabled
-            else 0.0
-        )
+        hover = max(0.0, min(1.0, float(self._button_hover["save"].value))) if enabled else 0.0
         press = max(0.0, min(1.0, float(self._press["save"].value)))
         fill = base
         if hover > 0.001:
@@ -3700,9 +3535,7 @@ class Menu:
             )
         # El pulgar queda visible en reposo: con muchas secciones hay que
         # saber que el menú sigue sin tener que descubrir la rueda.
-        indicator = max(
-            SCROLL_INDICATOR_IDLE_ALPHA, self._indicator_alpha(now)
-        )
+        indicator = max(SCROLL_INDICATOR_IDLE_ALPHA, self._indicator_alpha(now))
         if indicator <= 0.01:
             return
         clip_h = max(0.0, footer_top - content_top)
@@ -3733,6 +3566,3 @@ __all__ = [
     "Menu",
     "MenuHit",
 ]
-
-
-

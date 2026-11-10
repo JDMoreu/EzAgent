@@ -67,10 +67,10 @@ _GRAPHIC_PAIRS: Final[tuple[tuple[str, str], ...]] = (
 # Avisos: no bloquean, pero se muestran en el informe. La palabra de estado
 # usa WORD_*; estos acentos quedan como gráfico o en estados deshabilitados.
 _ADVISORY_TEXT_PAIRS: Final[tuple[tuple[str, str], ...]] = (
-    ("MINT", "BODY"),       # ojos ESCUCHO/HABLO en tema claro (gráfico)
-    ("WARM", "BODY"),       # ojos PIENSO en tema claro (gráfico)
+    ("MINT", "BODY"),  # ojos ESCUCHO/HABLO en tema claro (gráfico)
+    ("WARM", "BODY"),  # ojos PIENSO en tema claro (gráfico)
     ("TEXT_3", "GROUP_HOVER"),
-    ("TEXT_3", "TRACK"),    # botones deshabilitados (exentos por WCAG)
+    ("TEXT_3", "TRACK"),  # botones deshabilitados (exentos por WCAG)
 )
 
 
@@ -135,19 +135,10 @@ def contrast_report(
     include_advisory: bool = False,
 ) -> list[ContrastCheck]:
     """Lista de comprobaciones de contraste de un tema."""
-    checks = [
-        _check(theme, fg, bg, "text", advisory=False)
-        for fg, bg in _TEXT_PAIRS
-    ]
-    checks += [
-        _check(theme, fg, bg, "graphic", advisory=False)
-        for fg, bg in _GRAPHIC_PAIRS
-    ]
+    checks = [_check(theme, fg, bg, "text", advisory=False) for fg, bg in _TEXT_PAIRS]
+    checks += [_check(theme, fg, bg, "graphic", advisory=False) for fg, bg in _GRAPHIC_PAIRS]
     if include_advisory:
-        checks += [
-            _check(theme, fg, bg, "text", advisory=True)
-            for fg, bg in _ADVISORY_TEXT_PAIRS
-        ]
+        checks += [_check(theme, fg, bg, "text", advisory=True) for fg, bg in _ADVISORY_TEXT_PAIRS]
     return checks
 
 
@@ -155,9 +146,7 @@ def failures(theme: str, *, include_advisory: bool = False) -> list[ContrastChec
     """Comprobaciones que no alcanzan su mínimo."""
     return [
         check
-        for check in contrast_report(
-            theme, include_advisory=include_advisory
-        )
+        for check in contrast_report(theme, include_advisory=include_advisory)
         if not check.passed
     ]
 

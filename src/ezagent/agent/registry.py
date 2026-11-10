@@ -73,11 +73,7 @@ class ToolSpec:
 
 def _matches_type(value: Any, expected: Any) -> bool:
     if isinstance(expected, list):
-        return any(
-            _matches_type(value, item)
-            for item in expected
-            if isinstance(item, str)
-        )
+        return any(_matches_type(value, item) for item in expected if isinstance(item, str))
     if not isinstance(expected, str) or expected not in _JSON_TYPES:
         return True  # tipo desconocido: no se valida
     if expected == "string":
@@ -116,17 +112,9 @@ def _validate_value(name: str, value: Any, spec: dict[str, Any]) -> str | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         minimum = spec.get("minimum")
         maximum = spec.get("maximum")
-        if (
-            isinstance(minimum, (int, float))
-            and not isinstance(minimum, bool)
-            and value < minimum
-        ):
+        if isinstance(minimum, (int, float)) and not isinstance(minimum, bool) and value < minimum:
             return f"El parámetro '{name}' debe ser mayor o igual que {minimum}."
-        if (
-            isinstance(maximum, (int, float))
-            and not isinstance(maximum, bool)
-            and value > maximum
-        ):
+        if isinstance(maximum, (int, float)) and not isinstance(maximum, bool) and value > maximum:
             return f"El parámetro '{name}' debe ser menor o igual que {maximum}."
     return None
 

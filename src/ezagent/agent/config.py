@@ -140,7 +140,9 @@ class AgentConfig:
         Si se pasa ``path``, su carpeta se toma como ``app_dir`` para que las
         pruebas y los perfiles alternativos no dependan de %APPDATA%.
         """
-        permissions_path = Path(path) if path is not None else _default_app_dir() / "permissions.toml"
+        permissions_path = (
+            Path(path) if path is not None else _default_app_dir() / "permissions.toml"
+        )
         if not permissions_path.exists():
             _write_default_template(permissions_path)
         data = _read_toml(permissions_path)
@@ -154,24 +156,16 @@ class AgentConfig:
         tools_d_data = _section(data, "tools_d")
 
         general = GeneralConfig(
-            max_tool_calls_per_turn=_get_int(
-                general_data, "max_tool_calls_per_turn", 4, "general"
-            ),
-            confirm_timeout_s=_get_float(
-                general_data, "confirm_timeout_s", 15.0, "general"
-            ),
+            max_tool_calls_per_turn=_get_int(general_data, "max_tool_calls_per_turn", 4, "general"),
+            confirm_timeout_s=_get_float(general_data, "confirm_timeout_s", 15.0, "general"),
             bulk_threshold=_get_int(general_data, "bulk_threshold", 5, "general"),
             max_file_mb=_get_float(general_data, "max_file_mb", 10.0, "general"),
         )
         paths = PathsConfig(
             read_roots=_get_str_list(paths_data, "read_roots", _DEFAULT_READ_ROOTS, "paths"),
-            write_roots=_get_str_list(
-                paths_data, "write_roots", _DEFAULT_WRITE_ROOTS, "paths"
-            ),
+            write_roots=_get_str_list(paths_data, "write_roots", _DEFAULT_WRITE_ROOTS, "paths"),
             deny=_get_str_list(paths_data, "deny", _DEFAULT_DENY, "paths"),
-            deny_globs=_get_str_list(
-                paths_data, "deny_globs", _DEFAULT_DENY_GLOBS, "paths"
-            ),
+            deny_globs=_get_str_list(paths_data, "deny_globs", _DEFAULT_DENY_GLOBS, "paths"),
         )
         confirm = ConfirmConfig(
             accept=_get_str_list(confirm_data, "accept", _DEFAULT_ACCEPT, "confirm"),
@@ -179,9 +173,7 @@ class AgentConfig:
         )
         web = WebConfig(
             max_fetch_chars=_get_int(web_data, "max_fetch_chars", 8000, "web"),
-            block_private_ips=_get_bool(
-                web_data, "block_private_ips", True, "web"
-            ),
+            block_private_ips=_get_bool(web_data, "block_private_ips", True, "web"),
         )
         skills = SkillsConfig(
             allow_scripts=_get_bool(skills_data, "allow_scripts", False, "skills"),
@@ -244,9 +236,7 @@ def _write_default_template(path: Path) -> None:
         path.write_text(DEFAULT_PERMISSIONS_TOML, encoding="utf-8")
         logger.info("Creada la política por defecto en %s", path)
     except OSError as exc:
-        logger.warning(
-            "No se pudo crear %s; se usan los valores por defecto: %s", path, exc
-        )
+        logger.warning("No se pudo crear %s; se usan los valores por defecto: %s", path, exc)
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
@@ -256,9 +246,7 @@ def _read_toml(path: Path) -> dict[str, Any]:
     except FileNotFoundError:
         return {}
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
-        logger.warning(
-            "No se pudo leer %s; se usan los valores por defecto: %s", path, exc
-        )
+        logger.warning("No se pudo leer %s; se usan los valores por defecto: %s", path, exc)
         return {}
     if not isinstance(data, dict):
         logger.warning("%s no contiene una tabla TOML; se usan los valores por defecto", path)
@@ -287,9 +275,7 @@ def _warn_unknown_keys(data: dict[str, Any]) -> None:
                     "siempre pide confirmación. Se ignora."
                 )
             elif key not in _SECTION_KEYS[section_name]:
-                logger.warning(
-                    "Clave desconocida en [%s]: %s (se ignora)", section_name, key
-                )
+                logger.warning("Clave desconocida en [%s]: %s (se ignora)", section_name, key)
 
 
 def _section(data: dict[str, Any], name: str) -> dict[str, Any]:
@@ -310,9 +296,7 @@ def _get_int(section: dict[str, Any], key: str, default: int, section_name: str)
     return value
 
 
-def _get_float(
-    section: dict[str, Any], key: str, default: float, section_name: str
-) -> float:
+def _get_float(section: dict[str, Any], key: str, default: float, section_name: str) -> float:
     value = section.get(key, default)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         logger.warning(
@@ -325,9 +309,7 @@ def _get_float(
     return float(value)
 
 
-def _get_bool(
-    section: dict[str, Any], key: str, default: bool, section_name: str
-) -> bool:
+def _get_bool(section: dict[str, Any], key: str, default: bool, section_name: str) -> bool:
     value = section.get(key, default)
     if not isinstance(value, bool):
         logger.warning(

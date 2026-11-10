@@ -145,8 +145,7 @@ _DELEGATE_PARAMETERS: dict[str, Any] = {
         "agent": {
             "type": "string",
             "description": (
-                "Agente a lanzar: claude, opencode, codex, mcode, pi... "
-                "(valores del catálogo)."
+                "Agente a lanzar: claude, opencode, codex, mcode, pi... (valores del catálogo)."
             ),
         },
         "task": {
@@ -171,8 +170,7 @@ _DELEGATE_PARAMETERS: dict[str, Any] = {
         "gui": {
             "type": "boolean",
             "description": (
-                "true si la tarea requiere controlar la interfaz gráfica "
-                "(cua-driver)."
+                "true si la tarea requiere controlar la interfaz gráfica (cua-driver)."
             ),
         },
         "notify_on_done": {
@@ -304,9 +302,7 @@ class HerdrCallbacks:
     get_last_user_text: Callable[[], str]
     # Persiste la tarea que el usuario quiere vigilar, para poder decir qué
     # terminó y sobrevivir a un reinicio de EzAgent.
-    remember_task: Callable[[str, str, str], None] = (
-        lambda address, agent, task: None
-    )
+    remember_task: Callable[[str, str, str], None] = lambda address, agent, task: None
     # Si ``input_from`` sigue trabajando, la app guarda la cadena y lanza el
     # agente destino cuando la fuente termine.
     enqueue_chain: Callable[[dict[str, Any]], None] = lambda spec: None
@@ -318,9 +314,7 @@ class HerdrCallbacks:
     # True: run responde en cuanto la terminal está abierta y el resto del
     # arranque (programa, modelo, tarea) ocurre aparte.
     async_launch: bool = False
-    launch_failed: Callable[[str, str, str], None] = (
-        lambda address, agent, error: None
-    )
+    launch_failed: Callable[[str, str, str], None] = lambda address, agent, error: None
 
 
 @dataclass
@@ -340,19 +334,13 @@ def _action(args: dict[str, Any]) -> str:
     return value.strip().lower() if isinstance(value, str) else ""
 
 
-def _checked_action(
-    args: dict[str, Any], valid: tuple[str, ...], tool: str
-) -> str:
+def _checked_action(args: dict[str, Any], valid: tuple[str, ...], tool: str) -> str:
     action = _action(args)
     if not action:
-        raise _ArgumentError(
-            f"Falta la acción de «{tool}». "
-            f"Acciones válidas: {', '.join(valid)}."
-        )
+        raise _ArgumentError(f"Falta la acción de «{tool}». Acciones válidas: {', '.join(valid)}.")
     if action not in valid:
         raise _ArgumentError(
-            f"Acción desconocida para «{tool}»: {action!r}. "
-            f"Acciones válidas: {', '.join(valid)}."
+            f"Acción desconocida para «{tool}»: {action!r}. Acciones válidas: {', '.join(valid)}."
         )
     return action
 
@@ -360,22 +348,16 @@ def _checked_action(
 def _required_text(args: dict[str, Any], key: str, action: str) -> str:
     value = args.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise _ArgumentError(
-            f"Para la acción «{action}» falta el parámetro «{key}»."
-        )
+        raise _ArgumentError(f"Para la acción «{action}» falta el parámetro «{key}».")
     return value.strip()
 
 
-def _optional_text(
-    args: dict[str, Any], key: str, action: str
-) -> str | None:
+def _optional_text(args: dict[str, Any], key: str, action: str) -> str | None:
     value = args.get(key)
     if value is None:
         return None
     if not isinstance(value, str):
-        raise _ArgumentError(
-            f"El parámetro «{key}» de la acción «{action}» debe ser texto."
-        )
+        raise _ArgumentError(f"El parámetro «{key}» de la acción «{action}» debe ser texto.")
     value = value.strip()
     return value or None
 
@@ -386,8 +368,7 @@ def _optional_bool(args: dict[str, Any], key: str, action: str) -> bool:
         return False
     if not isinstance(value, bool):
         raise _ArgumentError(
-            f"El parámetro «{key}» de la acción «{action}» debe ser "
-            "verdadero o falso."
+            f"El parámetro «{key}» de la acción «{action}» debe ser verdadero o falso."
         )
     return value
 
@@ -402,9 +383,7 @@ def _optional_lines(args: dict[str, Any], action: str) -> int | None:
             "número entero entre 10 y 120."
         )
     if not 10 <= value <= 120:
-        raise _ArgumentError(
-            "El parámetro «lines» debe estar entre 10 y 120."
-        )
+        raise _ArgumentError("El parámetro «lines» debe estar entre 10 y 120.")
     return value
 
 
@@ -468,11 +447,7 @@ def _delegate_summary(args: dict[str, Any]) -> str:
         return f"Leer el manual del agente {agent or 'indicado'}."
     if action == "keys":
         pressed = args.get("keys")
-        shown = (
-            " ".join(str(k) for k in pressed)
-            if isinstance(pressed, list)
-            else "teclas"
-        )
+        shown = " ".join(str(k) for k in pressed) if isinstance(pressed, list) else "teclas"
         return f"Pulsar {shown} en el agente {address or 'indicado'}."
     if action == "configure":
         wanted = [
@@ -488,22 +463,16 @@ def _delegate_summary(args: dict[str, Any]) -> str:
             return f"Abrir el agente {target} en una pestaña visible."
         if task:
             where = (
-                "en segundo plano"
-                if args.get("background") is True
-                else "en una pestaña visible"
+                "en segundo plano" if args.get("background") is True else "en una pestaña visible"
             )
-            suffix = (
-                " con interfaz gráfica" if args.get("gui") is True else ""
-            )
+            suffix = " con interfaz gráfica" if args.get("gui") is True else ""
             details: list[str] = []
             if str(args.get("model") or "").strip():
                 details.append(f"modelo {str(args.get('model')).strip()}")
             if str(args.get("effort") or "").strip():
                 details.append(f"esfuerzo {str(args.get('effort')).strip()}")
             if str(args.get("input_from") or "").strip():
-                details.append(
-                    f"a partir de {str(args.get('input_from')).strip()}"
-                )
+                details.append(f"a partir de {str(args.get('input_from')).strip()}")
             extra = f" ({', '.join(details)})" if details else ""
             try:
                 steps = parse_steps(args.get("then"))
@@ -511,10 +480,7 @@ def _delegate_summary(args: dict[str, Any]) -> str:
                 steps = []
             if steps:
                 extra += f"; después: {describe_steps(steps)}"
-            return (
-                f"Lanzar el agente {target} {where}{suffix}{extra} "
-                f"con la tarea: {task}"
-            )
+            return f"Lanzar el agente {target} {where}{suffix}{extra} con la tarea: {task}"
         return f"Lanzar el agente {target} en Herdr."
     if action == "open_terminal":
         if name:
@@ -543,10 +509,7 @@ def _voice_summary(args: dict[str, Any]) -> str:
         return "Cerrar la escucha al terminar de hablar."
     if action == "close_and_watch":
         if address:
-            return (
-                "Cerrar la escucha y avisar cuando termine el agente "
-                f"{address}."
-            )
+            return f"Cerrar la escucha y avisar cuando termine el agente {address}."
         return "Cerrar la escucha y avisar cuando termine el agente."
     if action == "mic_mute":
         if args.get("muted") is True:
@@ -617,8 +580,7 @@ def _handle_run(
         for wanted in [agent, *[step["agent"] for step in steps]]:
             if resolver(wanted) is None:
                 raise _ArgumentError(
-                    f"Agente desconocido: {wanted!r}. Usa action=agents "
-                    "para ver los disponibles."
+                    f"Agente desconocido: {wanted!r}. Usa action=agents para ver los disponibles."
                 )
     background = _optional_bool(args, "background", action)
     gui = _optional_bool(args, "gui", action)
@@ -682,10 +644,7 @@ def _handle_run(
                     "task": task,
                     "model": model or "",
                     "effort": effort or "",
-                    "message": (
-                        f"Cuando termine {input_from}, lanzaré {agent} "
-                        "con su salida."
-                    ),
+                    "message": (f"Cuando termine {input_from}, lanzaré {agent} con su salida."),
                 },
             )
         output = _read_output(herdr, input_from)
@@ -694,9 +653,7 @@ def _handle_run(
                 ok=False,
                 error=f"No pude leer la salida de {input_from}.",
             )
-        packet = build_packet(
-            answer_or_tail(output), save=getattr(herdr, "save_context", None)
-        )
+        packet = build_packet(answer_or_tail(output), save=getattr(herdr, "save_context", None))
         effective_task = compose_handoff(task, packet_text(packet))
 
     run_kwargs: dict[str, Any] = {
@@ -715,18 +672,14 @@ def _handle_run(
     if steps:
         # El siguiente agente arranca ya, en paralelo, no al terminar este.
         callbacks.prewarm_chain(
-            chain_spec(
-                "", steps, cwd=cwd, space=space, notify=False, chain_id=chain_id
-            )
+            chain_spec("", steps, cwd=cwd, space=space, notify=False, chain_id=chain_id)
         )
 
     def after_ready(outcome: dict[str, Any]) -> None:
         """Se ejecuta cuando el agente ya arrancó y recibió su tarea."""
         ready_address = str(outcome.get("address") or "").strip()
         if not outcome.get("ok"):
-            callbacks.launch_failed(
-                ready_address, agent, str(outcome.get("error") or "")
-            )
+            callbacks.launch_failed(ready_address, agent, str(outcome.get("error") or ""))
             return
         if steps:
             callbacks.enqueue_chain(
@@ -755,9 +708,7 @@ def _handle_run(
 
     address = ""
     if isinstance(result, dict):
-        address = str(
-            result.get("address") or result.get("terminal") or ""
-        ).strip()
+        address = str(result.get("address") or result.get("terminal") or "").strip()
     if not address:
         return wrapped
 
@@ -776,9 +727,7 @@ def _handle_delegate(
     args: dict[str, Any],
 ) -> ToolResult:
     try:
-        action = _checked_action(
-            args, _DELEGATE_ACTIONS, "delegate_to_agent"
-        )
+        action = _checked_action(args, _DELEGATE_ACTIONS, "delegate_to_agent")
 
         if action == "list":
             return _wrapped(herdr.list_agents())
@@ -829,18 +778,14 @@ def _handle_delegate(
             key = resolver(wanted) if callable(resolver) else wanted.lower()
             text = load_guide(key or "")
             if text is None:
-                raise _ArgumentError(
-                    f"No hay manual para {wanted!r}. Usa action=agents."
-                )
+                raise _ArgumentError(f"No hay manual para {wanted!r}. Usa action=agents.")
             return ToolResult(ok=True, data={"agent": key, "guide": text})
 
         if action == "keys":
             address = _required_text(args, "address", action)
             pressed = args.get("keys")
             if not isinstance(pressed, list) or not pressed:
-                raise _ArgumentError(
-                    "Para la acción «keys» indica «keys» (lista de teclas)."
-                )
+                raise _ArgumentError("Para la acción «keys» indica «keys» (lista de teclas).")
             return _wrapped(herdr.keys_agent(address, pressed))
 
         if action == "configure":
@@ -848,9 +793,7 @@ def _handle_delegate(
             model = _optional_text(args, "model", action)
             effort = _optional_text(args, "effort", action)
             if not model and not effort:
-                raise _ArgumentError(
-                    "Para la acción «configure» indica «model» o «effort»."
-                )
+                raise _ArgumentError("Para la acción «configure» indica «model» o «effort».")
             return _wrapped(herdr.configure_agent(address, model, effort))
 
         if action == "focus":
@@ -882,9 +825,7 @@ def _handle_delegate(
     except _ArgumentError as exc:
         return ToolResult(ok=False, error=str(exc))
     except HerdrError as exc:
-        return ToolResult(
-            ok=False, error=f"No he podido hablar con Herdr: {exc}"
-        )
+        return ToolResult(ok=False, error=f"No he podido hablar con Herdr: {exc}")
     except Exception as exc:  # noqa: BLE001 - se devuelve error legible
         return ToolResult(
             ok=False,
@@ -905,9 +846,7 @@ def _handle_voice(
             watched: str | None = None
             if _wants_notify(_user_text(callbacks)) and state.last_address:
                 watched = state.last_address
-                callbacks.remember_task(
-                    watched, "", _user_text(callbacks)
-                )
+                callbacks.remember_task(watched, "", _user_text(callbacks))
                 callbacks.watch(watched)
             callbacks.request_close()
             return ToolResult(
@@ -920,9 +859,7 @@ def _handle_voice(
             )
 
         if action == "close_and_watch":
-            address = (
-                _optional_text(args, "address", action) or state.last_address
-            )
+            address = _optional_text(args, "address", action) or state.last_address
             if not address:
                 # DECISION: sin agente no se cierra, porque el usuario pidió
                 # expresamente que se le avise al terminar. El error explica
@@ -944,9 +881,7 @@ def _handle_voice(
                     "closed": True,
                     "address": address,
                     "watching": True,
-                    "message": (
-                        "Cerraré la escucha y te avisaré cuando termine."
-                    ),
+                    "message": ("Cerraré la escucha y te avisaré cuando termine."),
                 },
             )
 
@@ -954,19 +889,14 @@ def _handle_voice(
             muted = args.get("muted")
             if not isinstance(muted, bool):
                 raise _ArgumentError(
-                    "Para la acción «mic_mute» falta el parámetro booleano "
-                    "«muted»."
+                    "Para la acción «mic_mute» falta el parámetro booleano «muted»."
                 )
             callbacks.mic_mute(muted)
             return ToolResult(
                 ok=True,
                 data={
                     "muted": muted,
-                    "message": (
-                        "Micrófono silenciado."
-                        if muted
-                        else "Micrófono activo."
-                    ),
+                    "message": ("Micrófono silenciado." if muted else "Micrófono activo."),
                 },
             )
 
@@ -976,13 +906,9 @@ def _handle_voice(
         # mute
         minutes = args.get("minutes")
         if isinstance(minutes, bool) or not isinstance(minutes, int):
-            raise _ArgumentError(
-                "Para la acción «mute» falta el parámetro entero «minutes»."
-            )
+            raise _ArgumentError("Para la acción «mute» falta el parámetro entero «minutes».")
         if not 1 <= minutes <= 480:
-            raise _ArgumentError(
-                "El parámetro «minutes» debe estar entre 1 y 480."
-            )
+            raise _ArgumentError("El parámetro «minutes» debe estar entre 1 y 480.")
         callbacks.mute(minutes)
         return ToolResult(
             ok=True,
@@ -996,17 +922,12 @@ def _handle_voice(
     except Exception as exc:  # noqa: BLE001 - se devuelve error legible
         return ToolResult(
             ok=False,
-            error=(
-                "Error inesperado al controlar la voz: "
-                f"{type(exc).__name__}: {exc}"
-            ),
+            error=(f"Error inesperado al controlar la voz: {type(exc).__name__}: {exc}"),
         )
 
 
 # ------------------------------------------------------------------- builder
-def build_herdr_tools(
-    herdr: Herdr, callbacks: HerdrCallbacks
-) -> list[ToolSpec]:
+def build_herdr_tools(herdr: Herdr, callbacks: HerdrCallbacks) -> list[ToolSpec]:
     """Construye las dos herramientas de Herdr con estado compartido."""
     state = _SessionState()
 

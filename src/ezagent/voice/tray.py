@@ -36,9 +36,7 @@ def load_icon_image(path: Path | None = None) -> Image.Image:
         try:
             if path.exists():
                 return (
-                    Image.open(path)
-                    .convert("RGBA")
-                    .resize((ICON_SIZE, ICON_SIZE), Image.LANCZOS)
+                    Image.open(path).convert("RGBA").resize((ICON_SIZE, ICON_SIZE), Image.LANCZOS)
                 )
         except Exception:
             pass
@@ -79,12 +77,8 @@ class TrayIcon:
                     self._menu_config,
                     default=True,
                 ),
-                _pystray.MenuItem(
-                    "Cambiar forma (círculo / píldora)", self._menu_shape
-                ),
-                _pystray.MenuItem(
-                    "Reiniciar EzAgent", self._menu_restart
-                ),
+                _pystray.MenuItem("Cambiar forma (círculo / píldora)", self._menu_shape),
+                _pystray.MenuItem("Reiniciar EzAgent", self._menu_restart),
                 _pystray.Menu.SEPARATOR,
                 _pystray.MenuItem("Cerrar", self._menu_close),
             )

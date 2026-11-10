@@ -264,7 +264,6 @@ class Rect:
         return (self.y0 + self.y1) / 2.0
 
 
-
 def layout_menu(
     extra: dict[str, float] | None = None,
     viewport_h: float | None = None,
@@ -316,4 +315,3 @@ def layout_menu(
 def visible_menu_height(screen_h: float) -> float:
     """Alto visible del menú: min(560, 0,7 · alto de pantalla − 36)."""
     return min(float(MENU_HEIGHT), max(0.0, 0.7 * float(screen_h) - ISLAND_H))
-

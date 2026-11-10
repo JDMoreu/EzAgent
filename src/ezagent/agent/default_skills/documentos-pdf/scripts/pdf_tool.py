@@ -61,9 +61,7 @@ def _check_input(path: Path) -> None:
 
 def _check_output(path: Path) -> None:
     if path.exists():
-        raise ToolError(
-            f"El archivo de salida ya existe: {path}. Usa otro nombre."
-        )
+        raise ToolError(f"El archivo de salida ya existe: {path}. Usa otro nombre.")
 
 
 def _check_size(path: Path) -> None:
@@ -72,9 +70,7 @@ def _check_size(path: Path) -> None:
     except OSError as exc:
         raise ToolError(f"No se pudo leer {path}: {exc}") from exc
     if size_mb > 50:
-        raise ToolError(
-            f"El PDF supera el máximo de 50 MB ({size_mb:.1f} MB): {path}"
-        )
+        raise ToolError(f"El PDF supera el máximo de 50 MB ({size_mb:.1f} MB): {path}")
 
 
 def _parse_pages(specification: str | None, total: int) -> list[int]:
@@ -93,9 +89,7 @@ def _parse_pages(specification: str | None, total: int) -> list[int]:
             except ValueError as exc:
                 raise ToolError(f"Rango de páginas inválido: «{chunk}»") from exc
             if start < 1 or end < start or end > total:
-                raise ToolError(
-                    f"Rango de páginas fuera de 1..{total}: «{chunk}»"
-                )
+                raise ToolError(f"Rango de páginas fuera de 1..{total}: «{chunk}»")
             pages.extend(range(start - 1, end))
         else:
             try:
@@ -180,9 +174,7 @@ def command_merge(args: argparse.Namespace) -> int:
             try:
                 reader.decrypt("")
             except Exception as exc:  # noqa: BLE001
-                raise ToolError(
-                    f"El PDF está protegido y no se pudo abrir: {source}"
-                ) from exc
+                raise ToolError(f"El PDF está protegido y no se pudo abrir: {source}") from exc
         total_pages += len(reader.pages)
         if total_pages > MAX_PAGES:
             raise ToolError(f"El resultado supera {MAX_PAGES} páginas.")
@@ -252,7 +244,7 @@ def command_create(args: argparse.Namespace) -> int:
 
     pdf.setFont("Helvetica", 11)
     max_chars = max(20, int((width - 2 * margin) / 6))
-    for raw_line in (content.splitlines() or [""]):
+    for raw_line in content.splitlines() or [""]:
         wrapped = textwrap.wrap(raw_line, width=max_chars) or [""]
         for line in wrapped:
             if y < margin:

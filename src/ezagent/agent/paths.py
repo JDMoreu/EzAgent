@@ -13,9 +13,11 @@ from collections.abc import Sequence
 from pathlib import Path
 
 BS = chr(92)  # barra invertida, para evitar escapes en el código
-RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {
-    f"LPT{i}" for i in range(1, 10)
-}
+RESERVED = (
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
 
 
 class PathDenied(Exception):
@@ -60,9 +62,7 @@ def resolve_safe(
             raise PathDenied("carpeta protegida")
     posix = rp.as_posix()
     for pattern in deny_globs:
-        if fnmatch.fnmatch(posix, pattern) or fnmatch.fnmatch(
-            rp.name, pattern.split("/")[-1]
-        ):
+        if fnmatch.fnmatch(posix, pattern) or fnmatch.fnmatch(rp.name, pattern.split("/")[-1]):
             raise PathDenied("archivo protegido")  # DECISION: fnmatch simple
     if rp == Path(rp.anchor):
         raise PathDenied("raíz de unidad no permitida")

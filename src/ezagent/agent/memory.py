@@ -77,15 +77,88 @@ _ACCENT_MAP = str.maketrans(
 )
 _STOPWORDS: frozenset[str] = frozenset(
     {
-        "a", "al", "algo", "ante", "así", "ayer", "con", "como", "cuando",
-        "de", "del", "desde", "donde", "dónde", "el", "él", "ella", "ellas",
-        "ellos", "en", "entre", "era", "es", "esa", "ese", "eso", "esta",
-        "está", "este", "esto", "estos", "estas", "fue", "ha", "hablamos",
-        "han", "has", "hasta", "hay", "hoy", "la", "las", "le", "les", "lo",
-        "los", "más", "me", "mi", "mis", "mucho", "muy", "no", "nos", "o",
-        "para", "pero", "por", "que", "qué", "se", "ser", "si", "sí", "sin",
-        "sobre", "son", "su", "sus", "también", "te", "ti", "tu", "tus", "un",
-        "una", "unas", "uno", "unos", "y", "ya", "yo",
+        "a",
+        "al",
+        "algo",
+        "ante",
+        "así",
+        "ayer",
+        "con",
+        "como",
+        "cuando",
+        "de",
+        "del",
+        "desde",
+        "donde",
+        "dónde",
+        "el",
+        "él",
+        "ella",
+        "ellas",
+        "ellos",
+        "en",
+        "entre",
+        "era",
+        "es",
+        "esa",
+        "ese",
+        "eso",
+        "esta",
+        "está",
+        "este",
+        "esto",
+        "estos",
+        "estas",
+        "fue",
+        "ha",
+        "hablamos",
+        "han",
+        "has",
+        "hasta",
+        "hay",
+        "hoy",
+        "la",
+        "las",
+        "le",
+        "les",
+        "lo",
+        "los",
+        "más",
+        "me",
+        "mi",
+        "mis",
+        "mucho",
+        "muy",
+        "no",
+        "nos",
+        "o",
+        "para",
+        "pero",
+        "por",
+        "que",
+        "qué",
+        "se",
+        "ser",
+        "si",
+        "sí",
+        "sin",
+        "sobre",
+        "son",
+        "su",
+        "sus",
+        "también",
+        "te",
+        "ti",
+        "tu",
+        "tus",
+        "un",
+        "una",
+        "unas",
+        "uno",
+        "unos",
+        "y",
+        "ya",
+        "yo",
     }
 )
 
@@ -317,9 +390,7 @@ def _query_terms(query: str) -> list[str]:
 
 
 def _like_pattern(term: str) -> str:
-    escaped = (
-        term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    )
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"%{escaped}%"
 
 
@@ -447,20 +518,16 @@ class MemoryStore:
     def _init_db(self, *, prefer_fts: bool) -> None:
         with self._connect() as connection:
             connection.execute(_MESSAGES_DDL)
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages(ts)"
-            )
+            connection.execute("CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages(ts)")
             had_fts = (
                 connection.execute(
-                    "SELECT 1 FROM sqlite_master "
-                    "WHERE type = 'table' AND name = 'messages_fts'"
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'messages_fts'"
                 ).fetchone()
                 is not None
             )
             had_triggers = all(
                 connection.execute(
-                    "SELECT 1 FROM sqlite_master "
-                    "WHERE type = 'trigger' AND name = ?",
+                    "SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = ?",
                     (name,),
                 ).fetchone()
                 is not None
@@ -480,9 +547,7 @@ class MemoryStore:
                 # DECISION: sin FTS5 se retiran los triggers para que los
                 # INSERT sigan funcionando; recall cae a LIKE.
                 self.fts_error = str(exc)
-                logger.warning(
-                    "SQLite no ofrece FTS5 (%s); recall usará LIKE.", exc
-                )
+                logger.warning("SQLite no ofrece FTS5 (%s); recall usará LIKE.", exc)
                 warnings.warn(
                     "SQLite no ofrece FTS5; recall usará LIKE como respaldo.",
                     RuntimeWarning,
@@ -493,9 +558,7 @@ class MemoryStore:
                 return
             self.fts_enabled = True
             if not had_fts or not had_triggers:
-                connection.execute(
-                    "INSERT INTO messages_fts(messages_fts) VALUES('rebuild')"
-                )
+                connection.execute("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
 
     # ------------------------------------------------------------------
     # Archivos Markdown
@@ -606,8 +669,7 @@ class MemoryStore:
         if len(value) > MAX_ENTRY_CHARS:
             return MemoryResult(
                 "too_long",
-                f"El texto tiene {len(value)} caracteres; el máximo es "
-                f"{MAX_ENTRY_CHARS}.",
+                f"El texto tiene {len(value)} caracteres; el máximo es {MAX_ENTRY_CHARS}.",
                 kind=normalized_kind,
                 text=value,
             )
@@ -645,9 +707,7 @@ class MemoryStore:
                 text=value,
                 proposal=self._compaction_proposal(normalized_kind, value),
             )
-        return MemoryResult(
-            "ready", "Listo para guardar.", kind=normalized_kind, text=value
-        )
+        return MemoryResult("ready", "Listo para guardar.", kind=normalized_kind, text=value)
 
     def remember(self, kind: str, text: str) -> MemoryResult:
         """Valida y guarda una viñeta. Nunca guarda secretos ni duplicados."""
@@ -717,16 +777,13 @@ class MemoryStore:
             )
         lines = self._compaction_lines(text)
         if not lines:
-            return MemoryResult(
-                "empty", "La versión compactada está vacía.", kind=normalized_kind
-            )
+            return MemoryResult("empty", "La versión compactada está vacía.", kind=normalized_kind)
         content = "\n".join(lines) + "\n"
         limit = _KIND_LIMITS[normalized_kind]
         if len(content) > limit:
             return MemoryResult(
                 "too_long",
-                f"La versión compactada tiene {len(content)} caracteres; el "
-                f"máximo es {limit}.",
+                f"La versión compactada tiene {len(content)} caracteres; el máximo es {limit}.",
                 kind=normalized_kind,
                 text=content,
                 line_count=len(lines),
@@ -767,8 +824,7 @@ class MemoryStore:
         self._atomic_write(path, prepared.text)
         return MemoryResult(
             "compacted",
-            f"{self.filename(prepared.kind)} compactado; copia anterior en "
-            f"{backup.name}.",
+            f"{self.filename(prepared.kind)} compactado; copia anterior en {backup.name}.",
             kind=prepared.kind,
             text=prepared.text,
             backup=str(backup),
@@ -785,11 +841,7 @@ class MemoryStore:
         for kind in ("user", "memory"):
             content = self._read(kind)
             lines = content.splitlines()
-            kept = [
-                line
-                for line in lines
-                if not (line.strip() and needle in fold_text(line))
-            ]
+            kept = [line for line in lines if not (line.strip() and needle in fold_text(line))]
             if len(kept) == len(lines):
                 continue
             removed += len(lines) - len(kept)
@@ -899,9 +951,7 @@ class MemoryStore:
     def purge_old(self, now: datetime | None = None) -> int:
         """Borra mensajes anteriores al periodo de retención y devuelve cuántos."""
         current = _as_utc(now or self._clock())
-        cutoff = (current - timedelta(days=self.retention_days)).isoformat(
-            timespec="seconds"
-        )
+        cutoff = (current - timedelta(days=self.retention_days)).isoformat(timespec="seconds")
         with self._connect() as connection:
             cursor = connection.execute("DELETE FROM messages WHERE ts < ?", (cutoff,))
             return max(0, cursor.rowcount)
@@ -927,9 +977,7 @@ class MemoryStore:
         terms = _query_terms(query)
         if not terms:
             return []
-        expression = " OR ".join(
-            '"' + term.replace('"', '""') + '"' for term in terms
-        )
+        expression = " OR ".join('"' + term.replace('"', '""') + '"' for term in terms)
         statement = (
             "SELECT m.id, m.ts, m.session, m.role, m.content, "
             "bm25(messages_fts) AS score "
@@ -939,10 +987,7 @@ class MemoryStore:
         )
         with self._connect() as connection:
             rows = connection.execute(statement, (expression, limit)).fetchall()
-        return [
-            self._result_from_row(row, terms, score=float(row["score"]))
-            for row in rows
-        ]
+        return [self._result_from_row(row, terms, score=float(row["score"])) for row in rows]
 
     def _recall_like(self, query: str, limit: int) -> list[dict[str, Any]]:
         terms = _query_terms(query) or [fold_text(query)]
@@ -962,9 +1007,7 @@ class MemoryStore:
 
     # DECISION: si FTS5 está disponible pero no devuelve nada, se prueba LIKE
     # para no perder coincidencias por la tokenización.
-    def recall(
-        self, query: str, limit: int = DEFAULT_RECALL_LIMIT
-    ) -> list[dict[str, Any]]:
+    def recall(self, query: str, limit: int = DEFAULT_RECALL_LIMIT) -> list[dict[str, Any]]:
         """Busca conversaciones anteriores; fragmentos de 300 caracteres como máximo."""
         text = normalize_entry(query)
         if not text:
@@ -989,9 +1032,7 @@ class MemoryStore:
             cursor = connection.execute("DELETE FROM messages")
             deleted = max(0, cursor.rowcount)
             if self.fts_enabled:
-                connection.execute(
-                    "INSERT INTO messages_fts(messages_fts) VALUES('rebuild')"
-                )
+                connection.execute("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
         return deleted
 
 
@@ -1039,8 +1080,7 @@ def _wipe_command(args: argparse.Namespace) -> int:
             )
             return 2
         answer = input(
-            "Esto borrará todo el historial de conversaciones. "
-            "Escribe «borrar» para continuar: "
+            "Esto borrará todo el historial de conversaciones. Escribe «borrar» para continuar: "
         )
         if answer.strip().lower() != "borrar":
             print("Cancelado. No se borró nada.")

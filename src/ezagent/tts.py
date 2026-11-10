@@ -55,9 +55,7 @@ def resolve_kokoro_files(
     elif variant in MODEL_ASSETS:
         model = _ensure(manifest[MODEL_ASSETS[variant]])
     else:
-        logger.warning(
-            f"KOKORO_MODEL_VARIANT={variant!r} no reconocido; usa KOKORO_MODEL_PATH"
-        )
+        logger.warning(f"KOKORO_MODEL_VARIANT={variant!r} no reconocido; usa KOKORO_MODEL_PATH")
         model = None
 
     return (str(model) if model else None, str(voices) if voices else None)

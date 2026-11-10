@@ -107,11 +107,7 @@ def wrap_untrusted(source: str, content: str) -> str:
     """
     safe_source = html_module.escape(source, quote=True)
     safe_content = _CLOSING_UNTRUSTED_RE.sub("&lt;/untrusted_content", content)
-    return (
-        f"<untrusted_content source='{safe_source}'>\n"
-        f"{safe_content}\n"
-        f"</untrusted_content>"
-    )
+    return f"<untrusted_content source='{safe_source}'>\n{safe_content}\n</untrusted_content>"
 
 
 def run_web_search(
@@ -164,10 +160,7 @@ def run_fetch_page(
     except httpx.TimeoutException:
         return ToolResult(
             ok=False,
-            error=(
-                f"La página tardó más de {FETCH_TIMEOUT_S:g} segundos "
-                "en responder."
-            ),
+            error=(f"La página tardó más de {FETCH_TIMEOUT_S:g} segundos en responder."),
         )
     except httpx.InvalidURL as exc:
         return ToolResult(ok=False, error=f"La URL no es válida: {exc}")
@@ -189,9 +182,7 @@ def build_web_tools(
     ``provider`` permite inyectar un ``SearchProvider`` alternativo (Brave,
     SearXNG o un doble de pruebas). Por defecto se usa DuckDuckGo vía ``ddgs``.
     """
-    active_provider: SearchProvider = (
-        provider if provider is not None else DdgsSearchProvider()
-    )
+    active_provider: SearchProvider = provider if provider is not None else DdgsSearchProvider()
     default_max_chars = _configured_max_chars(config)
 
     def web_search(query: str, max_results: int = 5) -> ToolResult:
@@ -294,8 +285,7 @@ def _validated_query(query: Any) -> str:
     # gigantes sin molestar a una búsqueda normal.
     if len(normalized) > MAX_QUERY_CHARS:
         raise WebToolError(
-            "La consulta de búsqueda es demasiado larga "
-            f"(máximo {MAX_QUERY_CHARS} caracteres)."
+            f"La consulta de búsqueda es demasiado larga (máximo {MAX_QUERY_CHARS} caracteres)."
         )
     return normalized
 
@@ -306,9 +296,7 @@ def _validated_max_results(value: Any) -> int:
         or not isinstance(value, int)
         or not 1 <= value <= MAX_SEARCH_RESULTS
     ):
-        raise WebToolError(
-            "El parámetro 'max_results' debe ser un número entero entre 1 y 10."
-        )
+        raise WebToolError("El parámetro 'max_results' debe ser un número entero entre 1 y 10.")
     return value
 
 
@@ -330,26 +318,20 @@ def _validated_max_chars(config: AgentConfig, value: Any) -> int:
     # DECISION: WebConfig.max_fetch_chars es el techo duro del parámetro.
     limit = _configured_max_chars(config)
     if value > limit:
-        raise WebToolError(
-            f"El parámetro 'max_chars' no puede superar {limit}."
-        )
+        raise WebToolError(f"El parámetro 'max_chars' no puede superar {limit}.")
     return value
 
 
 def _clean_results(raw_results: Any, max_results: int) -> list[dict[str, str]]:
     if not isinstance(raw_results, (list, tuple)):
-        raise WebToolError(
-            "El proveedor de búsqueda devolvió un resultado con formato no válido."
-        )
+        raise WebToolError("El proveedor de búsqueda devolvió un resultado con formato no válido.")
     results: list[dict[str, str]] = []
     for item in raw_results:
         if not isinstance(item, dict):
             continue
         title = str(item.get("title") or "(sin título)").strip()
         url = str(item.get("url") or item.get("href") or "").strip()
-        snippet = str(
-            item.get("snippet") or item.get("body") or ""
-        ).strip()
+        snippet = str(item.get("snippet") or item.get("body") or "").strip()
         results.append({"title": title, "url": url, "snippet": snippet})
         if len(results) >= max_results:
             break
@@ -397,9 +379,7 @@ def _is_blocked_ip(
                 return True
         # Teredo ofusca la IPv4 del cliente en los últimos 32 bits (XOR).
         if address in _TEREDO_NETWORK:
-            embedded = ipaddress.IPv4Address(
-                (int(address) & 0xFFFFFFFF) ^ 0xFFFFFFFF
-            )
+            embedded = ipaddress.IPv4Address((int(address) & 0xFFFFFFFF) ^ 0xFFFFFFFF)
             if not embedded.is_global:
                 return True
     return False
@@ -423,9 +403,7 @@ def _resolve_ips(
     try:
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
-        raise UnsafeUrlError(
-            f"No se pudo resolver el nombre de host «{host}»."
-        ) from exc
+        raise UnsafeUrlError(f"No se pudo resolver el nombre de host «{host}».") from exc
 
     addresses: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
     for info in infos:
@@ -457,9 +435,7 @@ def _validate_public_url(url: str, config: AgentConfig) -> str:
 
     scheme = parts.scheme.lower()
     if scheme not in ("http", "https"):
-        raise UnsafeUrlError(
-            "Solo se permiten URL con esquema http:// o https://."
-        )
+        raise UnsafeUrlError("Solo se permiten URL con esquema http:// o https://.")
     # DECISION: credenciales embebidas (http://user:pass@host) se rechazan;
     # no hacen falta para leer páginas y facilitan el engaño.
     if parts.username is not None or parts.password is not None:
@@ -482,9 +458,7 @@ def _validate_public_url(url: str, config: AgentConfig) -> str:
 
     host_clean = host.rstrip(".").lower()
     if host_clean == "localhost" or host_clean.endswith(".localhost"):
-        raise UnsafeUrlError(
-            f"No se permite acceder a direcciones locales: «{host}»."
-        )
+        raise UnsafeUrlError(f"No se permite acceder a direcciones locales: «{host}».")
 
     literal_candidate = host_clean.split("%", 1)[0]
     try:
@@ -548,10 +522,7 @@ def _download_page_text(
         trust_env=False,
         headers={
             "User-Agent": USER_AGENT,
-            "Accept": (
-                "text/html,application/xhtml+xml,text/plain;q=0.9,"
-                "*/*;q=0.1"
-            ),
+            "Accept": ("text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1"),
         },
     ) as client:
         while True:
@@ -565,8 +536,7 @@ def _download_page_text(
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise PageTimeoutError(
-                    f"La página tardó más de {FETCH_TIMEOUT_S:g} segundos "
-                    "en responder."
+                    f"La página tardó más de {FETCH_TIMEOUT_S:g} segundos en responder."
                 )
 
             with client.stream(
@@ -576,38 +546,27 @@ def _download_page_text(
             ) as response:
                 if response.is_redirect:
                     if redirects >= MAX_REDIRECTS:
-                        raise WebToolError(
-                            f"Se superó el máximo de {MAX_REDIRECTS} redirecciones."
-                        )
+                        raise WebToolError(f"Se superó el máximo de {MAX_REDIRECTS} redirecciones.")
                     location = response.headers.get("location")
                     if not location:
-                        raise WebToolError(
-                            "La página devolvió una redirección sin destino."
-                        )
+                        raise WebToolError("La página devolvió una redirección sin destino.")
                     current_url = urljoin(current_url, location)
                     redirects += 1
                     continue
 
                 if response.status_code >= 400:
-                    raise WebToolError(
-                        f"La página respondió con HTTP {response.status_code}."
-                    )
+                    raise WebToolError(f"La página respondió con HTTP {response.status_code}.")
 
                 payload = bytearray()
                 for chunk in response.iter_bytes():
                     payload.extend(chunk)
                     if len(payload) > MAX_FETCH_BYTES:
-                        raise PageTooLargeError(
-                            "La página supera el tamaño máximo de 2 MB."
-                        )
+                        raise PageTooLargeError("La página supera el tamaño máximo de 2 MB.")
                     if time.monotonic() > deadline:
                         raise PageTimeoutError(
-                            f"La página tardó más de {FETCH_TIMEOUT_S:g} "
-                            "segundos en responder."
+                            f"La página tardó más de {FETCH_TIMEOUT_S:g} segundos en responder."
                         )
 
                 encoding = response.encoding or "utf-8"
-                page_text = _extract_text(
-                    bytes(payload).decode(encoding, errors="replace")
-                )
+                page_text = _extract_text(bytes(payload).decode(encoding, errors="replace"))
                 return current_url, page_text

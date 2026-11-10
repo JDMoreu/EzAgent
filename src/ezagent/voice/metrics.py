@@ -26,9 +26,7 @@ class TurnTimings:
     # ``llm`` (espera de tokens), ``tts_synth`` (síntesis) y ``tts_play`` (voz).
     spans: dict[str, float] = field(default_factory=dict)
     # La cola de voz suma ``tts_play`` desde su propio hilo.
-    _lock: threading.Lock = field(
-        default_factory=threading.Lock, repr=False, compare=False
-    )
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def mark(self, name: str, at: float | None = None) -> None:
         with self._lock:
@@ -90,11 +88,7 @@ def format_turn(report: dict[str, float]) -> str:
     if "stt_ready_ms" in report:
         parts.append(f"STT {_ms(report['stt_ready_ms'])}")
     if "llm_ms" in report:
-        detail = (
-            f" (1.er token {_ms(report['llm_ttft_ms'])})"
-            if "llm_ttft_ms" in report
-            else ""
-        )
+        detail = f" (1.er token {_ms(report['llm_ttft_ms'])})" if "llm_ttft_ms" in report else ""
         parts.append(f"LLM {_ms(report['llm_ms'])}{detail}")
     if "tts_synth_ms" in report:
         parts.append(f"TTS {_ms(report['tts_synth_ms'])} síntesis")
@@ -129,8 +123,7 @@ class LatencyStats:
     def record_command(self, name: str, handled_ms: float) -> None:
         """Registra un comando local (sin LLM): tiempo hasta ejecutarlo."""
         self._append_jsonl(
-            {"ts": time.time(), "kind": "command", "name": name,
-             "handled_ms": round(handled_ms, 1)}
+            {"ts": time.time(), "kind": "command", "name": name, "handled_ms": round(handled_ms, 1)}
         )
 
     def record(self, timings: TurnTimings) -> dict[str, float]:
@@ -138,8 +131,11 @@ class LatencyStats:
         self._turns.append(report)
         self._total += 1
         self._append_jsonl(
-            {"ts": time.time(), "kind": "turn",
-             **{key: round(value, 1) for key, value in report.items()}}
+            {
+                "ts": time.time(),
+                "kind": "turn",
+                **{key: round(value, 1) for key, value in report.items()},
+            }
         )
         print(f"[ezagent-voice] Tiempos: {format_turn(report)}", flush=True)
         if self._total >= 10 and self._total % 10 == 0:

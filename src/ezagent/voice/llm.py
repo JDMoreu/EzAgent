@@ -91,9 +91,7 @@ class Messenger:
         self.mic_mute = mic_mute
         self.runtime = runtime
         self._configure_client()
-        self.messages: list[dict[str, Any]] = [
-            {"role": "system", "content": self._system_prompt()}
-        ]
+        self.messages: list[dict[str, Any]] = [{"role": "system", "content": self._system_prompt()}]
         self._last_user_text = ""
         self._last_agent_address: str | None = None
         self._filler_index = 0
@@ -140,9 +138,7 @@ class Messenger:
                 self.runtime.refresh()
             except Exception:
                 pass
-        self.messages = [
-            {"role": "system", "content": self._system_prompt()}
-        ]
+        self.messages = [{"role": "system", "content": self._system_prompt()}]
         self._last_user_text = ""
         self._last_agent_address = None
 
@@ -175,18 +171,40 @@ class Messenger:
         return any(
             word in text
             for word in (
-                "avísame", "avisame", "avisa", "avísame cuando",
-                "me avisas", "me avise", "me avises",
-                "notifícame", "notificame", "notifica",
-                "cuando termine", "cuando acabe",
-                "cuando hayas terminado", "cuando esté", "cuando este",
-                "al terminar", "al acabar",
-                "estate atento", "estate pendiente",
-                "esté atento", "este atento",
-                "vigila", "vigílame", "vigilame", "pendiente de",
-                "me dice", "me digas", "me dices", "dime",
-                "me pasas", "me cuentas", "resumen",
-                "resúmeme", "resumeme",
+                "avísame",
+                "avisame",
+                "avisa",
+                "avísame cuando",
+                "me avisas",
+                "me avise",
+                "me avises",
+                "notifícame",
+                "notificame",
+                "notifica",
+                "cuando termine",
+                "cuando acabe",
+                "cuando hayas terminado",
+                "cuando esté",
+                "cuando este",
+                "al terminar",
+                "al acabar",
+                "estate atento",
+                "estate pendiente",
+                "esté atento",
+                "este atento",
+                "vigila",
+                "vigílame",
+                "vigilame",
+                "pendiente de",
+                "me dice",
+                "me digas",
+                "me dices",
+                "dime",
+                "me pasas",
+                "me cuentas",
+                "resumen",
+                "resúmeme",
+                "resumeme",
             )
         )
 
@@ -195,8 +213,12 @@ class Messenger:
         return any(
             word in text
             for word in (
-                "ciérrate", "cierrate", "cierra la escucha", "cierra el micro",
-                "deja de escuchar", "sin escuchar",
+                "ciérrate",
+                "cierrate",
+                "cierra la escucha",
+                "cierra el micro",
+                "deja de escuchar",
+                "sin escuchar",
             )
         )
 
@@ -270,8 +292,7 @@ class Messenger:
                     # El endpoint OpenAI de Anthropic exige 1.0; la API
                     # Messages nativa acepta la temperatura configurada.
                     1.0
-                    if self.cfg.llm_provider == "anthropic"
-                    and not self._anthropic_style()
+                    if self.cfg.llm_provider == "anthropic" and not self._anthropic_style()
                     else self.cfg.llm_temperature
                 ),
                 "max_tokens": self.cfg.llm_max_tokens,
@@ -280,18 +301,12 @@ class Messenger:
             if tools:
                 request["tools"] = tools
                 request["tool_choice"] = "auto"
-            effort = str(
-                getattr(self.cfg, "llm_reasoning_effort", "none") or "none"
-            )
+            effort = str(getattr(self.cfg, "llm_reasoning_effort", "none") or "none")
             if self.cfg.llm_provider in {"opencode", "openai"}:
                 # Se conserva el valor explícito (incluido «none») que ya
                 # usaba OpenCode/OpenAI; el usuario puede subirlo.
                 request["extra_body"] = {"reasoning_effort": effort}
-            elif (
-                effort != "none"
-                and self.cfg.llm_provider
-                not in {"anthropic", "gemini"}
-            ):
+            elif effort != "none" and self.cfg.llm_provider not in {"anthropic", "gemini"}:
                 # Groq, OpenRouter y endpoints compatibles suelen aceptar el
                 # parámetro; Anthropic/Gemini se dejan sin él.
                 request["extra_body"] = {"reasoning_effort": effort}
@@ -340,7 +355,8 @@ class Messenger:
 
             round_note = f"llamada {len(self.last_rounds) + 1}: " + (
                 f"{first_chunk * 1000:.0f} ms al 1.er fragmento"
-                if first_chunk is not None else "sin fragmentos"
+                if first_chunk is not None
+                else "sin fragmentos"
             )
             if tool_calls:
                 if content_parts:
@@ -365,16 +381,12 @@ class Messenger:
                     except Exception as exc:  # noqa: BLE001
                         logger.warning("Herramienta {}: {}", name, exc)
                         # El aviso sale por voz, no solo al log.
-                        yield (
-                            "No pude ejecutar la herramienta: "
-                            "el núcleo agéntico falló."
-                        )
+                        yield ("No pude ejecutar la herramienta: el núcleo agéntico falló.")
                         content = json.dumps(
                             {
                                 "ok": False,
                                 "error": (
-                                    "Error del núcleo agéntico: "
-                                    f"{type(exc).__name__}: {exc}"
+                                    f"Error del núcleo agéntico: {type(exc).__name__}: {exc}"
                                 ),
                             },
                             ensure_ascii=False,
@@ -386,9 +398,7 @@ class Messenger:
                             "content": content,
                         }
                     )
-                    round_note += (
-                        f", {name} {(time.monotonic() - tool_began) * 1000:.0f} ms"
-                    )
+                    round_note += f", {name} {(time.monotonic() - tool_began) * 1000:.0f} ms"
                 self.last_rounds.append(round_note)
                 continue
             self.last_rounds.append(round_note)
@@ -415,9 +425,7 @@ class Messenger:
     ) -> None:
         """Añade al contexto que un agente terminó, sin resumir todavía."""
         task_line = (
-            f"La tarea que pidió el usuario era:\n{task}\n"
-            if str(task or "").strip()
-            else ""
+            f"La tarea que pidió el usuario era:\n{task}\n" if str(task or "").strip() else ""
         )
         self.messages.append(
             {
@@ -432,4 +440,3 @@ class Messenger:
                 ),
             }
         )
-

@@ -67,9 +67,7 @@ def command_line(argv: list[str], env: dict[str, str] | None = None) -> str:
 
     ``env`` se antepone como ``$env:NOMBRE='valor'; `` (solo vive en esa shell).
     """
-    prefix = "".join(
-        f"$env:{name}={_ps_quote(value)}; " for name, value in (env or {}).items()
-    )
+    prefix = "".join(f"$env:{name}={_ps_quote(value)}; " for name, value in (env or {}).items())
     parts = [p if _PLAIN_ARG.match(p) else _ps_quote(p) for p in argv]
     return prefix + " ".join(parts)
 
@@ -100,7 +98,6 @@ def _is_shell(name: str) -> bool:
     return not plain or plain in _SHELLS
 
 
-
 class AgentSession:
     """Mixin: requiere ``cfg``, ``get_agent``, ``send_agent`` y ``keys_agent``."""
 
@@ -125,9 +122,7 @@ class AgentSession:
         for item in items:
             if isinstance(item, str) and item.strip():
                 steps.append({"send": item})
-            elif isinstance(item, dict) and any(
-                item.get(k) for k in ("send", "keys", "cycle")
-            ):
+            elif isinstance(item, dict) and any(item.get(k) for k in ("send", "keys", "cycle")):
                 steps.append(item)
         return steps
 
@@ -135,11 +130,7 @@ class AgentSession:
         """Espera (sin pausa fija) a que la shell recién abierta dibuje su prompt."""
         waited = 0.0
         while waited < SHELL_PROMPT_TIMEOUT_S:
-            lines = [
-                ln.strip()
-                for ln in self._screen(address).splitlines()
-                if ln.strip()
-            ]
+            lines = [ln.strip() for ln in self._screen(address).splitlines() if ln.strip()]
             if lines and _PS_PROMPT.match(lines[-1]):
                 return True
             self._sleep(0.15)
@@ -147,9 +138,7 @@ class AgentSession:
         return False
 
     def _screen_shows_program(self, address: str) -> bool:
-        lines = [
-            ln.strip() for ln in self._screen(address).splitlines() if ln.strip()
-        ]
+        lines = [ln.strip() for ln in self._screen(address).splitlines() if ln.strip()]
         return len(lines) >= 3 and not _PS_PROMPT.match(lines[-1])
 
     def wait_ready(self, address: str, timeout: float = READY_TIMEOUT_S) -> bool:
@@ -182,9 +171,7 @@ class AgentSession:
             return ""
         return "\n".join(str(text).splitlines()[-SCREEN_LINES:])
 
-    def _check_screen(
-        self, address: str, step: dict[str, Any], values: dict[str, str]
-    ) -> str:
+    def _check_screen(self, address: str, step: dict[str, Any], values: dict[str, str]) -> str:
         """Comprueba ``expect``/``fail`` en pantalla; devuelve el fallo o ''."""
         expect, fail = step.get("expect"), step.get("fail")
         if not expect and not fail:
@@ -198,15 +185,11 @@ class AgentSession:
             screen = self._screen(address)
             if fail and re.search(fill(str(fail), values, True), screen, re.I):
                 return message
-            if not expect or re.search(
-                fill(str(expect), values, True), screen, re.I
-            ):
+            if not expect or re.search(fill(str(expect), values, True), screen, re.I):
                 return ""
         return message
 
-    def _cycle(
-        self, address: str, step: dict[str, Any], values: dict[str, str]
-    ) -> tuple[str, str]:
+    def _cycle(self, address: str, step: dict[str, Any], values: dict[str, str]) -> tuple[str, str]:
         """Pulsa una tecla hasta que la pantalla muestre ``until``."""
         spec = step["cycle"] if isinstance(step.get("cycle"), dict) else {}
         keys = valid_keys(spec.get("keys"))
@@ -356,9 +339,7 @@ class AgentSession:
                     "Enter por ti: confírmalo tú y vuelve a pedirme la tarea."
                 ),
             }
-        applied, warnings, fatal = self._apply_in_session(
-            address, key, launch.pending
-        )
+        applied, warnings, fatal = self._apply_in_session(address, key, launch.pending)
         if fatal:
             return {
                 "ok": False,

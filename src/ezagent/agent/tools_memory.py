@@ -42,9 +42,7 @@ def _resolve_confirmation(
     if confirm is not None:
         return confirm
     if confirmation is not None:
-        return lambda summary, strong: bool(
-            confirmation.ask(summary, strong=strong)
-        )
+        return lambda summary, strong: bool(confirmation.ask(summary, strong=strong))
     return _deny_confirmation
 
 
@@ -159,15 +157,11 @@ def build_memory_tools(
                 data={
                     "status": "not_found",
                     "removed": 0,
-                    "message": (
-                        f"No encontré líneas que coincidan con "
-                        f"«{summarize_text(query)}»."
-                    ),
+                    "message": (f"No encontré líneas que coincidan con «{summarize_text(query)}»."),
                 },
             )
         detail = ", ".join(
-            f"{store.filename(kind)} ({len(lines)})"
-            for kind, lines in matches.items()
+            f"{store.filename(kind)} ({len(lines)})" for kind, lines in matches.items()
         )
         question = (
             f"¿Borro {total} línea(s) de {detail} que coinciden con "
@@ -246,10 +240,7 @@ def build_memory_tools(
     def describe_forget(args: dict[str, Any]) -> ToolInfo:
         return ToolInfo(
             level=2,
-            summary=(
-                "Olvidar líneas que coincidan con "
-                f"«{summarize_text(args.get('query', ''))}»"
-            ),
+            summary=(f"Olvidar líneas que coincidan con «{summarize_text(args.get('query', ''))}»"),
         )
 
     def describe_compact(args: dict[str, Any]) -> ToolInfo:

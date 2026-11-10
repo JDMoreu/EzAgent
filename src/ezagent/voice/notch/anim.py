@@ -27,9 +27,7 @@ from .tokens import (
 Easing = Callable[[float], float]
 
 
-def cubic_bezier(
-    x1: float, y1: float, x2: float, y2: float
-) -> Easing:
+def cubic_bezier(x1: float, y1: float, x2: float, y2: float) -> Easing:
     """Devuelve ease(x) -> y, igual que CSS cubic-bezier(x1, y1, x2, y2)."""
     cx = 3.0 * x1
     bx = 3.0 * (x2 - x1) - cx
@@ -111,9 +109,7 @@ class Tween:
             self.value = self._v1
             self._ease = None
         else:
-            self.value = self._v0 + (self._v1 - self._v0) * self._ease(
-                max(k, 0.0)
-            )
+            self.value = self._v0 + (self._v1 - self._v0) * self._ease(max(k, 0.0))
         return self.value
 
 
@@ -169,9 +165,7 @@ def animations_enabled() -> bool:
         ]
         user32.SystemParametersInfoW.restype = wintypes.BOOL
         flag = wintypes.BOOL(True)
-        ok = user32.SystemParametersInfoW(
-            0x1042, 0, ctypes.byref(flag), 0
-        )
+        ok = user32.SystemParametersInfoW(0x1042, 0, ctypes.byref(flag), 0)
         return bool(flag.value) if ok else True
     except Exception:
         return True

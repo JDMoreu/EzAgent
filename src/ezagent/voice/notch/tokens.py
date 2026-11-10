@@ -28,25 +28,25 @@ RGBA = tuple[int, int, int, int]
 Color = RGB | RGBA
 
 DARK: Final[dict[str, Color]] = {
-    "BODY": (20, 18, 16),          # #0E0F13
-    "GROUP": (30, 27, 24),         # #1C1C1F
-    "GROUP_HOVER": (40, 36, 32),   # #26262A
-    "TRACK": (52, 48, 43),         # #2F2F34
-    "TEXT": (244, 239, 232),       # #F5F5F7
-    "TEXT_2": (194, 186, 174),     # #B6B6BF
-    "TEXT_3": (156, 148, 136),     # #94949E
-    "LINE": (244, 239, 232, 23),   # rgba(255,255,255,.09)
-    "LINE_2": (244, 239, 232, 15), # rgba(255,255,255,.06)
-    "MINT": (212, 242, 90),        # #5EEAC4
-    "WARM": (255, 178, 62),        # #FFC24A
-    "ERR": (255, 93, 82),          # #FF453A
-    "MINT_BTN": (212, 242, 90),    # #5EEAC4
-    "MINT_INK": (20, 18, 16),      # #0B1220
-    "WARM_BTN": (255, 178, 62),    # #FFC24A
-    "WARM_INK": (26, 16, 0),       # #1A1200
-    "ERR_INK": (20, 18, 16),       # #0E0F13
-    "EYE_IDLE": (140, 160, 63),    # #3E927D
-    "EYE_MUTE": (183, 140, 58),    # #B78C3A
+    "BODY": (20, 18, 16),  # #0E0F13
+    "GROUP": (30, 27, 24),  # #1C1C1F
+    "GROUP_HOVER": (40, 36, 32),  # #26262A
+    "TRACK": (52, 48, 43),  # #2F2F34
+    "TEXT": (244, 239, 232),  # #F5F5F7
+    "TEXT_2": (194, 186, 174),  # #B6B6BF
+    "TEXT_3": (156, 148, 136),  # #94949E
+    "LINE": (244, 239, 232, 23),  # rgba(255,255,255,.09)
+    "LINE_2": (244, 239, 232, 15),  # rgba(255,255,255,.06)
+    "MINT": (212, 242, 90),  # #5EEAC4
+    "WARM": (255, 178, 62),  # #FFC24A
+    "ERR": (255, 93, 82),  # #FF453A
+    "MINT_BTN": (212, 242, 90),  # #5EEAC4
+    "MINT_INK": (20, 18, 16),  # #0B1220
+    "WARM_BTN": (255, 178, 62),  # #FFC24A
+    "WARM_INK": (26, 16, 0),  # #1A1200
+    "ERR_INK": (20, 18, 16),  # #0E0F13
+    "EYE_IDLE": (140, 160, 63),  # #3E927D
+    "EYE_MUTE": (183, 140, 58),  # #B78C3A
     # Variantes de texto de la palabra de estado (AA sobre BODY). En oscuro
     # coinciden con el color del ojo; en claro se oscurecen para el texto.
     "WORD_IDLE": (140, 160, 63),
@@ -57,31 +57,31 @@ DARK: Final[dict[str, Color]] = {
 }
 
 LIGHT: Final[dict[str, Color]] = {
-    "BODY": (250, 248, 245),       # #FFFFFF
-    "GROUP": (241, 237, 231),      # #F5F5F7
-    "GROUP_HOVER": (232, 227, 219),# #EBEBEF
-    "TRACK": (214, 208, 198),      # #D1D1D6
-    "TEXT": (26, 23, 20),          # #1D1D1F
-    "TEXT_2": (78, 72, 64),        # #52525A
-    "TEXT_3": (111, 103, 92),     # #6E6E73
-    "LINE": (26, 23, 20, 26),         # rgba(0,0,0,.10)
-    "LINE_2": (26, 23, 20, 15),       # rgba(0,0,0,.06)
-    "MINT": (77, 107, 0),        # #0C917E
-    "WARM": (163, 95, 0),        # #C2760A
-    "ERR": (200, 36, 26),           # #D70015
-    "MINT_BTN": (92, 127, 0),    # #0A7A6A
-    "MINT_INK": (255, 255, 255),   # #FFFFFF
-    "WARM_BTN": (163, 95, 0),      # #B25000
-    "WARM_INK": (255, 255, 255),   # #FFFFFF
-    "ERR_INK": (255, 255, 255),    # #FFFFFF
+    "BODY": (250, 248, 245),  # #FFFFFF
+    "GROUP": (241, 237, 231),  # #F5F5F7
+    "GROUP_HOVER": (232, 227, 219),  # #EBEBEF
+    "TRACK": (214, 208, 198),  # #D1D1D6
+    "TEXT": (26, 23, 20),  # #1D1D1F
+    "TEXT_2": (78, 72, 64),  # #52525A
+    "TEXT_3": (111, 103, 92),  # #6E6E73
+    "LINE": (26, 23, 20, 26),  # rgba(0,0,0,.10)
+    "LINE_2": (26, 23, 20, 15),  # rgba(0,0,0,.06)
+    "MINT": (77, 107, 0),  # #0C917E
+    "WARM": (163, 95, 0),  # #C2760A
+    "ERR": (200, 36, 26),  # #D70015
+    "MINT_BTN": (92, 127, 0),  # #0A7A6A
+    "MINT_INK": (255, 255, 255),  # #FFFFFF
+    "WARM_BTN": (163, 95, 0),  # #B25000
+    "WARM_INK": (255, 255, 255),  # #FFFFFF
+    "ERR_INK": (255, 255, 255),  # #FFFFFF
     # Ajuste AA sobre la spec: #6DBDB2 (2,19:1) y #D49F54 (2,36:1) no
     # alcanzaban ni el 3:1 gráfico sobre blanco. Se conserva la temperatura
     # mint/ámbar, un paso más profunda.
-    "EYE_IDLE": (111, 138, 31),    # #2F7F74
-    "EYE_MUTE": (163, 95, 0),    # #A06412
+    "EYE_IDLE": (111, 138, 31),  # #2F7F74
+    "EYE_MUTE": (163, 95, 0),  # #A06412
     "WORD_IDLE": (86, 110, 18),
-    "WORD_MINT": (77, 107, 0),   # #0A7A6A
-    "WORD_WARM": (163, 95, 0),     # #8A5207
+    "WORD_MINT": (77, 107, 0),  # #0A7A6A
+    "WORD_WARM": (163, 95, 0),  # #8A5207
     "WORD_MUTE": (163, 95, 0),
     "WORD_ERR": (200, 36, 26),
 }
@@ -137,9 +137,7 @@ FS_TITLE = FontStyle("FS_TITLE", "Geist", 16, 600)
 FS_ROW = FontStyle("FS_ROW", "Geist", 14, 400)
 FS_BODY = FontStyle("FS_BODY", "Geist", 13, 400)
 FS_SECONDARY = FontStyle("FS_SECONDARY", "Geist", 12, 600)
-FS_MICRO = FontStyle(
-    "FS_MICRO", "GeistMono", 11, 500, tracking_em=0.10, uppercase=True
-)
+FS_MICRO = FontStyle("FS_MICRO", "GeistMono", 11, 500, tracking_em=0.10, uppercase=True)
 
 FONT_STYLES: Final[dict[str, FontStyle]] = {
     "FS_TITLE": FS_TITLE,
@@ -245,10 +243,7 @@ class Rect:
     def overlaps(self, other: Rect) -> bool:
         """True si ambos rectángulos comparten área positiva."""
         return (
-            self.x0 < other.x1
-            and other.x0 < self.x1
-            and self.y0 < other.y1
-            and other.y0 < self.y1
+            self.x0 < other.x1 and other.x0 < self.x1 and self.y0 < other.y1 and other.y0 < self.y1
         )
 
 

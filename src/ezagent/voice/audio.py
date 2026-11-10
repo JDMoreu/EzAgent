@@ -263,10 +263,7 @@ class Segmenter:
                 self._noise_samples += 1
                 lo = float(np.min(self._quiet))
                 hi = float(np.max(self._quiet))
-                if (
-                    self._noise_samples >= 4
-                    and hi - lo > max(lo * 0.5, self.min_rms)
-                ):
+                if self._noise_samples >= 4 and hi - lo > max(lo * 0.5, self.min_rms):
                     # La energía cambia demasiado para ser un ventilador o un
                     # zumbido estable: es una frase que empezó al arrancar.
                     # No la convertimos en el suelo de ruido.
@@ -333,10 +330,7 @@ class Segmenter:
             voiced_secs = self._voiced_secs
             self._reset()
             self.last_speech_end = speech_end
-            if (
-                speech_secs >= self.min_speech_secs
-                and voiced_secs >= self.min_voiced_secs
-            ):
+            if speech_secs >= self.min_speech_secs and voiced_secs >= self.min_voiced_secs:
                 return pcm, False
             # Turno descartado (clic, soplido): b"" avisa a quien escucha de que
             # el arranque de voz no llegó a frase y debe soltar su estado.
