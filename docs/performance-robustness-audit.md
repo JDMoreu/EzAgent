@@ -475,12 +475,13 @@ Esta sección no reescribe la auditoría: registra qué se cambió, qué se vali
 | F56 | Corregido | Si un turno espera más de 1,5 s al anterior, `Messenger.on_busy` avisa una sola vez; `app.py` dice una frase local y deja una nota en el chat, sin añadirla al historial. Si se cancela la espera, no se dice nada. |
 | F57 | Corregido | `on_busy` recibe el modo del turno. En chat con `chat.voice_replies` apagado solo se muestra la nota; con voz o en un turno de voz se muestra y se dice. |
 | F58 | Corregido | El aviso de espera se marca como TTS (`_busy_speaking`): `is_speaking` lo cuenta, `_on_speech_start` lo ignora como eco y un barge-in real solo corta la frase, sin cancelar el turno que espera. Al terminar aplica la ventana post-TTS de 0,25 s. |
+| F59 | Corregido | El aviso tiene su propio `_busy_stop`: `_signal_tts_stop()` lo corta junto al del turno, pero el barge-in del aviso solo activa `_busy_stop`, sin tocar `_tts_stop`, `_turn_gen` ni el estado de la barra. El arranque reinyectado sigue el flujo normal de THINKING y abre un turno nuevo. |
 
-F52–F58 son defectos o mejoras detectados al revisar los cierres anteriores (83c3ae5 y posteriores), no formaban parte de la enumeración original.
+F52–F59 son defectos o mejoras detectados al revisar los cierres anteriores (83c3ae5 y posteriores), no formaban parte de la enumeración original.
 
 ### 12.1 Pruebas nuevas o actualizadas
 
-- `tests/test_audit_turn.py`: cancelación durante herramienta, historial sin llamadas huérfanas, `note_done` diferido, datos volátiles solo en la petición, aviso de espera (voz/chat, eco, barge-in y post-TTS), transcripción atrasada, error atrasado y migración del timeout de STT.
+- `tests/test_audit_turn.py`: cancelación durante herramienta, historial sin llamadas huérfanas, `note_done` diferido, datos volátiles solo en la petición, aviso de espera (voz/chat, eco, barge-in, stop propio y post-TTS), transcripción atrasada, error atrasado y migración del timeout de STT.
 - `tests/test_audit_tools.py`: timeout con resultado incierto, JSON, validación anidada, selección aditiva, `move_path`/`undo_last`/`list_dir`, `load_skill` por formato y por catálogo, y conservación de extras un turno.
 - Se actualizaron expectativas de pruebas que fijaban el comportamiento anterior (tope de 60 mensajes, `note_done` como `system`, selección por sustitución, respuestas ambiguas como rechazo y truncado no-JSON).
 

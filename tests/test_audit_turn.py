@@ -335,16 +335,22 @@ def test_un_barge_in_durante_el_aviso_solo_corta_la_frase() -> None:
     stopped: list[int] = []
     states: list[str] = []
     cancels: list[int] = []
+    tts_lock = threading.Lock()
     stub = SimpleNamespace(
         muted=False,
         in_call=True,
         state=THINKING,
         cfg=SimpleNamespace(barge_in=True),
         _busy_speaking=threading.Event(),
+        _busy_stop=threading.Event(),
+        _busy_barged=False,
+        _tts_lock=tts_lock,
+        _tts_guard=lambda: tts_lock,
+        _tts_stop=threading.Event(),
         _close_after_answer=False,
         _user_speaking=False,
-        _ignore_utterance=False,
-        _post_tts_ignore=False,
+        _ignore_utterance=True,
+        _post_tts_ignore=True,
         _turn_gen=5,
         _signal_tts_stop=lambda: stopped.append(1),
         _set_state=lambda state: states.append(state),
@@ -352,8 +358,60 @@ def test_un_barge_in_durante_el_aviso_solo_corta_la_frase() -> None:
     )
     stub._busy_speaking.set()
     VoiceApp._on_barge_in(stub, 0.1)
-    assert stub._turn_gen == 5 and cancels == []
-    assert stopped == [1] and not stub._busy_speaking.is_set()
+    assert stub._turn_gen == 5 and cancels == [] and stopped == []
+    assert stub._busy_stop.is_set() and not stub._tts_stop.is_set()
+    assert not stub._busy_speaking.is_set() and stub._busy_barged is True
+    assert states == [], "la barra debe seguir en THINKING"
+
+
+def test_signal_tts_stop_corta_tambien_el_aviso() -> None:
+    tts_lock = threading.Lock()
+    stub = SimpleNamespace(
+        _tts_lock=tts_lock,
+        _tts_guard=lambda: tts_lock,
+        _tts_stop=threading.Event(),
+        _busy_stop=threading.Event(),
+    )
+    VoiceApp._signal_tts_stop(stub)
+    assert stub._tts_stop.is_set() and stub._busy_stop.is_set()
+
+
+def test_tras_el_barge_in_el_arranque_de_voz_sigue_el_flujo() -> None:
+    states: list[str] = []
+    cancels: list[int] = []
+    tts_lock = threading.Lock()
+    stub = SimpleNamespace(
+        in_call=True,
+        muted=False,
+        state=THINKING,
+        cfg=SimpleNamespace(barge_in=True),
+        _busy_speaking=threading.Event(),
+        _busy_stop=threading.Event(),
+        _busy_barged=False,
+        _tts_lock=tts_lock,
+        _tts_guard=lambda: tts_lock,
+        _tts_stop=None,
+        _close_after_answer=False,
+        _user_speaking=False,
+        _ignore_utterance=False,
+        _post_tts_ignore=False,
+        _post_tts_until=0.0,
+        _turn_gen=5,
+        _last_turn_audio=(b"pcm", 16000, time.monotonic()),
+        _resume_pcm=None,
+        _signal_tts_stop=lambda: None,
+        _set_state=lambda state: states.append(state),
+        messenger=SimpleNamespace(cancel_turn=lambda: cancels.append(1)),
+    )
+    turn_stop = VoiceApp._new_tts_stop(stub)
+    stub._busy_stop.clear()
+    stub._busy_speaking.set()
+    VoiceApp._on_barge_in(stub, 0.1)
+    assert not turn_stop.is_set(), "el barge-in no debe tocar el stop del turno"
+
+    VoiceApp._on_speech_start(stub, 0.1)
+    assert stub._turn_gen == 6 and cancels == [1]
+    assert stub._resume_pcm == (b"pcm", 16000)
     assert states == [LISTENING]
 
 
@@ -361,6 +419,7 @@ def test_al_terminar_el_aviso_aplica_la_ventana_post_tts() -> None:
     stub = SimpleNamespace(
         _turn_gen=5,
         _busy_speaking=threading.Event(),
+        _busy_barged=False,
         _ignore_utterance=True,
         _post_tts_ignore=True,
         _post_tts_until=0.0,
@@ -388,6 +447,7 @@ def test_speak_busy_marca_el_aviso_y_emite_busy_done() -> None:
     )
     VoiceApp._speak_busy(stub, "frase", 5)
     assert stub._busy_speaking.is_set()
+    assert stub._busy_stop is not None
     assert spoken == ["frase"]
     assert events.get_nowait() == ("busy_done", 5)
 

@@ -395,6 +395,9 @@ class VoiceApp:
         # El aviso de espera suena como un TTS más: el VAD lo trata como eco y
         # solo un barge-in sostenido lo corta.
         self._busy_speaking = threading.Event()
+        # Parada propia del aviso: el barge-in la activa sin tocar el turno.
+        self._busy_stop: threading.Event | None = None
+        self._busy_barged = False
         self._turn_gen = 0
         self._turn_started = 0.0
         self._turn_timing: TurnTimings | None = None
@@ -1148,7 +1151,11 @@ class VoiceApp:
         elif kind == "busy_done":
             gen = event[1] if len(event) > 1 else self._turn_gen
             self._busy_speaking.clear()
-            if gen == self._turn_gen:
+            barged = self._busy_barged
+            self._busy_barged = False
+            # Si el barge-in ya cortó la frase, el audio reinyectado manda:
+            # no se resetea la captura ni se abre la ventana de eco.
+            if gen == self._turn_gen and not barged:
                 self._ignore_utterance = False
                 self._post_tts_ignore = False
                 self._post_tts_until = time.monotonic() + 0.25
@@ -1436,15 +1443,18 @@ class VoiceApp:
             self._close_after_answer = False
             self._close_mode = ""
         if busy:
-            # El aviso de espera es un TTS: se corta la frase, pero el turno
-            # que espera no se invalida por el barge-in.
+            # El aviso tiene su propio stop: el barge-in corta la frase sin
+            # tocar el stop ni la generación del turno que espera. El arranque
+            # reinyectado seguirá el flujo normal de THINKING.
+            with self._tts_guard():
+                if self._busy_stop is not None:
+                    self._busy_stop.set()
             self._busy_speaking.clear()
-            self._signal_tts_stop()
+            self._busy_barged = True
             self._user_speaking = True
             self._ignore_utterance = False
             self._post_tts_ignore = False
-            self._set_state(LISTENING)
-            log("Barge-in durante el aviso: te escucho.")
+            log("Barge-in durante el aviso: corto la frase.")
             return
         log("Barge-in: te escucho.")
         _advance_turn(self)
@@ -1655,6 +1665,9 @@ class VoiceApp:
         with self._tts_guard():
             if self._tts_stop is not None:
                 self._tts_stop.set()
+            # Un turno nuevo también corta un aviso de espera en curso.
+            if self._busy_stop is not None:
+                self._busy_stop.set()
             self._tts_stop = threading.Event()
             return self._tts_stop
 
@@ -1662,6 +1675,8 @@ class VoiceApp:
         with self._tts_guard():
             if self._tts_stop is not None:
                 self._tts_stop.set()
+            if self._busy_stop is not None:
+                self._busy_stop.set()
 
     def _speak(self, text: str, kind: str = "announce") -> None:
         if not text:
@@ -2106,11 +2121,13 @@ class VoiceApp:
         marca como TTS para que el VAD lo trate como eco; no cambia el estado
         visible ni el historial: solo suena y deja la nota en el chat.
         """
-        self._busy_speaking.set()
+        if self._busy_speaking.is_set():
+            return
+        stop = threading.Event()
         with self._tts_guard():
-            stop = self._tts_stop
-        if stop is None:
-            stop = threading.Event()
+            self._busy_stop = stop
+        self._busy_barged = False
+        self._busy_speaking.set()
 
         def run() -> None:
             try:
