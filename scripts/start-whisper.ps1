@@ -14,7 +14,9 @@ param(
     [int]$Threads = 6,
     [string]$Server = "",
     [string]$Model = "",
-    [string]$WhisperHome = ""
+    [string]$WhisperHome = "",
+    [string]$VadModel = "",
+    [switch]$NoVad
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,6 +38,13 @@ if (-not $Server) {
 }
 if (-not $Model)  { $Model  = Join-Path $WhisperHome "models\ggml-large-v3-turbo-q5_0.bin" }
 
+# VAD Silero dentro del servidor: sin voz, Whisper devuelve texto vacio en vez de
+# alucinar «Gracias.». Anade ~3 ms por frase. Si falta el modelo, arranca sin VAD.
+if (-not $VadModel) {
+    $VadModel = Join-Path (Split-Path -Parent $Model) "ggml-silero-v5.1.2.bin"
+}
+$UseVad = (-not $NoVad) -and (Test-Path $VadModel)
+
 if (-not (Test-Path $Server)) {
     throw "No encuentro whisper-server.exe en '$Server'. Pasa -Server o -WhisperHome."
 }
@@ -45,7 +54,8 @@ if (-not (Test-Path $Model)) {
 
 Write-Host "whisper-server : $Server"
 Write-Host "modelo         : $Model"
-Write-Host "escuchando en  : http://127.0.0.1:$Port/inference  (idioma $Language)"
+Write-Host ("vad            : " + $(if ($UseVad) { $VadModel } else { "desactivado" }))
+Write-Host "escuchando en : http://127.0.0.1:$Port/inference  (idioma $Language)"
 Write-Host "Ctrl+C para detener."
 Write-Host ""
 
@@ -55,5 +65,8 @@ $serverArgs = @(
 )
 if ($Engine -ieq "cpu") {
     $serverArgs += "-ng"
+}
+if ($UseVad) {
+    $serverArgs += @("--vad", "--vad-model", $VadModel)
 }
 & $Server @serverArgs

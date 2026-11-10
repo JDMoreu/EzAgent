@@ -36,13 +36,40 @@ _SKIP_NAMES = (
 )
 
 
+def _even(pcm: bytes) -> bytes:
+    """Descarta un byte suelto final: una muestra int16 ocupa dos bytes."""
+    return pcm[: len(pcm) - len(pcm) % 2]
+
+
 def pcm_rms(pcm: bytes) -> float:
+    pcm = _even(pcm)
     if not pcm:
         return 0.0
     samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
     if not samples.size:
         return 0.0
     return float(np.sqrt(np.mean(samples * samples)))
+
+
+# DECISION: por debajo de este pico (≈ -46 dBFS) un clip es silencio o ruido de
+# sala; una voz normal en el micrófono lo supera con holgura.
+WEAK_PEAK_RMS = 0.005
+WEAK_VOICED_SECS = 0.3
+
+
+def pcm_is_weak(pcm: bytes, rate: int) -> bool:
+    """True si el clip no tiene voz sostenida (silencio, ruido o un clic)."""
+    frames = max(1, int(rate * CHUNK_SECS))
+    samples = np.frombuffer(_even(pcm), dtype=np.int16).astype(np.float32) / 32768.0
+    usable = (samples.size // frames) * frames
+    if not usable:
+        return True
+    levels = np.sqrt(np.mean(samples[:usable].reshape(-1, frames) ** 2, axis=1))
+    peak = float(levels.max())
+    if peak < WEAK_PEAK_RMS:
+        return True
+    voiced = int(np.count_nonzero(levels >= max(0.002, 0.25 * peak)))
+    return voiced * CHUNK_SECS < WEAK_VOICED_SECS
 
 
 def pcm_to_wav(pcm: bytes, rate: int) -> bytes:
@@ -182,8 +209,13 @@ class Segmenter:
         noise_multiplier: float = 1.3,
         end_probe: EndProbe | None = None,
         quick_silence_secs: float = 0.35,
+        min_voiced_secs: float = 0.15,
     ):
         self.min_rms = min_rms
+        # Segundos de chunks por encima del umbral de arranque que debe tener
+        # un turno. Un clic o un soplido no los suman; no cambia ninguna espera.
+        self.min_voiced_secs = min_voiced_secs
+        self._voiced_secs = 0.0
         self.end_probe = end_probe
         self.quick_silence_secs = quick_silence_secs
         self._pending: Future[bool] | None = None
@@ -263,6 +295,7 @@ class Segmenter:
                 self._in_speech = True
                 self._buf = list(self._pre)
                 self._speech_secs = 0.0
+                self._voiced_secs = self._speech_run * CHUNK_SECS
                 self._silence_run = 0.0
                 self._pre.clear()
                 return None, True
@@ -270,6 +303,8 @@ class Segmenter:
 
         self._buf.append(chunk)
         self._speech_secs += CHUNK_SECS
+        if level >= start_threshold:
+            self._voiced_secs += CHUNK_SECS
         # Histéresis: dentro del turno solo cuenta como silencio lo que baja
         # del umbral de cierre, no cualquier valle por debajo del de arranque.
         if level < end_threshold:
@@ -295,10 +330,17 @@ class Segmenter:
             pcm = b"".join(self._buf)
             speech_secs = self._speech_secs
             speech_end = self._speech_end_at or now
+            voiced_secs = self._voiced_secs
             self._reset()
             self.last_speech_end = speech_end
-            if speech_secs >= self.min_speech_secs:
+            if (
+                speech_secs >= self.min_speech_secs
+                and voiced_secs >= self.min_voiced_secs
+            ):
                 return pcm, False
+            # Turno descartado (clic, soplido): b"" avisa a quien escucha de que
+            # el arranque de voz no llegó a frase y debe soltar su estado.
+            return b"", False
         return None, False
 
     def _turn_finished(self) -> bool:
@@ -344,6 +386,7 @@ class Segmenter:
         self._speech_run = 0
         self._silence_run = 0.0
         self._speech_secs = 0.0
+        self._voiced_secs = 0.0
         self._speech_end_at = None
         self._pending = None
         self._probed = False
@@ -475,7 +518,11 @@ class MicCapture:
             )
             if on_speech_start is not None:
                 on_speech_start(level)
-        if pcm:
+        if pcm == b"":
+            print("[ezagent-voice] VAD end: descartado (sin voz sostenida)", flush=True)
+            if on_utterance is not None:
+                on_utterance(b"", self.rate)
+        elif pcm:
             self.last_speech_end = segmenter.last_speech_end
             reason = {
                 "turn": " (fin de turno detectado)",

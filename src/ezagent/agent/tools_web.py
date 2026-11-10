@@ -378,7 +378,8 @@ def _is_blocked_ip(
     address: ipaddress.IPv4Address | ipaddress.IPv6Address,
 ) -> bool:
     """True si la IP no es global o encapsula una IPv4 no global."""
-    if not address.is_global:
+    # ipaddress considera «global» la multidifusión (224.0.0.0/4, ff00::/8).
+    if not address.is_global or address.is_multicast:
         return True
     if isinstance(address, ipaddress.IPv6Address):
         mapped = address.ipv4_mapped

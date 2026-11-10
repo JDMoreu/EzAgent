@@ -14,9 +14,13 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
+from urllib.parse import urlsplit
 
 API_STYLES: Final[tuple[str, ...]] = ("openai", "anthropic")
 CUSTOM_PROVIDER: Final[str] = "custom"
+LOCAL_HOSTS: Final[frozenset[str]] = frozenset(
+    {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +171,23 @@ def normalize_provider(name: str | None) -> str:
 
 def provider_spec(name: str | None) -> ProviderSpec | None:
     return PROVIDERS.get(normalize_provider(name))
+
+
+def is_local_endpoint(base_url: str) -> bool:
+    """True si la URL apunta a esta máquina (Ollama, LM Studio, vLLM…)."""
+    try:
+        host = urlsplit(str(base_url or "")).hostname
+    except ValueError:
+        return False
+    return (host or "").lower() in LOCAL_HOSTS
+
+
+def needs_api_key(provider: str | None, base_url: str) -> bool:
+    """Solo los proveedores de nube exigen clave; un endpoint local no."""
+    spec = provider_spec(provider)
+    if spec is None or spec.name == CUSTOM_PROVIDER:
+        return False
+    return not is_local_endpoint(base_url)
 
 
 @dataclass(frozen=True, slots=True)
@@ -497,9 +518,11 @@ __all__ = [
     "ProviderSpec",
     "config_path",
     "fetch_models",
+    "is_local_endpoint",
     "load_provider_catalog",
     "match_model",
     "models_url",
+    "needs_api_key",
     "normalize_api_style",
     "MODEL_CATALOG",
     "normalize_provider",

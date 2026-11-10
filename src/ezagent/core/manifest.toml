@@ -27,6 +27,15 @@ dest = "whisper/models/ggml-large-v3-turbo-q5_0.bin"
 license = "MIT"
 
 [[asset]]
+id = "whisper-vad-silero"
+label = "VAD Silero v5.1.2 para whisper.cpp (evita «Gracias.» con silencio)"
+url = "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin"
+sha256 = "29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf"
+size = 885098
+dest = "whisper/models/ggml-silero-v5.1.2.bin"
+license = "MIT"
+
+[[asset]]
 id = "kokoro-int8"
 label = "Kokoro v1.0 (int8)"
 url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.int8.onnx"

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import re
+import unicodedata
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -180,9 +182,46 @@ def transcribe(cfg: VoiceConfig, wav_bytes: bytes) -> str:
     )
 
 
+# Frases que Whisper inventa con silencio o ruido (vienen de subtítulos de
+# vídeos). Nadie se las dice a un agente de código: se descartan siempre.
+_ALWAYS_HALLUCINATED = frozenset(
+    {
+        "gracias por ver el video",
+        "gracias por ver",
+        "gracias por vernos",
+        "suscribete",
+        "suscribete al canal",
+        "no olvides suscribirte",
+        "hasta la proxima",
+    }
+)
+# Cortesías sueltas: pueden ser reales («gracias»), así que solo se descartan
+# cuando el audio era casi silencio o ruido (`weak_audio`).
+_HALLUCINATED_IF_WEAK = frozenset(
+    {"gracias", "muchas gracias", "gracias a todos", "hasta luego", "chao"}
+)
+
+
+def _norm(text: str) -> str:
+    raw = unicodedata.normalize("NFKD", text.lower())
+    raw = "".join(c for c in raw if not unicodedata.combining(c))
+    return " ".join(re.sub(r"[^a-z0-9 ]+", " ", raw).split())
+
+
+def is_hallucination(text: str, *, weak_audio: bool = False) -> bool:
+    """True si ``text`` es una frase típicamente inventada por Whisper."""
+    key = _norm(text)
+    if not key:
+        return False
+    if key in _ALWAYS_HALLUCINATED or "amara org" in key:
+        return True
+    return weak_audio and key in _HALLUCINATED_IF_WEAK
+
+
 __all__ = [
     "STTError",
     "available_whisper_models",
+    "is_hallucination",
     "transcribe",
     "whisper_home",
     "whisper_model_path",

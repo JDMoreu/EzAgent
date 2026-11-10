@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -12,6 +13,8 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+from loguru import logger
 
 from .agent_driver import (
     DEFAULT_SHELL,
@@ -42,6 +45,23 @@ class HerdrError(RuntimeError):
     pass
 
 
+# Carpeta de instalación por defecto y script oficial de cada pieza. Solo se
+# ejecuta cuando el binario no aparece; si ya está, no se toca.
+_HERDR_PARTS: tuple[tuple[str, str, str], ...] = (
+    ("hc_path", "herdr-core", "hc.exe"),
+    ("herdr_app_path", "herdr-app", "herdr-app.exe"),
+)
+_HERDR_INSTALLERS = {
+    "herdr-core": "irm https://releases.herdr.dev/core/install.ps1 | iex",
+    "herdr-app": "irm https://releases.herdr.dev/app/install.ps1 | iex",
+}
+
+
+def _programs_dir() -> Path:
+    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    return Path(base) / "Programs"
+
+
 def strip_ansi(text: str) -> str:
     text = _OSC.sub("", text)
     text = _ANSI.sub("", text)
@@ -57,9 +77,77 @@ def strip_ansi(text: str) -> str:
 class Herdr(AgentDriver):
     def __init__(self, cfg: VoiceConfig):
         self.cfg = cfg
+        self._install_lock = threading.Lock()
+        self._resolve_paths()
+
+    # ------------------------------------------------------------- instalación
+    def _resolve_paths(self) -> None:
+        """Usa el binario del PATH o el que deja el instalador de Herdr."""
+        for attr, folder, exe in _HERDR_PARTS:
+            current = str(getattr(self.cfg, attr, "") or "")
+            found = shutil.which(current)
+            if found:
+                setattr(self.cfg, attr, found)
+                continue
+            if current and Path(current).is_absolute():
+                continue  # ruta elegida por el usuario: no se sustituye
+            candidate = _programs_dir() / folder / exe
+            if candidate.is_file():
+                setattr(self.cfg, attr, str(candidate))
+
+    def ensure_installed(self) -> bool:
+        """Instala Herdr y su motor (hc) si faltan. True si ambos están listos.
+
+        Usa el instalador oficial y fijo de herdr.dev, sin texto del usuario
+        ni del LLM. Si el binario ya existe no descarga nada.
+        """
+        with self._install_lock:
+            self._resolve_paths()
+            for attr, folder, _exe in _HERDR_PARTS:
+                if shutil.which(str(getattr(self.cfg, attr, ""))):
+                    continue
+                logger.info("Herdr: falta {}; instalándolo…", folder)
+                if not self._run_installer(_HERDR_INSTALLERS[folder]):
+                    logger.warning("Herdr: no pude instalar {}.", folder)
+                self._resolve_paths()
+            return all(
+                shutil.which(str(getattr(self.cfg, attr, "")))
+                for attr, _folder, _exe in _HERDR_PARTS
+            )
+
+    @staticmethod
+    def _run_installer(script: str) -> bool:
+        # DECISION: `iex` sobre un script de URL fija es el instalador oficial
+        # de Herdr; PowerShell recibe la orden como argumento (sin shell=True)
+        # y nunca incluye texto del usuario ni del modelo.
+        command = [
+            "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "-Command", f"$ProgressPreference = 'SilentlyContinue'; {script}",
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=900,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            logger.warning("Herdr: instalador: {}", exc)
+            return False
+        if result.returncode != 0:
+            logger.warning(
+                "Herdr: el instalador devolvió {}: {}",
+                result.returncode,
+                (result.stderr or "")[-400:],
+            )
+            return False
+        return True
 
     # ------------------------------------------------------------------ base
-    def _run_command(
+    def _exec(
         self,
         command: list[str],
         timeout: float,
@@ -76,12 +164,47 @@ class Herdr(AgentDriver):
                 timeout=timeout,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
+        except subprocess.TimeoutExpired as exc:
+            raise HerdrError(f"`{command[0]}` tardó demasiado.") from exc
+
+    def _spawn(
+        self,
+        command: list[str],
+        timeout: float,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess:
+        try:
+            return self._exec(command, timeout, env)
         except FileNotFoundError as exc:
+            replacement = self._replacement_for(command[0])
+            if replacement:
+                try:
+                    return self._exec([replacement, *command[1:]], timeout, env)
+                except FileNotFoundError:
+                    pass
             raise HerdrError(
                 f"No encuentro `{command[0]}`. Revisa voice.json."
             ) from exc
-        except subprocess.TimeoutExpired as exc:
-            raise HerdrError(f"`{command[0]}` tardó demasiado.") from exc
+
+    def _replacement_for(self, executable: str) -> str | None:
+        name = Path(str(executable)).name.lower()
+        if name in ("hc", "hc.exe"):
+            attr = "hc_path"
+        elif name in ("herdr-app", "herdr-app.exe"):
+            attr = "herdr_app_path"
+        else:
+            return None
+        self.ensure_installed()
+        resolved = shutil.which(str(getattr(self.cfg, attr, "") or ""))
+        return resolved or None
+
+    def _run_command(
+        self,
+        command: list[str],
+        timeout: float,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess:
+        return self._spawn(command, timeout, env)
 
     @staticmethod
     def _anonymous_env() -> dict[str, str]:

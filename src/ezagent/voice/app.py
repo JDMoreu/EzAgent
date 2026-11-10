@@ -36,13 +36,14 @@ from ezagent.llm_providers import (
     fetch_models,
     load_provider_catalog,
     match_model,
+    needs_api_key,
     normalize_provider,
     provider_models,
     provider_spec,
     save_provider_profile,
 )
 
-from .audio import MicCapture, list_input_devices, pcm_to_wav
+from .audio import MicCapture, list_input_devices, pcm_is_weak, pcm_to_wav
 from .condenser import Condenser
 from .config import VoiceConfig, config_path
 from .herdr import Herdr
@@ -54,6 +55,7 @@ from .speech_queue import SpeechQueue
 from .stt import (
     STTError,
     available_whisper_models,
+    is_hallucination,
     transcribe,
     whisper_model_path,
 )
@@ -335,7 +337,8 @@ class VoiceApp:
         self._deliver: set[str] = set()
         self._prelaunch: dict[str, dict] = {}
         self._prelaunch_lock = threading.Lock()
-        self._pending_prompts: list[tuple[str, str, str, str, str]] = []
+        # Avisos de agentes en orden: nunca se pisan entre sí.
+        self._announce_queue: list[tuple[str, bool]] = []
         self._close_after_answer = False
         self._close_mode = ""           # "", "pause" o "hangup" ("" = ajuste)
         self._wake_lock = threading.Lock()
@@ -357,7 +360,6 @@ class VoiceApp:
         self._notch_hidden = bool(cfg.notch_hidden)
         self._restarting = False
         self._shutdown_done = False
-        self._done_prompt_pending = False
         self.tray = None
         self.events: queue.Queue[tuple] = queue.Queue()
         self.hotkey_events: queue.Queue[str] = queue.Queue()
@@ -431,6 +433,13 @@ class VoiceApp:
             f"pre_roll={cfg.pre_roll_secs}s, barge_in={cfg.barge_in}"
         )
         self.herdr = Herdr(cfg)
+        # Si Herdr o `hc` faltan, se instalan solos en segundo plano; el
+        # primer comando que los necesite espera a que termine el instalador.
+        threading.Thread(
+            target=self.herdr.ensure_installed,
+            daemon=True,
+            name="ez-herdr-install",
+        ).start()
         self.agent = self._create_agent_runtime(cfg)
         self.messenger = Messenger(
             cfg,
@@ -962,6 +971,9 @@ class VoiceApp:
                     self._handle_menu_event(event)
                 except Exception as exc:  # noqa: BLE001
                     log(f"Error en menú {event[0]!r}: {exc}")
+            # Red de seguridad: un aviso encolado nunca se queda atascado si
+            # el turno que lo bloqueaba termina en un evento no previsto.
+            self._pump_announcements()
         finally:
             self.root.after(30, self._tick)
 
@@ -1047,37 +1059,25 @@ class VoiceApp:
             notify_address = self.messenger.pending_notify_address()
             if notify_address and notify_address not in self.watched:
                 self._watch(notify_address)
-            self._done_prompt_pending = False
             if self._close_after_answer:
                 self._close_after_answer = False
                 if self._close_listening():
-                    self._drain_pending()
+                    self._pump_announcements()
                 return
             if self.in_call:
                 self._set_state(LISTENING)
             else:
                 self._set_idle()
-            self._drain_pending()
+            self._pump_announcements()
         elif kind == "done_answer":
             self._handle_done_answer(*event[1:])
         elif kind == "done_prompt":
             _, address, agent, reason, output, task = event
-            if (
-                self._done_prompt_pending
-                or self._pending_prompts
-                or self._user_speaking
-                or self.state in (THINKING, SPEAKING)
-            ):
-                self._pending_prompts.append(
-                    (address, agent, reason, output, task)
-                )
-                return
             self._handle_done_prompt(address, agent, reason, output, task)
         elif kind == "speak_done":
             gen = event[1]
             if gen != self._turn_gen:
                 return
-            self._done_prompt_pending = False
             self._speaking_kind = None
             self._reset_capture.set()
             self._ignore_utterance = False
@@ -1087,13 +1087,13 @@ class VoiceApp:
                 self._close_after_answer = False
                 if self.in_call:
                     self._close_listening()
-                self._drain_pending()
+                self._pump_announcements()
                 return
             if self.in_call:
                 self._set_state(LISTENING)
             else:
                 self._set_idle()
-            self._drain_pending()
+            self._pump_announcements()
         elif kind == "llm_models_ready":
             self._fix_model_name(str(event[1]), tuple(event[2]))
         elif kind == "error":
@@ -1206,7 +1206,7 @@ class VoiceApp:
         self.notch.set_in_call(False)
         self._set_idle()
         log("Llamada terminada.")
-        self.root.after(200, self._drain_pending)
+        self.root.after(200, self._pump_announcements)
 
     def _call_worker(self, stop_event: threading.Event) -> None:
         try:
@@ -1320,6 +1320,12 @@ class VoiceApp:
 
     def _on_utterance(self, pcm: bytes, rate: int) -> None:
         self._user_speaking = False
+        if not pcm:
+            # Arranque de voz descartado por el VAD (clic o ruido corto): se
+            # suelta el estado de «hablando» para que los avisos no se atasquen.
+            self._ignore_utterance = False
+            self._post_tts_ignore = False
+            return
         if self.muted:
             self._ignore_utterance = False
             self._post_tts_ignore = False
@@ -1469,12 +1475,35 @@ class VoiceApp:
         )
         self._speak_same_turn(summary + hint)
 
-    def _drain_pending(self) -> None:
-        if self._user_speaking or self.state not in (IDLE, LISTENING):
+    def _announcements(self) -> list[tuple[str, bool]]:
+        # Creación diferida: algunas pruebas construyen VoiceApp sin __init__.
+        if not hasattr(self, "_announce_queue"):
+            self._announce_queue = []
+        return self._announce_queue
+
+    def _queue_announcement(self, text: str, *, reopen_call: bool = True) -> None:
+        """Encola un aviso; suena cuando el turno anterior termine."""
+        if not text:
             return
-        if self._pending_prompts:
-            address, agent, reason, output, task = self._pending_prompts.pop(0)
-            self._handle_done_prompt(address, agent, reason, output, task)
+        self._announcements().append((text, reopen_call))
+        self._pump_announcements()
+
+    def _pump_announcements(self) -> None:
+        """Dice el siguiente aviso solo si no hay voz ni turno en curso."""
+        queue_ = self._announcements()
+        if not queue_:
+            return
+        agent = getattr(self, "agent", None)
+        if (
+            getattr(self, "_user_speaking", False)
+            or getattr(self, "state", IDLE) in (THINKING, SPEAKING)
+            or (agent is not None and getattr(agent, "confirm_pending", False))
+        ):
+            return
+        text, reopen = queue_.pop(0)
+        if reopen and not getattr(self, "in_call", False):
+            self._start_call()
+        self._speak(text, "announce")
 
     # --------------------------------------------------------------- workers
     def _stt_worker(
@@ -1483,6 +1512,9 @@ class VoiceApp:
         try:
             text = transcribe(self.cfg, pcm_to_wav(pcm, rate))
             timing.mark("stt_ready")
+            if is_hallucination(text, weak_audio=pcm_is_weak(pcm, rate)):
+                log(f"STT: descarto posible alucinación de Whisper: {text!r}")
+                text = ""
             self.events.put(("transcribed", text, gen))
         except STTError as exc:
             self.events.put(("error", str(exc)))
@@ -1746,25 +1778,8 @@ class VoiceApp:
         agent: str,
         answer: str,
         task: str = "",
-        tries: int = 0,
     ) -> None:
         """Dice la respuesta del agente en cuanto termina, sin preguntar."""
-        busy = (
-            self._done_prompt_pending
-            or self._user_speaking
-            or self.state in (THINKING, SPEAKING)
-        )
-        if busy and tries < 20:
-            # No se pisa al usuario ni a una respuesta en curso: se reintenta.
-            self.root.after(
-                1500,
-                lambda: self._handle_done_answer(
-                    address, agent, answer, task, tries + 1
-                ),
-            )
-            return
-        if not self.in_call:
-            self._start_call()
         log(f"Respuesta de {agent} ({address}); la digo sin preguntar.")
         self.messenger.note_done(address, agent, "done", answer, task=task)
         spoken = " ".join(answer.split())
@@ -1778,7 +1793,7 @@ class VoiceApp:
             self.notch.notice()
         except Exception:  # noqa: BLE001
             pass
-        self._speak(text, "announce")
+        self._queue_announcement(text)
 
     def _handle_done_prompt(
         self,
@@ -1788,10 +1803,6 @@ class VoiceApp:
         output: str,
         task: str = "",
     ) -> None:
-        self._done_prompt_pending = True
-        if not self.in_call:
-            # Reabre la llamada sola: notch de escucha + STT.
-            self._start_call()
         log(f"Aviso de {agent} ({reason}); reabro la escucha para preguntar.")
         self.messenger.note_done(address, agent, reason, output, task=task)
         spoken = " ".join(str(task or "").split())
@@ -1808,23 +1819,13 @@ class VoiceApp:
                 f"El agente {agent} necesita tu atención con {label}. "
                 "¿Quieres que te diga qué pasa o le das una instrucción?"
             )
-        # AVISO dura 1 s (spec 9.3). Si el usuario habla antes, se cancela la
-        # pregunta hablada y su turno manda.
+        # El aviso visual (spec 9.3) y la pregunta esperan su turno en la cola:
+        # así tres tareas que terminan a la vez no se cortan entre ellas.
         try:
             self.notch.notice()
         except Exception:
             pass
-        gen = self._turn_gen
-
-        def speak_after_notice() -> None:
-            if gen != self._turn_gen:
-                # El usuario habló antes de la pregunta: su turno manda.
-                self._done_prompt_pending = False
-                self._drain_pending()
-                return
-            self._speak(question, "announce")
-
-        self.root.after(1000, speak_after_notice)
+        self._queue_announcement(question)
 
     # ------------------------------------------------------- atajos y ajustes
     @staticmethod
@@ -3256,7 +3257,7 @@ def main() -> None:
             speaker.close()
         return
 
-    if not cfg.api_key:
+    if not cfg.api_key and needs_api_key(cfg.llm_provider, cfg.llm_base_url):
         log(f"Falta la API key del proveedor {cfg.llm_provider}. Configura LLM_API_KEY o la variable del proveedor en .env o llm.json.")
         raise SystemExit(1)
 
