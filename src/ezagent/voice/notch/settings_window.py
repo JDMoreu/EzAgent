@@ -19,12 +19,13 @@ from typing import Final
 
 import numpy as np
 
+from ..brand import drops_coverage
 from .flow import FlowField, colors_for
 from .icons import draw_icon
 from .menu import _fill_circle, _fill_round_rect
 from .menu_layout import GROUPS, SECTION_GROUPS, SECTION_TITLES, SIDEBAR_ORDER
 from .text import draw_text
-from .tokens import FLARE, FS_MICRO, FS_ROW, FS_TITLE
+from .tokens import FLARE, FS_MICRO, FS_ROW, FontStyle
 
 # ------------------------------------------------------------------ medidas
 SIDEBAR_W: Final[float] = 184.0  # px lógicos de la barra lateral
@@ -43,15 +44,28 @@ CORNER: Final[float] = 20.0  # lado de la zona de agarre de una esquina
 HEADER_H: Final[float] = 52.0  # franja superior: doble clic = tamaño de fábrica
 KEEP_VISIBLE: Final[float] = 96.0  # px de la ventana que siempre quedan en pantalla
 
-ITEMS_TOP: Final[float] = 88.0
+ITEMS_TOP: Final[float] = 64.0  # justo bajo la franja de cabecera (HEADER_H)
 ITEM_H: Final[float] = 40.0
 ITEM_GAP: Final[float] = 4.0
 ITEM_X0: Final[float] = 14.0
 ITEM_X1: Final[float] = SIDEBAR_W - 10.0
 ITEM_RADIUS: Final[float] = 12.0
 ICON_SIZE: Final[float] = 18.0
-ORB_D: Final[float] = 30.0
-ORB_CX, ORB_CY = 33.0, 34.0
+MARK_D: Final[float] = 22.0  # un poco mayor que ICON_SIZE: las gotas llevan aire alrededor
+MARK_CX: Final[float] = ITEM_X0 + 22.0  # misma columna que los iconos de sección
+MARK_FROM_BOTTOM: Final[float] = 30.0  # del centro de la marca al borde inferior de la ventana
+FOOT_H: Final[float] = 40.0  # alto de la fila del pie: como un elemento de la lista
+LABEL_CY: Final[float] = 26.0  # eje de «AJUSTES»: el mismo que el título y el ✕ del contenido
+
+# ``draw_text`` recorta al contorno de la tinta: su ``y`` es la parte alta de las
+# mayúsculas, no una línea de texto. Para centrar texto con un icono se centra la
+# altura de mayúsculas (Geist y Geist Mono la tienen en ~0,714 em).
+CAP_RATIO: Final[float] = 0.714
+
+# DECISION: el nombre es una palabra-marca de dos pesos de Geist (la misma familia
+# del sistema): «Ez» en semibold con el acento, «Agent» en medium con el texto.
+WORD_EZ: Final[FontStyle] = FontStyle("WORD_EZ", "Geist", 15, 600, tracking_em=-0.01)
+WORD_AGENT: Final[FontStyle] = FontStyle("WORD_AGENT", "Geist", 15, 500, tracking_em=-0.01)
 
 SECTION_ICONS: Final[dict[str, str]] = {
     "appearance": "sparkle",
@@ -224,11 +238,33 @@ def composite_over(dst: np.ndarray, src: np.ndarray, x0: int, y0: int) -> None:
     region[...] = top + region * (1.0 - top[..., 3:4])
 
 
+def cap_top(center_y: float, size: float) -> float:
+    """``y`` de ``draw_text`` para que las mayúsculas de ``size`` px queden centradas en ``center_y``."""
+    return center_y - CAP_RATIO * size / 2.0
+
+
+def _blend(seg: np.ndarray, line: tuple) -> None:
+    """Mezcla el color de línea (premultiplicado) sobre un tramo de 1 px de ``buf``."""
+    alpha = (line[3] / 255.0) if len(line) == 4 else 0.1
+    color = np.concatenate([np.asarray(line[:3], np.float32) / 255.0 * alpha, [alpha]])
+    seg[...] = color + seg * (1.0 - alpha)
+
+
+def _hline(buf: np.ndarray, line: tuple, scale: float, y: float, x0: float, x1: float) -> None:
+    """Línea horizontal de 1 px físicas en ``y``, de ``x0`` a ``x1`` (px lógicos)."""
+    _blend(buf[int(round(y * scale)), int(round(x0 * scale)) : int(round(x1 * scale))], line)
+
+
+def _vline(buf: np.ndarray, line: tuple, scale: float, x: float, y0: float, y1: float) -> None:
+    """Línea vertical de 1 px físicas en ``x``, de ``y0`` a ``y1`` (px lógicos)."""
+    _blend(buf[int(round(y0 * scale)) : int(round(y1 * scale)), int(round(x * scale))], line)
+
+
 class Sidebar:
     """Barra lateral: marca viva, título y lista de secciones con icono."""
 
     def __init__(self) -> None:
-        self._orb = FlowField("circle", seed=7)
+        self._flow = FlowField("circle", seed=7)
         self._last = 0.0
 
     def draw(
@@ -244,10 +280,12 @@ class Sidebar:
     ) -> None:
         dt = 0.0 if self._last == 0.0 else min(0.1, max(0.0, now - self._last))
         self._last = now
-        self._orb.step(dt, 0.0, "idle", reduced)
-        self._draw_orb(buf, scale, theme)
-        draw_text(buf, "EzAgent", FS_TITLE, pal["TEXT"], 56.0, 17.0, scale)
-        draw_text(buf, "Ajustes", FS_MICRO, pal["TEXT_3"], 56.0, 38.0, scale)
+        self._flow.step(dt, 0.0, "idle", reduced)
+        # «Ajustes» arriba; abajo, una línea y debajo la marca con el nombre, pegados
+        # al borde inferior.
+        top = cap_top(LABEL_CY, FS_MICRO.size)
+        draw_text(buf, "Ajustes", FS_MICRO, pal["TEXT_3"], ITEM_X0 + 13.0, top, scale)
+        self._draw_brand(buf, scale, pal, buf.shape[0] / scale - MARK_FROM_BOTTOM)
         for index, (name, title) in enumerate(sections()):
             x0, y0, x1, y1 = item_rect(index)
             cy = (y0 + y1) / 2.0
@@ -261,29 +299,34 @@ class Sidebar:
             draw_icon(
                 buf, SECTION_ICONS.get(name, "sliders"), x0 + 22.0, cy, ICON_SIZE, color, scale
             )
-            # Texto centrado en vertical con el icono: alto de línea de FS_ROW ≈ 18 px.
-            draw_text(buf, title, FS_ROW, color, x0 + 42.0, cy - 9.0, scale)
+            draw_text(buf, title, FS_ROW, color, x0 + 42.0, cap_top(cy, FS_ROW.size), scale)
         # Separador vertical entre la barra lateral y el contenido.
-        line = pal["LINE"]
-        x = int(round(SIDEBAR_W * scale)) - 1
-        alpha = (line[3] / 255.0) if len(line) == 4 else 0.1
-        rgb = np.asarray(line[:3], np.float32) / 255.0
-        top, bottom = int(16 * scale), buf.shape[0] - int(16 * scale)
-        col = buf[top:bottom, x]
-        col[...] = np.concatenate([rgb * alpha, [alpha]]) + col * (1.0 - alpha)
+        _vline(buf, pal["LINE"], scale, SIDEBAR_W - 1.0 / scale, 16.0, buf.shape[0] / scale - 16.0)
 
-    def _draw_orb(self, buf: np.ndarray, scale: float, theme: str) -> None:
-        """Un orbe pequeño de Marea: la marca viva en la ventana."""
-        size = max(8, int(round(ORB_D * scale)))
-        axis = np.linspace(-1.0, 1.0, size, dtype=np.float32)
+    def _draw_brand(self, buf: np.ndarray, scale: float, pal: dict, cy: float) -> None:
+        """Pie de la barra: línea, marca y palabra-marca, centradas en ``cy``."""
+        _hline(buf, pal["LINE"], scale, cy - FOOT_H / 2.0, ITEM_X0, ITEM_X1)
+        self._draw_mark(buf, scale, cy)
+        x = ITEM_X0 + 42.0
+        top = cap_top(cy, WORD_EZ.size)
+        # El ancho devuelto es el de la tinta (sin márgenes laterales): +0,6 px de aire.
+        x += draw_text(buf, "Ez", WORD_EZ, pal["MINT"], x, top, scale)[0] + 0.6
+        draw_text(buf, "Agent", WORD_AGENT, pal["TEXT"], x, top, scale)
+
+    def _draw_mark(self, buf: np.ndarray, scale: float, cy: float) -> None:
+        """La marca de EzAgent (las gotas del icono) llena de Marea en movimiento."""
+        size = max(8, int(round(MARK_D * scale)))
+        # DECISION: malla de ±0.5 y paleta clara siempre, igual que el icono: así el
+        # borde luminoso del círculo queda fuera de las gotas y la marca no cambia con el tema.
+        axis = np.linspace(-0.5, 0.5, size, dtype=np.float32)
         gx, gy = np.meshgrid(axis, axis)
-        rgb = np.clip(self._orb.render(gx, gy, theme, colors_for(theme, "idle")), 0, 255) / 255.0
-        dist = np.sqrt(gx * gx + gy * gy)
-        coverage = np.clip((1.0 - dist) * size / 2.0 + 0.5, 0.0, 1.0)[..., None]
-        orb = np.concatenate([rgb * coverage, coverage], axis=2).astype(np.float32)
-        x0 = int(round((ORB_CX - ORB_D / 2.0) * scale))
-        y0 = int(round((ORB_CY - ORB_D / 2.0) * scale))
-        composite_over(buf, orb, x0, y0)
+        rgb = np.clip(self._flow.render(gx, gy, "light", colors_for("light", "idle")), 0, 255)
+        rgb = rgb / 255.0
+        coverage = drops_coverage(size)[..., None]
+        mark = np.concatenate([rgb * coverage, coverage], axis=2).astype(np.float32)
+        x0 = int(round((MARK_CX - MARK_D / 2.0) * scale))
+        y0 = int(round((cy - MARK_D / 2.0) * scale))
+        composite_over(buf, mark, x0, y0)
 
 
 def draw_grip(buf: np.ndarray, scale: float, pal: dict) -> None:
