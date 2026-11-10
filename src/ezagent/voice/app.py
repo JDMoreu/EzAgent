@@ -482,6 +482,9 @@ class VoiceApp:
             hotkey.start()
         self.notch.on_action = self._on_notch_action
         self.notch.on_menu_action = lambda action: self.events.put(("menu_action", action))
+        self.notch.on_hotkey_capture = lambda active: self.events.put(
+            ("hotkey_capture", bool(active))
+        )
         self.notch.menu_settings_provider = self._notch_menu_settings
         self.notch.on_live_setting = self._notch_live_setting
         self.notch.on_save_settings = self._notch_save_settings
@@ -632,6 +635,10 @@ class VoiceApp:
             self._open_system_md()
         elif action == "open_voice_json":
             self._open_voice_json()
+        elif action == "open_permissions":
+            self._open_permissions()
+        elif action == "open_config_dir":
+            self._open_config_dir()
         elif action == "repeat_last":
             self._handle_hotkey("repeat")
         elif action == "new_conversation":
@@ -672,6 +679,39 @@ class VoiceApp:
             log(f"Abriendo {path}")
         except Exception as exc:  # noqa: BLE001
             log(f"No pude abrir system.md: {exc}")
+
+    def _app_dir(self) -> Path:
+        """Carpeta de datos de la app: la del runtime del agente o la de ``voice.json``."""
+        runtime = getattr(self, "agent", None)
+        if runtime is not None:
+            return Path(runtime.config.app_dir)
+        return Path(getattr(self, "config_file", None) or config_path()).parent
+
+    def _open_permissions(self) -> None:
+        """Abre permissions.toml (la política del agente) en el editor predeterminado."""
+        try:
+            runtime = getattr(self, "agent", None)
+            if runtime is not None:
+                path = Path(runtime.config.permissions_path)
+            else:
+                path = self._app_dir() / "permissions.toml"
+            if not path.exists():
+                log(f"permissions.toml todavía no existe en {path.parent}.")
+                return
+            os.startfile(str(path))
+            log(f"Abriendo {path}")
+        except Exception as exc:  # noqa: BLE001
+            log(f"No pude abrir permissions.toml: {exc}")
+
+    def _open_config_dir(self) -> None:
+        """Abre la carpeta de datos (ajustes, permisos, memoria, skills y registros)."""
+        try:
+            folder = self._app_dir()
+            folder.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(folder))
+            log(f"Abriendo {folder}")
+        except Exception as exc:  # noqa: BLE001
+            log(f"No pude abrir la carpeta de datos: {exc}")
 
     def _open_voice_json(self) -> None:
         """Abre voice.json para editar perfiles de agente, rutas o atajos."""
@@ -808,6 +848,18 @@ class VoiceApp:
         hotkeys.append(GlobalHotkey(self.cfg.mute_hotkey, "mute", self.hotkey_events, 47220))
         hotkeys.append(GlobalHotkey(self.cfg.menu_hotkey, "menu", self.hotkey_events, 47221))
         return hotkeys
+
+    def _suspend_hotkeys(self, active: bool) -> None:
+        """Suelta los atajos globales mientras Ajustes graba uno; los vuelve a registrar."""
+        if not active:
+            self._reload_hotkeys()
+            return
+        for hotkey in list(getattr(self, "hotkeys", [])):
+            try:
+                hotkey.stop(wait=True)
+            except Exception:
+                pass
+        self.hotkeys = []
 
     def _reload_hotkeys(self) -> None:
         """Re-registra los atajos tras cambiarlos en Ajustes."""
@@ -992,6 +1044,8 @@ class VoiceApp:
             self._tray_action_ui(str(event[1]))
         elif kind == "menu_action":
             self._menu_action_ui(str(event[1]))
+        elif kind == "hotkey_capture":
+            self._suspend_hotkeys(bool(event[1]))
         elif kind == "transcribed":
             _, text, gen = event
             text = (text or "").strip()

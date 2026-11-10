@@ -853,6 +853,7 @@ class DropUI:
         self.on_save_settings = lambda values: None
         self.on_test_voice = lambda values: None
         self.on_menu_action = lambda action: None
+        self.on_hotkey_capture = lambda active: None
         self.menu_settings_provider = lambda: None
 
     # ---------------------------------------------------------------- ventana
@@ -1340,6 +1341,8 @@ class DropUI:
                     on_close=self._menu_closed,
                     on_text_edit=self._menu_text_edit,
                     on_action=self._menu_action,
+                    on_copy=self._copy_text,
+                    on_hotkey_capture=self._hotkey_capture,
                 )
                 self._menu.set_palette_overrides(card_overrides)
             except Exception:
@@ -1502,6 +1505,23 @@ class DropUI:
                 card.set_keyboard_enabled(bool(active))
             except Exception:
                 pass
+
+    def _hotkey_capture(self, active: bool) -> None:
+        """Avisa a la app de que se graba un atajo (suelta los globales)."""
+        try:
+            self.on_hotkey_capture(bool(active))
+        except Exception:
+            pass
+
+    def _copy_text(self, text: str) -> bool:
+        """Pone ``text`` en el portapapeles desde la ventana de ajustes (sin registrarlo)."""
+        card = self._card
+        if card is None:
+            return False
+        try:
+            return bool(card.copy_text(text))
+        except Exception:
+            return False
 
     def _live_setting(self, key: str, value) -> None:
         try:

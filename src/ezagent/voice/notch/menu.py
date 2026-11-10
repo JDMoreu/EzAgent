@@ -90,6 +90,7 @@ from typing import Any, Callable, Final, Literal
 
 import numpy as np
 
+from . import hotkey_field as hk
 from .anim import EASE_IN, EASE_OUT, EASE_SPRING, Tween, lerp_rgb
 from .icons import draw_icon
 from .menu_layout import (
@@ -109,6 +110,8 @@ from .settings import (
     ALL_KEYS,
     COLOR_KEYS,
     LABELS,
+    METER_DB_CEIL,
+    METER_DB_FLOOR,
     SECRET_KEYS,
     SELECT_KEYS,
     SLIDER_KEYS,
@@ -117,6 +120,7 @@ from .settings import (
     TOGGLE_KEYS,
     MenuSettings,
     SelectOption,
+    db_to_rms,
 )
 from .text import draw_text, text_size
 from .tokens import (
@@ -192,10 +196,23 @@ TEXT_LINE2_CY: Final[float] = 37.0
 TEXT_CARET_W: Final[float] = 1.5
 TEXT_CARET_H: Final[float] = 16.0
 
+# Clave API: nunca se pinta; un botón «copiar» a la derecha de la línea de valor.
+COPY_BTN: Final[float] = 26.0  # diámetro del botón (zona de clic y fondo de hover)
+COPY_ICON: Final[float] = 18.0
+COPIED_SECS: Final[float] = 1.6  # el icono muestra un check este tiempo tras copiar
+DOT_R: Final[float] = 2.4
+DOT_PITCH: Final[float] = 8.0
+DOT_MAX: Final[int] = 22
+
+# Atajos: teclas dibujadas (keycaps) y campo de captura.
+KEYCAP_H: Final[float] = 22.0
+KEYCAP_PAD: Final[float] = 8.0
+KEYCAP_GAP: Final[float] = 4.0
+CAPTURE_MSG_SECS: Final[float] = 2.6
+
 # Medidor de entrada: barras horizontales, nivel en vivo y marca de umbral
-# arrastrable. Escala dBFS de -80 a -20, suficiente para voces flojas.
-METER_DB_FLOOR: Final[float] = -80.0
-METER_DB_CEIL: Final[float] = -20.0
+# arrastrable. La escala dBFS (``settings.METER_DB_*``) es también el rango del
+# umbral: toda la pista se puede arrastrar.
 METER_TRACK_Y: Final[float] = 36.0
 METER_TRACK_H: Final[float] = 4.0
 METER_TRACK_PAD: Final[float] = 10.0
@@ -316,7 +333,9 @@ FS_VALUE: Final[FontStyle] = FontStyle(
 # de la conversación (repetir lo último, empezar de cero).
 ACTION_KEYS: Final[tuple[str, ...]] = (
     "test_voice",
+    "open_config_dir",
     "open_system_md",
+    "open_permissions",
     "open_voice_json",
     "repeat_last",
     "new_conversation",
@@ -345,6 +364,7 @@ class MenuHit:
         "text",
         "meter",
         "action",
+        "copy",
         "save",
     ]
     key: str
@@ -689,6 +709,8 @@ class Menu:
         on_close: VoidCallback | None = None,
         on_text_edit: Callable[[bool], None] | None = None,
         on_action: Callable[[str], None] | None = None,
+        on_copy: Callable[[str], bool] | None = None,
+        on_hotkey_capture: Callable[[bool], None] | None = None,
     ) -> None:
         if not isinstance(settings, MenuSettings):
             raise TypeError("settings debe ser MenuSettings")
@@ -716,6 +738,17 @@ class Menu:
         self.on_close = on_close
         self.on_text_edit = on_text_edit
         self.on_action = on_action
+        self.on_copy = on_copy
+        # Captura de atajos: mientras dura, la app suelta los atajos globales para
+        # que la ventana reciba la combinación en vez de que Windows la consuma.
+        self.on_hotkey_capture = on_hotkey_capture
+        self.modifier_source: Callable[[], frozenset[str]] = hk.os_modifiers
+        self._capturing = False
+        self._capture_mods: frozenset[str] = frozenset()
+        self._capture_msg: tuple[str, float] | None = None
+        # Botón «copiar» de la clave API: fila bajo el puntero y copias recientes.
+        self._copy_hover: str | None = None
+        self._copied: dict[str, float] = {}
         # Colores que sustituyen a la paleta de tokens (la barra usa los suyos).
         self._palette_overrides: Callable[[str], dict[str, Color]] | None = None
         # Acciones destructivas armadas por el primer clic: clave -> caduca en.
@@ -1040,6 +1073,8 @@ class Menu:
         now = float(now)
         self._now = now
         self._advance(now)
+        if self._capturing:  # las teclas que mantienes se ven en vivo, también al soltarlas
+            self._capture_mods = frozenset(self.modifier_source())
         if not self._open and not self._closed_notified and float(self._height.value) <= 0.01:
             self._height.value = 0.0
             self._content_alpha.value = 0.0
@@ -1147,6 +1182,8 @@ class Menu:
         # Timers sin tween: confirmación de guardado, error y desvanecido del
         # indicador de scroll. Mantienen vivo el repintado mientras se ven.
         if now < max(self._check_until, self._saved_flash_until, self._error_until):
+            return True
+        if any(now < until for until in self._copied.values()):
             return True
         if self._footer_prev is not None and now - self._footer_state_at < FOOTER_FADE_MS / 1000.0:
             return True
@@ -1524,6 +1561,10 @@ class Menu:
                                 disabled=disabled,
                             )
                     elif kind == "text":
+                        if key in SECRET_KEYS and self._secret_text(key):
+                            button = self._copy_rect(y0)
+                            if button.x0 <= x <= button.x1 and button.y0 <= y <= button.y1:
+                                return MenuHit("copy", key, button)
                         if rect.x0 <= x <= rect.x1 and y0 <= y <= y1:
                             return MenuHit("text", key, rect)
                     elif kind == "palette":
@@ -1658,6 +1699,8 @@ class Menu:
                     target.to(1.0, now, T_MICRO, EASE_OUT)
             self._hover_id = new_id
         self._hover_option = new_option
+        hit = self.hit(x, y, now)
+        self._copy_hover = hit.key if hit is not None and hit.kind == "copy" else None
 
         # Thumb del slider: 16 px al pasar por su fila, 14 al salir (120 ms).
         for key in SLIDER_KEYS:
@@ -1668,6 +1711,25 @@ class Menu:
             if self._thumb_target[key] != target:
                 self._thumb_target[key] = target
                 self._thumb[key].to(target, now, SLIDER_HOVER_MS, EASE_OUT)
+
+    def _secret_text(self, key: str) -> str:
+        """Valor de una fila secreta: lo que se está escribiendo o lo guardado."""
+        if self._editing_key == key:
+            return self._edit_buffer
+        return str(self.settings.get(key, "") or "")
+
+    def _copy_rect(self, row_y0: float) -> Rect:
+        """Botón «copiar» de una fila secreta, alineado a la derecha de la línea de valor."""
+        right = ROW_X1 + self._dx + 2.0
+        cy = row_y0 + TEXT_LINE2_CY
+        half = COPY_BTN / 2.0
+        return Rect(right - COPY_BTN, cy - half, right, cy + half)
+
+    def _copy_secret(self, key: str, now: float) -> None:
+        """Copia la clave al portapapeles; el icono lo confirma con un check."""
+        text = self._secret_text(key)
+        if text and self._notify(self.on_copy, text):
+            self._copied[key] = now + COPIED_SECS
 
     def _hover_state(self, hover_id: str) -> Tween | None:
         if hover_id.startswith("row:"):
@@ -1791,6 +1853,8 @@ class Menu:
             else:
                 self._armed.pop(hit.key, None)
                 self._notify(self.on_action, hit.key)
+        elif hit.kind == "copy":
+            self._copy_secret(hit.key, now)
         elif hit.kind == "select":
             self._toggle_selector(hit.key, now)
         elif hit.kind == "option":
@@ -1832,11 +1896,12 @@ class Menu:
 
     def _set_meter_from_x(self, x: float, now: float) -> None:
         """Convierte la posición del puntero en el umbral de voz."""
-        spec = SLIDERS["min_rms"]
         width = (SLIDER_TRACK_X1 + self._dx) - SLIDER_TRACK_X0
         fraction = 0.0 if width <= 0 else (float(x) - SLIDER_TRACK_X0) / width
         fraction = max(0.0, min(1.0, fraction))
-        value = spec.minimum + fraction * (spec.maximum - spec.minimum)
+        # La posición se convierte en dB, no en amplitud lineal: es la misma escala con
+        # la que se dibuja el medidor, así el pulgar acaba justo bajo el puntero.
+        value = db_to_rms(METER_DB_FLOOR + fraction * (METER_DB_CEIL - METER_DB_FLOOR))
         old = self.settings.get("min_rms")
         new = self.settings.set("min_rms", value)
         if new == old:
@@ -1979,6 +2044,9 @@ class Menu:
             return
         if self._editing_key is not None:
             self._finish_text_edit(commit=True)
+        if key in hk.HOTKEY_KEYS:
+            self._begin_capture(key, now)
+            return
         self._editing_key = key
         self._edit_buffer = str(self.settings.get(key, "") or "")
         self._edit_cursor = len(self._edit_buffer)
@@ -1993,6 +2061,9 @@ class Menu:
     def _finish_text_edit(self, *, commit: bool) -> None:
         key = self._editing_key
         if key is None:
+            return
+        if self._capturing:  # sin combinación completa no hay nada que confirmar
+            self._end_capture()
             return
         text = self._edit_buffer
         self._editing_key = None
@@ -2013,16 +2084,67 @@ class Menu:
         """Descarta la edición sin avisar al llamador (cierre/reemplazo)."""
         if self._editing_key is None:
             return
+        if self._capturing:
+            self._end_capture()
+            return
         self._editing_key = None
         self._edit_buffer = ""
         self._edit_cursor = 0
         self._edit_select_all = False
         self._notify(self.on_text_edit, False)
 
+    def _begin_capture(self, key: str, now: float | None) -> None:
+        """Pasa la fila de atajo a modo captura: la siguiente combinación la sustituye."""
+        self._editing_key = key
+        self._capturing = True
+        self._capture_mods = frozenset()
+        self._capture_msg = None
+        self._edit_buffer = ""
+        self._edit_cursor = 0
+        self._edit_select_all = False
+        self._edit_t0 = self._now if now is None else float(now)
+        self._notify(self.on_text_edit, True)
+        self._notify(self.on_hotkey_capture, True)
+
+    def _end_capture(self) -> None:
+        if not self._capturing:
+            return
+        self._capturing = False
+        self._editing_key = None
+        self._capture_mods = frozenset()
+        self._capture_msg = None
+        self._notify(self.on_text_edit, False)
+        self._notify(self.on_hotkey_capture, False)
+
+    def _capture_press(self, vk: int) -> bool:
+        """Una tecla durante la captura: espera, cancela, rechaza o cierra el atajo."""
+        key = self._editing_key or ""
+        mods = frozenset(self.modifier_source())
+        self._capture_mods = mods
+        event = hk.press(vk, mods)
+        if event.kind == "cancel":
+            self._end_capture()
+        elif event.kind == "reject":
+            self._capture_msg = (event.reason, self._now + CAPTURE_MSG_SECS)
+        elif event.kind == "done":
+            others = {name: str(self.settings.get(name, "") or "") for name in hk.HOTKEY_KEYS}
+            taken = hk.conflict(event.spec, others, key, LABELS)
+            if taken is not None:
+                self._capture_msg = (f"Ya la usa «{taken}»", self._now + CAPTURE_MSG_SECS)
+                return True
+            old = self.settings.get(key)
+            new = self.settings.set(key, event.spec)
+            if new != old:  # primero el valor nuevo: al soltar la captura se registran con él
+                self._notify(self.on_live_change, key, new)
+            self._end_capture()
+        return True
+
     def paste_text(self, text: str) -> bool:
         """Pega texto de una sola línea en la fila activa."""
         if self._editing_key is None:
             return False
+        if self._capturing:
+            return True
         clean = str(text or "").replace("\r", " ").replace("\n", " ")
         self._insert_text(clean)
         return True
@@ -2031,7 +2153,7 @@ class Menu:
         """Introduce un carácter imprimible en la fila activa."""
         if self._editing_key is None:
             return False
-        if not char:
+        if self._capturing or not char:
             return True
         for ch in str(char):
             if ch == "\r" or ch == "\n":
@@ -2051,6 +2173,8 @@ class Menu:
             vk = int(vk)
         except (TypeError, ValueError):
             return False
+        if self._capturing:
+            return self._capture_press(vk)
         if vk == 27:  # Esc
             self._finish_text_edit(commit=False)
         elif vk == 13:  # Enter
@@ -2267,6 +2391,10 @@ class Menu:
             self._editing_key,
             self._edit_buffer,
             self._edit_cursor,
+            self._capturing,
+            tuple(sorted(self._capture_mods)),
+            self._capture_msg is not None and now < self._capture_msg[1],
+            int(now * 6.0) if self._capturing else 0,
             self.settings.get("llm_profile"),
             self.settings.get("theme"),
             self.settings.get("show_advanced"),
@@ -2281,6 +2409,8 @@ class Menu:
             now < self._check_until,
             now < self._saved_flash_until,
             now < self._error_until,
+            self._copy_hover,
+            tuple(sorted(key for key, until in self._copied.items() if now < until)),
             self._footer_prev is not None,
             self._save_prev_fill is not None,
             tuple(round(float(tween.value), 4) for tween in self._content_tweens()),
@@ -2859,6 +2989,9 @@ class Menu:
             label_cy,
             alpha,
         )
+        if key in hk.HOTKEY_KEYS:
+            self._draw_hotkey_value(layer, key, row_y0, pal, alpha, now)
+            return
         if editing:
             raw = self._edit_buffer
             display = raw
@@ -2885,25 +3018,22 @@ class Menu:
                 self._scale,
                 alpha,
             )
-        fitted = _fit_text(display or " ", FS_BODY, max_w, self._scale)
-        self._text_at(
-            layer,
-            fitted,
-            FS_BODY,
-            color,
-            ROW_X0,
-            value_cy,
-            alpha,
-        )
+        secret = key in SECRET_KEYS
+        if secret:
+            self._draw_secret_value(layer, raw, editing, value_cy, pal, alpha)
+            self._draw_copy_button(layer, key, row_y0, pal, alpha, now)
+        else:
+            fitted = _fit_text(display or " ", FS_BODY, max_w, self._scale)
+            self._text_at(layer, fitted, FS_BODY, color, ROW_X0, value_cy, alpha)
         if key in COLOR_KEYS:
             self._draw_color_swatch(layer, key, row_y0, pal, alpha)
         if editing and int((now - self._edit_t0) * 2.0) % 2 == 0:
             cursor = max(0, min(len(raw), self._edit_cursor))
             prefix = raw[:cursor]
-            width = min(
-                max_w,
-                text_size(prefix, FS_BODY, self._scale)[0],
-            )
+            if secret:
+                width = min(len(prefix), DOT_MAX) * DOT_PITCH
+            else:
+                width = min(max_w, text_size(prefix, FS_BODY, self._scale)[0])
             _fill_round_rect(
                 layer,
                 ROW_X0 + width,
@@ -2915,6 +3045,126 @@ class Menu:
                 self._scale,
                 alpha,
             )
+
+    def _draw_keycap(
+        self,
+        layer: np.ndarray,
+        x: float,
+        cy: float,
+        label: str,
+        pal: dict[str, Color],
+        alpha: float,
+        *,
+        accent: bool = False,
+        ghost: bool = False,
+    ) -> float:
+        """Una tecla dibujada; devuelve la ``x`` donde empieza la siguiente."""
+        width = text_size(label, FS_SECONDARY, self._scale)[0] + 2.0 * KEYCAP_PAD
+        width = max(width, KEYCAP_H)
+        y0, y1 = cy - KEYCAP_H / 2.0, cy + KEYCAP_H / 2.0
+        box = (x, y0, x + width, y1)
+        if ghost:
+            _stroke_round_rect(layer, *box, 6.0, pal["TEXT_3"], self._scale, alpha * 0.7)
+            color = pal["TEXT_3"]
+        elif accent:
+            _fill_round_rect(layer, *box, 6.0, pal["MINT"], self._scale, alpha * 0.18)
+            _stroke_round_rect(layer, *box, 6.0, pal["MINT"], self._scale, alpha * 0.8)
+            color = pal["MINT"]
+        else:
+            _fill_round_rect(layer, *box, 6.0, pal["TRACK"], self._scale, alpha * 0.8)
+            color = pal["TEXT"]
+        self._text_at(layer, label, FS_SECONDARY, color, x + KEYCAP_PAD, cy, alpha)
+        return x + width + KEYCAP_GAP
+
+    def _draw_hotkey_value(
+        self,
+        layer: np.ndarray,
+        key: str,
+        row_y0: float,
+        pal: dict[str, Color],
+        alpha: float,
+        now: float,
+    ) -> None:
+        """Atajo como teclas dibujadas; al hacer clic captura la combinación en vivo."""
+        cy = row_y0 + TEXT_LINE2_CY
+        right = ROW_X1 + self._dx
+        if not (self._capturing and self._editing_key == key):
+            x = ROW_X0
+            for label in hk.parts_for(str(self.settings.get(key, "") or "")):
+                x = self._draw_keycap(layer, x, cy, label, pal, alpha)
+            hover = max(0.0, min(1.0, float(self._row_hover[key].value)))
+            if hover > 0.01:
+                self._text_at(
+                    layer,
+                    "Cambiar",
+                    FS_BODY,
+                    pal["TEXT_3"],
+                    right,
+                    cy,
+                    alpha * hover,
+                    align="right",
+                )
+            return
+        top, bottom = cy - KEYCAP_H / 2.0 - 1.5, cy + KEYCAP_H / 2.0 + 1.5
+        field = (ROW_X0 - 8.0, top, right + 6.0, bottom)
+        _fill_round_rect(layer, *field, 9.0, pal["TRACK"], self._scale, alpha * 0.5)
+        _stroke_round_rect(layer, *field, 9.0, pal["MINT"], self._scale, alpha)
+        if self._capture_msg is not None and now < self._capture_msg[1]:
+            self._text_at(layer, self._capture_msg[0], FS_BODY, pal["ERR"], ROW_X0, cy, alpha)
+            return
+        x = ROW_X0
+        for label in hk.mod_labels(self._capture_mods):
+            x = self._draw_keycap(layer, x, cy, label, pal, alpha, accent=True)
+        if self._capture_mods:
+            self._draw_keycap(layer, x, cy, "…", pal, alpha, ghost=True)
+            return
+        pulse = 0.65 + 0.35 * math.sin((now - self._edit_t0) * 5.0)
+        self._text_at(
+            layer, "Pulsa la combinación", FS_BODY, pal["TEXT_2"], ROW_X0, cy, alpha * pulse
+        )
+        self._text_at(layer, "Esc cancela", FS_BODY, pal["TEXT_3"], right, cy, alpha, align="right")
+
+    def _draw_secret_value(
+        self,
+        layer: np.ndarray,
+        raw: str,
+        editing: bool,
+        value_cy: float,
+        pal: dict[str, Color],
+        alpha: float,
+    ) -> None:
+        """Puntos en lugar de la clave: se ve cuánto mide, nunca qué dice."""
+        if not raw and not editing:
+            self._text_at(layer, "Sin clave", FS_BODY, pal["TEXT_3"], ROW_X0, value_cy, alpha)
+            return
+        color = pal["TEXT"] if editing else pal["TEXT_2"]
+        for index in range(min(len(raw), DOT_MAX)):
+            cx = ROW_X0 + DOT_R + index * DOT_PITCH
+            _fill_circle(layer, cx, value_cy, DOT_R * 2.0, color, self._scale, alpha)
+
+    def _draw_copy_button(
+        self,
+        layer: np.ndarray,
+        key: str,
+        row_y0: float,
+        pal: dict[str, Color],
+        alpha: float,
+        now: float,
+    ) -> None:
+        """Icono «copiar» (un check un momento después de copiar) con fondo al pasar."""
+        if not self._secret_text(key):
+            return
+        rect = self._copy_rect(row_y0)
+        cx, cy = rect.center
+        copied = now < self._copied.get(key, 0.0)
+        hovered = self._copy_hover == key
+        if hovered and not copied:
+            _fill_circle(layer, cx, cy, COPY_BTN, pal["GROUP_HOVER"], self._scale, alpha)
+        if copied:
+            icon, color = "check", pal["MINT"]
+        else:
+            icon, color = "copy", pal["TEXT"] if hovered else pal["TEXT_2"]
+        draw_icon(layer, icon, cx, cy, COPY_ICON, color, self._scale, alpha=alpha)
 
     def _draw_slider_row(
         self,
@@ -3019,6 +3269,19 @@ class Menu:
             center_y,
             alpha,
         )
+        if key == "show_advanced":
+            hidden = len(ADVANCED_ROWS)
+            note = f"{hidden} visibles" if self.settings.get(key) else f"+{hidden} ajustes"
+            self._text_at(
+                layer,
+                note,
+                FS_VALUE,
+                pal["TEXT_3"],
+                (TOGGLE_X0 + self._dx) - 12.0,
+                center_y,
+                alpha,
+                align="right",
+            )
         color_k = max(0.0, min(1.0, float(self._toggle_color[key].value)))
         pos = max(0.0, min(1.0, float(self._toggle_pos[key].value)))
         track_color = lerp_rgb(

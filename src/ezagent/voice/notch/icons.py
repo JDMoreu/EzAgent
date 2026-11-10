@@ -51,12 +51,13 @@ ICON_NAMES: Final[tuple[str, ...]] = (
     "voice-line",
     "chip",
     "sliders",
+    "copy",
 )
 
 # Los iconos de esta lista no usan la fuente Segoe: así los cinco de la barra
 # lateral comparten el mismo trazo y las mismas terminaciones.
 _VECTOR_ONLY: Final[frozenset[str]] = frozenset(
-    {"close", "sparkle", "mic-line", "voice-line", "chip", "sliders"}
+    {"close", "sparkle", "mic-line", "voice-line", "chip", "sliders", "copy"}
 )
 
 # Alias tolerantes con los nombres que ya usa el notch actual.
@@ -296,6 +297,20 @@ def _draw_vector(name: str, width: float, draw: ImageDraw.ImageDraw, k: float) -
                 outline=255,
                 width=max(1, int(round(width))),
             )
+    elif name == "copy":
+        # Dos hojas: la de atrás asoma por arriba y a la izquierda.
+        _path(
+            draw,
+            ((5.4, 15.4), (5.4, 6.4), (6.8, 5.0), (14.6, 5.0), (15.8, 6.2), (15.8, 8.2)),
+            width,
+            k,
+        )
+        draw.rounded_rectangle(
+            (8.4 * k, 8.4 * k, 19.0 * k, 19.2 * k),
+            radius=2.4 * k,
+            outline=255,
+            width=max(1, int(round(width))),
+        )
     elif name == "speaker":
         _path(
             draw,

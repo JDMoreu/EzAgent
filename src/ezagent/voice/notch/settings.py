@@ -17,6 +17,7 @@ guardada con los valores actuales después de ese redondeo.
 
 from __future__ import annotations
 
+import math
 import threading
 from dataclasses import dataclass
 from typing import Any, Final, Iterable, Mapping, Sequence
@@ -171,7 +172,7 @@ SECRET_KEYS: Final[tuple[str, ...]] = ("api_key",)
 LABELS: Final[dict[str, str]] = {
     "ui_layout": "Forma",
     "ui_scale": "Tamaño",
-    "show_advanced": "Mostrar opciones avanzadas",
+    "show_advanced": "Opciones avanzadas",
     "theme": "Tema",
     "theme_preview": "Paletas",
     "theme_base": "Interfaz",
@@ -228,7 +229,9 @@ LABELS: Final[dict[str, str]] = {
     "repeat_hotkey": "Atajo de repetir",
     "mute_hotkey": "Atajo de silencio",
     "menu_hotkey": "Atajo de ajustes",
+    "open_config_dir": "Abrir carpeta de datos",
     "open_system_md": "Abrir system.md",
+    "open_permissions": "Abrir permissions.toml",
     "open_voice_json": "Abrir voice.json",
 }
 
@@ -300,13 +303,31 @@ DEFAULT_VALUES: Final[dict[str, Any]] = {
 
 @dataclass(frozen=True, slots=True)
 class SliderSpec:
-    """Rango cerrado, paso y formato de un slider."""
+    """Rango cerrado, paso y formato de un slider.
+
+    Con ``log`` el valor es una amplitud lineal y ``step`` se mide en dB: el valor
+    se redondea en la escala de decibelios (``minimum`` y ``maximum`` siguen siendo
+    amplitudes), que es la escala en la que se dibuja y se arrastra el medidor.
+    """
 
     minimum: float
     maximum: float
     step: float
     decimals: int
     suffix: str = ""
+    log: bool = False
+
+
+# Escala del medidor de entrada (dBFS). La pista entera es el rango del umbral:
+# lo que se ve arrastrable es lo que se puede ajustar.
+METER_DB_FLOOR: Final[float] = -80.0
+METER_DB_CEIL: Final[float] = -20.0
+METER_DB_STEP: Final[float] = 0.5
+
+
+def db_to_rms(db: float) -> float:
+    """Amplitud lineal de un nivel en dBFS."""
+    return float(10.0 ** (db / 20.0))
 
 
 # Tamaño de la barra: de 60 % a 200 % del base, en pasos de 5 %.
@@ -316,7 +337,9 @@ UI_SCALE_STEP: Final[float] = 0.05
 
 SLIDERS: Final[dict[str, SliderSpec]] = {
     "ui_scale": SliderSpec(UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_STEP, 2, " %"),
-    "min_rms": SliderSpec(0.0003, 0.008, 0.0001, 4),
+    "min_rms": SliderSpec(
+        db_to_rms(METER_DB_FLOOR), db_to_rms(METER_DB_CEIL), METER_DB_STEP, 6, log=True
+    ),
     "noise_multiplier": SliderSpec(1.0, 2.5, 0.1, 1, "×"),
     "silence_secs": SliderSpec(0.8, 3.5, 0.1, 1, " s"),
     "turn_threshold": SliderSpec(0.3, 0.95, 0.05, 2),
@@ -450,6 +473,12 @@ def _quantize(value: Any, spec: SliderSpec) -> float:
     if number != number:  # NaN defensivo
         number = spec.minimum
     number = max(spec.minimum, min(spec.maximum, number))
+    if spec.log:
+        low = 20.0 * math.log10(spec.minimum)
+        db = 20.0 * math.log10(number)
+        db = low + round((db - low) / spec.step) * spec.step
+        number = max(spec.minimum, min(spec.maximum, db_to_rms(db)))
+        return float(round(number, spec.decimals))
     steps = round((number - spec.minimum) / spec.step)
     quantized = spec.minimum + steps * spec.step
     # ``decimals + 2`` conserva el paso y elimina colas como 0.30000000000004.

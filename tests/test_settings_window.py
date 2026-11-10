@@ -96,9 +96,23 @@ def test_advanced_rows_are_folded_until_asked() -> None:
     assert not folded & ADVANCED_ROWS
     assert {"stt_model", "llm_profile", "llm_model", "api_key"} <= folded
 
+    menu = Menu(_settings(), scale=1.0)
+    menu.set_groups(sw.section_groups("system"), "Sistema")
+    assert not _visible_rows(menu) & ADVANCED_ROWS
+
     menu = Menu(_settings(show_advanced=True), scale=1.0)
-    menu.set_groups(sw.section_groups("models"), "Modelos")
-    assert ADVANCED_ROWS & _visible_rows(menu)
+    menu.set_groups(sw.section_groups("system"), "Sistema")
+    assert ADVANCED_ROWS <= _visible_rows(menu)
+
+
+def test_advanced_rows_live_only_next_to_their_switch() -> None:
+    """El interruptor está en Sistema: lo que activa tiene que verse ahí, no en otra sección."""
+    for name, _title in sw.sections():
+        if name == "system":
+            continue
+        menu = Menu(_settings(show_advanced=True), scale=1.0)
+        menu.set_groups(sw.section_groups(name), sw.section_title(name))
+        assert not _visible_rows(menu) & ADVANCED_ROWS, name
 
 
 def test_custom_theme_rows_only_with_custom_theme() -> None:

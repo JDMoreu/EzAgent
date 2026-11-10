@@ -48,7 +48,7 @@ ROW = {
 
 # Grupos de ajustes. Cada grupo es una tarjeta con su etiqueta; varias tarjetas
 # forman una sección de la barra lateral (ver ``SECTIONS``). Las filas de
-# ``ADVANCED_ROWS`` solo se ven con «Mostrar opciones avanzadas» y las de
+# ``ADVANCED_ROWS`` solo se ven con «Opciones avanzadas» y las de
 # ``CUSTOM_THEME_ROWS`` solo con el tema «Personalizado».
 GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
@@ -87,10 +87,6 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         (
             ("silence_secs", "slider"),
             ("smart_turn", "toggle"),
-            ("turn_threshold", "slider"),
-            ("pre_roll_secs", "slider"),
-            ("min_speech_secs", "slider"),
-            ("max_utterance_secs", "slider"),
         ),
     ),
     (
@@ -106,16 +102,12 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         (
             ("voice", "select"),
             ("speed", "slider"),
-            ("tts_model_variant", "select"),
-            ("tts_sentence_pause", "slider"),
-            ("tts_clause_pause", "slider"),
         ),
     ),
     (
         "dialog",
         (
             ("barge_in", "toggle"),
-            ("barge_in_rms", "slider"),
             ("confirm_actions", "toggle"),
         ),
     ),
@@ -132,9 +124,6 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         (
             ("stt_model", "select"),
             ("auto_start_whisper", "toggle"),
-            ("stt_engine", "select"),
-            ("stt_prompt", "text"),
-            ("stt_timeout_secs", "slider"),
         ),
     ),
     (
@@ -144,13 +133,6 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("llm_profile", "select"),
             ("llm_model", "text"),
             ("api_key", "text"),
-            ("llm_provider", "text"),
-            ("llm_api_style", "select"),
-            ("llm_base_url", "text"),
-            ("llm_model_pick", "select"),
-            ("llm_temperature", "slider"),
-            ("llm_max_tokens", "slider"),
-            ("llm_reasoning_effort", "select"),
         ),
     ),
     (
@@ -165,9 +147,57 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ),
     (
         "advanced",
+        (("show_advanced", "toggle"),),
+    ),
+    (
+        # Ajustes finos: viven aquí, justo debajo del interruptor, para que al
+        # activarlo se vea lo que aparece. Con el interruptor apagado el menú
+        # oculta todas sus filas y, con ellas, los cuatro grupos.
+        "adv_listen",
         (
-            ("show_advanced", "toggle"),
+            ("turn_threshold", "slider"),
+            ("pre_roll_secs", "slider"),
+            ("min_speech_secs", "slider"),
+            ("max_utterance_secs", "slider"),
+        ),
+    ),
+    (
+        "adv_voice",
+        (
+            ("tts_model_variant", "select"),
+            ("tts_sentence_pause", "slider"),
+            ("tts_clause_pause", "slider"),
+            ("barge_in_rms", "slider"),
+        ),
+    ),
+    (
+        "adv_stt",
+        (
+            ("stt_engine", "select"),
+            ("stt_prompt", "text"),
+            ("stt_timeout_secs", "slider"),
+        ),
+    ),
+    (
+        # Conexión con el proveedor y muestreo del modelo.
+        "adv_llm",
+        (
+            ("llm_provider", "text"),
+            ("llm_api_style", "select"),
+            ("llm_base_url", "text"),
+            ("llm_model_pick", "select"),
+            ("llm_temperature", "slider"),
+            ("llm_max_tokens", "slider"),
+            ("llm_reasoning_effort", "select"),
+        ),
+    ),
+    (
+        # Los archivos que la app lee de verdad, en %APPDATA%\EzAgent.
+        "files",
+        (
+            ("open_config_dir", "action"),
             ("open_system_md", "action"),
+            ("open_permissions", "action"),
             ("open_voice_json", "action"),
         ),
     ),
@@ -218,7 +248,11 @@ SECTIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("listening", "Escucha", ("mic", "turn", "wake")),
     ("voice", "Voz", ("speech", "dialog", "actions")),
     ("models", "Modelos", ("stt", "llm")),
-    ("system", "Sistema", ("hotkeys", "advanced")),
+    (
+        "system",
+        "Sistema",
+        ("hotkeys", "advanced", "adv_listen", "adv_voice", "adv_stt", "adv_llm", "files"),
+    ),
 )
 
 # Orden y títulos de la barra lateral de la ventana de ajustes.
@@ -239,6 +273,11 @@ GROUP_LABELS = {
     "llm": "MODELO DE IA",
     "hotkeys": "ATAJOS",
     "advanced": "AVANZADO",
+    "adv_listen": "ESCUCHA · AFINADO",
+    "adv_voice": "VOZ · AFINADO",
+    "adv_stt": "TRANSCRIPCIÓN · AFINADO",
+    "adv_llm": "MODELO DE IA · CONEXIÓN",
+    "files": "ARCHIVOS",
 }
 
 MENU_HEIGHT = H_MENU

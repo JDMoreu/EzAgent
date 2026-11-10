@@ -272,6 +272,14 @@ if _IS_WIN:
         u.IsClipboardFormatAvailable.restype = wintypes.BOOL
         u.GetClipboardData.argtypes = [wintypes.UINT]
         u.GetClipboardData.restype = ctypes.c_void_p
+        u.EmptyClipboard.argtypes = []
+        u.EmptyClipboard.restype = wintypes.BOOL
+        u.SetClipboardData.argtypes = [wintypes.UINT, ctypes.c_void_p]
+        u.SetClipboardData.restype = ctypes.c_void_p
+        k.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+        k.GlobalAlloc.restype = ctypes.c_void_p
+        k.GlobalFree.argtypes = [ctypes.c_void_p]
+        k.GlobalFree.restype = ctypes.c_void_p
         k.GlobalLock.argtypes = [ctypes.c_void_p]
         k.GlobalLock.restype = ctypes.c_void_p
         k.GlobalUnlock.argtypes = [ctypes.c_void_p]
@@ -478,6 +486,8 @@ _WM_SETFOCUS = 0x0007
 _WM_KILLFOCUS = 0x0008
 _WM_KEYDOWN = 0x0100
 _WM_CHAR = 0x0102
+_WM_SYSKEYDOWN = 0x0104  # teclas con Alt: Windows no las manda como WM_KEYDOWN
+_WM_SYSCHAR = 0x0106
 _WM_MOUSEACTIVATE = 0x0021
 _WM_NCCREATE = 0x0081
 _WM_MOUSEMOVE = 0x0200
@@ -496,6 +506,7 @@ _IDC_HAND = 32649
 _WS_EX_NOACTIVATE = 0x08000000
 _GWL_EXSTYLE = -20
 _CF_UNICODETEXT = 13
+_GMEM_MOVEABLE = 0x0002
 _WH_MOUSE_LL = 14
 
 
@@ -897,6 +908,35 @@ class LayeredWindow:
         except Exception:
             return ""
 
+    def copy_text(self, text: str) -> bool:
+        """Pone ``text`` en el portapapeles (Unicode). ``False`` si no se pudo."""
+        if not _IS_WIN or not text:
+            return False
+        data = (text + "\0").encode("utf-16-le")
+        handle = _k32.GlobalAlloc(_GMEM_MOVEABLE, len(data))
+        if not handle:
+            return False
+        try:
+            ptr = _k32.GlobalLock(handle)
+            if not ptr:
+                _k32.GlobalFree(handle)
+                return False
+            ctypes.memmove(ptr, data, len(data))
+            _k32.GlobalUnlock(handle)
+            if not _u32.OpenClipboard(int(self.hwnd or 0)):
+                _k32.GlobalFree(handle)
+                return False
+            try:
+                _u32.EmptyClipboard()
+                if _u32.SetClipboardData(_CF_UNICODETEXT, handle):
+                    return True  # el portapapeles es ahora el dueño de ``handle``
+                _k32.GlobalFree(handle)
+                return False
+            finally:
+                _u32.CloseClipboard()
+        except Exception:
+            return False
+
     # ---- puntero interactivo (menú, sliders, rueda)
     # Los hooks reciben coordenadas de cliente en píxeles físicos. Si
     # ``on_pointer_down`` devuelve True, la ventana no inicia el arrastre.
@@ -1238,7 +1278,9 @@ class LayeredWindow:
                 pass
             # El rect sugerido por Windows se aplica en el hilo de render.
             return 0
-        if msg == _WM_KEYDOWN and self._keyboard:
+        if msg == _WM_SYSCHAR and self._keyboard:
+            return 0  # sin pitido ni mnemónicos mientras se edita o se captura
+        if msg in (_WM_KEYDOWN, _WM_SYSKEYDOWN) and self._keyboard:
             vk = int(wparam or 0) & 0xFFFF
             ctrl = bool(_u32.GetAsyncKeyState(0x11) & 0x8000)
             if vk == 86 and ctrl:  # Ctrl+V
