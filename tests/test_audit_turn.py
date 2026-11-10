@@ -179,6 +179,50 @@ def test_una_llamada_huerfana_se_repara_antes_de_enviar() -> None:
     )
 
 
+def test_note_done_durante_un_turno_se_aplica_al_siguiente() -> None:
+    runtime = Runtime()
+    client = Client([call("slow", call_id="c1")], [text("ok")], [text("fin")])
+    messenger = make(client, runtime)
+    seen: list[str] = []
+
+    def consume() -> None:
+        for delta in messenger.ask_stream("hazlo"):
+            seen.append(delta)
+
+    worker = threading.Thread(target=consume, daemon=True)
+    worker.start()
+    assert runtime.entered.wait(2)
+    # Llega desde el hilo de Tk mientras la herramienta está bloqueada.
+    messenger.note_done("t1:2", "claude", "terminó", "salida X", task="Haz el plan")
+    assert "Datos de un agente delegado" not in {
+        str(message.get("content") or "") for message in messenger.messages
+    }
+    runtime.release.set()
+    worker.join(3)
+    assert not worker.is_alive()
+
+    for request in client.requests:
+        messages = request["messages"]
+        for index, message in enumerate(messages):
+            if message.get("role") != "assistant" or not message.get("tool_calls"):
+                continue
+            call_id = message["tool_calls"][0]["id"]
+            assert messages[index + 1].get("role") == "tool"
+            assert messages[index + 1].get("tool_call_id") == call_id
+    assert all("Datos de un agente delegado" not in str(r) for r in client.requests[0]["messages"])
+
+    assert messenger.ask("siguiente") == "fin"
+    second = client.requests[-1]["messages"]
+    last_user = next(m for m in reversed(second) if m.get("role") == "user")
+    assert "Datos de un agente delegado" in last_user["content"]
+    assert "siguiente" in last_user["content"]
+    positions = [i for i, m in enumerate(messenger.messages) if "Datos de un agente" in str(m)]
+    user_positions = [
+        i for i, m in enumerate(messenger.messages) if m.get("content") == "siguiente"
+    ]
+    assert positions and user_positions and positions[-1] < user_positions[-1]
+
+
 def test_una_transcripcion_atrasada_no_resuelve_la_confirmacion() -> None:
     answered: list[tuple[str, str | None]] = []
     stub = SimpleNamespace(
