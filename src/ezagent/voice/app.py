@@ -44,6 +44,9 @@ from ezagent.llm_providers import (
 )
 
 from .audio import MicCapture, list_input_devices, pcm_is_weak, pcm_to_wav
+from .chat.session import ChatModel
+from .chat.speech import spoken_version
+from .chat.store import ChatStore
 from .condenser import Condenser
 from .config import VoiceConfig, config_path
 from .herdr import Herdr
@@ -76,6 +79,7 @@ HOTKEY_KEYS = (
     "repeat_hotkey",
     "mute_hotkey",
     "menu_hotkey",
+    "chat_hotkey",
 )
 
 # Apariencia y escucha: el menú los aplica y guarda al instante (sin «Guardar»).
@@ -94,6 +98,7 @@ INSTANT_SETTINGS = (
     "close_action",
     "voice_wake",
     "wake_phrase",
+    "chat_voice",
 )
 
 
@@ -345,6 +350,8 @@ class VoiceApp:
         self._last_turn_audio: tuple[bytes, int, float] | None = None
         self._resume_pcm: tuple[bytes, int] | None = None
         self.last_summary = ""
+        # El chat escrito comparte hilo con la voz: todo lo que se dice o escribe entra aquí.
+        self.chat = ChatModel(ChatStore(), voice_replies=bool(getattr(cfg, "chat_voice", False)))
         self.mute_until = 0.0
         self.watched: set[str] = set()
         self._deliver: set[str] = set()
@@ -486,6 +493,14 @@ class VoiceApp:
             ("hotkey_capture", bool(active))
         )
         self.notch.menu_settings_provider = self._notch_menu_settings
+        self.notch.chat_model = self.chat
+        self.notch.chat_hotkey = cfg.chat_hotkey
+        self.notch.chat_roots, self.notch.chat_base_dirs = self._chat_media_roots()
+        self.notch.on_chat_new = lambda: self.events.put(("chat_new",))
+        self.notch.on_chat_stop = lambda: self.events.put(("chat_stop",))
+        self.notch.on_chat_confirm = lambda yes: self.events.put(("confirm_click", bool(yes)))
+        self.notch.on_chat_send = lambda text: self.events.put(("chat_send", text))
+        self.notch.on_chat_voice = self._set_chat_voice
         self.notch.on_live_setting = self._notch_live_setting
         self.notch.on_save_settings = self._notch_save_settings
         self.notch.on_test_voice = self._notch_test_voice
@@ -655,6 +670,7 @@ class VoiceApp:
         if messenger is not None:
             messenger.reset_history()
         self.last_summary = ""
+        self.chat.new_session()
         log("Conversación borrada desde el menú.")
         self._speak("Listo, empezamos de cero.", "answer")
 
@@ -847,6 +863,7 @@ class VoiceApp:
             hotkeys.append(GlobalHotkey(spec, "repeat", self.hotkey_events, 47210 + index))
         hotkeys.append(GlobalHotkey(self.cfg.mute_hotkey, "mute", self.hotkey_events, 47220))
         hotkeys.append(GlobalHotkey(self.cfg.menu_hotkey, "menu", self.hotkey_events, 47221))
+        hotkeys.append(GlobalHotkey(self.cfg.chat_hotkey, "chat", self.hotkey_events, 47222))
         return hotkeys
 
     def _suspend_hotkeys(self, active: bool) -> None:
@@ -1035,6 +1052,17 @@ class VoiceApp:
                 self.cfg.save_key("notch_hidden", False)
                 self.notch.show(IDLE)
             self._toggle_menu()
+        elif event == "chat":
+            self._show_bar_if_hidden()
+            self._toggle_chat()
+
+    def _show_bar_if_hidden(self) -> None:
+        """Si la barra estaba oculta, vuelve a mostrarla (el chat sale de ella)."""
+        if self._notch_hidden:
+            self._notch_hidden = False
+            self.cfg.notch_hidden = False
+            self.cfg.save_key("notch_hidden", False)
+            self.notch.show(IDLE)
 
     def _handle_event(self, event: tuple) -> None:
         kind = event[0]
@@ -1046,6 +1074,12 @@ class VoiceApp:
             self._menu_action_ui(str(event[1]))
         elif kind == "hotkey_capture":
             self._suspend_hotkeys(bool(event[1]))
+        elif kind == "chat_send":
+            self._chat_send(str(event[1]))
+        elif kind == "chat_new":
+            self._chat_new()
+        elif kind == "chat_stop":
+            self._chat_stop()
         elif kind == "transcribed":
             _, text, gen = event
             text = (text or "").strip()
@@ -1070,6 +1104,7 @@ class VoiceApp:
                 log(f"Comando local: {handled_ms:.0f} ms")
                 return
             self._set_state(THINKING)
+            self.chat.add_user(text, "voice")
             threading.Thread(target=self._answer_worker, args=(text, gen), daemon=True).start()
         elif kind == "speaking":
             gen = event[1]
@@ -1162,6 +1197,7 @@ class VoiceApp:
         elif kind == "confirm_ask":
             self._show_confirmation(str(event[1]), bool(event[2]))
         elif kind == "confirm_done":
+            self.chat.clear_confirm()
             try:
                 self.notch.hide_confirmation()
             except Exception:
@@ -1489,6 +1525,7 @@ class VoiceApp:
         # por voz; en ese caso no se muestra ni se lee la pregunta.
         if agent is None or not agent.confirm_pending:
             return
+        self.chat.ask_confirm(summary, strong)
         try:
             self.notch.show_confirmation(
                 summary,
@@ -1557,6 +1594,8 @@ class VoiceApp:
         first_audio = False
         speech = self._speech_queue(stop_event, timing)
         finished = False
+        chat_msg = self.chat.begin_assistant("voice")
+        chat_done = False
 
         def speak_sentence(sentence: str) -> None:
             nonlocal first_audio
@@ -1577,6 +1616,7 @@ class VoiceApp:
                     timing.mark("first_token")
                     first_token = True
                 full.append(delta)
+                self.chat.append(chat_msg.id, delta)
                 for sentence in sentences.feed(delta):
                     if gen != self._turn_gen or stop_event.is_set():
                         return
@@ -1600,6 +1640,8 @@ class VoiceApp:
                     self.events.put(("error", f"Kokoro: {exc}"))
                     return
             answer = "".join(full).strip()
+            self.chat.finish(chat_msg.id)
+            chat_done = True
             if answer:
                 self.last_summary = answer
                 log(f"Mensajero: {answer}")
@@ -1615,12 +1657,122 @@ class VoiceApp:
                 self.events.put(("error", f"Kokoro: {exc}"))
         except Exception as exc:  # noqa: BLE001
             log(f"LLM ({self.cfg.llm_provider}): {type(exc).__name__}: {exc}")
-            self.events.put(
-                ("error", friendly_llm_error(exc, self._llm_label(), self.cfg.llm_model))
-            )
+            reason = friendly_llm_error(exc, self._llm_label(), self.cfg.llm_model)
+            self.chat.fail(chat_msg.id, reason)
+            chat_done = True
+            self.events.put(("error", reason))
         finally:
+            if not chat_done:  # turno interrumpido: se conserva lo que llegó
+                self.chat.cancel(chat_msg.id)
             if not finished:
                 speech.abort()
+            self.events.put(("answer_done", gen))
+
+    # ------------------------------------------------------------------ chat
+    def _toggle_chat(self) -> None:
+        """El chat escrito vive en la barra: se abre con el botón 💬 o con el atajo."""
+        try:
+            self.notch.toggle_chat()
+        except Exception as exc:  # noqa: BLE001
+            log(f"No pude abrir el chat: {exc}")
+
+    def _set_chat_voice(self, enabled: bool) -> None:
+        """Interruptor «responder por voz» del chat: se aplica ya y se guarda."""
+        self.cfg.chat_voice = bool(enabled)
+        self.chat.set_voice_replies(bool(enabled))
+        try:
+            self.cfg.save_key("chat_voice", bool(enabled))
+        except Exception as exc:  # noqa: BLE001
+            log(f"No pude guardar chat_voice: {exc}")
+
+    def _chat_media_roots(self) -> tuple[tuple[Path, ...], tuple[Path, ...]]:
+        """Carpetas desde las que el chat muestra imágenes y documentos (las de lectura del agente)."""
+        agent = getattr(self, "agent", None)
+        if agent is None:
+            return ((Path.home(),), ())
+        config = agent.config
+        roots = [Path(str(r)).expanduser() for r in getattr(config.paths, "read_roots", [])]
+        roots += [Path(config.workspace), Path(config.app_dir)]
+        return (tuple(roots), (Path(config.workspace),))
+
+    def _chat_stop(self) -> None:
+        """El usuario pulsó «detener» en el chat: se corta la respuesta y la voz."""
+        self._turn_gen += 1
+        self._signal_tts_stop()
+        self._speaking_kind = None
+        if self.in_call:
+            self._set_state(LISTENING)
+        else:
+            self._set_idle()
+
+    def _chat_new(self) -> None:
+        """Nueva conversación desde el chat: igual que la del menú, pero sin decirlo en voz alta."""
+        self._turn_gen += 1
+        self._signal_tts_stop()
+        self._speaking_kind = None
+        messenger = getattr(self, "messenger", None)
+        if messenger is not None:
+            messenger.reset_history()
+        self.last_summary = ""
+        self.chat.new_session()
+        log("Conversación nueva desde el chat.")
+
+    def _chat_send(self, text: str) -> None:
+        """Un mensaje escrito en el chat: es un turno más, igual que uno hablado."""
+        text = (text or "").strip()
+        if not text:
+            return
+        agent = getattr(self, "agent", None)
+        if agent is not None and agent.confirm_pending:
+            # Escribir «sí» o «confirmo 3» responde a la confirmación pendiente.
+            self.chat.add_user(text, "chat")
+            agent.submit_confirmation(text)
+            return
+        self._turn_gen += 1
+        gen = self._turn_gen
+        self._signal_tts_stop()
+        self._speaking_kind = None
+        self.chat.add_user(text, "chat")
+        log(f"Chat: {text[:80]}")
+        self._set_state(THINKING)
+        threading.Thread(target=self._chat_worker, args=(text, gen), daemon=True).start()
+
+    def _chat_worker(self, text: str, gen: int) -> None:
+        """Turno del chat: el texto llega en streaming a la pantalla; solo habla si se quiere."""
+        stop_event = self._new_tts_stop()
+        message = self.chat.begin_assistant("chat")
+        finished = False
+        try:
+            got_text = False
+            for delta in self.messenger.ask_stream(text, mode="chat"):
+                if gen != self._turn_gen or stop_event.is_set():
+                    return
+                got_text = got_text or bool(delta.strip())
+                self.chat.append(message.id, delta)
+            if not got_text:
+                self.chat.fail(message.id, "El modelo no devolvió respuesta. Prueba de nuevo.")
+                finished = True
+                return
+            self.chat.finish(message.id)
+            finished = True
+            answer = self.chat.last_assistant_text()
+            spoken = spoken_version(answer) if answer else ""
+            if answer:
+                self.last_summary = spoken or answer
+            if spoken and self.chat.voice_replies and gen == self._turn_gen:
+                self._speaking_kind = "answer"
+                self.events.put(("speaking", gen))
+                self.speaker.speak(
+                    spoken, stop_event, on_level=lambda level: self.notch.draw(level, SPEAKING)
+                )
+        except Exception as exc:  # noqa: BLE001
+            log(f"Chat ({self.cfg.llm_provider}): {type(exc).__name__}: {exc}")
+            reason = friendly_llm_error(exc, self._llm_label(), self.cfg.llm_model)
+            self.chat.fail(message.id, reason)
+            finished = True
+        finally:
+            if not finished:  # interrumpido: se conserva lo que llegó
+                self.chat.cancel(message.id)
             self.events.put(("answer_done", gen))
 
     def _speech_queue(self, stop_event: threading.Event, timing: TurnTimings | None) -> SpeechQueue:
@@ -2007,6 +2159,8 @@ class VoiceApp:
             self._resume_listening_from_mic()
         elif action == "panel":
             self._toggle_menu()
+        elif action == "chat":
+            self._toggle_chat()
         elif action == "repeat":
             self._handle_hotkey("repeat")
         elif action == "hangup":
@@ -2171,6 +2325,8 @@ class VoiceApp:
             "ui_motion": "set_motion",
             "ui_scale": "set_bar_scale",
         }.get(key)
+        if key == "chat_voice":  # el interruptor de Ajustes y el del chat son el mismo
+            self.chat.set_voice_replies(bool(value))
         method = getattr(self.notch, setter, None) if setter else None
         if callable(method):
             try:

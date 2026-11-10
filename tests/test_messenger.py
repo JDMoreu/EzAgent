@@ -505,3 +505,68 @@ def test_el_mensaje_amigable_no_filtra_la_clave() -> None:
     error = StatusError(401)
     error.args = ("Incorrect API key provided: sk-SECRETO",)
     assert "sk-SECRETO" not in friendly_llm_error(error, "OpenAI", "m")
+
+
+# -------------------------------------------------------------------- modo chat
+def test_el_modo_chat_permite_markdown_y_respuestas_largas() -> None:
+    from ezagent.voice.llm import CHAT_MAX_TOKENS, CHAT_MODE_PROMPT
+
+    client = Client([text("## Resumen\n\n- uno")])
+    messenger = make(client)
+    assert "".join(messenger.ask_stream("resume", mode="chat")) == "## Resumen\n\n- uno"
+    request = client.requests[0]
+    assert request["max_tokens"] == CHAT_MAX_TOKENS  # 150 en voz; en el chat cabe un documento
+    system = request["messages"][0]["content"]
+    assert system.startswith("PROMPT-SISTEMA") and CHAT_MODE_PROMPT in system
+    assert "markdown" in system and "[Nombre](ruta completa)" in system
+
+
+def test_el_modo_voz_no_cambia_ni_el_prompt_ni_los_tokens() -> None:
+    from ezagent.voice.llm import CHAT_MODE_PROMPT
+
+    client = Client([text("Hola.")])
+    say(make(client), "hola")
+    request = client.requests[0]
+    assert request["max_tokens"] == 150
+    assert request["messages"][0]["content"] == "PROMPT-SISTEMA"
+    assert CHAT_MODE_PROMPT not in request["messages"][0]["content"]
+
+
+def test_el_bloque_del_chat_no_se_arrastra_al_turno_de_voz_siguiente() -> None:
+    from ezagent.voice.llm import CHAT_MODE_PROMPT
+
+    client = Client([text("Uno.")], [text("Dos.")])
+    messenger = make(client)
+    "".join(messenger.ask_stream("a", mode="chat"))
+    messenger.client = Client([text("Dos.")])
+    say(messenger, "b")
+    assert CHAT_MODE_PROMPT not in messenger.client.requests[0]["messages"][0]["content"]
+    assert messenger.client.requests[0]["max_tokens"] == 150
+
+
+def test_el_chat_no_dice_acuses_de_relleno() -> None:
+    client = Client(tool_round("web_search", "{}", "c1"), [text("Encontré tres resultados.")])
+    out = "".join(make(client).ask_stream("busca", mode="chat"))
+    assert not any(filler in out for filler in ACK_FILLERS)
+    assert out == "Encontré tres resultados."
+
+
+def test_en_el_chat_el_historial_es_el_mismo_que_en_voz() -> None:
+    messenger = make(Client([text("Hola.")]))
+    "".join(messenger.ask_stream("hola", mode="chat"))
+    assert messenger.messages[-2:] == [
+        {"role": "user", "content": "hola"},
+        {"role": "assistant", "content": "Hola."},
+    ]
+
+
+def test_sin_runtime_el_chat_tampoco_deja_su_prompt_pegado() -> None:
+    from ezagent.voice.llm import CHAT_MODE_PROMPT
+
+    client = Client([text("Hola.")], [text("Adiós.")])
+    messenger = make(client, runtime=None)
+    "".join(messenger.ask_stream("hola", mode="chat"))
+    assert CHAT_MODE_PROMPT in client.requests[0]["messages"][0]["content"]
+    say(messenger, "adiós")
+    assert CHAT_MODE_PROMPT not in client.requests[1]["messages"][0]["content"]
+    assert "núcleo agéntico no está disponible" in client.requests[1]["messages"][0]["content"]

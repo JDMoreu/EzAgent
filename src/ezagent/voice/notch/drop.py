@@ -2,8 +2,9 @@
 
 Dos disposiciones (``ui_layout`` en ``voice.json``):
 
-* ``pill``: ☰ a la izquierda de la cápsula de color; 🎤 y ✕ a la derecha;
+* ``pill``: ☰ y 💬 a la izquierda de la cápsula de color; 🎤 y ✕ a la derecha;
 * ``circle``: un círculo de color sobre una fila corta con los mismos botones.
+El 💬 abre el chat escrito, que sale de la propia forma (``chat_ui.py``).
 
 **El contorno no se deforma nunca**: es fijo y nítido. Dentro fluye «Marea»
 (``flow.py``), un gradiente orgánico con la paleta de EzAgent: cuando hablas el
@@ -46,6 +47,7 @@ from . import layered as _shell
 from .anim import animations_enabled
 from .bar_motion import Choreo, Spring, emerge
 from .bar_theme import CARD_RADIUS, body_top, card_overrides, card_palette
+from .chat_ui import ChatPanel, fluid_array
 from .flow import CUSTOM_POSES, FlowField, colors_for, custom_palette
 from .settings import UI_SCALE_MAX, UI_SCALE_MIN, UI_SCALE_STEP
 from .state import UiState
@@ -73,7 +75,8 @@ HYSTERESIS = 24.0  # px de holgura extra para volver al dock por defecto (evita 
 # DECISION: tres botones (☰ menú, 🎤 micrófono, ✕ colgar). «Repetir» pasa al
 # menú y a la voz/atajo; «nueva conversación» vive en el menú con confirmación.
 # Sin llamada el micrófono se pliega y ✕ se convierte en «llamar» (mismo botón).
-BUTTONS = ("gear", "mic", "hang")
+BUTTONS = ("gear", "chat", "mic", "hang")
+NB = len(BUTTONS)
 LAYOUTS = ("pill", "circle")
 # DECISION: los botones solo aparecen al acercar el puntero; «always» queda para
 # las pruebas y no se ofrece en el menú.
@@ -88,11 +91,11 @@ DOCKS = {"pill": ("sides", "right", "left"), "circle": ("bottom", "top", "right"
 # Docks en línea: botones antes y después de la forma, del más cercano al más lejano.
 # Leídos de izquierda a derecha son siempre ☰ 🎤 ✕.
 _SIDES = {
-    ("pill", "sides"): (("gear",), ("mic", "hang")),
-    ("pill", "right"): ((), ("gear", "mic", "hang")),
-    ("pill", "left"): (("hang", "mic", "gear"), ()),
-    ("circle", "right"): ((), ("gear", "mic", "hang")),
-    ("circle", "left"): (("hang", "mic", "gear"), ()),
+    ("pill", "sides"): (("chat", "gear"), ("mic", "hang")),
+    ("pill", "right"): ((), ("gear", "chat", "mic", "hang")),
+    ("pill", "left"): (("hang", "mic", "chat", "gear"), ()),
+    ("circle", "right"): ((), ("gear", "chat", "mic", "hang")),
+    ("circle", "left"): (("hang", "mic", "chat", "gear"), ()),
 }
 
 
@@ -105,7 +108,7 @@ def emerge_order(layout: str, dock: str | None = None) -> tuple[tuple[str, ...],
     """Grupos de botones por salida: del hueco más cercano a la forma al más lejano."""
     dock = clean_dock(layout, dock)
     if layout == "circle" and dock in ("bottom", "top"):
-        return (("mic",), ("gear", "hang"))
+        return (("chat", "mic"), ("gear", "hang"))
     before, after = _SIDES[(layout, dock)]
     return tuple(
         tuple(side[i] for side in (before, after) if i < len(side))
@@ -118,9 +121,9 @@ def layout_size(layout: str, dock: str | None = None) -> tuple[float, float]:
     dock = clean_dock(layout, dock)
     if layout == "circle":
         if dock in ("bottom", "top"):
-            return (3 * BTN + 2 * GAP + 2 * PAD, PAD + CIRCLE_D + ORB_GAP + BTN + PAD)
-        return (2 * PAD + CIRCLE_D + ORB_GAP + 3 * BTN + 2 * GAP, 2 * PAD + CIRCLE_D)
-    return (3 * BTN + PILL_W + 3 * GAP + 2 * PAD, 2 * PAD + max(BTN, PILL_H))
+            return (NB * BTN + (NB - 1) * GAP + 2 * PAD, PAD + CIRCLE_D + ORB_GAP + BTN + PAD)
+        return (2 * PAD + CIRCLE_D + ORB_GAP + NB * BTN + (NB - 1) * GAP, 2 * PAD + CIRCLE_D)
+    return (NB * BTN + PILL_W + NB * GAP + 2 * PAD, 2 * PAD + max(BTN, PILL_H))
 
 
 def _row_x(order: tuple[str, ...], mic: float, circle: bool) -> dict[str, float]:
@@ -152,15 +155,16 @@ def slots(layout: str, mic: float = 1.0, dock: str | None = None) -> dict[str, t
     mic = max(0.0, min(1.0, mic))
     circle = layout == "circle"
     if circle and dock in ("bottom", "top"):
-        widths = [BTN, BTN * mic, BTN]
+        widths = [BTN, BTN, BTN * mic, BTN]
         gap_mic = GAP * mic + CALL_GAP * (1.0 - mic)
-        total = sum(widths) + GAP + gap_mic  # gear-mic = GAP, mic-hang = hueco del micro
+        gaps = (GAP, GAP, gap_mic, 0.0)  # mic-hang = respiro mayor si el micro está plegado
+        total = sum(widths) + sum(gaps)
         x = w / 2 - total / 2
         bottom = dock == "bottom"
         row_y = (PAD + CIRCLE_D + ORB_GAP + BTN / 2) if bottom else (PAD + BTN / 2)
         form_y = (PAD + CIRCLE_D / 2) if bottom else (PAD + BTN + ORB_GAP + CIRCLE_D / 2)
         out = {}
-        for name, width, gap in zip(BUTTONS, widths, (GAP, gap_mic, 0.0), strict=True):
+        for name, width, gap in zip(BUTTONS, widths, gaps, strict=True):
             out[name] = (x + width / 2, row_y)
             x += width + gap
         out["pill"] = (w / 2, form_y)
@@ -361,6 +365,7 @@ class DropModel:
         self.field = _flow_for(self.layout)
         self.theme = "light"
         self.cols = colors_for("light", "idle").copy()
+        self.form_hidden = False  # el chat ocupa su lugar: solo se dibujan los botones
         self._colored = False
         self.bright = 1.0
         self.lvl = 0.0
@@ -415,7 +420,12 @@ class DropModel:
 
         show = hover or asking or menu_open or buttons == "always"
         live = in_call or asking
-        want = {"gear": show and not asking, "mic": show and live, "hang": show}
+        want = {
+            "gear": show and not asking,
+            "chat": show and not asking,
+            "mic": show and live,
+            "hang": show,
+        }
         self.choreo.set_targets(want, emerge_order(self.layout, self.dock), now, reduced)
         self.choreo.step(
             now, dt, reduced, grow=hover and not asking, hover_item=hover_item, pressed=pressed
@@ -562,6 +572,12 @@ def _glyph(
         # engranaje de 8 dientes se leía como un sol («brillo»).
         for y in (6.5, 12, 17.5):
             _stroke(d, [P(5, y), P(19, y)], width, color)
+    elif name == "chat":
+        # Burbuja con cola y dos líneas de texto: «escribir».
+        d.rounded_rectangle((*P(2.8, 3.6), *P(21.2, 17.4)), radius=5 * u, outline=color, width=w)
+        _stroke(d, [P(8.0, 17.4), P(6.2, 21.8), P(12.8, 17.4)], width, color)
+        _stroke(d, [P(7.4, 8.6), P(16.6, 8.6)], width * 0.9, color)
+        _stroke(d, [P(7.4, 12.4), P(13.6, 12.4)], width * 0.9, color)
     elif name == "repeat":
         d.arc((*P(4, 4), *P(20, 20)), -132.5, 180, fill=color, width=w)
         _stroke(d, [P(4, 4), P(4, 8.5), P(8.5, 8.5)], width, color)
@@ -684,6 +700,7 @@ def render_model(
     menu_open: bool,
     now: float | None = None,
     hover_item: str | None = None,
+    chat_open: bool = False,
 ) -> np.ndarray:
     """Dibuja un fotograma BGRA premultiplicado de ``w``×``h`` px físicos."""
     now = time.monotonic() if now is None else now
@@ -704,6 +721,8 @@ def render_model(
         hov = hover_item == name
         if name == "gear":
             tiles = [(button_sprite("gear", theme, s, hover=hov, signal=menu_open), 1.0)]
+        elif name == "chat":
+            tiles = [(button_sprite("chat", theme, s, hover=hov, signal=chat_open), 1.0)]
         elif name == "hang":  # al preguntar, ✕ significa «no»
             call = 0.0 if model.asking else max(0.0, min(1.0, model.call.x))
             tiles = [
@@ -720,10 +739,11 @@ def render_model(
 
     # 2) la forma: interior fluido + máscara exacta (contorno nítido a cualquier escala)
     fx, fy, grow, _ = pos["pill"]
-    mask = form_mask(model.layout, s * grow)
-    interior = Image.fromarray(render_fluid(model, now), "RGB").resize(mask.size, Image.BICUBIC)
-    interior.putalpha(mask)
-    cv.paste(interior, fx * s, fy * s)
+    if not model.form_hidden:
+        mask = form_mask(model.layout, s * grow)
+        interior = Image.fromarray(render_fluid(model, now), "RGB").resize(mask.size, Image.BICUBIC)
+        interior.putalpha(mask)
+        cv.paste(interior, fx * s, fy * s)
 
     arr = np.asarray(cv.img.convert("RGBa"))
     return np.ascontiguousarray(arr[..., [2, 1, 0, 3]])
@@ -937,6 +957,7 @@ class DropUI:
         self._muted = False
         self._in_call = False
         self._menu_open = False
+        self._chat_open = False  # el chat escrito está abierto (el 💬 se ilumina)
         self._asking = False
         self._on_yes = None
         self._on_no = None
@@ -976,6 +997,17 @@ class DropUI:
         self.on_save_settings = lambda values: None
         self.on_test_voice = lambda values: None
         self.on_menu_action = lambda action: None
+        # Chat escrito: el modelo y las acciones los pone la app.
+        self.chat_model = None
+        self.chat_roots = None
+        self.chat_base_dirs = ()
+        self.chat_hotkey = ""
+        self.on_chat_send = lambda text: None
+        self.on_chat_voice = lambda enabled: None
+        self.on_chat_new = lambda: None
+        self.on_chat_stop = lambda: None
+        self.on_chat_confirm = lambda yes: None
+        self._chat = ChatPanel(self)
         self.on_hotkey_capture = lambda active: None
         self.menu_settings_provider = lambda: None
 
@@ -1096,11 +1128,13 @@ class DropUI:
 
     def hide(self, close_eyes: bool = True) -> None:
         self._visible = False
+        self._chat.close_now()
         self._close_card_now()
         if self._win is not None:
             self._win.hide()
 
     def close(self) -> None:
+        self._chat.close_now()
         self._close_card_now()
         if self._win is not None:
             self._win.stop()
@@ -1272,6 +1306,7 @@ class DropUI:
         if self._persist_pos_at and now >= self._persist_pos_at:
             self._persist_pos_at = 0.0
             self._save_bar_position()
+        self._chat.poll(now)
         w, h = self._size()
         return render_model(
             self.model,
@@ -1284,6 +1319,7 @@ class DropUI:
             self._menu_open,
             now,
             self._hover_item,
+            self._chat_open,
         )
 
     def target_fps(self, pose: str, hover: bool, now: float) -> float:
@@ -1320,6 +1356,37 @@ class DropUI:
                     self.cfg.save_key("drop_dock", self.dock)
             except Exception:
                 pass
+
+    # ------------------------------------------------------------ chat
+    def toggle_chat(self) -> None:
+        """Abre el chat escrito (la forma se transforma en el panel) o lo cierra."""
+        if self._asking and not self._chat.is_open:
+            return
+        self._chat.toggle()
+
+    @property
+    def chat_is_open(self) -> bool:
+        return self._chat.is_open
+
+    def set_chat_open(self, active: bool) -> None:
+        self._chat_open = bool(active)
+
+    def set_form_hidden(self, hidden: bool) -> None:
+        self.model.form_hidden = bool(hidden)
+
+    def form_size(self) -> tuple[float, float]:
+        """Tamaño lógico de la forma de color (esfera o píldora)."""
+        return _form_dims(self.layout)
+
+    def chat_body_rgb(self) -> tuple[int, int, int]:
+        return tuple(card_palette(self._theme_name())["BODY"][:3])  # type: ignore[return-value]
+
+    def chat_fluid(self, w: int, h: int, now: float):
+        """El fluido Marea actual, estirado a ``w``×``h`` (relleno de la forma al transformarse)."""
+        try:
+            return fluid_array(render_fluid(self.model, now), w, h)
+        except Exception:
+            return None
 
     def toggle_layout(self) -> None:
         self.set_layout("circle" if self.layout == "pill" else "pill")
@@ -1399,6 +1466,9 @@ class DropUI:
             if name == "gear":
                 if not asking:
                     self.on_action("panel")
+            elif name == "chat":
+                if not asking:
+                    self.on_action("chat")
             elif name == "mic":
                 if asking:
                     if self._on_yes:

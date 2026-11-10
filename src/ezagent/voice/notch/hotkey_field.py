@@ -19,6 +19,7 @@ HOTKEY_KEYS: Final[tuple[str, ...]] = (
     "repeat_hotkey",
     "mute_hotkey",
     "menu_hotkey",
+    "chat_hotkey",
 )
 MODIFIERS: Final[tuple[str, ...]] = ("ctrl", "alt", "shift", "win")
 MOD_LABELS: Final[dict[str, str]] = {

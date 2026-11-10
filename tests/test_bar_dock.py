@@ -31,7 +31,7 @@ CASES = [(layout, dock) for layout, docks in DOCKS.items() for dock in docks]
 def test_the_pill_is_narrower_than_before() -> None:
     assert D.PILL_W <= 112  # antes 148
     assert D.PILL_H == 38
-    assert layout_size("pill")[0] < 3 * D.BTN + 148 + 3 * D.GAP + 2 * D.PAD
+    assert layout_size("pill")[0] < D.NB * D.BTN + 148 + D.NB * D.GAP + 2 * D.PAD
 
 
 def test_the_fluid_keeps_the_real_proportion_of_the_pill() -> None:
@@ -84,12 +84,13 @@ def test_emerge_order_lists_every_button_once_nearest_first(layout: str, dock: s
 
 def test_default_docks_keep_the_original_arrangement() -> None:
     assert DEFAULT_DOCK == {"pill": "sides", "circle": "bottom"}
-    assert emerge_order("pill") == (("gear", "mic"), ("hang",))
-    assert emerge_order("circle") == (("mic",), ("gear", "hang"))
-    sl = slots("pill")
-    assert sl["gear"][0] < sl["pill"][0] < sl["mic"][0] < sl["hang"][0]
-    sl = slots("circle")
-    assert sl["pill"][1] < sl["gear"][1] == sl["mic"][1] == sl["hang"][1]
+    assert emerge_order("pill") == (("chat", "mic"), ("gear", "hang"))
+    assert emerge_order("circle") == (("chat", "mic"), ("gear", "hang"))
+    sl = slots("pill")  # ☰ 💬 [forma] 🎤 ✕
+    assert sl["gear"][0] < sl["chat"][0] < sl["pill"][0] < sl["mic"][0] < sl["hang"][0]
+    sl = slots("circle")  # la forma arriba y los cuatro botones en fila debajo
+    assert sl["pill"][1] < sl["gear"][1] == sl["chat"][1] == sl["mic"][1] == sl["hang"][1]
+    assert sl["gear"][0] < sl["chat"][0] < sl["mic"][0] < sl["hang"][0]
 
 
 def test_circle_docks_put_the_buttons_on_the_chosen_side() -> None:
@@ -98,9 +99,9 @@ def test_circle_docks_put_the_buttons_on_the_chosen_side() -> None:
     right, left = slots("circle", 1.0, "right"), slots("circle", 1.0, "left")
     assert all(right[n][0] > right["pill"][0] for n in BUTTONS)
     assert all(left[n][0] < left["pill"][0] for n in BUTTONS)
-    # ☰ 🎤 ✕ se leen siempre de izquierda a derecha.
+    # ☰ 💬 🎤 ✕ se leen siempre de izquierda a derecha.
     for sl in (right, left):
-        assert sl["gear"][0] < sl["mic"][0] < sl["hang"][0]
+        assert sl["gear"][0] < sl["chat"][0] < sl["mic"][0] < sl["hang"][0]
 
 
 def test_unknown_docks_fall_back_to_the_default() -> None:
@@ -292,3 +293,45 @@ def test_every_dock_renders_with_the_buttons_inside_the_frame(layout: str, dock:
     # Nada se pinta pegado al borde de la ventana: los botones caben con su margen.
     assert alpha[:2].max() == 0 and alpha[-2:].max() == 0
     assert alpha[:, :2].max() == 0 and alpha[:, -2:].max() == 0
+
+
+def test_there_are_four_buttons_and_the_chat_one_is_a_real_button() -> None:
+    assert BUTTONS == ("gear", "chat", "mic", "hang") and D.NB == 4
+    model = DropModel("circle")
+    for step in range(60):
+        model.update(
+            step / 60, 1 / 60, "idle", 0.0, "dark", True, False, False, False, in_call=True
+        )
+    cx, cy, scale, alpha = model.positions()["chat"]
+    assert scale > 0.9 and alpha > 0.9
+    assert model.item_at(cx, cy) == "chat"
+
+
+def test_the_chat_button_hides_with_the_menu_one_while_a_confirmation_is_pending() -> None:
+    model = DropModel("pill")
+    for step in range(90):
+        model.update(step / 60, 1 / 60, "idle", 0.0, "dark", True, True, False, False, in_call=True)
+    pos = model.positions()
+    assert pos["gear"][3] < 0.1 and pos["chat"][3] < 0.1  # ☰ y 💬 se retiran al preguntar
+    assert pos["mic"][3] > 0.9 and pos["hang"][3] > 0.9  # ✓ y «no» se quedan
+
+
+def test_the_chat_glyph_is_drawn_and_lights_up_when_open() -> None:
+    import numpy as np
+
+    closed = np.asarray(D.button_sprite("chat", "dark", 1.0)).astype(int)
+    opened = np.asarray(D.button_sprite("chat", "dark", 1.0, signal=True)).astype(int)
+    assert closed[..., 3].max() > 200 and not np.array_equal(closed, opened)
+    plain = np.asarray(D.button_sprite("gear", "dark", 1.0)).astype(int)
+    assert not np.array_equal(closed, plain)  # no es el mismo icono
+
+
+def test_clicking_the_chat_button_asks_the_app_to_toggle_the_chat() -> None:
+    actions: list[str] = []
+    bar = DropUI(None, cfg=SimpleNamespace(ui_layout="circle"))
+    bar.on_action = actions.append
+    bar._activate("chat")
+    assert actions == ["chat"]
+    bar._asking = True
+    bar._activate("chat")
+    assert actions == ["chat"]  # con una confirmación pendiente no abre el chat

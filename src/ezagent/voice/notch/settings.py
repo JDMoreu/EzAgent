@@ -71,6 +71,7 @@ EDITABLE_KEYS: Final[tuple[str, ...]] = (
     "repeat_hotkey",
     "mute_hotkey",
     "menu_hotkey",
+    "chat_hotkey",
 )
 
 # ``llm_profile`` es un selector de conveniencia: elige un perfil guardado y
@@ -95,6 +96,7 @@ INSTANT_KEYS: Final[tuple[str, ...]] = (
     "close_action",
     "voice_wake",
     "wake_phrase",
+    "chat_voice",
 )
 ALL_KEYS: Final[tuple[str, ...]] = EDITABLE_KEYS + UI_KEYS + INSTANT_KEYS
 # Todo lo que «Guardar» persiste: «Guardar» se activa con cualquier cambio de estas claves.
@@ -141,6 +143,7 @@ TOGGLE_KEYS: Final[tuple[str, ...]] = (
     "auto_start_whisper",
     "voice_wake",
     "show_advanced",
+    "chat_voice",
 )
 TEXT_KEYS: Final[tuple[str, ...]] = (
     "llm_provider",
@@ -156,6 +159,7 @@ TEXT_KEYS: Final[tuple[str, ...]] = (
     "repeat_hotkey",
     "mute_hotkey",
     "menu_hotkey",
+    "chat_hotkey",
     "wake_phrase",
     "theme_primary",
     "theme_secondary",
@@ -231,6 +235,8 @@ LABELS: Final[dict[str, str]] = {
     "repeat_hotkey": "Atajo de repetir",
     "mute_hotkey": "Atajo de silencio",
     "menu_hotkey": "Atajo de ajustes",
+    "chat_hotkey": "Atajo de chat",
+    "chat_voice": "Responder por voz en el chat",
     "open_config_dir": "Abrir carpeta de datos",
     "open_system_md": "Abrir system.md",
     "open_permissions": "Abrir permissions.toml",
@@ -286,6 +292,8 @@ DEFAULT_VALUES: Final[dict[str, Any]] = {
     "repeat_hotkey": "ctrl+alt+r",
     "mute_hotkey": "ctrl+alt+m",
     "menu_hotkey": "ctrl+alt+o",
+    "chat_hotkey": "ctrl+alt+t",
+    "chat_voice": False,
     "ui_layout": "pill",
     "ui_scale": 1.0,
     "show_advanced": False,

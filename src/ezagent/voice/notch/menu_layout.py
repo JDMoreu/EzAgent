@@ -109,6 +109,7 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         (
             ("barge_in", "toggle"),
             ("confirm_actions", "toggle"),
+            ("chat_voice", "toggle"),
         ),
     ),
     (
@@ -143,6 +144,7 @@ GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("repeat_hotkey", "text"),
             ("mute_hotkey", "text"),
             ("menu_hotkey", "text"),
+            ("chat_hotkey", "text"),
         ),
     ),
     (

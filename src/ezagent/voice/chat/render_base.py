@@ -35,6 +35,7 @@ STYLES: Final[dict[str, FontStyle]] = {
 }
 LINE_K: Final[float] = 1.5  # interlineado
 PARA_GAP: Final[float] = 8.0  # espacio entre bloques
+_EPS: Final[float] = 0.05  # tolerancia de redondeo al medir texto (px lógicos)
 _SPLIT = re.compile(r"(\s+)")
 
 
@@ -221,7 +222,7 @@ def wrap(ctx: Ctx, spans: Iterable[Span], base: str, width: float) -> list[list[
 
     def place(piece: _Piece, w: float) -> None:
         nonlocal x
-        if x + w > width and lines[-1]:
+        if x + w > width + _EPS and lines[-1]:
             while lines[-1] and lines[-1][-1].piece.space:
                 lines[-1].pop()  # sin espacios colgando al final de la línea
             lines.append([])
@@ -235,7 +236,7 @@ def wrap(ctx: Ctx, spans: Iterable[Span], base: str, width: float) -> list[list[
             if lines[-1]:
                 lines[-1].append(_Run(x, piece.text, piece, w))
                 x += w
-        elif w > width and not piece.code and len(piece.text) > 1:
+        elif w > width + _EPS and not piece.code and len(piece.text) > 1:
             for chunk in _split_word(ctx, piece, width):  # palabra más ancha que la caja
                 place(chunk, _piece_width(ctx, chunk))
         else:

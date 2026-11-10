@@ -52,12 +52,30 @@ ICON_NAMES: Final[tuple[str, ...]] = (
     "chip",
     "sliders",
     "copy",
+    "plus",
+    "clock",
+    "send",
+    "stop",
+    "chevron-left",
 )
 
 # Los iconos de esta lista no usan la fuente Segoe: así los cinco de la barra
 # lateral comparten el mismo trazo y las mismas terminaciones.
 _VECTOR_ONLY: Final[frozenset[str]] = frozenset(
-    {"close", "sparkle", "mic-line", "voice-line", "chip", "sliders", "copy"}
+    {
+        "close",
+        "sparkle",
+        "mic-line",
+        "voice-line",
+        "chip",
+        "sliders",
+        "copy",
+        "plus",
+        "clock",
+        "send",
+        "stop",
+        "chevron-left",
+    }
 )
 
 # Alias tolerantes con los nombres que ya usa el notch actual.
@@ -297,6 +315,21 @@ def _draw_vector(name: str, width: float, draw: ImageDraw.ImageDraw, k: float) -
                 outline=255,
                 width=max(1, int(round(width))),
             )
+    elif name == "plus":
+        _path(draw, ((12.0, 5.2), (12.0, 18.8)), width, k)
+        _path(draw, ((5.2, 12.0), (18.8, 12.0)), width, k)
+    elif name == "clock":
+        draw.ellipse(
+            (4.0 * k, 4.0 * k, 20.0 * k, 20.0 * k), outline=255, width=max(1, int(round(width)))
+        )
+        _path(draw, ((12.0, 7.6), (12.0, 12.0), (15.4, 14.0)), width, k)
+    elif name == "send":
+        _path(draw, ((12.0, 19.0), (12.0, 6.0)), width, k)
+        _path(draw, ((6.2, 11.6), (12.0, 5.8), (17.8, 11.6)), width, k)
+    elif name == "stop":
+        draw.rounded_rectangle((7.0 * k, 7.0 * k, 17.0 * k, 17.0 * k), radius=2.2 * k, fill=255)
+    elif name == "chevron-left":
+        _path(draw, ((14.8, 6.6), (9.4, 12.0), (14.8, 17.4)), width, k)
     elif name == "copy":
         # Dos hojas: la de atrás asoma por arriba y a la izquierda.
         _path(

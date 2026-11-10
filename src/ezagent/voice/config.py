@@ -309,6 +309,9 @@ class VoiceConfig:
     repeat_hotkey: str = "ctrl+alt+r"
     mute_hotkey: str = "ctrl+alt+m"
     menu_hotkey: str = "ctrl+alt+o"
+    chat_hotkey: str = "ctrl+alt+t"
+    # Chat escrito: ¿también se responde en voz alta? Apagado, solo texto.
+    chat_voice: bool = False
 
     # STT / TTS.
     whisper_url: str = "http://127.0.0.1:8088/inference"

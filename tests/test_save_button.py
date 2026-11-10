@@ -31,6 +31,7 @@ CHANGES = {
     "close_action": "hangup",
     "voice_wake": False,
     "wake_phrase": "Hola EzAgent",
+    "chat_voice": True,
 }
 
 

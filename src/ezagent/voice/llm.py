@@ -27,6 +27,23 @@ ACK_FILLERS: tuple[str, ...] = (
 # Herramientas instantáneas que no merecen acuse (silenciar, cerrar…).
 _NO_ACK_TOOLS = frozenset({"voice_control"})
 
+# Modo chat: el usuario escribe y lee en pantalla (a veces también escucha la respuesta).
+# Sustituye la regla de «una o dos frases, sin markdown» del modo voz.
+CHAT_MODE_PROMPT = (
+    "# Modo chat\n"
+    "El usuario te escribe y lee tu respuesta en una ventana de chat. Aquí puedes usar "
+    "markdown (títulos, listas, **negrita**, tablas, bloques de código) y respuestas más "
+    "largas cuando ayuden: resúmenes, comparativas, documentos, pasos. Empieza por lo "
+    "importante y sé claro, sin relleno. Si la respuesta es larga, abre con una o dos "
+    "frases que se entiendan solas.\n"
+    "- Para enseñar un archivo o documento que creaste o encontraste, escribe en una "
+    "línea sola `[Nombre](ruta completa)`; para una imagen local, `![descripción](ruta "
+    "completa)`. Usa solo rutas reales que hayas visto en una herramienta; nunca las "
+    "inventes.\n"
+    "- No uses HTML. No pegues enlaces de imágenes de la web."
+)
+CHAT_MAX_TOKENS = 2400
+
 
 def _status_of(exc: BaseException) -> int | None:
     status = getattr(exc, "status_code", None)
@@ -257,8 +274,13 @@ class Messenger:
         answer = "".join(self.ask_stream(text)).strip()
         return answer or "No he podido completar la consulta."
 
-    def ask_stream(self, text: str) -> Iterator[str]:
-        """Streaming de la respuesta, incluidas las llamadas a herramientas."""
+    def ask_stream(self, text: str, mode: str = "voice") -> Iterator[str]:
+        """Streaming de la respuesta, incluidas las llamadas a herramientas.
+
+        ``mode="chat"`` es para el chat escrito: markdown permitido, respuestas largas y sin acuses
+        («un momento, lo reviso»), que solo tienen sentido hablados.
+        """
+        chat = mode == "chat"
         self._last_user_text = text
         runtime = self.runtime
         if runtime is not None:
@@ -274,10 +296,16 @@ class Messenger:
                     exc,
                 )
                 runtime = None
+        if runtime is None:
+            # Sin núcleo agéntico el prompt es fijo: se rehace para no arrastrar el del chat.
+            self.messages[0] = {"role": "system", "content": self._system_prompt()}
+        if chat:
+            base = str(self.messages[0].get("content") or "")
+            self.messages[0] = {"role": "system", "content": f"{base}\n\n{CHAT_MODE_PROMPT}"}
         self.messages.append({"role": "user", "content": text})
         self._trim_history()
         self.last_rounds = []
-        spoke = False
+        spoke = chat  # el acuse de relleno es para la voz; en el chat no hace falta
         for _ in range(4):
             tools: list[dict[str, Any]] = []
             if runtime is not None:
@@ -295,7 +323,11 @@ class Messenger:
                     if self.cfg.llm_provider == "anthropic" and not self._anthropic_style()
                     else self.cfg.llm_temperature
                 ),
-                "max_tokens": self.cfg.llm_max_tokens,
+                "max_tokens": (
+                    max(int(self.cfg.llm_max_tokens), CHAT_MAX_TOKENS)
+                    if chat
+                    else self.cfg.llm_max_tokens
+                ),
                 "stream": True,
             }
             if tools:
