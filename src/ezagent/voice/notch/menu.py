@@ -2366,6 +2366,23 @@ class Menu:
             return False
         return not any(tween.active for tween in self._content_tweens())
 
+    def frame_key(self, now: float) -> tuple | None:
+        """Huella de todo lo que se ve del menú, o ``None`` si algo se está animando.
+
+        Dos llamadas con la misma huella pintarían el mismo cuadro: la ventana de
+        ajustes reutiliza el último en vez de volver a componerlo.
+        """
+        if not self._layers_static(now):
+            return None
+        return (
+            self._layer_signature_value(now),
+            self._open,
+            round(float(self._height.value), 3),
+            round(float(self._content_alpha.value), 3),
+            round(float(self.scroll_offset), 2),
+            round(float(self._indicator_alpha(now)), 3),
+        )
+
     def _layer_signature_value(self, now: float) -> tuple:
         """Huella de todo lo que pinta las capas (no de la composición)."""
         settings_values = tuple(

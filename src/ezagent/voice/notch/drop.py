@@ -57,7 +57,7 @@ BTN = 36.0  # diámetro de los botones redondos
 GAP = 8.0  # separación entre elementos de la fila
 CALL_GAP = 10.0  # respiro extra de «llamar» cuando el micro está plegado
 PAD = 12.0  # margen para sombras dentro de la ventana
-PILL_W, PILL_H = 148.0, 38.0
+PILL_W, PILL_H = 108.0, 38.0  # la píldora es compacta: ni más ancha ni más alta
 CIRCLE_D = 58.0
 ORB_GAP = 10.0  # separación entre el círculo y la fila de botones
 HOVER_MARGIN = 22.0  # el puntero «cerca» de la barra hace aparecer los botones
@@ -68,62 +68,176 @@ GRID_CELL = 2.0  # px lógicos por celda del fluido (se escala suavemente)
 SHADOW = 10.0  # margen de sombra de cada sprite
 FPS_BUSY = 60.0  # mientras algo se mueve: botones, voz, crecimiento, iconos
 FPS_CALM = 30.0  # en reposo; el fluido sigue fluyendo despacio
+HYSTERESIS = 24.0  # px de holgura extra para volver al dock por defecto (evita parpadeo)
 
 # DECISION: tres botones (☰ menú, 🎤 micrófono, ✕ colgar). «Repetir» pasa al
 # menú y a la voz/atajo; «nueva conversación» vive en el menú con confirmación.
 # Sin llamada el micrófono se pliega y ✕ se convierte en «llamar» (mismo botón).
-NAMES = {"pill": ("gear", "pill", "mic", "hang"), "circle": ("gear", "mic", "hang")}
 BUTTONS = ("gear", "mic", "hang")
-# Orden de salida por grupos: del hueco más cercano a la forma al más lejano.
-EMERGE_ORDER = {"pill": (("gear", "mic"), ("hang",)), "circle": (("mic",), ("gear", "hang"))}
-
 LAYOUTS = ("pill", "circle")
 # DECISION: los botones solo aparecen al acercar el puntero; «always» queda para
 # las pruebas y no se ofrece en el menú.
 MOTION_MODES = ("system", "full", "reduced")
 
+# Dock: de qué lado de la forma van los botones. Por defecto, la píldora lleva ☰ a un
+# lado y 🎤 ✕ al otro («sides»), y el círculo los lleva debajo («bottom»). Si la barra
+# queda pegada a un borde o a una esquina, los botones pasan al lado donde sí hay sitio
+# (``choose_dock``) y la forma puede llegar hasta el borde.
+DEFAULT_DOCK = {"pill": "sides", "circle": "bottom"}
+DOCKS = {"pill": ("sides", "right", "left"), "circle": ("bottom", "top", "right", "left")}
+# Docks en línea: botones antes y después de la forma, del más cercano al más lejano.
+# Leídos de izquierda a derecha son siempre ☰ 🎤 ✕.
+_SIDES = {
+    ("pill", "sides"): (("gear",), ("mic", "hang")),
+    ("pill", "right"): ((), ("gear", "mic", "hang")),
+    ("pill", "left"): (("hang", "mic", "gear"), ()),
+    ("circle", "right"): ((), ("gear", "mic", "hang")),
+    ("circle", "left"): (("hang", "mic", "gear"), ()),
+}
 
-def layout_size(layout: str) -> tuple[float, float]:
-    """Tamaño lógico de la ventana según la disposición."""
+
+def clean_dock(layout: str, dock: str | None) -> str:
+    """``dock`` si vale para la disposición; si no, el de por defecto."""
+    return dock if dock in DOCKS.get(layout, ()) else DEFAULT_DOCK.get(layout, "sides")
+
+
+def emerge_order(layout: str, dock: str | None = None) -> tuple[tuple[str, ...], ...]:
+    """Grupos de botones por salida: del hueco más cercano a la forma al más lejano."""
+    dock = clean_dock(layout, dock)
+    if layout == "circle" and dock in ("bottom", "top"):
+        return (("mic",), ("gear", "hang"))
+    before, after = _SIDES[(layout, dock)]
+    return tuple(
+        tuple(side[i] for side in (before, after) if i < len(side))
+        for i in range(max(len(before), len(after)))
+    )
+
+
+def layout_size(layout: str, dock: str | None = None) -> tuple[float, float]:
+    """Tamaño lógico de la ventana según la disposición y el dock."""
+    dock = clean_dock(layout, dock)
     if layout == "circle":
-        return (3 * BTN + 2 * GAP + 2 * PAD, PAD + CIRCLE_D + ORB_GAP + BTN + PAD)
+        if dock in ("bottom", "top"):
+            return (3 * BTN + 2 * GAP + 2 * PAD, PAD + CIRCLE_D + ORB_GAP + BTN + PAD)
+        return (2 * PAD + CIRCLE_D + ORB_GAP + 3 * BTN + 2 * GAP, 2 * PAD + CIRCLE_D)
     return (3 * BTN + PILL_W + 3 * GAP + 2 * PAD, 2 * PAD + max(BTN, PILL_H))
 
 
-def row_center_y(layout: str) -> float:
-    _, h = layout_size(layout)
-    return (PAD + CIRCLE_D + ORB_GAP + BTN / 2) if layout == "circle" else h / 2
-
-
-def slots(layout: str, mic: float = 1.0) -> dict[str, tuple[float, float]]:
-    """Centro de cada elemento. ``mic`` (0..1) es el hueco del micrófono: sin
-    llamada se pliega y ✕/llamar se desliza a su sitio; la forma no se mueve."""
-    w, _ = layout_size(layout)
-    cy = row_center_y(layout)
-    mic = max(0.0, min(1.0, mic))
-    out: dict[str, tuple[float, float]] = {}
-    names = NAMES[layout]
-    widths = [PILL_W if n == "pill" else (BTN * mic if n == "mic" else BTN) for n in names]
-    # Al plegarse el micro, su espacio se convierte en un respiro más ancho
-    # (GAP + CALL_GAP): «llamar» no queda pegado a la forma ni a ☰.
-    gaps = [
-        (GAP * mic + CALL_GAP * (1.0 - mic)) if a == "mic" else GAP
-        for a, b in zip(names, names[1:], strict=False)
-    ]
+def _row_x(order: tuple[str, ...], mic: float, circle: bool) -> dict[str, float]:
+    """Centro x de cada elemento de una fila; ``mic`` es el hueco del micrófono."""
+    form_w = CIRCLE_D if circle else PILL_W
+    out: dict[str, float] = {}
     x = PAD
-    if layout == "circle":  # la fila se centra bajo el círculo
-        x = w / 2 - (sum(widths) + sum(gaps)) / 2
-    for i, (n, width) in enumerate(zip(names, widths, strict=True)):
-        out[n] = (x + width / 2, cy)
-        x += width + (gaps[i] if i < len(gaps) else 0.0)
-    if layout == "circle":
-        out["pill"] = (w / 2, PAD + CIRCLE_D / 2)
+    for i, name in enumerate(order):
+        width = form_w if name == "pill" else (BTN * mic if name == "mic" else BTN)
+        out[name] = x + width / 2
+        if i + 1 < len(order):
+            # Al plegarse el micro, su espacio se convierte en un respiro más ancho
+            # (GAP + CALL_GAP): «llamar» no queda pegado a la forma ni a ☰.
+            if name == "mic":
+                gap = GAP * mic + CALL_GAP * (1.0 - mic)
+            elif circle and "pill" in (name, order[i + 1]):
+                gap = ORB_GAP
+            else:
+                gap = GAP
+            x += width + gap
     return out
 
 
-def form_center(layout: str) -> tuple[float, float]:
+def slots(layout: str, mic: float = 1.0, dock: str | None = None) -> dict[str, tuple[float, float]]:
+    """Centro de cada elemento. ``mic`` (0..1) es el hueco del micrófono: sin
+    llamada se pliega y ✕/llamar se desliza a su sitio; la forma no se mueve."""
+    dock = clean_dock(layout, dock)
+    w, h = layout_size(layout, dock)
+    mic = max(0.0, min(1.0, mic))
+    circle = layout == "circle"
+    if circle and dock in ("bottom", "top"):
+        widths = [BTN, BTN * mic, BTN]
+        gap_mic = GAP * mic + CALL_GAP * (1.0 - mic)
+        total = sum(widths) + GAP + gap_mic  # gear-mic = GAP, mic-hang = hueco del micro
+        x = w / 2 - total / 2
+        bottom = dock == "bottom"
+        row_y = (PAD + CIRCLE_D + ORB_GAP + BTN / 2) if bottom else (PAD + BTN / 2)
+        form_y = (PAD + CIRCLE_D / 2) if bottom else (PAD + BTN + ORB_GAP + CIRCLE_D / 2)
+        out = {}
+        for name, width, gap in zip(BUTTONS, widths, (GAP, gap_mic, 0.0), strict=True):
+            out[name] = (x + width / 2, row_y)
+            x += width + gap
+        out["pill"] = (w / 2, form_y)
+        return out
+    before, after = _SIDES[(layout, dock)]
+    order = (*reversed(before), "pill", *after)
+    full = _row_x(order, 1.0, circle)
+    cur = _row_x(order, mic, circle)
+    shift = full["pill"] - cur["pill"]  # la forma no se mueve cuando el micro se pliega
+    return {name: (cur[name] + shift, h / 2) for name in order}
+
+
+def form_center(layout: str, dock: str | None = None) -> tuple[float, float]:
     """Centro de la forma de color (cápsula o círculo)."""
-    return slots(layout)["pill"]
+    return slots(layout, 1.0, dock)["pill"]
+
+
+def row_center_y(layout: str, dock: str | None = None) -> float:
+    """Altura de la fila de botones."""
+    return slots(layout, 1.0, dock)["gear"][1]
+
+
+def _window_overflow(
+    layout: str,
+    dock: str,
+    anchor: tuple[float, float],
+    work: tuple[int, int, int, int],
+    bs: float,
+    extra: float = 0.0,
+) -> float:
+    """Cuánto se sale de la zona útil (px) la ventana de ``dock`` con la forma en ``anchor``.
+
+    Se permite el mismo margen de sombras que ``DropUI.clamp_position``; ``extra`` lo
+    reduce (holgura exigida para volver al dock por defecto).
+    """
+    w, h = layout_size(layout, dock)
+    fx, fy = form_center(layout, dock)
+    margin = max(0.0, PAD * bs - extra)
+    x0, y0 = anchor[0] - fx * bs, anchor[1] - fy * bs
+    return (
+        max(0.0, work[0] - margin - x0)
+        + max(0.0, x0 + w * bs - (work[2] + margin))
+        + max(0.0, work[1] - margin - y0)
+        + max(0.0, y0 + h * bs - (work[3] + margin))
+    )
+
+
+def choose_dock(
+    layout: str,
+    current: str | None,
+    anchor: tuple[float, float],
+    work: tuple[int, int, int, int],
+    bs: float,
+) -> str:
+    """Lado de los botones que cabe en pantalla con la forma de color en ``anchor``.
+
+    Prefiere el dock por defecto; si la barra está pegada a un borde o esquina, pasa
+    al primero que sí cabe. Para volver al de por defecto pide algo de holgura
+    (``HYSTERESIS``), así no parpadea al arrastrar justo en el límite.
+    """
+    current = clean_dock(layout, current)
+    default = DEFAULT_DOCK[layout]
+    slack = 0.0 if current == default else HYSTERESIS * bs
+    if _window_overflow(layout, default, anchor, work, bs, slack) <= 0.0:
+        return default
+    if _window_overflow(layout, current, anchor, work, bs) <= 0.0:
+        return current
+    docks = DOCKS[layout]
+    for dock in docks:
+        if _window_overflow(layout, dock, anchor, work, bs) <= 0.0:
+            return dock
+    return min(docks, key=lambda dock: _window_overflow(layout, dock, anchor, work, bs))
+
+
+def _flow_for(layout: str) -> FlowField:
+    """El fluido de la forma, con la proporción real de la píldora."""
+    return FlowField(layout, aspect=1.0 if layout == "circle" else PILL_W / PILL_H)
 
 
 # --------------------------------------------------------------------- color
@@ -241,9 +355,10 @@ class DropModel:
     pliega y ✕ se convierte en el botón de llamar.
     """
 
-    def __init__(self, layout: str = "pill") -> None:
+    def __init__(self, layout: str = "pill", dock: str | None = None) -> None:
         self.layout = layout if layout in LAYOUTS else "pill"
-        self.field = FlowField(self.layout)
+        self.dock = clean_dock(self.layout, dock)
+        self.field = _flow_for(self.layout)
         self.theme = "light"
         self.cols = colors_for("light", "idle").copy()
         self._colored = False
@@ -294,14 +409,14 @@ class DropModel:
             self.pose_since = now
         self.ts = now - self.pose_since
         if self.field.layout != self.layout:
-            self.field = FlowField(self.layout)
+            self.field = _flow_for(self.layout)
         self.custom = custom
         self._update_air(dt, pose, rms, theme, reduced)
 
         show = hover or asking or menu_open or buttons == "always"
         live = in_call or asking
         want = {"gear": show and not asking, "mic": show and live, "hang": show}
-        self.choreo.set_targets(want, EMERGE_ORDER[self.layout], now, reduced)
+        self.choreo.set_targets(want, emerge_order(self.layout, self.dock), now, reduced)
         self.choreo.step(
             now, dt, reduced, grow=hover and not asking, hover_item=hover_item, pressed=pressed
         )
@@ -355,7 +470,7 @@ class DropModel:
         Los botones viajan desde el centro de la forma hasta su hueco; la forma
         nunca se mueve (su «escala» es el leve crecimiento al acercar).
         """
-        sl = slots(self.layout, self.mic_space.x)
+        sl = slots(self.layout, self.mic_space.x, self.dock)
         origin = sl["pill"]
         out: dict[str, tuple[float, float, float, float]] = {
             "pill": (origin[0], origin[1], self.choreo.grow.x, 1.0)
@@ -386,7 +501,7 @@ class DropModel:
         estará un botón oculto también lo hace aparecer.
         """
         xs, ys = [], []
-        for name, (cx, cy) in slots(self.layout).items():
+        for name, (cx, cy) in slots(self.layout, 1.0, self.dock).items():
             if name == "pill":
                 half_w, half_h = (
                     (PILL_W / 2, PILL_H / 2)
@@ -581,7 +696,7 @@ def render_model(
     mp = model.mute_p
     mute_progress = mp.x if (mp.t > 0 or not muted) else 1.0
     # Los lejanos primero: al salir pasan por detrás de los cercanos, no encima.
-    draw_order = [n for group in reversed(EMERGE_ORDER[model.layout]) for n in group]
+    draw_order = [n for g in reversed(emerge_order(model.layout, model.dock)) for n in g]
     for name in draw_order:
         cx, cy, sc, al = pos[name]
         if sc <= 0.02 or al <= 0.01:
@@ -698,7 +813,7 @@ class DropWindow(_shell.LayeredWindow):
         self.ui.set_scale(max(1.0, dpi / 96.0))
 
     def clamp_position(self, x: int, y: int) -> tuple[int, int]:
-        return self.ui.clamp_position(x, y)
+        return self.ui.drag_target(x, y)
 
     def on_window_drag_end(self, x: int, y: int) -> None:
         self.ui.drag_end(x, y)
@@ -706,6 +821,8 @@ class DropWindow(_shell.LayeredWindow):
 
 class CardWindow(_shell.LayeredWindow):
     """Ventana de la tarjeta de ajustes; aloja el ``Menu`` existente."""
+
+    lazy_drag = True  # pintarla cuesta decenas de ms: al moverla no se repinta
 
     def __init__(self, ui: DropUI, x: int, y: int, w: int, h: int) -> None:
         super().__init__(int(w), int(h), int(x), int(y), click_through=False, title="card")
@@ -802,12 +919,16 @@ class DropUI:
         self._persist_pos_at = 0.0
         layout = str(getattr(cfg, "ui_layout", "pill") or "pill").lower()
         self.layout = layout if layout in LAYOUTS else "pill"
+        # Lado de los botones: el guardado solo vale con la disposición con que se guardó.
+        saved_dock = getattr(cfg, "drop_dock", "")
+        same_layout = getattr(cfg, "drop_layout", "") == self.layout
+        self.dock = clean_dock(self.layout, saved_dock if same_layout else None)
         self.buttons = "hover"
         motion = str(getattr(cfg, "ui_motion", "system") or "system").lower()
         self.motion = motion if motion in MOTION_MODES else "system"
         self._position = position
         self._ui = UiState()
-        self.model = DropModel(self.layout)
+        self.model = DropModel(self.layout, self.dock)
         self._win: DropWindow | None = None
         self._visible = False
         self._state = "idle"
@@ -839,6 +960,8 @@ class DropUI:
         # Ventana de ajustes: sección visible y barra lateral (``settings_window``).
         self._section = "appearance"
         self._sidebar = None
+        # Último cuadro de la tarjeta sin la marca viva: (huella, BGRA uint8).
+        self._card_cache: tuple | None = None
         self._sidebar_hover: str | None = None
         self._card_lock = threading.RLock()
         self._pending_save: bool | None = None
@@ -875,15 +998,69 @@ class DropUI:
         return self.s * self.bar_scale
 
     def _size(self) -> tuple[int, int]:
-        w, h = layout_size(self.layout)
+        w, h = layout_size(self.layout, self.dock)
         return (round(w * self.bs), round(h * self.bs))
 
     def _default_position(self) -> tuple[int, int]:
         """Abajo y con la forma de color centrada en la pantalla."""
         wa = _shell.work_area()
         _, h = self._size()
-        fx, _ = form_center(self.layout)
+        fx, _ = form_center(self.layout, self.dock)
         return (round((wa[0] + wa[2]) / 2 - fx * self.bs), wa[3] - h - round(6 * self.bs))
+
+    # ----------------------------------------------------- dock de los botones
+    def _origin_for(self, anchor: tuple[float, float], dock: str) -> tuple[int, int]:
+        """Esquina de la ventana para que la forma de color quede en ``anchor``."""
+        fx, fy = form_center(self.layout, dock)
+        return (round(anchor[0] - fx * self.bs), round(anchor[1] - fy * self.bs))
+
+    def _form_anchor(self) -> tuple[float, float] | None:
+        """Centro de la forma de color en pantalla (px físicos), o ``None`` sin ventana."""
+        win = self._win
+        if win is None:
+            return None
+        fx, fy = form_center(self.layout, self.dock)
+        return (win.x + fx * self.bs, win.y + fy * self.bs)
+
+    def _retarget(self, anchor: tuple[float, float]) -> None:
+        """Recoloca la ventana con la forma en ``anchor``, con el dock que quepa en pantalla."""
+        win = self._win
+        if win is None:
+            return
+        self.dock = choose_dock(self.layout, self.dock, anchor, _shell.work_area(), self.bs)
+        self.model.dock = self.dock
+        nx, ny = self.clamp_position(*self._origin_for(anchor, self.dock))
+        w, h = self._size()
+        win.resize(w, h)
+        win.set_pos(nx, ny)
+        self._position = (nx, ny)
+
+    def drag_target(self, x: int, y: int) -> tuple[int, int]:
+        """Esquina permitida para un arrastre; los botones cambian de lado cerca de un borde.
+
+        Recibe la esquina que pide el cursor, sin recortar: así el dock cambia *antes* de
+        que el límite de pantalla frene la ventana y la forma puede llegar hasta el borde.
+        """
+        win = self._win
+        if win is None:
+            return self.clamp_position(x, y)
+        fx, fy = form_center(self.layout, self.dock)
+        anchor = (x + fx * self.bs, y + fy * self.bs)
+        dock = choose_dock(self.layout, self.dock, anchor, _shell.work_area(), self.bs)
+        if dock != self.dock:
+            nfx, nfy = form_center(self.layout, dock)
+            self.dock = dock
+            self.model.dock = dock
+            # La forma debe seguir bajo el cursor: el agarre se corre lo que se movió la forma.
+            ox, oy = win._drag_off
+            win._drag_off = (
+                ox + round((nfx - fx) * self.bs),
+                oy + round((nfy - fy) * self.bs),
+            )
+            w, h = self._size()
+            win.resize(w, h)
+            x, y = self._origin_for(anchor, dock)
+        return self.clamp_position(x, y)
 
     def _motion_reduced(self) -> bool:
         if self.motion == "reduced":
@@ -899,9 +1076,14 @@ class DropUI:
 
     def _ensure_window(self) -> bool:
         if self._win is None:
-            w, h = self._size()
             x, y = self._position if self._position else self._default_position()
-            x, y = self.clamp_position(x, y)
+            # La pantalla puede ser otra que la de la última vez: se revisa el dock.
+            fx, fy = form_center(self.layout, self.dock)
+            anchor = (x + fx * self.bs, y + fy * self.bs)
+            self.dock = choose_dock(self.layout, self.dock, anchor, _shell.work_area(), self.bs)
+            self.model.dock = self.dock
+            x, y = self.clamp_position(*self._origin_for(anchor, self.dock))
+            w, h = self._size()
             self._win = DropWindow(self, x, y, w, h)
         return self._win.start()
 
@@ -1121,21 +1303,13 @@ class DropUI:
         if layout == self.layout:
             return
         win = self._win
-        anchor = None
-        if win is not None:
-            fx, fy = form_center(self.layout)
-            anchor = (win.x + fx * self.bs, win.y + fy * self.bs)
+        anchor = self._form_anchor()
         self.layout = layout
+        self.dock = DEFAULT_DOCK[layout]
         self.model.layout = layout
+        self.model.dock = self.dock
         if win is not None and anchor is not None:
-            fx, fy = form_center(layout)
-            nx, ny = self.clamp_position(
-                round(anchor[0] - fx * self.bs), round(anchor[1] - fy * self.bs)
-            )
-            w, h = self._size()
-            win.resize(w, h)
-            win.set_pos(nx, ny)
-            self._position = (nx, ny)
+            self._retarget(anchor)
         if self.cfg is not None:
             try:
                 self.cfg.save_key("ui_layout", layout)
@@ -1143,6 +1317,7 @@ class DropUI:
                     self.cfg.save_key("drop_x", int(win.x))
                     self.cfg.save_key("drop_y", int(win.y))
                     self.cfg.save_key("drop_layout", layout)
+                    self.cfg.save_key("drop_dock", self.dock)
             except Exception:
                 pass
 
@@ -1156,20 +1331,10 @@ class DropUI:
         if abs(new - self.bar_scale) < 1e-6:
             return
         win = self._win
-        anchor = None
-        if win is not None:
-            fx, fy = form_center(self.layout)
-            anchor = (win.x + fx * self.bs, win.y + fy * self.bs)
+        anchor = self._form_anchor()
         self.bar_scale = new
         if win is not None and anchor is not None:
-            fx, fy = form_center(self.layout)
-            nx, ny = self.clamp_position(
-                round(anchor[0] - fx * self.bs), round(anchor[1] - fy * self.bs)
-            )
-            w, h = self._size()
-            win.resize(w, h)
-            win.set_pos(nx, ny)
-            self._position = (nx, ny)
+            self._retarget(anchor)
             # La posición se guarda cuando se deja de ajustar (no en cada paso).
             self._persist_pos_at = time.monotonic() + 0.6
 
@@ -1181,6 +1346,7 @@ class DropUI:
             self.cfg.save_key("drop_x", int(win.x))
             self.cfg.save_key("drop_y", int(win.y))
             self.cfg.save_key("drop_layout", self.layout)
+            self.cfg.save_key("drop_dock", self.dock)
         except Exception:
             pass
 
@@ -1267,6 +1433,7 @@ class DropUI:
                 self.cfg.save_key("drop_x", int(x))
                 self.cfg.save_key("drop_y", int(y))
                 self.cfg.save_key("drop_layout", self.layout)
+                self.cfg.save_key("drop_dock", self.dock)
             except Exception:
                 pass
         self.on_position_change(int(x), int(y))
@@ -1352,12 +1519,8 @@ class DropUI:
     def _bar_box(self) -> tuple[float, float, float]:
         """(x central, arriba, abajo) de la barra en píxeles físicos de pantalla."""
         win = self._win
-        w, h = layout_size(self.layout)
-        if self.layout == "circle":
-            top, bottom = PAD, h - PAD
-        else:
-            half = max(BTN, PILL_H) / 2
-            top, bottom = h / 2 - half, h / 2 + half
+        w, h = layout_size(self.layout, self.dock)
+        top, bottom = PAD, h - PAD
         return (win.x + w / 2 * self.s, win.y + top * self.s, win.y + bottom * self.s)
 
     def _settings_room(self) -> float:
@@ -1584,7 +1747,7 @@ class DropUI:
 
     def render_card(self) -> np.ndarray:
         """Cuadro de la ventana de ajustes: cuerpo, barra lateral y la sección."""
-        from .settings_window import SIDEBAR_W, Sidebar, composite_over, draw_grip, fade
+        from .settings_window import Sidebar, fade_factor
 
         card, menu = self._card, self._menu
         if card is None or menu is None:
@@ -1612,9 +1775,38 @@ class DropUI:
         if self._card is None:  # se cerró durante update()
             return np.zeros((h, w, 4), np.uint8)
         theme = self._theme_name()
-        frame = np.array(render_card_body(w, h, s, theme, fresh=True), dtype=np.float32)
         if self._sidebar is None:
             self._sidebar = Sidebar()
+        # Con el menú quieto, el cuadro (sin la marca viva) es el mismo de la vez anterior:
+        # se reutiliza y solo se repinta la marca, que es lo único que se mueve.
+        still = menu.frame_key(now)
+        key = None
+        if still is not None:
+            key = (w, h, round(s, 4), theme, self._section, self._sidebar_hover, still)
+        cached = self._card_cache
+        if key is not None and cached is not None and cached[0] == key:
+            base = cached[1]
+        else:
+            base = self._compose_card(menu, w, h, s, theme, now, mh, vh)
+            if base is None:
+                return np.zeros((h, w, 4), np.uint8)
+            self._card_cache = (key, base) if key is not None else None
+        out = base.copy()
+        try:
+            self._sidebar.overlay_mark(out, s, now, fade_factor(mh / max(1.0, vh)), self._reduced)
+        except Exception:
+            pass
+        try:
+            card._interval = 1.0 / (60.0 if menu.is_animating(now) else 30.0)
+        except Exception:
+            pass
+        return out
+
+    def _compose_card(self, menu, w, h, s, theme, now, mh, vh):
+        """Compone el cuadro completo sin la marca viva (BGRA uint8) o ``None`` si falla."""
+        from .settings_window import SIDEBAR_W, composite_over, draw_grip, fade
+
+        frame = np.array(render_card_body(w, h, s, theme, fresh=True), dtype=np.float32)
         try:
             self._sidebar.draw(
                 frame,
@@ -1625,6 +1817,7 @@ class DropUI:
                 self._sidebar_hover,
                 now,
                 self._reduced,
+                with_mark=False,
             )
         except Exception:
             pass
@@ -1634,7 +1827,7 @@ class DropUI:
         try:
             menu.draw(content, now)
         except Exception:
-            return np.zeros((h, w, 4), np.uint8)
+            return None
         composite_over(frame, np.clip(content[y0 : y0 + h], 0.0, 1.0), round(SIDEBAR_W * s), 0)
         try:
             draw_grip(frame, s, card_palette(theme))
@@ -1642,12 +1835,7 @@ class DropUI:
             pass
         # Al abrir y cerrar, la ventana entera aparece o se desvanece con el menú.
         fade(frame, mh / max(1.0, vh))
-        out = (np.clip(frame, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)[..., [2, 1, 0, 3]]
-        try:
-            card._interval = 1.0 / (60.0 if menu.is_animating(now) else 30.0)
-        except Exception:
-            pass
-        return out
+        return (np.clip(frame, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)[..., [2, 1, 0, 3]]
 
     def _card_point(self, x: float, y: float) -> tuple[float, float, bool]:
         """Punto de la ventana en coordenadas del menú (a la derecha de la barra lateral)."""

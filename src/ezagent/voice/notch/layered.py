@@ -619,6 +619,15 @@ def frame_due(now: float, last_paint: float, interval: float) -> bool:
     return now - last_paint >= interval - FRAME_SLACK
 
 
+def paint_due(
+    visible: bool, dragging: bool, dirty: bool, now: float, last_paint: float, interval: float
+) -> bool:
+    """¿Hay que pintar ahora? Nunca mientras se arrastra una ventana ``lazy_drag``."""
+    if not visible or dragging:
+        return False
+    return dirty or frame_due(now, last_paint, interval)
+
+
 def paint_mark(now: float, last_paint: float, interval: float) -> float:
     """Hora de referencia del fotograma pintado.
 
@@ -641,6 +650,10 @@ class LayeredWindow:
     """
 
     FPS_ACTIVE = 30
+    # Ventanas cuyo cuadro no depende de dónde están y que son caras de pintar (la tarjeta
+    # de ajustes): moverlas no repinta y, mientras se arrastran, el hilo atiende el
+    # ratón en vez de pintar. Con ``False`` (la barra) cada movimiento repinta.
+    lazy_drag = False
 
     def __init__(self, w, h, x=0, y=0, click_through=False, title="ezagent"):
         self.w = int(w)
@@ -745,9 +758,10 @@ class LayeredWindow:
 
     def set_pos(self, x, y):
         self.x, self.y = int(x), int(y)
-        self._dirty = True
         with self._lock:
             hwnd = self.hwnd
+        if not (self.lazy_drag and hwnd):
+            self._dirty = True
         if hwnd:
             try:
                 # Sin SWP_NOZORDER: cada movimiento reafirma el topmost para
@@ -1048,11 +1062,14 @@ class LayeredWindow:
                 self._restore_focus_if_due()
                 now = time.monotonic()
                 interval = self._interval
-                if self._visible and (self._dirty or frame_due(now, self._last_paint, interval)):
+                dragging = self.lazy_drag and self._dragging and self._drag_moved
+                if paint_due(self._visible, dragging, self._dirty, now, self._last_paint, interval):
                     mark = paint_mark(now, self._last_paint, interval)
                     self._paint(now)
                     self._last_paint = mark
                 delay = min(1.0 / 60.0, self._last_paint + interval - time.monotonic())
+                if dragging:
+                    delay = 1.0 / 120.0  # sin pintar: solo espera mensajes del ratón
                 if delay > 0.001:
                     # Esperar atendiendo mensajes: con un gancho global de
                     # ratón, dormir con time.sleep retenía cada movimiento del

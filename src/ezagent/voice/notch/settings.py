@@ -79,8 +79,8 @@ EDITABLE_KEYS: Final[tuple[str, ...]] = (
 # ``llm_model_pick`` copia en ``llm_model`` un modelo de la lista de la API;
 # ``theme_preset`` copia una paleta base en los cuatro colores personalizados.
 UI_KEYS: Final[tuple[str, ...]] = ("llm_profile", "llm_model_pick", "theme_preset")
-# Apariencia y escucha: se aplican y se guardan al instante (como el tema), sin
-# pasar por «Guardar» ni contar como cambios pendientes.
+# Apariencia y escucha: se aplican en vivo (se ven al momento), pero igual que
+# cualquier otro ajuste cuentan como cambio pendiente hasta pulsar «Guardar».
 INSTANT_KEYS: Final[tuple[str, ...]] = (
     "ui_layout",
     "theme",
@@ -97,6 +97,8 @@ INSTANT_KEYS: Final[tuple[str, ...]] = (
     "wake_phrase",
 )
 ALL_KEYS: Final[tuple[str, ...]] = EDITABLE_KEYS + UI_KEYS + INSTANT_KEYS
+# Todo lo que «Guardar» persiste: «Guardar» se activa con cualquier cambio de estas claves.
+TRACKED_KEYS: Final[tuple[str, ...]] = EDITABLE_KEYS + INSTANT_KEYS
 
 SLIDER_KEYS: Final[tuple[str, ...]] = (
     "ui_scale",
@@ -694,7 +696,7 @@ class MenuSettings:
         current_provider = str(self._values.get("llm_provider") or "")
         if current_provider:
             self._values["llm_profile"] = current_provider
-        self._saved: dict[str, Any] = {key: self._values[key] for key in EDITABLE_KEYS}
+        self._saved: dict[str, Any] = {key: self._values[key] for key in TRACKED_KEYS}
 
     # ---- construcción -----------------------------------------------------
     @classmethod
@@ -865,7 +867,7 @@ class MenuSettings:
         Los sliders se comparan después de redondear al paso, de modo que un
         temblor de coma flotante no marca cambios falsos.
         """
-        for key in EDITABLE_KEYS:
+        for key in TRACKED_KEYS:
             current = self._values[key]
             saved = self._saved[key]
             if key in SLIDERS:
@@ -881,7 +883,7 @@ class MenuSettings:
             self._saved = dict(self._values)
             return
         saved: dict[str, Any] = {}
-        for key in EDITABLE_KEYS:
+        for key in TRACKED_KEYS:
             raw = values.get(key, self._saved[key])
             saved[key] = self._normalize_for_saved(key, raw)
         self._saved = saved
@@ -933,7 +935,7 @@ class MenuSettings:
 
     def snapshot(self) -> dict[str, Any]:
         """Diccionario de valores actuales listo para ``on_save``/``on_test``."""
-        return {key: self._values[key] for key in EDITABLE_KEYS}
+        return {key: self._values[key] for key in TRACKED_KEYS}
 
     # ---- presentación -----------------------------------------------------
 
@@ -1085,6 +1087,7 @@ __all__ = [
     "ALL_KEYS",
     "DEFAULT_VALUES",
     "EDITABLE_KEYS",
+    "TRACKED_KEYS",
     "FIXED_OPTIONS",
     "INSTANT_KEYS",
     "LABELS",

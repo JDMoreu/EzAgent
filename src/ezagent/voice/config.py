@@ -383,6 +383,7 @@ class VoiceConfig:
     drop_x: int | None = None
     drop_y: int | None = None
     drop_layout: str = ""  # disposición con la que se guardó drop_x/drop_y
+    drop_dock: str = ""  # lado de los botones con el que se guardó drop_x/drop_y
     # Forma de la barra: «pill» (cápsula) o «circle» (círculo sobre los botones).
     # Los colores siguen al tema (claro u oscuro) y los botones solo aparecen al
     # acercar el puntero; «ui_palette» y «ui_buttons» antiguos se ignoran al cargar.

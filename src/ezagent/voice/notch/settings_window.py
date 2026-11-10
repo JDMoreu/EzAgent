@@ -277,15 +277,16 @@ class Sidebar:
         hover: str | None,
         now: float,
         reduced: bool = False,
+        with_mark: bool = True,
     ) -> None:
-        dt = 0.0 if self._last == 0.0 else min(0.1, max(0.0, now - self._last))
-        self._last = now
-        self._flow.step(dt, 0.0, "idle", reduced)
+        """Dibuja la barra lateral. ``with_mark=False`` deja la marca para ``overlay_mark``."""
+        if with_mark:
+            self._tick(now, reduced)
         # «Ajustes» arriba; abajo, una línea y debajo la marca con el nombre, pegados
         # al borde inferior.
         top = cap_top(LABEL_CY, FS_MICRO.size)
         draw_text(buf, "Ajustes", FS_MICRO, pal["TEXT_3"], ITEM_X0 + 13.0, top, scale)
-        self._draw_brand(buf, scale, pal, buf.shape[0] / scale - MARK_FROM_BOTTOM)
+        self._draw_brand(buf, scale, pal, buf.shape[0] / scale - MARK_FROM_BOTTOM, with_mark)
         for index, (name, title) in enumerate(sections()):
             x0, y0, x1, y1 = item_rect(index)
             cy = (y0 + y1) / 2.0
@@ -303,18 +304,52 @@ class Sidebar:
         # Separador vertical entre la barra lateral y el contenido.
         _vline(buf, pal["LINE"], scale, SIDEBAR_W - 1.0 / scale, 16.0, buf.shape[0] / scale - 16.0)
 
-    def _draw_brand(self, buf: np.ndarray, scale: float, pal: dict, cy: float) -> None:
+    def _tick(self, now: float, reduced: bool) -> None:
+        dt = 0.0 if self._last == 0.0 else min(0.1, max(0.0, now - self._last))
+        self._last = now
+        self._flow.step(dt, 0.0, "idle", reduced)
+
+    def _draw_brand(
+        self, buf: np.ndarray, scale: float, pal: dict, cy: float, with_mark: bool = True
+    ) -> None:
         """Pie de la barra: línea, marca y palabra-marca, centradas en ``cy``."""
         _hline(buf, pal["LINE"], scale, cy - FOOT_H / 2.0, ITEM_X0, ITEM_X1)
-        self._draw_mark(buf, scale, cy)
+        if with_mark:
+            self._draw_mark(buf, scale, cy)
         x = ITEM_X0 + 42.0
         top = cap_top(cy, WORD_EZ.size)
         # El ancho devuelto es el de la tinta (sin márgenes laterales): +0,6 px de aire.
         x += draw_text(buf, "Ez", WORD_EZ, pal["MINT"], x, top, scale)[0] + 0.6
         draw_text(buf, "Agent", WORD_AGENT, pal["TEXT"], x, top, scale)
 
-    def _draw_mark(self, buf: np.ndarray, scale: float, cy: float) -> None:
-        """La marca de EzAgent (las gotas del icono) llena de Marea en movimiento."""
+    def overlay_mark(
+        self, out: np.ndarray, scale: float, now: float, opacity: float, reduced: bool = False
+    ) -> None:
+        """Pinta la marca viva sobre un cuadro ya terminado (BGRA uint8, premultiplicado).
+
+        Es lo único de la ventana que se mueve cuando no pasa nada más: así no hace
+        falta recomponer la tarjeta entera para animarla.
+        """
+        self._tick(now, reduced)
+        k = max(0.0, min(1.0, float(opacity)))
+        if k <= 0.0:
+            return
+        cy = out.shape[0] / scale - MARK_FROM_BOTTOM
+        mark = self._mark_pixels(scale)
+        x0 = int(round((MARK_CX - MARK_D / 2.0) * scale))
+        y0 = int(round((cy - MARK_D / 2.0) * scale))
+        h = min(mark.shape[0], out.shape[0] - y0)
+        w = min(mark.shape[1], out.shape[1] - x0)
+        if h <= 0 or w <= 0 or x0 < 0 or y0 < 0:
+            return
+        top = mark[:h, :w] * k  # premultiplicado RGBA, 0..1
+        region = out[y0 : y0 + h, x0 : x0 + w].astype(np.float32)
+        bgra = top[..., [2, 1, 0, 3]] * 255.0
+        blended = bgra + region * (1.0 - top[..., 3:4])
+        out[y0 : y0 + h, x0 : x0 + w] = np.clip(blended + 0.5, 0.0, 255.0).astype(np.uint8)
+
+    def _mark_pixels(self, scale: float) -> np.ndarray:
+        """RGBA premultiplicado (float32, 0..1) de la marca con el fotograma actual del fluido."""
         size = max(8, int(round(MARK_D * scale)))
         # DECISION: malla de ±0.5 y paleta clara siempre, igual que el icono: así el
         # borde luminoso del círculo queda fuera de las gotas y la marca no cambia con el tema.
@@ -323,10 +358,13 @@ class Sidebar:
         rgb = np.clip(self._flow.render(gx, gy, "light", colors_for("light", "idle")), 0, 255)
         rgb = rgb / 255.0
         coverage = drops_coverage(size)[..., None]
-        mark = np.concatenate([rgb * coverage, coverage], axis=2).astype(np.float32)
+        return np.concatenate([rgb * coverage, coverage], axis=2).astype(np.float32)
+
+    def _draw_mark(self, buf: np.ndarray, scale: float, cy: float) -> None:
+        """La marca de EzAgent (las gotas del icono) llena de Marea en movimiento."""
         x0 = int(round((MARK_CX - MARK_D / 2.0) * scale))
         y0 = int(round((cy - MARK_D / 2.0) * scale))
-        composite_over(buf, mark, x0, y0)
+        composite_over(buf, self._mark_pixels(scale), x0, y0)
 
 
 def draw_grip(buf: np.ndarray, scale: float, pal: dict) -> None:
@@ -340,8 +378,16 @@ def draw_grip(buf: np.ndarray, scale: float, pal: dict) -> None:
             _fill_circle(buf, right - col * 5.0, bottom - row * 5.0, 2.2, color, scale, 0.55)
 
 
+def fade_factor(amount: float) -> float:
+    """Factor de opacidad (curva suave) para un fundido de ``amount`` entre 0 y 1."""
+    k = max(0.0, min(1.0, float(amount)))
+    if k >= 1.0:
+        return 1.0
+    return k * k * (3.0 - 2.0 * k) if not math.isclose(k, 0.0) else 0.0
+
+
 def fade(buf: np.ndarray, amount: float) -> None:
     """Multiplica el cuadro entero (premultiplicado) por ``amount`` (fundido)."""
-    k = max(0.0, min(1.0, float(amount)))
-    if k < 1.0:
-        buf *= k * k * (3.0 - 2.0 * k) if not math.isclose(k, 0.0) else 0.0
+    factor = fade_factor(amount)
+    if factor < 1.0:
+        buf *= factor

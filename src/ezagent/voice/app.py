@@ -2138,13 +2138,19 @@ class VoiceApp:
         else:
             updates = {key: value}
         for name, color in updates.items():
-            self._apply_instant_setting(name, color, push=False)
+            self._apply_instant_setting(name, color, push=False, persist=False)
         self._push_custom_colors()
         if self.cfg.theme != "custom":
-            self._apply_instant_setting("theme", "custom")
+            self._apply_instant_setting("theme", "custom", persist=False)
 
-    def _apply_instant_setting(self, key: str, value, push: bool = True) -> None:
-        """Apariencia y escucha: se aplican a la barra y se guardan ya."""
+    def _apply_instant_setting(
+        self, key: str, value, push: bool = True, persist: bool = True
+    ) -> None:
+        """Apariencia y escucha: se aplican a la barra en vivo.
+
+        Con ``persist`` también se escriben ya en ``voice.json``; los controles de
+        Ajustes pasan ``persist=False`` y se guardan con «Guardar» como los demás.
+        """
         try:
             from .notch.settings import normalize_setting
 
@@ -2153,10 +2159,11 @@ class VoiceApp:
             log(f"Ajuste {key} no válido: {exc}")
             return
         setattr(self.cfg, key, value)
-        try:
-            self.cfg.save_key(key, value)
-        except Exception as exc:  # noqa: BLE001
-            log(f"No pude guardar {key}: {exc}")
+        if persist:
+            try:
+                self.cfg.save_key(key, value)
+            except Exception as exc:  # noqa: BLE001
+                log(f"No pude guardar {key}: {exc}")
         setter = {
             "ui_layout": "set_layout",
             "theme": "set_theme",
@@ -2173,7 +2180,7 @@ class VoiceApp:
         if push and key.startswith("theme_") and key != "theme_base":
             self._push_custom_colors()
             if self.cfg.theme != "custom":
-                self._apply_instant_setting("theme", "custom")
+                self._apply_instant_setting("theme", "custom", persist=persist)
         log(f"Ajuste {key} = {'(frase)' if key == 'wake_phrase' else value}")
 
     def _notch_hide(self) -> None:
@@ -2197,7 +2204,7 @@ class VoiceApp:
             self._apply_custom_theme(key, value)
             return
         if key in INSTANT_SETTINGS:
-            self._apply_instant_setting(key, value)
+            self._apply_instant_setting(key, value, persist=False)
             return
         try:
             if key == "input_device_index":
@@ -2624,6 +2631,10 @@ class VoiceApp:
             self.messenger.reload_llm()
         for key, spec in hotkey_values.items():
             setattr(self.cfg, key, spec)
+        # Apariencia y escucha ya están aplicadas en vivo; aquí se confirman y se escriben.
+        for key in INSTANT_SETTINGS:
+            if key in values:
+                setattr(self.cfg, key, values[key])
         self.cfg.save()
         if tuple(str(getattr(self.cfg, key, "") or "") for key in HOTKEY_KEYS) != old_hotkeys:
             self._reload_hotkeys()
