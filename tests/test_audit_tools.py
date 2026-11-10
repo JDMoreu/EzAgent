@@ -263,6 +263,34 @@ def test_un_seguimiento_conserva_un_turno_las_herramientas_extra(tmp_path: Path)
         runtime.close()
 
 
+def test_una_skill_instalada_ofrece_load_skill_por_su_descripcion(tmp_path: Path) -> None:
+    root = tmp_path / "work"
+    root.mkdir()
+    runtime = _make_runtime(_write_permissions(tmp_path, root))
+    try:
+        _write_skill(
+            Path(runtime.config.skills_dir),
+            "navegador",
+            "abrir páginas web en Chrome",
+            time.time() + 10,
+        )
+        runtime.begin_turn("abre Chrome y entra a Gmail")
+        names = {
+            schema["function"]["name"]
+            for schema in runtime.tools_for("abre Chrome y entra a Gmail")
+        }
+        assert "load_skill" in names
+
+        keywords = runtime.skills.keywords()
+        assert "chrome" in keywords and "navegador" in keywords
+        assert keywords is runtime.skills.keywords(), "las palabras clave se cachean por versión"
+
+        base = select_tool_names("hola qué tal", skill_keywords=keywords)
+        assert set(base) == set(BASE_TOOLS)
+    finally:
+        runtime.close()
+
+
 # --------------------------------------------------------------- F26/F27
 def _write_skill(root: Path, name: str, description: str, stamp: float) -> None:
     folder = root / name

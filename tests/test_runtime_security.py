@@ -486,7 +486,9 @@ def test_las_cinco_herramientas_base_son_unicas_y_existen(rt) -> None:
     ],
 )
 def test_la_intencion_suma_capacidades_sin_quitar_las_anteriores(text, added, kept, rt) -> None:
-    names = select_tool_names(text)
+    # El contrato ahora incluye las palabras clave del catálogo de skills:
+    # sin pasarlas, la comparación de longitudes no mide lo mismo.
+    names = select_tool_names(text, skill_keywords=rt.skills.keywords())
     assert added in names and kept in names and len(names) <= 14
     assert set(names) <= set(rt.registry.names())
     assert len(rt.tools_for(text)) == len(names)

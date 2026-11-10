@@ -26,7 +26,7 @@ from .memory import MemoryStore
 from .paths import PathDenied, resolve_safe
 from .policy import decide
 from .registry import ToolRegistry, ToolResult
-from .skills import SkillLibrary, ensure_default_skills
+from .skills import SkillLibrary, ensure_default_skills, skill_tokens
 from .system_prompt import SystemPromptBuilder
 from .tools_core import build_core_tools
 from .tools_d import load_tools_d
@@ -117,11 +117,19 @@ _SESSION_PATHS = (
 )
 
 
+def _skill_matches(text: str, keywords: set[str] | frozenset[str]) -> bool:
+    """¿El texto comparte una palabra clave con el catálogo de skills?"""
+    if not keywords:
+        return False
+    return bool(skill_tokens(text).intersection(keywords))
+
+
 def select_tool_names(
     text: str,
     *,
     scripts_loaded: bool = False,
     has_memory: bool = True,
+    skill_keywords: set[str] | frozenset[str] = frozenset(),
 ) -> list[str]:
     """Elige hasta 14 nombres para el prompt de este turno.
 
@@ -148,7 +156,7 @@ def select_tool_names(
         names.append("delete_path")
     if _LIST_RE.search(text):
         names.append("list_dir")
-    if _DOC_RE.search(text) or _SKILL_RE.search(text):
+    if _DOC_RE.search(text) or _SKILL_RE.search(text) or _skill_matches(text, skill_keywords):
         names.append("load_skill")
     if _SKILL_RE.search(text):
         names.append("run_skill_script")
@@ -497,6 +505,7 @@ class AgentRuntime:
             text,
             scripts_loaded=scripts,
             has_memory=True,
+            skill_keywords=self.skills.keywords(),
         )
         # Se conservan un turno las extra del anterior, sin pasar de 14.
         names = list(selected)

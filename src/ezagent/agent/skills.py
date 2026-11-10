@@ -19,6 +19,7 @@ import logging
 import re
 import shutil
 import threading
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +39,64 @@ MAX_NAME_CHARS = 64
 _NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 _WINDOWS_DRIVE_RE = re.compile(r"^[A-Za-z]:")
 _FRONTMATTER_OPEN = "---"
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+# Palabras de enlace que no identifican una skill. Se comparan ya sin tildes.
+_SKILL_STOPWORDS = frozenset(
+    {
+        "para",
+        "por",
+        "con",
+        "sin",
+        "que",
+        "cual",
+        "cuales",
+        "como",
+        "cuando",
+        "donde",
+        "desde",
+        "hasta",
+        "sobre",
+        "entre",
+        "este",
+        "esta",
+        "estos",
+        "estas",
+        "todo",
+        "toda",
+        "todos",
+        "todas",
+        "otro",
+        "otra",
+        "otros",
+        "otras",
+        "mas",
+        "pero",
+        "sus",
+        "ser",
+        "son",
+        "fue",
+        "han",
+        "hay",
+        "muy",
+        "hola",
+        "tal",
+        "hacer",
+        "hace",
+        "puede",
+        "debe",
+        "usar",
+        "usa",
+    }
+)
+
+
+def skill_tokens(text: str) -> set[str]:
+    """Palabras normalizadas (sin tildes, en singular simple) para comparar skills."""
+    decomposed = unicodedata.normalize("NFKD", str(text or "").casefold())
+    folded = "".join(char for char in decomposed if not unicodedata.combining(char))
+    tokens = set(_TOKEN_RE.findall(folded))
+    # Singular simple: «páginas» y «página» deben coincidir.
+    return {token[:-1] if len(token) > 4 and token.endswith("s") else token for token in tokens}
 
 
 class SkillError(Exception):
@@ -97,6 +156,10 @@ class SkillLibrary:
         self._collisions: list[str] = []
         self._fingerprint: tuple[tuple[str, int, int], ...] = ()
         self._refresh_lock = threading.Lock()
+        # Las palabras clave se recalculan solo cuando cambia el catálogo.
+        self._catalog_version = 0
+        self._keywords_version = -1
+        self._keywords: frozenset[str] = frozenset()
         self.refresh()
 
     # ------------------------------------------------------------ catálogo
@@ -119,12 +182,14 @@ class SkillLibrary:
             yaml_module = _import_yaml()
             if yaml_module is None:
                 self._warn("PyYAML no está instalado; el catálogo de skills queda vacío.")
+                self._catalog_version += 1
                 return True
 
             self._discover(Path(self._config.skills_dir), "local", yaml_module)
             self._discover(Path(self._config.global_skills_dir), "global", yaml_module)
             # Recalcular tras leer evita perder un cambio ocurrido durante el barrido.
             self._fingerprint = self._fingerprint_tree()
+            self._catalog_version += 1
             return True
 
     def _fingerprint_tree(self) -> tuple[tuple[str, int, int], ...]:
@@ -177,6 +242,21 @@ class SkillLibrary:
             lines.append(f"- {skill.name}: {description}")
         lines.append("</available_skills>")
         return "\n".join(lines)
+
+    def keywords(self) -> frozenset[str]:
+        """Palabras clave de nombres y descripciones, cacheadas por versión del catálogo."""
+        with self._refresh_lock:
+            if self._keywords_version == self._catalog_version:
+                return self._keywords
+            tokens: set[str] = set()
+            for skill in self._skills.values():
+                tokens.update(skill_tokens(skill.name))
+                tokens.update(skill_tokens(skill.description))
+            self._keywords = frozenset(
+                token for token in tokens if len(token) >= 3 and token not in _SKILL_STOPWORDS
+            )
+            self._keywords_version = self._catalog_version
+            return self._keywords
 
     # -------------------------------------------------------------- carga
     def load_skill(self, name: str, file: str | None = None) -> SkillContent:
