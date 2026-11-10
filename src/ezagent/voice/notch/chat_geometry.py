@@ -6,6 +6,7 @@ animar la ventana.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Final
 
 import numpy as np
@@ -104,15 +105,68 @@ def panel_rect(
 
 
 def rounded_coverage(w: int, h: int, radius: float, inset: float = 0.0) -> np.ndarray:
-    """Cobertura (0..1) suave de un rectángulo redondeado ``w``×``h`` (distancia con signo)."""
+    """Cobertura (0..1) suave de un rectángulo redondeado ``w``×``h`` (distancia con signo).
+
+    El resultado se comparte (caché) y es de solo lectura: quien lo modifique debe copiarlo.
+    """
+    return _coverage(int(w), int(h), round(float(radius), 3), round(float(inset), 3))
+
+
+@lru_cache(maxsize=8)  # pocas entradas: cada una es del tamaño del panel
+def _coverage(w: int, h: int, radius: float, inset: float) -> np.ndarray:
     w, h = max(2, w), max(2, h)
     r = max(0.0, min(radius, min(w, h) / 2.0)) - inset
-    xs = np.abs(np.arange(w, dtype=np.float32) + 0.5 - w / 2)[None, :]
-    ys = np.abs(np.arange(h, dtype=np.float32) + 0.5 - h / 2)[:, None]
-    dx = np.maximum(xs - (w / 2 - inset - r), 0.0)
-    dy = np.maximum(ys - (h / 2 - inset - r), 0.0)
+    if r <= 0.0:  # sin esquinas: el caso general (raro y pequeño)
+        xs = np.abs(np.arange(w, dtype=np.float32) + 0.5 - w / 2)[None, :]
+        ys = np.abs(np.arange(h, dtype=np.float32) + 0.5 - h / 2)[:, None]
+        dx = np.maximum(xs - (w / 2 - inset - r), 0.0)
+        dy = np.maximum(ys - (h / 2 - inset - r), 0.0)
+        out = np.clip(0.5 - (np.sqrt(dx * dx + dy * dy) - r), 0.0, 1.0)
+        out.setflags(write=False)
+        return out
+    # Solo las franjas del borde tienen cobertura parcial; el centro es opaco. Calcular el
+    # sqrt de todo el panel cada fotograma costaba más que pintar la forma (morph a tirones).
+    out = np.ones((h, w), np.float32)
+    xs = np.abs(np.arange(w, dtype=np.float32) + 0.5 - w / 2)
+    ys = np.abs(np.arange(h, dtype=np.float32) + 0.5 - h / 2)
+    sx = np.maximum(xs - (w / 2 - inset - r), 0.0)
+    sy = np.maximum(ys - (h / 2 - inset - r), 0.0)
+    band = min(h, w, int(np.ceil(r + inset)) + 1)
+    for yy in (slice(0, band), slice(h - band, h)):
+        dist = np.sqrt(sx[None, :] ** 2 + sy[yy][:, None] ** 2) - r
+        out[yy, :] = np.clip(0.5 - dist, 0.0, 1.0)
+    if band * 2 < h:
+        mid = slice(band, h - band)
+        for xx in (slice(0, band), slice(w - band, w)):
+            dist = np.sqrt(sx[xx][None, :] ** 2 + sy[mid][:, None] ** 2) - r
+            out[mid, xx] = np.clip(0.5 - dist, 0.0, 1.0)
+    out.setflags(write=False)
+    return out
+
+
+def rounded_shadow(w: int, h: int, radius: float, reach: int) -> np.ndarray:
+    """Sombra suave (0..1) de un rectángulo redondeado ``w``×``h``, de ``(h+2·reach)×(w+2·reach)``.
+
+    Vale 1 bajo el rectángulo y cae sin escalones hasta 0 a ``reach`` píxeles de su borde. Una sola
+    pasada: antes eran tres capas del tamaño del panel que se rehacían en cada fotograma.
+    """
+    return _shadow(int(w), int(h), round(float(radius), 3), max(1, int(reach)))
+
+
+@lru_cache(maxsize=4)
+def _shadow(w: int, h: int, radius: float, reach: int) -> np.ndarray:
+    w, h = max(2, w), max(2, h)
+    r = max(0.0, min(radius, min(w, h) / 2.0))
+    ww, hh = w + 2 * reach, h + 2 * reach
+    xs = np.abs(np.arange(ww, dtype=np.float32) + 0.5 - ww / 2)[None, :]
+    ys = np.abs(np.arange(hh, dtype=np.float32) + 0.5 - hh / 2)[:, None]
+    dx = np.maximum(xs - (w / 2 - r), 0.0)
+    dy = np.maximum(ys - (h / 2 - r), 0.0)
     dist = np.sqrt(dx * dx + dy * dy) - r
-    return np.clip(0.5 - dist, 0.0, 1.0)
+    fall = np.clip(1.0 - dist / reach, 0.0, 1.0)
+    fall *= fall  # cola suave: la sombra se pierde sin borde visible
+    fall.setflags(write=False)
+    return fall
 
 
 # ------------------------------------------------------------ redimensionar

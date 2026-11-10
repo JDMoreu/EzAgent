@@ -44,6 +44,7 @@ ICON_NAMES: Final[tuple[str, ...]] = (
     "minus",
     "check",
     "speaker",
+    "speaker-slash",
     # Siempre vectoriales: iconos de la barra lateral de ajustes y de ventana.
     "close",
     "sparkle",
@@ -57,6 +58,8 @@ ICON_NAMES: Final[tuple[str, ...]] = (
     "send",
     "stop",
     "chevron-left",
+    "trash",
+    "menu",
 )
 
 # Los iconos de esta lista no usan la fuente Segoe: así los cinco de la barra
@@ -75,6 +78,8 @@ _VECTOR_ONLY: Final[frozenset[str]] = frozenset(
         "send",
         "stop",
         "chevron-left",
+        "trash",
+        "menu",
     }
 )
 
@@ -90,6 +95,9 @@ _ALIASES: Final[dict[str, str]] = {
     "chevron_up": "chevron-up",
     "dash": "minus",
     "volume": "speaker",
+    "volume-off": "speaker-slash",
+    "speaker-off": "speaker-slash",
+    "mute": "speaker-slash",
 }
 
 _ICON_FONT_CANDIDATES: Final[tuple[Path, ...]] = (
@@ -107,6 +115,7 @@ _GLYPHS: Final[dict[str, int]] = {
     "minus": 0xE738,
     "check": 0xE73E,
     "speaker": 0xE767,
+    "speaker-slash": 0xE74F,  # «Mute» de Segoe Fluent
 }
 
 _CACHE: dict[tuple[str, Color, float, float], np.ndarray] = {}
@@ -244,6 +253,25 @@ def _phone(draw: ImageDraw.ImageDraw, width: float, k: float, rotation: float = 
     _path(draw, points, width, k, closed=True)
 
 
+def _speaker(draw: ImageDraw.ImageDraw, width: float, k: float) -> None:
+    _path(
+        draw,
+        (
+            (4.0, 9.3),
+            (8.2, 9.3),
+            (12.9, 4.7),
+            (12.9, 19.3),
+            (8.2, 14.7),
+            (4.0, 14.7),
+        ),
+        width,
+        k,
+        closed=True,
+    )
+    _arc(draw, (12.3, 7.6, 18.2, 16.4), -52.0, 52.0, width, k)
+    _arc(draw, (12.3, 4.8, 21.3, 19.2), -52.0, 52.0, width, k)
+
+
 def _draw_vector(name: str, width: float, draw: ImageDraw.ImageDraw, k: float) -> None:
     if name == "microphone":
         _mic(draw, width, k)
@@ -330,6 +358,20 @@ def _draw_vector(name: str, width: float, draw: ImageDraw.ImageDraw, k: float) -
         draw.rounded_rectangle((7.0 * k, 7.0 * k, 17.0 * k, 17.0 * k), radius=2.2 * k, fill=255)
     elif name == "chevron-left":
         _path(draw, ((14.8, 6.6), (9.4, 12.0), (14.8, 17.4)), width, k)
+    elif name == "menu":
+        for y in (6.5, 12.0, 17.5):
+            _path(draw, ((4.8, y), (19.2, y)), width, k)
+    elif name == "trash":
+        _path(draw, ((4.8, 7.0), (19.2, 7.0)), width, k)  # tapa
+        _path(draw, ((9.4, 7.0), (9.4, 4.8), (14.6, 4.8), (14.6, 7.0)), width, k)  # asa
+        _path(  # cuerpo
+            draw,
+            ((6.6, 7.0), (7.5, 18.4), (8.6, 19.4), (15.4, 19.4), (16.5, 18.4), (17.4, 7.0)),
+            width,
+            k,
+        )
+        _path(draw, ((10.2, 10.6), (10.2, 16.0)), width, k)
+        _path(draw, ((13.8, 10.6), (13.8, 16.0)), width, k)
     elif name == "copy":
         # Dos hojas: la de atrás asoma por arriba y a la izquierda.
         _path(
@@ -345,22 +387,17 @@ def _draw_vector(name: str, width: float, draw: ImageDraw.ImageDraw, k: float) -
             width=max(1, int(round(width))),
         )
     elif name == "speaker":
-        _path(
-            draw,
-            (
-                (4.0, 9.3),
-                (8.2, 9.3),
-                (12.9, 4.7),
-                (12.9, 19.3),
-                (8.2, 14.7),
-                (4.0, 14.7),
-            ),
-            width,
-            k,
-            closed=True,
-        )
-        _arc(draw, (12.3, 7.6, 18.2, 16.4), -52.0, 52.0, width, k)
-        _arc(draw, (12.3, 4.8, 21.3, 19.2), -52.0, 52.0, width, k)
+        _speaker(draw, width, k)
+    elif name == "speaker-slash":
+        _speaker(draw, width, k)
+        start, end = 4.0 * k, 20.0 * k
+        gap = max(1, int(round(width * 2.4)))
+        line_width = max(1, int(round(width)))
+        draw.line((start, start, end, end), fill=0, width=gap)
+        draw.line((start, start, end, end), fill=255, width=line_width)
+        radius = line_width / 2.0
+        for x, y in ((start, start), (end, end)):
+            draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=255)
     else:
         raise ValueError(f"icono desconocido: {name!r}")
 

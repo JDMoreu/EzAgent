@@ -228,12 +228,12 @@ def test_the_orb_is_calm_at_rest_and_lively_when_working(panel, clock) -> None:
     opened(panel, clock)
     clock[0] += 0.1
     rest = panel.render()
-    assert panel._act == 0.0 and panel.window._interval == pytest.approx(1 / 20)
+    assert panel._act == 0.0 and panel.window._interval == pytest.approx(1 / 30)
     panel.ui.pose = "think"
     for _ in range(30):
         clock[0] += 1 / 30
         working = panel.render()
-    assert panel._act > 0.95 and panel.window._interval == pytest.approx(1 / 40)
+    assert panel._act > 0.95 and panel.window._interval == pytest.approx(1 / 60)
     assert not np.array_equal(rest, working)  # el orbe, el halo y la línea se ven distintos
 
 

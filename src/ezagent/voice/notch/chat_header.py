@@ -65,22 +65,66 @@ class HeaderMixin:
                 top + 24,
             )
             return
+        busy = self.model.busy
+        current = self.model.current_session
         y = top + 8 - self.scroll
         total = 8.0
+        if busy:  # no se cambia ni se borra nada mientras el modelo responde
+            self._text(
+                buf,
+                "Detén la respuesta para cambiar de conversación.",
+                FS_MICRO,
+                self._color("TEXT_3"),
+                PAD,
+                y + 4,
+            )
+            y += 22
+            total += 22
         for info in sessions:
-            rect = (8.0, y, self.g.width - 8, y + 58)
             total += 60
-            if rect[3] > top and rect[1] < bottom:
-                if self.hover == f"session:{info.session}":
-                    _fill_round_rect(buf, *rect, 12.0, self._color("GROUP_HOVER")[:3], self.g.scale)
-                title = info.title if len(info.title) < 44 else info.title[:43] + "…"
-                self._text(buf, title, FS_ROW, self._color("TEXT"), 20, y + 11)
-                meta = f"{_date(info.started)} · {info.messages} mensajes"
-                self._text(buf, meta, FS_MICRO, self._color("TEXT_3"), 20, y + 35)
-                self._hit(rect, "session", info.session)
+            if y + 58 > top and y < bottom:
+                self._draw_history_row(buf, info, y, busy, info.session == current)
             y += 60
         self._max_scroll = max(0.0, total - (bottom - top))
         self.scroll = max(0.0, min(self.scroll, self._max_scroll))
+
+    def _draw_history_row(self, buf, info, y: float, busy: bool, is_current: bool) -> None:
+        w = self.g.width
+        asking = self._pending_delete == info.session
+        right = w - 8 - 24  # centro del último botón de la fila
+        rect = (8.0, y, w - 8 - (84 if asking else 44), y + 58)
+        if self.hover == f"session:{info.session}" and not busy:
+            _fill_round_rect(
+                buf, 8.0, y, w - 8, y + 58, 12.0, self._color("GROUP_HOVER")[:3], self.g.scale
+            )
+        tone = "TEXT_3" if busy else "TEXT"
+        if asking:
+            self._text(buf, "¿Eliminar esta conversación?", FS_ROW, self._color("ERR"), 20, y + 20)
+            self._row_button(buf, "check", right - 40, y + 29, "delete_yes", info.session, "ERR")
+            self._row_button(buf, "close", right, y + 29, "delete_no", info.session, "TEXT_2")
+            return
+        title = info.title if len(info.title) < 40 else info.title[:39] + "…"
+        self._text(buf, title, FS_ROW, self._color(tone), 20, y + 11)
+        meta = f"{_date(info.started)} · {info.messages} mensajes"
+        self._text(buf, meta, FS_MICRO, self._color("TEXT_3"), 20, y + 35)
+        if is_current:
+            self._text(
+                buf, "ACTUAL", FS_MICRO, self._color("MINT"), right - 16, y + 35, align="right"
+            )
+        if not busy:
+            self._hit(rect, "session", info.session)
+            self._row_button(buf, "trash", right, y + 29, "delete_ask", info.session, "TEXT_3")
+
+    def _row_button(
+        self, buf, icon: str, cx: float, cy: float, kind: str, session: int, tone: str
+    ) -> None:
+        """Botón redondo de una fila del historial (borrar, confirmar, cancelar)."""
+        hovered = self.hover == f"{kind}:{session}"
+        if hovered:
+            _fill_circle(buf, cx, cy, BTN, self._color("GROUP_HOVER")[:3], self.g.scale)
+        color = self._color("ERR" if hovered and kind == "delete_ask" else tone)[:3]
+        draw_icon(buf, icon, cx, cy, 18.0, color, self.g.scale)
+        self._hit((cx - BTN / 2, cy - BTN / 2, cx + BTN / 2, cy + BTN / 2), kind, session)
 
     # ------------------------------------------------------------- cabecera
     def _draw_header(self, buf) -> None:
@@ -96,24 +140,24 @@ class HeaderMixin:
         else:  # el orbe vivo se pinta encima (el panel lo anima); aquí solo se le deja el sitio
             self.orb = (PAD + ORB_D / 2, cy, ORB_D)
             x = PAD + ORB_D + 10
-        title = (
-            "Historial"
-            if self.mode == "history"
-            else ("Conversación anterior" if viewing else "Chat")
-        )
+        title = "Historial" if self.mode == "history" else ("Anterior" if viewing else "Chat")
         if self.status and not back:
             self._text(buf, title, FS_TITLE, self._color("TEXT"), x, cy - 15)
             self._text(buf, self.status, FS_MICRO, self._color("MINT"), x, cy + 4)
         else:
             self._text(buf, title, FS_TITLE, self._color("TEXT"), x, cy - 9)
         right = g.width - PAD - BTN / 2 + 6
-        for name, key, active in (
-            ("close", "close", False),
-            ("plus", "new", False),
-            ("clock", "history", self.mode == "history"),
-            ("speaker", "voice", self.model.voice_replies),
+        muted = self.model.mic_muted
+        voice = self.model.voice_replies
+        for name, key, active, alert in (
+            ("close", "close", False, False),
+            ("plus", "new", False, False),
+            ("clock", "history", self.mode == "history", False),
+            ("menu", "settings", False, False),
+            ("speaker" if voice else "speaker-slash", "voice", False, not voice),
+            ("microphone-slash" if muted else "microphone", "mic", False, muted),
         ):
-            self._icon_button(buf, name, right, cy, key, active)
+            self._icon_button(buf, name, right, cy, key, active, alert)
             right -= BTN + 2
         line = np.asarray(self._color("LINE"), np.float32) / 255.0
         buf[
@@ -122,7 +166,14 @@ class HeaderMixin:
         ] = np.concatenate([line[:3] * line[3], [line[3]]])
 
     def _icon_button(
-        self, buf, name: str, cx: float, cy: float, key: str, active: bool = False
+        self,
+        buf,
+        name: str,
+        cx: float,
+        cy: float,
+        key: str,
+        active: bool = False,
+        alert: bool = False,
     ) -> None:
         rect = (cx - BTN / 2, cy - BTN / 2, cx + BTN / 2, cy + BTN / 2)
         hovered = self.hover == key
@@ -131,6 +182,8 @@ class HeaderMixin:
             _fill_circle(
                 buf, cx, cy, BTN, self._color(tone)[:3], self.g.scale, 0.18 if active else 1.0
             )
-        color = self._color("MINT" if active else ("TEXT" if hovered else "TEXT_2"))[:3]
+        color = self._color(
+            "ERR" if alert else ("MINT" if active else ("TEXT" if hovered else "TEXT_2"))
+        )[:3]
         draw_icon(buf, name, cx, cy, 18.0, color, self.g.scale)
         self._hit(rect, key)

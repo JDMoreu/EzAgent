@@ -44,6 +44,7 @@ from ezagent.llm_providers import (
 )
 
 from .audio import MicCapture, list_input_devices, pcm_is_weak, pcm_to_wav
+from .chat.contexts import ChatContexts
 from .chat.session import ChatModel
 from .chat.speech import spoken_version
 from .chat.store import ChatStore
@@ -352,6 +353,8 @@ class VoiceApp:
         self.last_summary = ""
         # El chat escrito comparte hilo con la voz: todo lo que se dice o escribe entra aquí.
         self.chat = ChatModel(ChatStore(), voice_replies=bool(getattr(cfg, "chat_voice", False)))
+        # Cada conversación del chat conserva su propio contexto del modelo.
+        self.contexts = ChatContexts(self.chat, lambda: getattr(self, "messenger", None))
         self.mute_until = 0.0
         self.watched: set[str] = set()
         self._deliver: set[str] = set()
@@ -471,6 +474,8 @@ class VoiceApp:
         )
         # Cuando la conversación se compacta, el chat lo cuenta con una nota.
         self.messenger.on_context_event = lambda text: self.chat.add_note(text)
+        if self.chat.snapshot()[1]:  # la conversación que se ve ya tenía mensajes
+            self.contexts.rebuild()  # el modelo la recuerda aunque se reinició la app
         # Lista real de modelos del proveedor activo: llena el menú y corrige
         # un id guardado sin prefijo antes del primer turno.
         self._fetch_llm_models(
@@ -502,9 +507,13 @@ class VoiceApp:
         self.notch.chat_roots, self.notch.chat_base_dirs = self._chat_media_roots()
         self.notch.on_chat_new = lambda: self.events.put(("chat_new",))
         self.notch.on_chat_stop = lambda: self.events.put(("chat_stop",))
+        self.notch.on_chat_switch = lambda session: self.events.put(("chat_switch", int(session)))
+        self.notch.on_chat_delete = lambda session: self.events.put(("chat_delete", int(session)))
         self.notch.on_chat_confirm = lambda yes: self.events.put(("confirm_click", bool(yes)))
         self.notch.on_chat_send = lambda text: self.events.put(("chat_send", text))
         self.notch.on_chat_voice = self._set_chat_voice
+        self.notch.on_chat_mic = lambda muted: self.events.put(("chat_mute", bool(muted)))
+        self.notch.on_chat_menu = lambda: self.events.put(("notch_action", "panel"))
         self.notch.on_live_setting = self._notch_live_setting
         self.notch.on_save_settings = self._notch_save_settings
         self.notch.on_test_voice = self._notch_test_voice
@@ -670,11 +679,8 @@ class VoiceApp:
         self._turn_gen += 1
         self._signal_tts_stop()
         self._speaking_kind = None
-        messenger = getattr(self, "messenger", None)
-        if messenger is not None:
-            messenger.reset_history()
+        self.contexts.new_chat()
         self.last_summary = ""
-        self.chat.new_session()
         log("Conversación borrada desde el menú.")
         self._speak("Listo, empezamos de cero.", "answer")
 
@@ -692,7 +698,8 @@ class VoiceApp:
                     from ezagent.agent.system_prompt import DEFAULT_SYSTEM_MD
                 except Exception:
                     DEFAULT_SYSTEM_MD = (
-                        "# Identidad\nEres EzAgent, un asistente de voz local para Windows.\n"
+                        "# Identidad\nEres EzAgent, un agente autónomo para Windows. "
+                        "Responde corto y directo, en español neutro latinoamericano.\n"
                     )
                 path.write_text(DEFAULT_SYSTEM_MD, encoding="utf-8")
             os.startfile(str(path))
@@ -1082,8 +1089,14 @@ class VoiceApp:
             self._chat_send(str(event[1]))
         elif kind == "chat_new":
             self._chat_new()
+        elif kind == "chat_switch":
+            self._chat_switch(int(event[1]))
+        elif kind == "chat_delete":
+            self._chat_delete(int(event[1]))
         elif kind == "chat_stop":
             self._chat_stop()
+        elif kind == "chat_mute":
+            self._set_mic_muted(bool(event[1]), source="chat")
         elif kind == "transcribed":
             _, text, gen = event
             text = (text or "").strip()
@@ -1714,12 +1727,28 @@ class VoiceApp:
         self._turn_gen += 1
         self._signal_tts_stop()
         self._speaking_kind = None
-        messenger = getattr(self, "messenger", None)
-        if messenger is not None:
-            messenger.reset_history()
+        self.contexts.new_chat()
         self.last_summary = ""
-        self.chat.new_session()
         log("Conversación nueva desde el chat.")
+
+    def _chat_switch(self, session: int) -> None:
+        """Retoma otra conversación del historial con su propio contexto del modelo."""
+        if self.chat.busy:  # no se cambia el contexto en mitad de una respuesta
+            return
+        self._turn_gen += 1
+        self._signal_tts_stop()
+        self._speaking_kind = None
+        if self.contexts.switch(session):
+            last = self.chat.last_assistant_text()
+            self.last_summary = spoken_version(last) if last else ""
+            log(f"Conversación {session} retomada desde el chat.")
+
+    def _chat_delete(self, session: int) -> None:
+        """Borra una conversación del historial (y su contexto) a petición del usuario."""
+        if self.contexts.delete(session):
+            if session == self.chat.current_session:
+                self.last_summary = ""
+            log(f"Conversación {session} borrada del historial.")
 
     def _chat_send(self, text: str) -> None:
         """Un mensaje escrito en el chat: es un turno más, igual que uno hablado."""

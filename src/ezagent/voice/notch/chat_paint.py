@@ -68,7 +68,7 @@ class PaintMixin:
             self._blend_u8(out, arr, x0, y0)
         return out
 
-    def _sig(self, view: ChatView, now: float) -> tuple:
+    def _sig(self, view: ChatView, now: float, ticking: bool = True) -> tuple:
         m = view.model
         return (
             m.version,
@@ -78,17 +78,18 @@ class PaintMixin:
             view.input.cursor,
             view.input.anchor,
             view.mode,
+            view.pending_delete,
             view.status,
             view.flash_token,
-            int(now * 2),
-            int(now * 30) if view.animating(now) else 0,
+            int(now * 2) if ticking else 0,
+            int(now * 30) if ticking and view.animating(now) else 0,
             view.g.theme,
             round(view.g.width),
             round(view.g.height),
         )
 
-    def _content(self, view: ChatView, now: float) -> np.ndarray:
-        sig = self._sig(view, now)
+    def _content(self, view: ChatView, now: float, ticking: bool = True) -> np.ndarray:
+        sig = self._sig(view, now, ticking)
         if self._cache is None or self._cache[0] != sig:
             self._cache = (sig, view.render(now))
         return self._cache[1]
@@ -131,11 +132,17 @@ class PaintMixin:
         )
         if mask.max() > 0.01:
             lift = 0 if not (fly and opening) else round((1.0 - float(mask.mean())) * 10 * s)
-            self._paint_content(canvas, view, rect, radius, mask, lift, now)
+            self._paint_content(
+                canvas, view, rect, radius, mask, lift, now, self.anim.state == "open"
+            )
             if live:
                 for lx, ly, arr in self._live_layers(x1 - x0, rows, now, 1.0, mask, x0, y0 + lift):
                     self._composite(canvas, arr, lx, ly)
-        return (np.clip(canvas, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)[..., [2, 1, 0, 3]]
+        # BGRA uint8 en el sitio: ahorra tres copias del tamaño del lienzo por cuadro.
+        np.multiply(canvas, 255.0, out=canvas)
+        canvas += 0.5
+        np.clip(canvas, 0.0, 255.0, out=canvas)
+        return canvas.astype(np.uint8)[..., [2, 1, 0, 3]]
 
     def _paint_shape(
         self,
@@ -159,17 +166,24 @@ class PaintMixin:
         ) * (1.0 - solid)
         alpha = cov * alpha_k
         self._shadow_under(canvas, rect, radius, shadow_k * alpha_k)
-        self._composite(
-            canvas, np.concatenate([rgb * alpha[..., None], alpha[..., None]], axis=2), x0, y0
-        )
+        if fluid is None:  # cuerpo liso: se premultiplica en una sola pasada
+            rgb = np.broadcast_to(body, (h, w, 3)) * alpha[..., None]
+        else:
+            rgb *= alpha[..., None]
+        self._composite_over(canvas, rgb, alpha, x0, y0)
+        # DECISION: el aro se pinta cuando el cuerpo ya es opaco; a media transformación no se
+        # distingue del fluido y rehacerlo entero costaba un cuadro grande.
+        if solid < 0.999:
+            return
         ring = np.clip(cov - rounded_coverage(w, h, radius, inset=max(1.0, self.ui.s)), 0.0, 1.0)
         line = np.asarray(card_palette(self.ui._theme_name())["LINE"], np.float32) / 255.0
         la = ring * line[3] * 2.2 * solid * alpha_k
-        self._composite(
+        self._composite_frame(
             canvas,
             np.concatenate([line[None, None, :3] * la[..., None], la[..., None]], axis=2),
             x0,
             y0,
+            int(np.ceil(radius + max(1.0, self.ui.s))) + 2,
         )
 
     def _shadow_under(self, canvas, rect: Rect, radius: float, k: float) -> None:
@@ -179,12 +193,74 @@ class PaintMixin:
         x0, y0, x1, y1 = (round(v) for v in rect)
         w, h = x1 - x0, y1 - y0
         grow = round(MARGIN * self.ui.s * 0.8)
+        shift = round(self.ui.s * 5)
         for step in range(3):
             g = grow * (step + 1) // 3
             cov = rounded_coverage(w + 2 * g, h + 2 * g, radius + g)
-            layer = np.zeros(cov.shape + (4,), np.float32)
-            layer[..., 3] = cov * (k * 0.10)
-            self._composite(canvas, layer, x0 - g, y0 - g + round(self.ui.s * 5))
+            # La sombra es negra: basta con oscurecer; el cuerpo tapa su centro y solo se
+            # compone el marco que asoma (con las esquinas redondeadas y el desplazamiento).
+            band = int(0.3 * (radius + g)) + g + shift + 2
+            self._shade_frame(canvas, cov * (k * 0.10), x0 - g, y0 - g + shift, band)
+
+    @staticmethod
+    def _composite_over(canvas, rgb, alpha, x0: int, y0: int) -> None:
+        """Compone ``rgb`` (ya premultiplicado por ``alpha``) y ``alpha`` sobre el lienzo."""
+        h, w = alpha.shape[:2]
+        sx0, sy0 = max(0, -x0), max(0, -y0)
+        dx0, dy0 = max(0, x0), max(0, y0)
+        w -= sx0
+        h -= sy0
+        cw = min(w, canvas.shape[1] - dx0)
+        ch = min(h, canvas.shape[0] - dy0)
+        if cw <= 0 or ch <= 0:
+            return
+        a = alpha[sy0 : sy0 + ch, sx0 : sx0 + cw, None]
+        region = canvas[dy0 : dy0 + ch, dx0 : dx0 + cw]
+        region *= 1.0 - a
+        region[..., :3] += rgb[sy0 : sy0 + ch, sx0 : sx0 + cw]
+        region[..., 3:] += a
+
+    @staticmethod
+    def _shade_frame(canvas, alpha, x0: int, y0: int, band: int) -> None:
+        """Oscurece el marco de ``band`` px que ocupa ``alpha`` (su centro queda tapado)."""
+        h, w = alpha.shape[:2]
+        band = min(max(1, band), h, w)
+        if band * 2 >= h or band * 2 >= w:  # marco casi todo el lienzo: una sola pasada
+            PaintMixin._shade(canvas, alpha, x0, y0)
+            return
+        for yy in (slice(0, band), slice(h - band, h)):
+            PaintMixin._shade(canvas, alpha[yy], x0, y0 + yy.start)
+        mid = slice(band, h - band)
+        for xx in (slice(0, band), slice(w - band, w)):
+            PaintMixin._shade(canvas, alpha[mid, xx], x0 + xx.start, y0 + band)
+
+    @staticmethod
+    def _shade(canvas, alpha, x0: int, y0: int) -> None:
+        h, w = alpha.shape[:2]
+        sx0, sy0 = max(0, -x0), max(0, -y0)
+        dx0, dy0 = max(0, x0), max(0, y0)
+        cw = min(w - sx0, canvas.shape[1] - dx0)
+        ch = min(h - sy0, canvas.shape[0] - dy0)
+        if cw <= 0 or ch <= 0:
+            return
+        a = alpha[sy0 : sy0 + ch, sx0 : sx0 + cw, None]
+        region = canvas[dy0 : dy0 + ch, dx0 : dx0 + cw]
+        region[..., :3] *= 1.0 - a  # negro: no añade color
+        region[..., 3:] = a + region[..., 3:] * (1.0 - a)
+
+    @staticmethod
+    def _composite_frame(canvas, src, x0: int, y0: int, band: int) -> None:
+        """Compone solo el marco de ``band`` px de ``src`` (su centro queda tapado o es cero)."""
+        h, w = src.shape[:2]
+        band = min(max(1, band), h, w)
+        if band * 2 >= h or band * 2 >= w:  # marco casi todo el lienzo: una sola pasada
+            PaintMixin._composite(canvas, src, x0, y0)
+            return
+        for yy in (slice(0, band), slice(h - band, h)):
+            PaintMixin._composite(canvas, src[yy], x0, y0 + yy.start)
+        mid = slice(band, h - band)
+        for xx in (slice(0, band), slice(w - band, w)):
+            PaintMixin._composite(canvas, src[mid, xx], x0 + xx.start, y0 + band)
 
     def _paint_content(
         self,
@@ -195,8 +271,9 @@ class PaintMixin:
         mask: np.ndarray,
         lift: int,
         now: float,
+        ticking: bool = True,
     ) -> None:
-        content = self._content(view, now)
+        content = self._content(view, now, ticking)
         x0, y0, x1, y1 = (round(v) for v in rect)
         w, h = x1 - x0, y1 - y0
         cov = rounded_coverage(w, h, radius)
@@ -228,34 +305,13 @@ class PaintMixin:
         k = float(mask[row]) * gain
         if k <= 0.01:
             return []
-        act = self._act
-        pulse = 0.5 + 0.5 * math.sin(now * 5.5)
-        d = max(6, round(diam * s * (1.0 + 0.10 * act * pulse)))
+        d = max(6, round(diam * s))  # tamaño fijo: lo único que se mueve es el fluido de dentro
         fluid = self.ui.chat_fluid(d, d, now)
         if fluid is None:
             return []
-        glow = round(5 * s)
-        big = d + 2 * glow
-        cov_in = rounded_coverage(d, d, d / 2)
-        cov_big = rounded_coverage(big, big, big / 2)
-        tint = fluid.reshape(-1, 3).mean(axis=0)
-        halo = (
-            np.clip(cov_big - np.pad(cov_in, glow), 0.0, 1.0)
-            * (0.10 + 0.30 * act)
-            * (0.7 + 0.3 * pulse)
-        )
-        layer = np.zeros((big, big, 4), np.float32)
-        layer[..., :3] = tint[None, None, :] * halo[..., None]
-        layer[..., 3] = halo
-        a_in = np.pad(cov_in * (0.9 + 0.1 * act), glow)
-        layer[glow : glow + d, glow : glow + d, :3] = (
-            layer[glow : glow + d, glow : glow + d, :3]
-            * (1.0 - a_in[glow : glow + d, glow : glow + d, None])
-            + fluid * a_in[glow : glow + d, glow : glow + d, None]
-        )
-        layer[..., 3] = np.maximum(layer[..., 3], a_in)
-        layer *= k
-        out = [(round(ox + cx * s - big / 2), round(oy + cy * s - big / 2), layer)]
+        alpha = rounded_coverage(d, d, d / 2)[..., None]
+        layer = np.concatenate([fluid * alpha, alpha], axis=2).astype(np.float32) * k
+        out = [(round(ox + cx * s - d / 2), round(oy + cy * s - d / 2), layer)]
         line = self._status_line(pw, now, k, ox, oy)
         if line is not None:
             out.append(line)
@@ -308,4 +364,5 @@ class PaintMixin:
             return
         top = src[sy0 : sy0 + h, sx0 : sx0 + w]
         region = canvas[dy0 : dy0 + h, dx0 : dx0 + w]
-        region[...] = top + region * (1.0 - top[..., 3:4])
+        region *= 1.0 - top[..., 3:4]  # en el sitio: sin temporales del tamaño del panel
+        region += top

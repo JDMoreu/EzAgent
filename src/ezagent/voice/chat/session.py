@@ -41,6 +41,7 @@ class ChatModel:
     def __init__(self, store: ChatStore | None = None, voice_replies: bool = False) -> None:
         self.store = store
         self.voice_replies = bool(voice_replies)
+        self._mic_muted = False
         self._lock = threading.RLock()
         self._messages: list[ChatMessage] = []
         self._next_id = 1
@@ -171,8 +172,43 @@ class ChatModel:
                 self.store.new_session()
             self._bump()
 
+    def switch_session(self, session: int) -> bool:
+        """Retoma una conversación anterior como la actual (con sus mensajes y su historial)."""
+        with self._lock:
+            if self.store is None or self._busy or not self.store.resume(session):
+                return False
+            self._messages.clear()
+            for entry in self.store.entries(session):
+                self._push(entry.role, entry.text, entry.source, entry.t)
+            self._confirm = None
+            self._viewing = None
+            self._bump()
+            return True
+
+    def delete_session(self, session: int) -> bool:
+        """Borra una conversación del historial; si era la actual, la pantalla queda vacía."""
+        with self._lock:
+            if self.store is None:
+                return False
+            current = session == self.store.session
+            if current and self._busy:
+                return False
+            if not self.store.delete_session(session):
+                return False
+            if current:
+                self._messages.clear()
+                self._confirm = None
+            if self._viewing == session:
+                self._viewing = None
+            self._bump()
+            return True
+
     def sessions(self) -> list[SessionInfo]:
         return self.store.sessions() if self.store is not None else []
+
+    @property
+    def current_session(self) -> int | None:
+        return self.store.session if self.store is not None else None
 
     def view_session(self, session: int | None) -> None:
         """Muestra una conversación pasada (solo lectura); ``None`` vuelve a la actual."""
@@ -189,6 +225,17 @@ class ChatModel:
         with self._lock:
             if self.voice_replies != bool(enabled):
                 self.voice_replies = bool(enabled)
+                self._bump()
+
+    @property
+    def mic_muted(self) -> bool:
+        """El micrófono está en pausa (el mismo estado que el botón de la barra)."""
+        return self._mic_muted
+
+    def set_mic_muted(self, muted: bool) -> None:
+        with self._lock:
+            if self._mic_muted != bool(muted):
+                self._mic_muted = bool(muted)
                 self._bump()
 
     # -------------------------------------------------------------- lectura

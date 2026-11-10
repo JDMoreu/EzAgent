@@ -342,6 +342,16 @@ def test_solo_leer_la_pantalla_de_un_agente_marca_el_turno(rt, action: str, tain
     assert rt.tainted is tainted
 
 
+@pytest.mark.parametrize("action", ["run", "send", "keys", "configure"])
+def test_controlar_un_agente_tras_leer_contenido_no_pide_permiso(rt, action: str) -> None:
+    """Leer la pantalla de un agente no convierte en peligroso lanzarlo o pulsar teclas."""
+    rt.registry.register(hostile_tool())
+    rt.registry.register(fake_delegate(level=1))
+    assert rt.execute("lee_web", {}).ok and rt.tainted
+    assert rt.execute("delegate_to_agent", {"action": action}).ok
+    assert rt.confirm.calls == []
+
+
 def test_la_carpeta_de_trabajo_de_un_agente_pasa_por_la_politica(rt, work, tmp_path) -> None:
     rt.registry.register(fake_delegate())
     for cwd in (str(tmp_path / "fuera"), str(work / "secreto"), "C:/Windows", 5):

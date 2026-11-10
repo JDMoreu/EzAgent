@@ -108,11 +108,23 @@ class FakeUI:
     def on_chat_voice(self, enabled):
         self.calls.append(("voice", enabled))
 
+    def on_chat_mic(self, muted):
+        self.calls.append(("mic", muted))
+
+    def on_chat_menu(self):
+        self.calls.append(("menu",))
+
     def on_chat_new(self):
         self.calls.append(("new",))
 
     def on_chat_stop(self):
         self.calls.append(("stop",))
+
+    def on_chat_switch(self, session):
+        self.calls.append(("switch", session))
+
+    def on_chat_delete(self, session):
+        self.calls.append(("delete", session))
 
     def on_chat_confirm(self, yes):
         self.calls.append(("confirm", yes))
@@ -216,6 +228,17 @@ def test_the_form_hides_only_after_the_first_painted_frame(panel, clock) -> None
     assert panel.ui.hidden == []  # todavía no: la barra sigue dibujando su forma
     panel.render()
     assert panel.ui.hidden == [True]
+
+
+def test_the_messages_are_drawn_before_the_morph_starts(tmp_path: Path, clock) -> None:
+    model = ChatModel(ChatStore(tmp_path / "chat.jsonl"))
+    model.add_user("hola")
+    msg = model.begin_assistant()
+    model.append(msg.id, "respuesta")
+    model.finish(msg.id)
+    panel = ChatPanel(FakeUI(model))
+    panel.open()
+    assert len(panel.view._cache) == 2  # sin congelar la forma a mitad de la animación
 
 
 def test_it_reaches_the_open_state_after_the_morph(panel, clock) -> None:
@@ -363,7 +386,7 @@ def test_the_render_asks_for_60_fps_only_while_something_moves(panel, clock) -> 
     assert panel.window._interval == pytest.approx(1 / 60)
     settle(panel, clock)
     panel.render()
-    assert panel.window._interval == pytest.approx(1 / 20)
+    assert panel.window._interval == pytest.approx(1 / 30)
     panel.view.model.add_user("hola")
     panel.view.model.begin_assistant()
     panel.render()
@@ -425,6 +448,10 @@ def test_clicking_a_control_acts_and_clicking_empty_space_drags_the_window(panel
 def test_header_buttons_reach_the_app(panel, clock) -> None:
     panel.open()
     settle(panel, clock)
+    panel.pointer_down(*spot(panel, "settings"))
+    assert panel.ui.calls[-1] == ("menu",)  # ajustes sin cerrar el chat
+    panel.pointer_down(*spot(panel, "mic"))
+    assert panel.ui.calls[-1] == ("mic", True)  # silencia el mismo micro de la barra
     panel.pointer_down(*spot(panel, "new"))
     assert panel.ui.calls[-1] == ("new",)
     panel.pointer_down(*spot(panel, "close"))
@@ -541,15 +568,20 @@ def test_a_window_that_cannot_start_leaves_everything_clean(panel, clock, monkey
 # ----------------------------------------------------- integración con la barra
 def test_the_bar_stops_drawing_its_form_while_the_chat_replaces_it() -> None:
     model = D.DropModel("circle")
-    for step in range(30):
+    for step in range(90):
         model.update(
-            step / 60, 1 / 60, "idle", 0.0, "dark", False, False, False, False, in_call=True
+            step / 60, 1 / 60, "idle", 0.0, "dark", True, False, False, False, in_call=True
         )
     shown = D.render_model(model, 148, 128, 1.0, "dark", False, True, False, 1.0)
+    slot = D.slots("circle", 1.0, model.dock)["chat"]
+    assert model.item_at(*slot) == "chat"  # con la barra a la vista, el hub responde
     model.form_hidden = True
     hidden = D.render_model(model, 148, 128, 1.0, "dark", False, True, False, 1.0)
     fx, fy = (round(v) for v in D.form_center("circle"))
     assert shown[fy, fx, 3] > 200 and hidden[fy, fx, 3] == 0
+    # Con el chat abierto el hub no se ve ni se pulsa: el clic llega al chat.
+    assert model.item_at(*slot) is None and not model.near(*slot)
+    assert hidden[round(slot[1]), round(slot[0]), 3] == 0
 
 
 def test_the_bar_exposes_the_chat_api(tmp_path: Path) -> None:

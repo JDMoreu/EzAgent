@@ -418,7 +418,7 @@ class DropModel:
         self.custom = custom
         self._update_air(dt, pose, rms, theme, reduced)
 
-        show = hover or asking or menu_open or buttons == "always"
+        show = (hover or asking or menu_open or buttons == "always") and not self.form_hidden
         live = in_call or asking
         want = {
             "gear": show and not asking,
@@ -492,6 +492,8 @@ class DropModel:
 
     def item_at(self, x: float, y: float) -> str | None:
         """Botón visible bajo el punto, o ``'pill'`` si es la forma (para arrastrar)."""
+        if self.form_hidden:  # el chat ocupa su lugar: ni botones ni forma bajo el ratón
+            return None
         pos = self.positions()
         for name in BUTTONS:
             cx, cy, sc, al = pos[name]
@@ -530,6 +532,8 @@ class DropModel:
         )
 
     def near(self, x: float, y: float) -> bool:
+        if self.form_hidden:
+            return False
         x0, y0, x1, y1 = self.bar_rect()
         return x0 <= x <= x1 and y0 <= y <= y1
 
@@ -714,7 +718,7 @@ def render_model(
     mute_progress = mp.x if (mp.t > 0 or not muted) else 1.0
     # Los lejanos primero: al salir pasan por detrás de los cercanos, no encima.
     draw_order = [n for g in reversed(emerge_order(model.layout, model.dock)) for n in g]
-    for name in draw_order:
+    for name in () if model.form_hidden else draw_order:
         cx, cy, sc, al = pos[name]
         if sc <= 0.02 or al <= 0.01:
             continue
@@ -1005,10 +1009,15 @@ class DropUI:
         self.chat_size: tuple[float, float] | None = None  # tamaño recordado (px lógicos)
         self.on_chat_send = lambda text: None
         self.on_chat_voice = lambda enabled: None
+        self.on_chat_mic = lambda muted: None
+        self.on_chat_menu = lambda: None
         self.on_chat_new = lambda: None
         self.on_chat_stop = lambda: None
+        self.on_chat_switch = lambda session: None
+        self.on_chat_delete = lambda session: None
         self.on_chat_confirm = lambda yes: None
         self._chat = ChatPanel(self)
+        self._fluid_cache: tuple[float, np.ndarray] | None = None  # un fotograma de fluido
         self.on_hotkey_capture = lambda active: None
         self.menu_settings_provider = lambda: None
 
@@ -1148,6 +1157,8 @@ class DropUI:
     def set_muted(self, muted: bool) -> None:
         self._muted = bool(muted)
         self._ui.set_muted(self._muted)
+        if self.chat_model is not None:
+            self.chat_model.set_mic_muted(self._muted)
 
     def set_in_call(self, in_call: bool) -> None:
         self._in_call = bool(in_call)
@@ -1402,7 +1413,11 @@ class DropUI:
     def chat_fluid(self, w: int, h: int, now: float):
         """El fluido Marea actual, estirado a ``w``×``h`` (relleno de la forma al transformarse)."""
         try:
-            return fluid_array(render_fluid(self.model, now), w, h)
+            cached = self._fluid_cache
+            if cached is None or cached[0] != now:  # el orbe y la raya comparten fotograma
+                cached = (now, render_fluid(self.model, now))
+                self._fluid_cache = cached
+            return fluid_array(cached[1], w, h)
         except Exception:
             return None
 
@@ -1457,6 +1472,8 @@ class DropUI:
 
     # ----------------------------------------------------------------- puntero
     def pointer_down(self, x: float, y: float) -> bool:
+        if self.model.form_hidden:  # el chat ocupa la forma: la barra ni se arrastra ni pulsa
+            return True
         name = self.model.item_at(x, y)
         if name is None:
             return False

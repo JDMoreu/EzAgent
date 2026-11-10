@@ -13,8 +13,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
+import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
+from ..notch.icons import draw_icon
 from ..notch.text import _load_font
 from ..notch.tokens import Color, FontStyle
 from .markdown import Span
@@ -145,6 +147,25 @@ def line(
         (ctx.px(x0), ctx.px(y0), max(ctx.px(x0), ctx.px(x1) - 1), max(ctx.px(y0), ctx.px(y1) - 1)),
         fill=color,
     )
+
+
+def draw_icon_at(
+    img: Image.Image,
+    ctx: Ctx,
+    name: str,
+    cx: float,
+    cy: float,
+    size: float,
+    color: tuple[int, int, int, int],
+) -> None:
+    """Icono vectorial de la interfaz (``notch.icons``) centrado en ``(cx, cy)`` lógicos."""
+    side = max(4, ctx.px(size) + 4)
+    buf = np.zeros((side, side, 4), np.float32)
+    draw_icon(buf, name, side / 2 / ctx.scale, side / 2 / ctx.scale, size, color, ctx.scale)
+    alpha = buf[..., 3:4]
+    rgb = np.divide(buf[..., :3], alpha, out=np.zeros_like(buf[..., :3]), where=alpha > 1e-6)
+    tile = Image.fromarray((np.concatenate([rgb, alpha], axis=2) * 255.0 + 0.5).astype(np.uint8))
+    img.alpha_composite(tile, (ctx.px(cx) - side // 2, ctx.px(cy) - side // 2))
 
 
 def draw_text_at(

@@ -32,12 +32,15 @@ from .chat_footer import (
     _break,
 )
 from .chat_header import HEADER_H, HeaderMixin
+from .icons import draw_icon
 from .menu import _fill_circle, _fill_round_rect
 from .settings_window import composite_over
 from .text import draw_text
 from .tokens import FS_MICRO
 
 GAP = 14.0
+KEYED = ("session", "delete_ask", "delete_yes", "delete_no")  # el hover lleva su fila
+COPY_W = 30.0  # ancho (px lógicos) de la zona del icono de copiar
 SCROLL_STEP = 56.0
 
 
@@ -45,7 +48,7 @@ SCROLL_STEP = 56.0
 class Action:
     """Lo que la vista le pide al dueño de la ventana."""
 
-    kind: str  # send | close | voice | copy | open | reveal | confirm | stop | new
+    kind: str  # send | close | voice | mic | settings | copy | open | reveal | confirm | stop | new
     data: object = None
 
 
@@ -103,6 +106,7 @@ class ChatView(HeaderMixin, FooterMixin):
         self.input = TextInput()
         self.scroll = 0.0  # px lógicos desde el final (0 = pegado al último mensaje)
         self.mode = "chat"  # «chat» | «history»
+        self._pending_delete: int | None = None  # fila del historial pidiendo confirmar
         self.hover: str | None = None
         self.g = _Geometry()
         self._cache: dict[int, _Cached] = {}
@@ -197,9 +201,9 @@ class ChatView(HeaderMixin, FooterMixin):
             _premult(img),
             self.g.width - PAD - bw,
             hits,
-            caption_hit=(0.0, bh, 64.0, bh + extra),
+            caption_hit=(0.0, bh, COPY_W, bh + extra),
             plain=msg.text,  # lo escrito, tal cual (sin interpretar markdown)
-            caption_x=self.g.width - PAD - 64.0,
+            caption_x=self.g.width - PAD - COPY_W,
             label_y=bh + 4.0,
             copy_align="right",
         )
@@ -220,7 +224,7 @@ class ChatView(HeaderMixin, FooterMixin):
             img.alpha_composite(rendered.image, (0, round(caption * sc)))
         hits = tuple(_shift(h, 0.0, caption) for h in rendered.hits)
         arr = _premult(img)
-        copy_rect = (0.0, height - copy_h, 64.0, height) if copy_h > 5 else None
+        copy_rect = (0.0, height - copy_h, COPY_W, height) if copy_h > 5 else None
         return _Entry(height, arr, PAD, hits, copy_rect, rendered.plain, PAD, height - copy_h + 5.0)
 
     # -------------------------------------------------------------- dibujo
@@ -238,6 +242,11 @@ class ChatView(HeaderMixin, FooterMixin):
         self._draw_header(buf)
         self._draw_footer(buf, now, footer)
         return buf
+
+    @property
+    def pending_delete(self) -> int | None:
+        """Conversación del historial que espera confirmación para borrarse."""
+        return self._pending_delete
 
     def animating(self, now: float) -> bool:
         flashing = self._flash is not None and now < self._flash[1]
@@ -301,30 +310,27 @@ class ChatView(HeaderMixin, FooterMixin):
         self._register_message_hits(msg, entry, y, top, bottom)
 
     def _draw_copy_label(self, buf, msg, entry: _Entry, y: float, top, bottom, now: float) -> None:
-        """«COPIAR» bajo cada mensaje (y «POR VOZ» en los hablados); «COPIADO» un momento después."""
-        if entry.caption_hit is None or y + entry.label_y < top or y + entry.label_y + 12 > bottom:
+        """Icono de copiar bajo cada mensaje (y «POR VOZ» en los hablados); un ✓ al copiar."""
+        if entry.caption_hit is None or y + entry.label_y < top or y + entry.label_y + 14 > bottom:
             return
         copied = self._flash is not None and self._flash[0] == entry.plain and now < self._flash[1]
-        hovered = self.hover == "copy_msg"
-        tone = "TEXT_2" if copied else ("MINT" if not hovered else "TEXT")
-        label = "COPIADO" if copied else "COPIAR"
-        ly = y + entry.label_y
-        if entry.copy_align == "right":
+        tone = "MINT" if copied else ("TEXT" if self.hover == "copy_msg" else "TEXT_2")
+        cy = y + entry.label_y + 6
+        right = entry.copy_align == "right"
+        cx = self.g.width - PAD - COPY_W / 2 if right else PAD + COPY_W / 2
+        draw_icon(
+            buf, "check" if copied else "copy", cx, cy, 15.0, self._color(tone)[:3], self.g.scale
+        )
+        if right and msg.source == "voice":
             self._text(
-                buf, label, FS_MICRO, self._color(tone), self.g.width - PAD, ly, align="right"
+                buf,
+                "POR VOZ",
+                FS_MICRO,
+                self._color("TEXT_3"),
+                self.g.width - PAD - COPY_W,
+                cy - 6,
+                align="right",
             )
-            if msg.source == "voice":
-                self._text(
-                    buf,
-                    "POR VOZ ·",
-                    FS_MICRO,
-                    self._color("TEXT_3"),
-                    self.g.width - PAD - 58,
-                    ly,
-                    align="right",
-                )
-        else:
-            self._text(buf, label, FS_MICRO, self._color(tone), PAD, ly)
 
     def _register_message_hits(self, msg, entry: _Entry, y: float, top, bottom) -> None:
         for h in entry.hits:
@@ -360,7 +366,7 @@ class ChatView(HeaderMixin, FooterMixin):
     def _at(self, x: float, y: float) -> tuple[str, object] | None:
         for rect, kind, data in reversed(self._hits):
             if rect[0] <= x <= rect[2] and rect[1] <= y <= rect[3]:
-                return kind + (f":{data}" if kind == "session" else ""), data
+                return kind + (f":{data}" if kind in KEYED else ""), data
         return None
 
     def pointer_move(self, x: float, y: float) -> bool:
@@ -393,15 +399,28 @@ class ChatView(HeaderMixin, FooterMixin):
             return simple[kind]
         if kind == "voice":
             return Action("voice", not self.model.voice_replies)
+        if kind == "mic":
+            return Action("mic", not self.model.mic_muted)
+        if kind == "settings":
+            return Action("settings")
         if kind == "history":
             self.mode = "history" if self.mode == "chat" else "chat"
             self.scroll = 0.0
+            self._pending_delete = None
         elif kind == "back":
             self.model.view_session(None)
             self.mode, self.scroll = "chat", 0.0
-        elif kind == "session":
-            self.model.view_session(int(data))  # type: ignore[arg-type]
-            self.mode, self.scroll = "chat", 0.0
+        elif kind == "session":  # retomar esa conversación (con su propio contexto)
+            self.mode, self.scroll, self._pending_delete = "chat", 0.0, None
+            if int(data) != self.model.current_session:  # type: ignore[arg-type]
+                return Action("switch", int(data))  # type: ignore[arg-type]
+        elif kind == "delete_ask":
+            self._pending_delete = int(data)  # type: ignore[arg-type]
+        elif kind == "delete_no":
+            self._pending_delete = None
+        elif kind == "delete_yes":
+            self._pending_delete = None
+            return Action("delete", int(data))  # type: ignore[arg-type]
         elif kind in ("copy_msg", "copy_code"):
             return Action("copy", data)
         elif kind in ("open", "reveal"):
@@ -463,6 +482,9 @@ class ChatView(HeaderMixin, FooterMixin):
     def _escape(self) -> Action | None:
         if not self.input.empty:
             self.input.clear()
+            return None
+        if self._pending_delete is not None:
+            self._pending_delete = None
             return None
         if self.mode == "history":
             self.mode = "chat"

@@ -62,17 +62,17 @@ def test_the_panel_renders_at_the_right_size(tmp_path: Path, scale: float, theme
 def test_the_empty_state_invites_to_write(tmp_path: Path) -> None:
     _, view = make(tmp_path)
     assert view.render(1.0)[..., 3].max() > 0
-    assert {"close", "voice", "history", "new", "send", "input"} <= kinds(view)
+    assert {"close", "voice", "mic", "settings", "history", "new", "send", "input"} <= kinds(view)
 
 
 def test_header_buttons_exist_in_every_state(tmp_path: Path) -> None:
     model, view = make(tmp_path)
     reply(model, "a", "b")
     view.render(1.0)
-    assert {"close", "voice", "history", "new"} <= kinds(view)
+    assert {"close", "voice", "mic", "settings", "history", "new"} <= kinds(view)
     view.mode = "history"
     view.render(1.0)
-    assert {"close", "voice", "history", "new", "back"} <= kinds(view)
+    assert {"close", "voice", "mic", "settings", "history", "new", "back"} <= kinds(view)
 
 
 def test_a_streaming_answer_shows_the_typing_dots_until_text_arrives(tmp_path: Path) -> None:
@@ -130,6 +130,19 @@ def test_close_and_new_and_voice_buttons(tmp_path: Path) -> None:
     assert click(view, "voice") == Action("voice", False)
 
 
+def test_the_mic_button_toggles_the_same_pause_as_the_bar(tmp_path: Path) -> None:
+    model, view = make(tmp_path)
+    assert click(view, "mic") == Action("mic", True)
+    model.set_mic_muted(True)
+    view.render(1.0)  # el icono tachado se dibuja sin romper
+    assert click(view, "mic") == Action("mic", False)
+
+
+def test_the_menu_button_opens_settings_from_the_chat(tmp_path: Path) -> None:
+    _, view = make(tmp_path)
+    assert click(view, "settings") == Action("settings")
+
+
 def test_sending_from_the_button_takes_the_text(tmp_path: Path) -> None:
     _, view = make(tmp_path)
     view.paste("resume el informe")
@@ -159,11 +172,11 @@ def test_history_lists_conversations_and_opens_one(tmp_path: Path) -> None:
     assert view.mode == "history"
     view.render(1.0)
     assert {"session", "back"} <= kinds(view)
-    click(view, "session", old)
-    assert view.mode == "chat" and model.viewing == old
-    assert [m.text for m in model.snapshot()[1]][0] == "presupuesto de marzo"
+    assert click(view, "session", old) == Action("switch", old)  # se retoma, no solo se mira
+    assert view.mode == "chat"
+    click(view, "history")
     click(view, "back")
-    assert model.viewing is None and view.mode == "chat"
+    assert view.mode == "chat" and model.viewing is None
 
 
 def test_empty_history_says_so(tmp_path: Path) -> None:
@@ -435,51 +448,60 @@ def test_what_the_user_typed_can_be_copied_exactly_as_typed(tmp_path: Path) -> N
     assert click(view, "copy_msg", typed) == Action("copy", typed)  # sin interpretar el markdown
 
 
-def test_every_message_shows_a_visible_copy_label(tmp_path: Path, monkeypatch) -> None:
-    model, view = make(tmp_path)
-    reply(model, "hola", "respuesta")
-    labels: list[str] = []
-    original = view._text
+def record_drawing(view, monkeypatch) -> tuple[list[str], list[str]]:
+    """Qué iconos y qué textos dibuja la vista (para comprobar el botón de copiar)."""
+    icons: list[str] = []
+    texts: list[str] = []
+    real_icon, real_text = cv.draw_icon, view._text
+    monkeypatch.setattr(
+        cv,
+        "draw_icon",
+        lambda buf, name, *a, **k: (icons.append(name), real_icon(buf, name, *a, **k))[1],
+    )
     monkeypatch.setattr(
         view,
         "_text",
-        lambda buf, text, *a, **k: (labels.append(text), original(buf, text, *a, **k))[1],
+        lambda buf, text, *a, **k: (texts.append(text), real_text(buf, text, *a, **k))[1],
     )
+    return icons, texts
+
+
+def test_every_message_has_a_copy_icon_not_a_text_label(tmp_path: Path, monkeypatch) -> None:
+    model, view = make(tmp_path)
+    reply(model, "hola", "respuesta")
+    icons, texts = record_drawing(view, monkeypatch)
     view.render(1.0)
-    assert labels.count("COPIAR") == 2  # el del usuario y el del asistente: antes era invisible
+    assert icons.count("copy") == 2  # el del usuario y el del asistente
+    assert "COPIAR" not in texts and "COPIADO" not in texts
 
 
-def test_the_copy_label_confirms_for_a_moment(tmp_path: Path, monkeypatch) -> None:
+def test_the_copy_icon_turns_into_a_check_for_a_moment(tmp_path: Path, monkeypatch) -> None:
     model, view = make(tmp_path)
     reply(model, "hola", "respuesta")
-    labels: list[str] = []
-    original = view._text
-    monkeypatch.setattr(
-        view,
-        "_text",
-        lambda buf, text, *a, **k: (labels.append(text), original(buf, text, *a, **k))[1],
-    )
+    icons, _ = record_drawing(view, monkeypatch)
     view.flash_copied("hola", now=10.0)
     view.render(10.5)
-    assert labels.count("COPIADO") == 1 and labels.count("COPIAR") == 1  # solo el copiado
-    labels.clear()
+    assert icons.count("check") == 1 and icons.count("copy") == 1  # solo el copiado cambia
+    icons.clear()
     view.render(12.0)  # pasó el aviso
-    assert "COPIADO" not in labels and labels.count("COPIAR") == 2
+    assert "check" not in icons and icons.count("copy") == 2
     assert view.animating(10.5) and not view.animating(12.0)
 
 
-def test_voice_messages_say_so_next_to_copy(tmp_path: Path, monkeypatch) -> None:
+def test_voice_messages_say_so_next_to_the_copy_icon(tmp_path: Path, monkeypatch) -> None:
     model, view = make(tmp_path)
     model.add_user("dicho en voz alta", "voice")
-    labels: list[str] = []
-    original = view._text
-    monkeypatch.setattr(
-        view,
-        "_text",
-        lambda buf, text, *a, **k: (labels.append(text), original(buf, text, *a, **k))[1],
-    )
+    icons, texts = record_drawing(view, monkeypatch)
     view.render(1.0)
-    assert "POR VOZ ·" in labels and "COPIAR" in labels
+    assert "POR VOZ" in texts and "copy" in icons
+
+
+def test_the_copy_zone_is_just_the_icon(tmp_path: Path) -> None:
+    model, view = make(tmp_path)
+    reply(model, "hola", "respuesta")
+    view.render(1.0)
+    zones = [r for r, k, _ in view._hits if k == "copy_msg"]
+    assert len(zones) == 2 and all(r[2] - r[0] <= 32 for r in zones)
 
 
 def test_context_notes_are_drawn_centred_without_copy_or_caption(tmp_path: Path) -> None:

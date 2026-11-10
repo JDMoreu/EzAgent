@@ -19,6 +19,7 @@ from .render_base import (
     Ctx,
     Hit,
     Painter,
+    draw_icon_at,
     draw_text_at,
     line,
     paint_lines,
@@ -138,15 +139,20 @@ def _code(block: md.Code, ctx: Ctx) -> tuple[float, Painter]:
             draw_text_at(
                 img, ctx, x + CODE_PAD, y + 16, block.lang.upper(), "micro", ctx.color("TEXT_3")
             )
-        label = "Copiar"
-        tw = ctx.length(label, "micro")
-        draw_text_at(
-            img, ctx, x + ctx.width - CODE_PAD - tw, y + 16, label, "micro", ctx.color("MINT")
+        # Copiar: un icono (dos hojas), no texto.
+        draw_icon_at(
+            img,
+            ctx,
+            "copy",
+            x + ctx.width - CODE_PAD - 7,
+            y + CODE_HEAD / 2,
+            15.0,
+            ctx.color("MINT"),
         )
         ctx.hits.append(
             Hit(
                 "copy_code",
-                (x + ctx.width - CODE_PAD - tw - 8, y, x + ctx.width, y + CODE_HEAD),
+                (x + ctx.width - CODE_PAD - 22, y, x + ctx.width, y + CODE_HEAD),
                 block.text,
             )
         )

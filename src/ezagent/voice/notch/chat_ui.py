@@ -235,6 +235,9 @@ class ChatPanel(PaintMixin):
             hotkey_label=_hotkey_label(getattr(self.ui, "chat_hotkey", "")),
         )
         self._configure_view((panel[2] - panel[0]) / s, (panel[3] - panel[1]) / s)
+        # Los mensajes se dibujan antes de la transformación: el primer cuadro con contenido
+        # costaba ~100 ms y congelaba la forma justo al empezar a aparecer.
+        self.view.render(time.monotonic())
         m = round(MARGIN * s)
         self.window = ChatWindow(
             self,
@@ -365,8 +368,12 @@ class ChatPanel(PaintMixin):
         self._update_live(now)
         if self.anim.state in ("opening", "open"):
             self.ui.set_form_hidden(True)  # recién con el primer cuadro pintado: sin parpadeo
-        moving = self.anim.state in ("opening", "closing") or view.animating(now)
-        window._interval = 1.0 / (60.0 if moving else (40.0 if self._act > 0.02 else 20.0))
+        moving = (
+            self.anim.state in ("opening", "closing")
+            or view.animating(now)
+            or self._resize is not None  # redimensionar a 60 fps, no a los 20 del reposo
+        )
+        window._interval = 1.0 / (60.0 if moving else (60.0 if self._act > 0.02 else 30.0))
         if self.anim.state == "open":
             return self._stable(window, view, now)
         return self._compose(window, view, p, now, live=True)
@@ -511,10 +518,18 @@ class ChatPanel(PaintMixin):
             self.close()
         elif kind == "voice":
             ui.on_chat_voice(bool(data))
+        elif kind == "mic":
+            ui.on_chat_mic(bool(data))
+        elif kind == "settings":
+            ui.on_chat_menu()
         elif kind == "new":
             ui.on_chat_new()
         elif kind == "stop":
             ui.on_chat_stop()
+        elif kind == "switch":
+            ui.on_chat_switch(int(data))  # type: ignore[arg-type]
+        elif kind == "delete":
+            ui.on_chat_delete(int(data))  # type: ignore[arg-type]
         elif kind == "confirm":
             ui.on_chat_confirm(bool(data))
         elif kind == "copy":

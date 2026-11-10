@@ -273,6 +273,22 @@ class Messenger:
         self._last_user_text = ""
         self.summary = ""
 
+    def export_context(self) -> tuple[list[dict[str, Any]], str, str]:
+        """El contexto de la conversación actual: ``(mensajes, resumen, último texto del usuario)``.
+
+        Lo usa el chat para guardar cada conversación por separado al cambiar de una a otra.
+        """
+        return self.messages, self.summary, self._last_user_text
+
+    def import_context(
+        self, messages: list[dict[str, Any]], summary: str = "", last_user: str = ""
+    ) -> None:
+        """Pone ese contexto como el de la conversación actual (con el prompt de sistema vigente)."""
+        body = [m for m in messages if m.get("role") != "system"]
+        self.messages = [{"role": "system", "content": self._system_prompt()}, *body]
+        self.summary = summary
+        self._last_user_text = last_user
+
     # ------------------------------------------------------------- tool loop
     def _trim_history(self, keep: int = 12) -> None:
         """Recorta por grupos completos, nunca entre assistant y tool."""

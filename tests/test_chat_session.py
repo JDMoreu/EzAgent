@@ -148,6 +148,17 @@ def test_voice_replies_setting_is_a_simple_switch(store: ChatStore) -> None:
     assert model.version == version  # sin cambio no hay repintado
 
 
+def test_mic_mute_is_the_same_state_shown_by_the_bar(store: ChatStore) -> None:
+    model = ChatModel(store)
+    version = model.version
+    assert not model.mic_muted
+    model.set_mic_muted(True)
+    assert model.mic_muted and model.version > version
+    version = model.version
+    model.set_mic_muted(True)
+    assert model.version == version  # sin cambio no hay repintado
+
+
 def test_the_chat_works_without_a_store() -> None:
     model = ChatModel(None)
     model.add_user("hola")

@@ -1,8 +1,10 @@
 """Historial del chat: un archivo JSONL de solo añadir, legible y editable a mano.
 
 Guarda lo que se escribe y lo que se habla (``source``), agrupado en
-conversaciones (``session``). Nunca se borra nada: «nueva conversación» solo
-añade una marca, y el historial completo sigue consultable.
+conversaciones (``session``). «Nueva conversación» solo añade una marca y retomar una
+anterior otra; el historial completo sigue consultable. Una conversación solo se borra si el
+usuario lo pide (``delete_session``), y entonces el archivo se reescribe entero y de forma
+atómica (archivo temporal + ``os.replace``), nunca con ``unlink``.
 """
 
 from __future__ import annotations
@@ -87,7 +89,11 @@ class ChatStore:
         session = int(data["session"])
         self._starts.setdefault(session, float(data.get("t", 0.0)))
         self._session = max(self._session, session)
-        if data.get("event") == "session":
+        event = data.get("event")
+        if event == "resume":  # se retomó una conversación anterior: esa es la actual
+            self._session = session
+            return
+        if event == "session":
             return
         role = str(data["role"])
         if role not in ("user", "assistant", "system"):
@@ -156,6 +162,88 @@ class ChatStore:
             )
             return self._session
 
+    def resume(self, session: int) -> bool:
+        """Retoma una conversación anterior como la actual (lo que se escriba se añade a ella)."""
+        with self._lock:
+            if session == self._session:
+                return True
+            if not any(e.session == session for e in self._entries):
+                return False
+            self._session = session
+            self._write(
+                {"v": _VERSION, "t": round(time.time(), 3), "event": "resume", "session": session}
+            )
+            return True
+
+    def delete_session(self, session: int) -> bool:
+        """Borra una conversación del historial (y del disco). ``False`` si no se pudo guardar.
+
+        Si es la actual, queda vacía pero sigue siendo la actual (se numera igual).
+        """
+        with self._lock:
+            kept = [e for e in self._entries if e.session != session]
+            starts = {
+                k: v for k, v in self._starts.items() if k != session or session == self._session
+            }
+            if len(kept) == len(self._entries) and session not in self._starts:
+                return False
+            if not self._rewrite(kept, starts):
+                return False
+            self._entries, self._starts = kept, starts
+            return True
+
+    def _rewrite(self, entries: list[ChatEntry], starts: dict[int, float]) -> bool:
+        """Reescribe el archivo con ``entries``: a un temporal y luego ``os.replace`` (atómico)."""
+        lines: list[str] = []
+        for session in sorted(starts):
+            lines.append(
+                json.dumps(
+                    {
+                        "v": _VERSION,
+                        "t": round(starts[session], 3),
+                        "event": "session",
+                        "session": session,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        for e in entries:
+            lines.append(
+                json.dumps(
+                    {
+                        "v": _VERSION,
+                        "t": round(e.t, 3),
+                        "session": e.session,
+                        "role": e.role,
+                        "source": e.source,
+                        "text": e.text,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        if self._session != max(starts, default=self._session):  # la actual no es la última
+            lines.append(
+                json.dumps(
+                    {
+                        "v": _VERSION,
+                        "t": round(time.time(), 3),
+                        "event": "resume",
+                        "session": self._session,
+                    }
+                )
+            )
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(
+                "\n".join(lines) + ("\n" if lines else ""), encoding="utf-8", newline="\n"
+            )
+            os.replace(tmp, self.path)
+        except OSError as exc:
+            logger.warning("No pude borrar la conversación del historial: {}", exc)
+            return False
+        return True
+
     # -------------------------------------------------------------- lectura
     @property
     def session(self) -> int:
@@ -173,21 +261,22 @@ class ChatStore:
             return list(self._entries[-max(0, limit) :])
 
     def sessions(self) -> list[SessionInfo]:
-        """Conversaciones con mensajes, de la más reciente a la más antigua."""
+        """Conversaciones con mensajes, de la usada más recientemente a la más antigua."""
         with self._lock:
-            out: list[SessionInfo] = []
-            for session in sorted({e.session for e in self._entries}, reverse=True):
+            out: list[tuple[float, SessionInfo]] = []
+            for session in {e.session for e in self._entries}:
                 items = [e for e in self._entries if e.session == session]
                 first_user = next((e.text for e in items if e.role == "user"), items[0].text)
-                out.append(
-                    SessionInfo(
-                        session=session,
-                        started=self._starts.get(session, items[0].t),
-                        messages=len(items),
-                        title=_title(first_user),
-                    )
+                info = SessionInfo(
+                    session=session,
+                    started=self._starts.get(session, items[0].t),
+                    messages=len(items),
+                    title=_title(first_user),
                 )
-            return out
+                out.append((max(e.t for e in items), info))
+            # La que se usó hace menos va primero (retomar una antigua la sube).
+            out.sort(key=lambda pair: (pair[0], pair[1].session), reverse=True)
+            return [info for _, info in out]
 
     def search(self, query: str, limit: int = 50) -> list[ChatEntry]:
         """Mensajes que contienen ``query`` (sin distinguir mayúsculas), los más recientes primero."""
