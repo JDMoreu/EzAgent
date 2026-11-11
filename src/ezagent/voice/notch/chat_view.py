@@ -20,6 +20,7 @@ from ..chat import markdown as md
 from ..chat.render import render_message
 from ..chat.render_base import Ctx, Hit, paint_lines, round_rect, wrap
 from ..chat.session import ChatMessage, ChatModel
+from ..chat.store import SessionInfo
 from ..chat.text_input import TextInput
 from .chat_footer import (
     BTN,
@@ -31,7 +32,7 @@ from .chat_footer import (
     FooterMixin,
     _break,
 )
-from .chat_header import HEADER_H, HeaderMixin
+from .chat_header import DELETE_SECS, HEADER_H, HeaderMixin
 from .icons import draw_icon
 from .menu import _fill_circle, _fill_round_rect
 from .settings_window import composite_over
@@ -105,6 +106,7 @@ class ChatView(HeaderMixin, FooterMixin):
         self.scroll = 0.0  # px lógicos desde el final (0 = pegado al último mensaje)
         self.mode = "chat"  # «chat» | «history»
         self._pending_delete: int | None = None  # fila del historial pidiendo confirmar
+        self._deleting: tuple[int, SessionInfo, float] | None = None  # fila que se desvanece
         self.hover: str | None = None
         self.g = _Geometry()
         self._cache: dict[int, _Cached] = {}
@@ -216,12 +218,12 @@ class ChatView(HeaderMixin, FooterMixin):
         )
         sc = self.g.scale
         caption = 20.0
-        copy_h = 28.0 if (msg.text and not msg.streaming and not msg.error) else 12.0
-        height = caption + 12 + (rendered.height if msg.text else 16.0) + copy_h
+        has_copy = bool(msg.text and not msg.streaming and not msg.error)
+        height = caption + 12 + (rendered.height if msg.text else 16.0) + 4.0
         img = Image.new("RGBA", (round(self.content_w * sc), round(height * sc)), (0, 0, 0, 0))
         ctx = self._ctx(self.content_w)
-        # DECISION: reserve a bottom inset inside each message card so copying
-        # never covers text, code, attachments or their interaction targets.
+        # DECISION: the copy icon shares the last text row (bottom-right corner)
+        # instead of reserving a new row when streaming finishes.
         round_rect(
             img,
             ctx,
@@ -235,8 +237,8 @@ class ChatView(HeaderMixin, FooterMixin):
         hits = tuple(_shift(h, 12.0, caption + 12) for h in rendered.hits)
         arr = _premult(img)
         copy_rect = (
-            (self.content_w - COPY_W - 6, height - 28, self.content_w - 6, height - 4)
-            if copy_h > 12
+            (self.content_w - COPY_W - 6, height - 24, self.content_w - 6, height - 4)
+            if has_copy
             else None
         )
         return _Entry(height, arr, PAD, hits, copy_rect, rendered.plain)
@@ -250,7 +252,7 @@ class ChatView(HeaderMixin, FooterMixin):
         self._hits = []
         footer = self._footer_height()
         if self.mode == "history":
-            self._draw_history(buf, HEADER_H, g.height - footer)
+            self._draw_history(buf, HEADER_H, g.height - footer, now)
         else:
             self._draw_messages(buf, now, HEADER_H, g.height - footer)
         self._draw_header(buf)
@@ -264,7 +266,10 @@ class ChatView(HeaderMixin, FooterMixin):
 
     def animating(self, now: float) -> bool:
         flashing = self._flash is not None and now < self._flash[1]
-        return self.model.busy or self.model.confirm is not None or flashing
+        fading = self._deleting is not None
+        if fading and now - self._deleting[2] >= DELETE_SECS:
+            self._deleting, fading = None, False
+        return self.model.busy or self.model.confirm is not None or flashing or fading
 
     def flash_copied(self, text: str, now: float | None = None) -> None:
         """Avisa un momento de que se copió ``text`` («COPIADO» donde estaba «COPIAR»)."""
@@ -334,9 +339,18 @@ class ChatView(HeaderMixin, FooterMixin):
         tone = "MINT" if copied else ("TEXT" if self.hover == "copy_msg" else "TEXT_2")
         cy = y + (y0 + y1) / 2
         cx = entry.x + (x0 + x1) / 2
+        # La superficie detrás del icono evita que el texto de la última línea lo emborrone.
+        _fill_circle(buf, cx, cy, 10.5, self._copy_fill(msg), self.g.scale)
         draw_icon(
             buf, "check" if copied else "copy", cx, cy, 15.0, self._color(tone)[:3], self.g.scale
         )
+
+    def _copy_fill(self, msg: ChatMessage) -> tuple[int, int, int]:
+        """Color de la tarjeta (o de la burbuja del usuario) bajo el icono de copiar."""
+        if msg.role != "user":
+            return self._color("GROUP")[:3]
+        mint, body = self._color("MINT")[:3], self._color("BODY")[:3]
+        return tuple(round(m * 0.15 + b * 0.85) for m, b in zip(mint, body, strict=True))
 
     def _register_message_hits(self, msg, entry: _Entry, y: float, top, bottom) -> None:
         for h in entry.hits:
@@ -426,7 +440,12 @@ class ChatView(HeaderMixin, FooterMixin):
             self._pending_delete = None
         elif kind == "delete_yes":
             self._pending_delete = None
-            return Action("delete", int(data))  # type: ignore[arg-type]
+            session = int(data)  # type: ignore[arg-type]
+            rows = self.model.sessions()
+            index = next((i for i, row in enumerate(rows) if row.session == session), -1)
+            if index >= 0:
+                self._deleting = (index, rows[index], time.monotonic())
+            return Action("delete", session)
         elif kind in ("copy_msg", "copy_code"):
             return Action("copy", data)
         elif kind in ("open", "reveal"):

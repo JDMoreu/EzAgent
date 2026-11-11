@@ -90,7 +90,7 @@ class ChatWindow(_shell.LayeredWindow):
     lazy_drag = True  # moverla no repinta (el contenido no depende de dónde esté)
 
     def __init__(self, panel: ChatPanel, x: int, y: int, w: int, h: int) -> None:
-        super().__init__(int(w), int(h), int(x), int(y), click_through=False, title="chat")
+        super().__init__(int(w), int(h), int(x), int(y), click_through=False, title="EzAgent")
         self.panel = panel
         self._interval = 1.0 / 60.0
 

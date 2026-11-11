@@ -279,8 +279,11 @@ HAIRLINE_PX: Final[float] = 1.0
 FOOTER_TEXT_X: Final[float] = 23.0
 FOOTER_DOT: Final[float] = 6.0
 FOOTER_DOT_GAP: Final[float] = 6.0
-SAVE_BUTTON_X1: Final[float] = GROUP_X1
-SAVE_BUTTON_X0: Final[float] = GROUP_X1 - 72.0
+# «Guardar» a la izquierda y el estado a su derecha: así el pie comparte fila
+# con el tirador de redimensionado de la ventana de ajustes.
+SAVE_BUTTON_X0: Final[float] = FOOTER_TEXT_X
+SAVE_BUTTON_X1: Final[float] = SAVE_BUTTON_X0 + 72.0
+FOOTER_STATUS_X: Final[float] = SAVE_BUTTON_X1 + 12.0
 SAVE_CHECK_MS: Final[float] = 600.0
 SAVE_FLASH_MS: Final[float] = 800.0
 SAVE_ERROR_MS: Final[float] = 2000.0
@@ -1427,9 +1430,9 @@ class Menu:
         footer = layout["footer"]
         cy = (footer.y0 + footer.y1) / 2.0
         return Rect(
-            (SAVE_BUTTON_X0 + self._dx),
+            SAVE_BUTTON_X0,
             cy - BUTTON_H / 2.0,
-            (SAVE_BUTTON_X1 + self._dx),
+            SAVE_BUTTON_X1,
             cy + BUTTON_H / 2.0,
         )
 
@@ -3768,7 +3771,7 @@ class Menu:
             return
         text, color_key, show_dot = state
         if show_dot:
-            dot_cx = FOOTER_TEXT_X + FOOTER_DOT / 2.0
+            dot_cx = FOOTER_STATUS_X + FOOTER_DOT / 2.0
             _fill_circle(
                 layer,
                 dot_cx,
@@ -3778,9 +3781,9 @@ class Menu:
                 self._scale,
                 alpha,
             )
-            text_x = FOOTER_TEXT_X + FOOTER_DOT + FOOTER_DOT_GAP
+            text_x = FOOTER_STATUS_X + FOOTER_DOT + FOOTER_DOT_GAP
         else:
-            text_x = FOOTER_TEXT_X
+            text_x = FOOTER_STATUS_X
         self._text_at(
             layer,
             text,

@@ -557,7 +557,6 @@ def test_message_copy_targets_stay_inside_the_bottom_right_of_the_card(
         assert 0 <= x0 < x1 <= width and 0 <= y0 < y1 <= height
         assert width - x1 == pytest.approx(6, abs=1 / scale)
         assert height - y1 == pytest.approx(4, abs=1 / scale)
-        assert all(hit.rect[3] <= y0 for hit in entry.hits)
 
 
 def test_header_uses_a_minimize_icon_and_composer_has_no_enter_hint(

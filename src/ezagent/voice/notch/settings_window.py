@@ -23,7 +23,14 @@ from ..brand import drops_coverage
 from .flow import FlowField, colors_for
 from .icons import draw_icon
 from .menu import _fill_circle, _fill_round_rect
-from .menu_layout import GROUPS, SECTION_GROUPS, SECTION_TITLES, SIDEBAR_ORDER
+from .menu_layout import (
+    FOOTER,
+    GROUPS,
+    PAD_BOTTOM,
+    SECTION_GROUPS,
+    SECTION_TITLES,
+    SIDEBAR_ORDER,
+)
 from .text import draw_text
 from .tokens import FLARE, FS_MICRO, FS_ROW, FontStyle
 
@@ -368,14 +375,14 @@ class Sidebar:
 
 
 def draw_grip(buf: np.ndarray, scale: float, pal: dict) -> None:
-    """Seis puntos en triángulo en la esquina inferior derecha: «aquí se estira»."""
+    """Seis puntos en el pie, a la derecha de «Guardar»: «aquí se estira»."""
     h, w = buf.shape[:2]
     right = w / scale - BODY_INSET - 13.0
-    bottom = h / scale - 13.0
+    cy = h / scale - WINDOW_EXTRA_H - PAD_BOTTOM - FOOTER / 2.0
     color = pal["TEXT_3"]
     for row in range(3):
         for col in range(3 - row):
-            _fill_circle(buf, right - col * 5.0, bottom - row * 5.0, 2.2, color, scale, 0.55)
+            _fill_circle(buf, right - col * 5.0, cy + 5.0 - row * 5.0, 2.2, color, scale, 0.55)
 
 
 def fade_factor(amount: float) -> float:

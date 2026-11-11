@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from ezagent.voice.config import VoiceConfig
@@ -301,6 +302,28 @@ def test_clamp_size_and_position() -> None:
 def test_content_size_matches_window() -> None:
     cw, vh = sw.content_size(760, 620)
     assert cw == 760 - sw.SIDEBAR_W and vh == 620 - sw.WINDOW_EXTRA_H
+
+
+def test_save_status_and_resize_grip_share_the_footer_row() -> None:
+    from ezagent.voice.notch.bar_theme import card_palette
+    from ezagent.voice.notch.menu import FOOTER_STATUS_X, SAVE_BUTTON_X0, SAVE_BUTTON_X1
+    from ezagent.voice.notch.menu_layout import Rect
+    from ezagent.voice.notch.tokens import H_ISLAND
+
+    menu = Menu(_settings(), scale=1.0)
+    menu.set_max_height(sw.content_size(sw.DEFAULT_W, sw.DEFAULT_H)[1])
+    layout = menu._layout()
+    save: Rect = menu._save_rect(layout)
+    footer = layout["footer"]
+    assert save.x0 == SAVE_BUTTON_X0 < save.x1 == SAVE_BUTTON_X1 < FOOTER_STATUS_X
+    assert save.center[1] == pytest.approx((footer.y0 + footer.y1) / 2.0)
+
+    buf = np.zeros((round(sw.DEFAULT_H), round(sw.DEFAULT_W), 4), np.float32)
+    sw.draw_grip(buf, 1.0, card_palette("dark"))
+    rows = np.nonzero(buf[..., 3])[0]
+    assert rows.size and (rows.min() + rows.max()) / 2.0 == pytest.approx(
+        save.center[1] - H_ISLAND, abs=1.0
+    )
 
 
 # -------------------------------------------------------------------- dibujo

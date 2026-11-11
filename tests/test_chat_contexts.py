@@ -307,6 +307,20 @@ def test_cancelling_the_confirmation_deletes_nothing(tmp_path: Path) -> None:
     assert view._escape() is None and view.pending_delete is None and view.mode == "history"
 
 
+def test_the_deleted_row_fades_out_instead_of_vanishing(tmp_path: Path) -> None:
+    model, view, old = history_with_two(tmp_path)
+    click(view, "delete_ask", old)
+    assert click(view, "delete_yes", old) == Action("delete", old)
+    model.delete_session(old)
+    assert view._deleting is not None
+    start = view._deleting[2]
+    assert view.animating(start + 0.05)
+    view.render(start + 0.05)
+    assert view._deleting is not None  # la fila fantasma sigue en pantalla
+    view.render(start + 0.3)
+    assert view._deleting is None and not view.animating(start + 0.3)
+
+
 def test_leaving_the_history_cancels_a_pending_delete(tmp_path: Path) -> None:
     _, view, old = history_with_two(tmp_path)
     click(view, "delete_ask", old)

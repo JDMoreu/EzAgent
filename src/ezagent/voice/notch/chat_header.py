@@ -12,10 +12,12 @@ import numpy as np
 from .chat_footer import BTN, PAD
 from .icons import draw_icon
 from .menu import _fill_circle, _fill_round_rect, _fit_text
+from .settings_window import composite_over
 from .text import draw_text  # noqa: F401  (los métodos usan ``self._text``)
 from .tokens import FS_MICRO, FS_ROW, FS_SECONDARY, FS_TITLE
 
 HEADER_H = 56.0
+DELETE_SECS = 0.18  # fila del historial que se desvanece al borrarla
 ORB_D = 28.0  # diámetro (px lógicos) del orbe vivo que acompaña al título
 _MONTHS = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
 
@@ -49,12 +51,18 @@ class HeaderMixin:
                 mid + 14 + i * 18,
                 align="center",
             )
-        hint = f"{self.hotkey_label} abre y cierra el chat"
-        self._text(buf, hint, FS_MICRO, self._color("TEXT_3", 0.8), cx, mid + 82, align="center")
 
     # -------------------------------------------------------------- historial
-    def _draw_history(self, buf, top: float, bottom: float) -> None:
-        sessions = self.model.sessions()
+    def _draw_history(self, buf, top: float, bottom: float, now: float) -> None:
+        sessions = list(self.model.sessions())
+        ghost = self._deleting
+        if ghost is not None:
+            elapsed = now - ghost[2]
+            # Si el borrado no llegó a ocurrir (o ya pasó el fundido), no hay fila fantasma.
+            if elapsed >= DELETE_SECS or any(row.session == ghost[1].session for row in sessions):
+                self._deleting = ghost = None
+            else:
+                sessions.insert(min(ghost[0], len(sessions)), ghost[1])
         if not sessions:
             self._text(
                 buf,
@@ -80,20 +88,42 @@ class HeaderMixin:
             )
             y += 22
             total += 22
+        progress = 0.0
+        if ghost is not None:
+            raw = max(0.0, min(1.0, (now - ghost[2]) / DELETE_SECS))
+            progress = raw * raw * (3.0 - 2.0 * raw)
         for info in sessions:
-            total += 60
-            if y + 58 > top and y < bottom:
-                self._draw_history_row(buf, info, y, busy, info.session == current)
-            y += 60
+            fading = ghost is not None and info.session == ghost[1].session
+            row_h = 60.0 * (1.0 - progress) if fading else 60.0
+            total += row_h
+            if row_h > 1.0 and y + row_h > top and y < bottom:
+                if fading:
+                    self._draw_ghost_row(
+                        buf, info, y, row_h, busy, info.session == current, 1.0 - progress
+                    )
+                else:
+                    self._draw_history_row(buf, info, y, busy, info.session == current)
+            y += row_h
         self._max_scroll = max(0.0, total - (bottom - top))
         self.scroll = max(0.0, min(self.scroll, self._max_scroll))
 
-    def _draw_history_row(self, buf, info, y: float, busy: bool, is_current: bool) -> None:
+    def _draw_ghost_row(
+        self, buf, info, y: float, height: float, busy: bool, is_current: bool, alpha: float
+    ) -> None:
+        """Fila ya borrada: se encoge y se desvanece mientras las de abajo suben."""
+        rows = max(1, round(height * self.g.scale))
+        tmp = np.zeros((rows, buf.shape[1], 4), np.float32)
+        self._draw_history_row(tmp, info, 0.0, busy, is_current, interactive=False)
+        composite_over(buf, tmp * alpha, 0, round(y * self.g.scale))
+
+    def _draw_history_row(
+        self, buf, info, y: float, busy: bool, is_current: bool, interactive: bool = True
+    ) -> None:
         w = self.g.width
         asking = self._pending_delete == info.session
         right = w - 8 - 24  # centro del último botón de la fila
         rect = (8.0, y, w - 8 - (84 if asking else 44), y + 58)
-        if self.hover == f"session:{info.session}" and not busy:
+        if interactive and self.hover == f"session:{info.session}" and not busy:
             _fill_round_rect(
                 buf, 8.0, y, w - 8, y + 58, 12.0, self._color("GROUP_HOVER")[:3], self.g.scale
             )
@@ -111,7 +141,7 @@ class HeaderMixin:
             self._text(
                 buf, "ACTUAL", FS_MICRO, self._color("MINT"), right - 16, y + 35, align="right"
             )
-        if not busy:
+        if not busy and interactive:
             self._hit(rect, "session", info.session)
             self._row_button(buf, "trash", right, y + 29, "delete_ask", info.session, "TEXT_3")
 
@@ -140,7 +170,7 @@ class HeaderMixin:
         else:  # el orbe vivo se pinta encima (el panel lo anima); aquí solo se le deja el sitio
             self.orb = (PAD + ORB_D / 2, cy, ORB_D)
             x = PAD + ORB_D + 10
-        title = "Historial" if self.mode == "history" else ("Anterior" if viewing else "Chat")
+        title = "Historial" if self.mode == "history" else ("Anterior" if viewing else "EzAgent")
         if self.status and not back:
             self._text(buf, title, FS_TITLE, self._color("TEXT"), x, cy - 15)
             available = g.width - PAD - 4 * (BTN + 2) - x
