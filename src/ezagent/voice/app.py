@@ -3178,6 +3178,9 @@ class VoiceApp:
         self._close_after_answer = True
 
     # ------------------------------------------------- pausa y reactivación
+    def _request_close(self) -> None:
+        self._close_after_answer = True
+
     def _close_action(self) -> str:
         cfg = getattr(self, "cfg", None)
         value = str(getattr(cfg, "close_action", "pause") or "pause").lower()
