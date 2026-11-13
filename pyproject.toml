@@ -26,6 +26,7 @@ dependencies = [
 
 [project.scripts]
 ezagent-voice = "ezagent.voice.app:main"
+ezs = "ezagent.swarm.cli:main"
 
 [project.optional-dependencies]
 office = [
