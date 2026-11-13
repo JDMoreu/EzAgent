@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .incidents import describe
 from .models import BROADCAST, SWARM_STATES, Member, Message, SwarmError, Task
 from .protocol import role_label
 from .store import SwarmStore
@@ -70,6 +71,7 @@ class Issue:
 
     key: str
     text: str
+    member: str = ""
 
 
 @dataclass(frozen=True)
@@ -111,13 +113,13 @@ def _task_issues(
         key = f"T{task.id}"
         if task.state == "failed":
             text = f"{key} falló: {task.result or task.title}"
-            issues.append(Issue(f"failed:{key}", text))
+            issues.append(Issue(f"failed:{key}", text, task.owner))
         elif task.state == "claimed":
             owner = by_name.get(task.owner)
             idle = now - owner.seen if owner else 0.0
             if idle > STALL_SECS:
                 text = f"{task.owner} lleva {_minutes(idle)} min sin señales en {key}."
-                issues.append(Issue(f"stall:{key}", text))
+                issues.append(Issue(f"stall:{key}", text, task.owner))
         elif task.state == "pending" and task.id not in parts:
             above = by_id.get(task.parent)
             deps = set(task.deps) | (set(above.deps) if above else set())
@@ -155,7 +157,7 @@ def _unclaimed_issues(
                 flagged.add(task.id)
                 text = f"T{task.id} lleva {_minutes(waiting)} min lista y "
                 text += f"{member.name} no la toma."
-                issues.append(Issue(f"unclaimed:T{task.id}", text))
+                issues.append(Issue(f"unclaimed:T{task.id}", text, member.name))
     return issues
 
 
@@ -172,8 +174,33 @@ def _ask_issues(messages: list[Message], now: float) -> list[Issue]:
         if age > ASK_SECS and not answered:
             text = f"{message.recipient} no respondió a {message.sender} en "
             text += f"{_minutes(age)} min."
-            issues.append(Issue(f"ask:{message.id}", text))
+            issues.append(Issue(f"ask:{message.id}", text, message.recipient))
     return issues
+
+
+def _incident_issues(
+    store: SwarmStore, swarm: str, members: list[Member], issues: list[Issue]
+) -> list[Issue]:
+    """Los incidentes van primero y tapan los avisos derivados del mismo miembro."""
+    by_name = {member.name: member for member in members}
+    found = [i for i in store.incidents(swarm) if i.member in by_name]
+    held = {incident.member for incident in found}
+    first = [
+        Issue(
+            f"incident:{incident.id}",
+            describe(
+                incident,
+                by_name[incident.member],
+                [f"T{t.id}" for t in store.mine(swarm, incident.member)],
+            ),
+            incident.member,
+        )
+        for incident in found
+    ]
+    info = store.get(swarm)
+    if info is not None and info.status == "paused":
+        first.insert(0, Issue("paused", "El enjambre está en pausa."))
+    return first + [issue for issue in issues if issue.member not in held]
 
 
 def health(store: SwarmStore, swarm: str, *, now: float) -> Health:
@@ -185,14 +212,19 @@ def health(store: SwarmStore, swarm: str, *, now: float) -> Health:
     parts = _parts(tasks)
     leaves = [task for task in tasks if task.id not in parts]
     done = sum(task.state == "done" for task in leaves)
-    working = tuple(f"{task.owner} en T{task.id}" for task in leaves if task.state == "claimed")
+    held = {incident.member for incident in store.incidents(swarm)}
+    working = tuple(
+        f"{task.owner} en T{task.id}"
+        for task in leaves
+        if task.state == "claimed" and task.owner not in held
+    )
     if not leaves:
         return Health("empty", 0, 0, ())
     if done == len(leaves):
         return Health("done", done, len(leaves), ())
     issues = _task_issues(tasks, members, parts, now)
     issues += [
-        Issue(f"blocked:{m.name}", f"{m.name} está bloqueado.")
+        Issue(f"blocked:{m.name}", f"{m.name} está bloqueado.", m.name)
         for m in members
         # Un miembro bloqueado sin nada que hacer no frena al enjambre.
         if m.state == "blocked"
@@ -203,6 +235,7 @@ def health(store: SwarmStore, swarm: str, *, now: float) -> Health:
     ]
     issues += _unclaimed_issues(store, swarm, tasks, members, now)
     issues += _ask_issues(store.history(swarm, limit=200), now)
+    issues = _incident_issues(store, swarm, members, issues)
     state = "attention" if issues else "ok"
     return Health(state, done, len(leaves), working, tuple(issues))
 

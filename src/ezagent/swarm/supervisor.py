@@ -32,6 +32,7 @@ from loguru import logger
 
 from . import protocol
 from .models import Member, SwarmInfo
+from .recovery import Recovery
 from .service import SwarmService
 
 TICK_SECS = 3.0
@@ -45,6 +46,7 @@ MISSING_TICKS = 3
 _WORKING = "working"
 _IDLE = "idle"
 _BLOCKED = "blocked"
+_ERROR = "error"
 _MISSING = "missing"
 _UNKNOWN = "unknown"
 _EXITED = "exited"
@@ -65,8 +67,10 @@ def _agent_state(raw: object) -> str:
         return _WORKING
     if state in ("done", "idle"):
         return _IDLE
-    if state in ("blocked", "error"):
+    if state == "blocked":
         return _BLOCKED
+    if state == "error":
+        return _ERROR
     return _UNKNOWN
 
 
@@ -80,8 +84,10 @@ class Supervisor:
         *,
         seat_dir: Path,
         announce: Callable[[str], None],
+        ask: Callable[[str], None] | None = None,
         command_dir: str = "",
         clock: Callable[[], float] = time.monotonic,
+        wall: Callable[[], float] = time.time,
     ) -> None:
         self.service = service
         self.herdr = herdr
@@ -104,6 +110,16 @@ class Supervisor:
         self._unbriefed: set[tuple[str, str]] = set()
         self._missing: dict[tuple[str, str], int] = {}
         self._launches: dict[tuple[str, str], int] = {}
+        self.recovery = Recovery(
+            service,
+            herdr,
+            handoff_dir=self.seat_dir.parent / "handoff",
+            announce=announce,
+            ask=ask or announce,
+            reset_launches=self._reset_launches,
+            wall=wall,
+            clock=clock,
+        )
         service.subscribe(self._on_event)
 
     # ------------------------------------------------------------ ciclo
@@ -189,6 +205,8 @@ class Supervisor:
             if states is None:
                 continue
             state = states.get(member.address) or self._probe(member.address)
+            if self.recovery.hold(info, member, working=state == _WORKING):
+                continue  # bajo un incidente: lo atiende la recuperación
             if state not in (_MISSING, _EXITED):
                 self._missing.pop(key, None)
             if state in (_MISSING, _EXITED):
@@ -202,10 +220,16 @@ class Supervisor:
                 self._idle_since.pop(key, None)
                 if member.state == "blocked":
                     store.set_member_state(info.id, member.name, "working")
-            elif state == _BLOCKED:
+            elif state in (_BLOCKED, _ERROR):
+                if self.recovery.inspect(info, member, error=state == _ERROR, stuck=True):
+                    continue
                 if member.state != "blocked":
                     store.set_member_state(info.id, member.name, "blocked")
             elif state == _IDLE:
+                # Libre con trabajo pendiente: antes de despertarlo, ¿se le acabó algo?
+                stuck = bool(store.mine(info.id, member.name)) and key not in self._unbriefed
+                if self.recovery.inspect(info, member, error=False, stuck=stuck):
+                    continue
                 self._nudge(info, member)
         self._announce_issues(info.id)
 
@@ -231,11 +255,7 @@ class Supervisor:
             logger.warning("Enjambre {}: {} se cerró; lo reabro.", info.id, member.name)
             store.set_address(info.id, member.name, "")  # la próxima pasada lo abre
             return
-        store.set_member_state(info.id, member.name, "gone")
-        what = "se cerró otra vez" if exited else "ya no tiene su terminal abierta"
-        self.announce(
-            f"Enjambre: {member.name} ({member.agent}) {what}; su trabajo quedó sin responsable."
-        )
+        self.recovery.closed(info, member, exited=exited)
 
     def _announce_issues(self, swarm: str) -> None:
         """Dice una vez cada aviso nuevo; si se resuelve y vuelve, lo repite."""
@@ -244,6 +264,8 @@ class Supervisor:
         said = self._announced.setdefault(swarm, set())
         said &= current
         for issue in found:
+            if issue.key.startswith(("incident:", "paused")):
+                continue  # la recuperación ya lo anunció con sus opciones
             if issue.key not in said:
                 said.add(issue.key)
                 self.announce(f"Enjambre: {issue.text}")
@@ -293,6 +315,17 @@ class Supervisor:
             self._nudged[key] = _Nudge(signature, count, now)
             logger.info("Enjambre {}: aviso {} a {}.", info.id, count, member.name)
 
+    def _reset_launches(self, swarm: str, member: str) -> None:
+        """Miembro reabierto o reemplazado: empieza de cero sus contadores."""
+        key = (swarm, member)
+        with self._lock:
+            self._launches.pop(key, None)
+            self._unbriefed.discard(key)
+        self._nudged.pop(key, None)
+        self._missing.pop(key, None)
+        self._idle_since.pop(key, None)
+        self._wake.set()
+
     def _has_failed(self, swarm: str, member: str) -> bool:
         return any(
             task.state == "failed" and task.owner == member
@@ -333,6 +366,10 @@ class Supervisor:
             }
             if self.command_dir:
                 kwargs["path_prepend"] = [self.command_dir]
+            extra = getattr(self.herdr, "swarm_args", None)
+            args = extra(member.agent) if callable(extra) else []
+            if args:
+                kwargs["extra_args"] = args
             if member.model:
                 kwargs["model"] = member.model
             if member.effort:

@@ -128,6 +128,7 @@ class SwarmService:
         self._news = threading.Condition()
         self._closed = False
         self._listeners: list[Listener] = []
+        self._activity: list[Callable[[str, str], None]] = []
         self._commands: dict[str, Callable[[_Call], str]] = {
             "next": self._next,
             "done": self._done,
@@ -250,6 +251,29 @@ class SwarmService:
             raise SwarmError(f"{member!r} no es miembro del enjambre {swarm}.")
         return protocol.join_line(info, me, command=self.command)
 
+    def pause(self, swarm: str) -> None:
+        """Detiene a todos sin perder nada; ``resume`` lo retoma donde estaba."""
+        self.store.set_status(swarm, "paused")
+        self._changed(swarm, SYSTEM, "pause")
+
+    def resume(self, swarm: str) -> None:
+        info = self.store.get(swarm)
+        if info is None or info.status != "paused":
+            raise SwarmError("Ese enjambre no está en pausa.")
+        self.store.set_status(swarm, "active")
+        self._changed(swarm, SYSTEM, "resume")
+
+    def on_activity(self, listener: Callable[[str, str], None]) -> None:
+        """``listener(enjambre, miembro)`` cada vez que un miembro usa ``ezs``."""
+        self._activity.append(listener)
+
+    def _seen(self, swarm: str, member: str) -> None:
+        for listener in list(self._activity):
+            try:
+                listener(swarm, member)
+            except Exception:  # noqa: BLE001
+                logger.exception("Fallo en un oyente de actividad del enjambre")
+
     def stop(self, swarm: str) -> None:
         self.store.set_status(swarm, "stopped")
         self._changed(swarm, SYSTEM, "stop")
@@ -286,7 +310,10 @@ class SwarmService:
             info = self.store.get(swarm)
             if info is not None and info.status == "stopped":
                 return Reply(True, protocol.STOPPED)
+            if info is not None and info.status == "paused":
+                return Reply(True, protocol.PAUSED)
             self.store.touch(swarm, me.name)
+            self._seen(swarm, me.name)
             words, options = _parse(list(argv[1:]))
             text = handler(_Call(swarm, me, words, options))
         except SwarmError as exc:
@@ -314,19 +341,26 @@ class SwarmService:
         every = "all" in call.options
         taken = self.store.claim(call.swarm, call.me.name, every=every) if every or not mine else []
         tasks = self.store.tasks(call.swarm)
-        lines += [f"En curso: {self._describe(task, tasks)}" for task in mine]
-        lines += [f"Tu tarea: {self._describe(task, tasks)}" for task in taken]
+        lines += [f"En curso: {self._describe(task, tasks, call.me)}" for task in mine]
+        lines += [f"Tu tarea: {self._describe(task, tasks, call.me)}" for task in taken]
         if not mine and not taken:
             lines.append(protocol.ALL_DONE if self._finished(call.swarm) else protocol.IDLE)
         return "\n".join(lines)
 
     @staticmethod
-    def _describe(task: Task, tasks: Sequence[Task]) -> str:
+    def _describe(task: Task, tasks: Sequence[Task], me: Member) -> str:
+        """Tarea y qué viene después; lo que es de otro se marca para no adelantarlo."""
         text = f"T{task.id} {task.title}"
         if task.rounds and task.result:
             text += f" · corregir ({task.rounds}/{MAX_ROUNDS}): {task.result}"
-        after = [f"T{t.id} {t.title}" for t in tasks if task.id in t.deps][:2]
-        return text + (f" · luego: {'; '.join(after)}" if after else "")
+        for after in [t for t in tasks if task.id in t.deps][:2]:
+            mine = after.owner == me.name or (not after.owner and after.role == me.role)
+            if mine:
+                text += f" · luego: T{after.id} {after.title}"
+            else:
+                who = after.owner or protocol.role_label(after.role)
+                text += f" · después sigue {who} con T{after.id} (no la hagas tú)"
+        return text
 
     def _finished(self, swarm: str) -> bool:
         return self.status(swarm).state == "done"

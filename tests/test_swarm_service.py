@@ -86,7 +86,8 @@ def test_flujo_completo_planear_desarrollar_validar(team: Team) -> None:
     team.service.subscribe(lambda swarm, member, op: events.append((member, op)))
     assert "Sin tareas listas" in team.run("dev", "next")
     first = team.run("plan", "next")
-    assert first.startswith("Tu tarea: T") and "luego: T" in first and "Desarrollar" in first
+    assert first.startswith("Tu tarea: T")
+    assert "después sigue desarrollar con T2 (no la hagas tú)" in first
     build = team.service.store.tasks(team.swarm)[1].id
     assert team.run("plan", "add", "API", "login", "--in", f"T{build}").startswith("Creada: T")
     team.run("plan", "add", "Pruebas", f"--in={build}")

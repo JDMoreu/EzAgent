@@ -266,6 +266,34 @@ flowchart LR
 - **Identidad.** Cada miembro tiene un token propio guardado en un archivo de
   asiento; la terminal solo ve su ruta (`EZS_SEAT`). El tablero guarda el
   resumen del token, nunca el token.
+- **Argumentos por harness** (`agent_profiles.<agente>.swarm_args` en
+  `voice.json`, solo dentro del enjambre): Codex va con `--yolo`, porque su
+  sandbox no deja ejecutar el Python de `uv` que usa `ezs`; Claude Code con
+  `--allowedTools "Bash(ezs *)"` para no pedir permiso en cada llamada.
+
+### Incidentes
+
+`swarm/incidents.py` reconoce la causa en las últimas líneas de la pantalla
+del agente (dato no confiable: solo elige una etiqueta) y `swarm/recovery.py`
+decide. Todo queda en `board.db` (tabla `incident`), así que sobrevive a un
+reinicio de EzAgent.
+
+| Qué pasa | Cómo se nota | Qué hace EzAgent | Pregunta al usuario |
+|---|---|---|---|
+| Se acabó el uso de la suscripción | «hit your limit», «usage limit», 429… y la hora de restablecimiento si aparece | Detiene solo a ese miembro, avisa a los demás en el tablero (sin despertarlos) y, a la hora indicada, le escribe para que siga | Esperar, reemplazarlo (sugiere el agente y modelo de otro miembro) o pausar |
+| Se llenó el contexto | «prompt is too long», «context window exceeded»… | Lo reabre en una sesión nueva con su avance en un archivo; si se repite en la misma tarea, pregunta | Solo la segunda vez |
+| Compacta el contexto | Sigue trabajando | Nada: si pierde el hilo, `ezs me` le repite su papel | No |
+| Ventana cerrada | La terminal desaparece varias pasadas seguidas | Lo marca y espera | Reabrir, reemplazar o pausar |
+| El programa sale solo | La terminal vuelve a la shell | Lo reabre una vez; la segunda, pregunta | La segunda vez |
+| Sesión perdida o error | «please /login», estado de error en Herdr | Lo marca y espera | Iniciar sesión, reemplazar o reabrir |
+| Vuelve solo | Trabaja otra vez o usa `ezs` | Cierra el incidente y avisa | No |
+
+Las decisiones llegan por voz a `swarm action=resolve` (`wait`, `replace`,
+`reopen`, `release`, `pause`). Al reemplazar o reabrir, la pantalla del agente
+saliente se guarda en `swarm\handoff\` y el nuevo recibe solo la ruta. Sus
+tareas siguen a nombre del miembro: nadie más tiene que cambiar nada, y su
+primer `ezs next` le entrega su papel, el traspaso y la tarea en curso.
+`release` devuelve sus tareas al rol para que las tome otro miembro.
 
 ## Archivos
 
@@ -280,7 +308,7 @@ flowchart LR
   permissions.toml  política
   system.md         comportamiento editable
   tasks.json        tareas vigiladas
-  swarm\            board.db, endpoint.json y asientos del modo enjambre
+  swarm\            board.db, endpoint.json, asientos y traspasos del enjambre
   memory\           USER.md, MEMORY.md, history.db
   logs\             audit.jsonl, latency.jsonl
 ```

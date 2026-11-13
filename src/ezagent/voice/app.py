@@ -573,7 +573,9 @@ class VoiceApp:
             return SwarmStack(
                 self.tasks.path.with_name("swarm"),
                 self.herdr,
-                announce=lambda text: self.events.put(("swarm_notice", text)),
+                announce=lambda text: self.events.put(("swarm_notice", text, False)),
+                # Las preguntas reabren la escucha para que el usuario conteste.
+                ask=lambda text: self.events.put(("swarm_notice", text, True)),
             )
         except Exception as exc:  # noqa: BLE001
             log(f"Modo enjambre no disponible: {exc}")
@@ -1272,8 +1274,10 @@ class VoiceApp:
             self._pump_announcements()
         elif kind == "swarm_notice":
             log(f"Enjambre: {event[1]}")
-            if time.time() >= self.mute_until:
-                self._queue_announcement(str(event[1]), reopen_call=False)
+            asks = bool(event[2]) if len(event) > 2 else False
+            # Una pregunta no se silencia: el enjambre espera la respuesta.
+            if asks or time.time() >= self.mute_until:
+                self._queue_announcement(str(event[1]), reopen_call=asks)
         elif kind == "done_answer":
             self._handle_done_answer(*event[1:])
         elif kind == "done_prompt":

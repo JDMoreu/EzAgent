@@ -46,6 +46,12 @@ CREATE TABLE IF NOT EXISTS cursor (
 CREATE TABLE IF NOT EXISTS lease (
     swarm TEXT NOT NULL, path TEXT NOT NULL, member TEXT NOT NULL, expires REAL NOT NULL,
     PRIMARY KEY (swarm, path));
+CREATE TABLE IF NOT EXISTS incident (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, swarm TEXT NOT NULL, member TEXT NOT NULL,
+    kind TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', resets REAL NOT NULL DEFAULT 0,
+    state TEXT NOT NULL DEFAULT 'open', action TEXT NOT NULL DEFAULT '',
+    created REAL NOT NULL, updated REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_incident_swarm ON incident(swarm, state);
 """
 
 

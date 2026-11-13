@@ -23,6 +23,7 @@ import sqlite3
 import uuid
 from collections.abc import Sequence
 
+from .incident_db import IncidentMixin
 from .mail import MailMixin
 from .models import (
     BROADCAST,
@@ -48,7 +49,7 @@ from .models import (
 )
 
 
-class SwarmStore(MailMixin):
+class SwarmStore(MailMixin, IncidentMixin):
     """Tablero persistente de uno o varios enjambres."""
 
     # ---------------------------------------------------------- enjambres
@@ -75,6 +76,14 @@ class SwarmStore(MailMixin):
         with self._read() as db:
             rows = db.execute(
                 "SELECT * FROM swarm WHERE status = 'active' ORDER BY created"
+            ).fetchall()
+        return [SwarmInfo(**dict(row)) for row in rows]
+
+    def live(self) -> list[SwarmInfo]:
+        """Enjambres en marcha o en pausa (los que el usuario puede retomar)."""
+        with self._read() as db:
+            rows = db.execute(
+                "SELECT * FROM swarm WHERE status IN ('active', 'paused') ORDER BY created"
             ).fetchall()
         return [SwarmInfo(**dict(row)) for row in rows]
 
@@ -150,6 +159,43 @@ class SwarmStore(MailMixin):
                 (state, self._clock(), swarm, name),
             )
 
+    def update_member(
+        self, swarm: str, name: str, *, agent: str, model: str = "", effort: str = ""
+    ) -> Member:
+        """Cambia el agente detrás de un miembro; sus tareas siguen a su nombre."""
+        with self._write() as db:
+            self._require_member(db, swarm, name)
+            db.execute(
+                "UPDATE member SET agent = ?, model = ?, effort = ?, address = '', "
+                "state = 'idle', seen = ? WHERE swarm = ? AND name = ?",
+                (
+                    clip(agent, 40)[0],
+                    clip(model, 80)[0],
+                    clip(effort, 20)[0],
+                    self._clock(),
+                    swarm,
+                    name,
+                ),
+            )
+            return self._member(self._require_member(db, swarm, name))
+
+    def release_tasks(self, swarm: str, name: str) -> list[int]:
+        """Devuelve al rol las tareas en curso o asignadas al miembro."""
+        with self._write() as db:
+            self._require_member(db, swarm, name)
+            rows = db.execute(
+                "SELECT id FROM task WHERE swarm = ? AND owner = ? AND state IN ('claimed', 'pending')",
+                (swarm, name),
+            ).fetchall()
+            ids = [int(row["id"]) for row in rows]
+            db.execute(
+                "UPDATE task SET state = 'pending', owner = '', updated = ? "
+                "WHERE swarm = ? AND owner = ? AND state IN ('claimed', 'pending')",
+                (self._clock(), swarm, name),
+            )
+            db.execute("DELETE FROM lease WHERE swarm = ? AND member = ?", (swarm, name))
+        return ids
+
     def set_address(self, swarm: str, name: str, address: str) -> None:
         """Terminal de Herdr donde vive el miembro ('' si aún no se abrió)."""
         with self._write() as db:
@@ -170,7 +216,8 @@ class SwarmStore(MailMixin):
             me = self._require_member(db, swarm, name)
             row = db.execute(
                 "SELECT COUNT(*), COALESCE(MAX(id), 0) FROM message WHERE swarm = ? "
-                "AND sender != ? AND (recipient = ? OR (recipient = ? AND sender = ?)) "
+                "AND sender != ? AND kind != 'sys' "
+                "AND (recipient = ? OR (recipient = ? AND sender = ?)) "
                 "AND id > COALESCE("
                 "(SELECT last FROM cursor WHERE swarm = ? AND member = ?), 0)",
                 (swarm, name, name, BROADCAST, SYSTEM, swarm, name),

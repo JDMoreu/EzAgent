@@ -39,6 +39,7 @@ class SwarmStack:
         herdr: Any,
         *,
         announce: Callable[[str], None],
+        ask: Callable[[str], None] | None = None,
         command: str = "ezs",
     ) -> None:
         self.base_dir = Path(base_dir)
@@ -52,6 +53,7 @@ class SwarmStack:
             herdr,
             seat_dir=self.base_dir / "seats",
             announce=announce,
+            ask=ask,
             command_dir=self.command_dir,
         )
 
@@ -63,19 +65,29 @@ class SwarmStack:
         self.supervisor.stop()
         self.server.stop()
 
+    @property
+    def recovery(self) -> Any:
+        return self.supervisor.recovery
+
     def active(self) -> bool:
-        return bool(self.store.active())
+        return bool(self.store.live())
 
     def prompt_block(self) -> str:
         """Estado de los enjambres activos para el prompt (dato, no instrucción)."""
-        active = self.store.active()
-        if not active:
+        live = self.store.live()
+        if not live:
             return ""
         lines = ["<swarms>"]
-        for info in active[-3:]:
+        for info in live[-3:]:
             goal = escape(" ".join(info.goal.split())[:100], quote=False)
             spoken = escape(self.service.status(info.id).spoken(), quote=False)
             lines.append(f"- enjambre {info.id} · «{goal}» · {spoken}")
+            for incident in self.store.incidents(info.id):
+                state = "esperando" if incident.state == "waiting" else "pide decisión"
+                lines.append(
+                    f"  incidente I{incident.id} · {incident.member} · {incident.kind} · "
+                    f"{state} · opciones: wait, replace, reopen, release, pause"
+                )
         lines.append("</swarms>")
         return "\n".join(lines)
 

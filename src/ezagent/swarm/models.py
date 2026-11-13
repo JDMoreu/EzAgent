@@ -24,6 +24,7 @@ MEMBER_STATES = {"idle": "libre", "working": "trabaja", "blocked": "bloqueado", 
 SWARM_STATES = {
     "setup": "preparando",
     "active": "activo",
+    "paused": "en pausa",
     "done": "terminado",
     "stopped": "detenido",
 }
@@ -108,6 +109,22 @@ class Lease:
     path: str
     member: str
     expires: float
+
+
+@dataclass(frozen=True)
+class Incident:
+    """Algo que impide trabajar a un miembro (ver ``incidents.py``)."""
+
+    id: int
+    swarm: str
+    member: str
+    kind: str
+    detail: str
+    resets: float
+    state: str
+    action: str
+    created: float
+    updated: float
 
 
 # ------------------------------------------------------------- validación

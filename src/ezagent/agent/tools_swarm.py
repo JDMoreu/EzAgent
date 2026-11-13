@@ -19,8 +19,16 @@ from ezagent.swarm.service import MemberSpec
 from ezagent.swarm.view import board
 
 MAX_MEMBERS = 6
-_ACTIONS = ("start", "status", "tell", "stop")
-_LEVELS = {"start": 1, "status": 0, "tell": 1, "stop": 1}
+_ACTIONS = ("start", "status", "tell", "resolve", "pause", "resume", "stop")
+_LEVELS = {
+    "start": 1,
+    "status": 0,
+    "tell": 1,
+    "resolve": 1,
+    "pause": 1,
+    "resume": 1,
+    "stop": 1,
+}
 _ROLE_ALIASES = {
     "planificar": "plan",
     "planificador": "plan",
@@ -76,6 +84,19 @@ _PARAMETERS: dict[str, Any] = {
         "text": {"type": "string", "description": "tell: el recado, en una línea."},
         "to": {"type": "string", "description": "tell: nombre del miembro; sin él, a todos."},
         "swarm": {"type": "string", "description": "Id del enjambre; sin él, el más reciente."},
+        "incident": {"type": "string", "description": "resolve: id del incidente (I3)."},
+        "choice": {
+            "type": "string",
+            "enum": ["wait", "replace", "reopen", "release", "pause"],
+            "description": (
+                "resolve: wait espera a que vuelva; replace lo cambia por otro agente "
+                "(agent/model/effort; sin agent, el sugerido); reopen lo reabre; release "
+                "pasa su trabajo a otro de su rol; pause pausa el enjambre."
+            ),
+        },
+        "agent": {"type": "string", "description": "resolve con replace: agente nuevo."},
+        "model": {"type": "string", "description": "resolve con replace: modelo."},
+        "effort": {"type": "string", "description": "resolve con replace: esfuerzo."},
     },
     "required": ["action"],
 }
@@ -160,6 +181,25 @@ def _target(stack: Any, args: dict[str, Any]) -> str:
     return swarm
 
 
+def _resolve(stack: Any, swarm: str, args: dict[str, Any]) -> ToolResult:
+    """Aplica la decisión del usuario sobre un incidente."""
+    raw = _text(args, "incident").upper().lstrip("I")
+    if not raw.isdigit():
+        found = stack.store.incidents(swarm)
+        if len(found) != 1:
+            raise SwarmError("Indica el incidente (por ejemplo I3).")
+        raw = str(found[0].id)
+    message = stack.recovery.resolve(
+        int(raw),
+        _text(args, "choice"),
+        agent=_text(args, "agent"),
+        model=_text(args, "model"),
+        effort=_text(args, "effort"),
+    )
+    stack.supervisor.poke()
+    return ToolResult(ok=True, data={"swarm": swarm, "message": message})
+
+
 def _handle(stack: Any, args: dict[str, Any]) -> ToolResult:
     action = _text(args, "action").lower()
     try:
@@ -177,6 +217,15 @@ def _handle(stack: Any, args: dict[str, Any]) -> ToolResult:
                     "board": board(stack.store, swarm),
                 },
             )
+        if action == "resolve":
+            return _resolve(stack, swarm, args)
+        if action == "pause":
+            stack.service.pause(swarm)
+            return ToolResult(ok=True, data={"swarm": swarm, "message": "Enjambre en pausa."})
+        if action == "resume":
+            stack.service.resume(swarm)
+            stack.supervisor.poke()
+            return ToolResult(ok=True, data={"swarm": swarm, "message": "Enjambre retomado."})
         if action == "tell":
             text = _text(args, "text")
             if not text:
@@ -208,6 +257,9 @@ def _info(args: dict[str, Any]) -> ToolInfo:
         "start": "Crear un enjambre de agentes que colaboran en una tarea.",
         "status": "Consultar cómo va el enjambre.",
         "tell": "Pasar un recado al enjambre.",
+        "resolve": "Decidir qué hacer con un incidente del enjambre.",
+        "pause": "Pausar el enjambre.",
+        "resume": "Retomar el enjambre.",
         "stop": "Detener el enjambre.",
     }
     return ToolInfo(
@@ -228,7 +280,8 @@ def build_swarm_tools(stack: Any) -> list[ToolSpec]:
                 "Enjambre: varios agentes (p. ej. uno planifica, otro desarrolla, otro "
                 "valida) que colaboran solos con un tablero común y se devuelven "
                 "correcciones. start lo crea con goal y members en orden de trabajo; "
-                "status dice cómo va; tell pasa un recado del usuario; stop lo detiene. "
+                "status dice cómo va; tell pasa un recado del usuario; resolve aplica la "
+                "decisión del usuario sobre un incidente (I3); pause/resume; stop lo detiene. "
                 "Úsalo solo si el usuario pide trabajo en equipo o validación con ida y "
                 "vuelta; para una tarea suelta usa delegate_to_agent."
             ),
