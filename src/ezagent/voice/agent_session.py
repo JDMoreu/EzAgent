@@ -64,12 +64,19 @@ def _ps_quote(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def command_line(argv: list[str], env: dict[str, str] | None = None) -> str:
+def command_line(
+    argv: list[str],
+    env: dict[str, str] | None = None,
+    path_prepend: list[str] | None = None,
+) -> str:
     """Línea que se escribe en PowerShell; cita lo que no sea un argumento simple.
 
     ``env`` se antepone como ``$env:NOMBRE='valor'; `` (solo vive en esa shell).
+    ``path_prepend`` añade carpetas al principio del PATH de esa shell.
     """
     prefix = "".join(f"$env:{name}={_ps_quote(value)}; " for name, value in (env or {}).items())
+    for folder in path_prepend or []:
+        prefix += f"$env:PATH={_ps_quote(folder + ';')}+$env:PATH; "
     parts = [p if _PLAIN_ARG.match(p) else _ps_quote(p) for p in argv]
     return prefix + " ".join(parts)
 

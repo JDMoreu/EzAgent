@@ -34,6 +34,7 @@ from .tools_fs import build_fs_tools
 from .tools_herdr import HerdrCallbacks, build_herdr_tools
 from .tools_memory import build_memory_tools
 from .tools_skills import build_skill_tools
+from .tools_swarm import build_swarm_tools
 from .tools_web import build_web_tools
 
 # Herramientas que escriben en disco. El documento limita a 3 escrituras de
@@ -77,6 +78,13 @@ _MOVE_RE = re.compile(
     r"\b(mueve|mover|mu[eé]veme|renombra|renombrar|ren[oó]mbrame|"
     r"pasa(?:lo|la)? a la carpeta)\b",
     re.IGNORECASE,
+)
+# Trabajo en equipo: solo entonces se ofrece la herramienta del enjambre.
+_SWARM_RE = re.compile(
+    r"\b(enjambre|swarm|cooperativ[oa]s?|colabor\w+|en equipo|equipo de agentes|"
+    r"entre (?:ellos|s[ií])|se coordinen|trabajen juntos)\b|"
+    r"\bplan\w*\b.*\b(valid\w+|audit\w+|revis\w+)\b",
+    re.IGNORECASE | re.DOTALL,
 )
 _UNDO_RE = re.compile(
     r"\b(deshaz|deshacer|deshazlo|revierte|revertir|vuelve atr[aá]s)\b",
@@ -130,6 +138,7 @@ def select_tool_names(
     scripts_loaded: bool = False,
     has_memory: bool = True,
     skill_keywords: set[str] | frozenset[str] = frozenset(),
+    swarm_active: bool = False,
 ) -> list[str]:
     """Elige hasta 14 nombres para el prompt de este turno.
 
@@ -138,6 +147,8 @@ def select_tool_names(
     # dejaba sin leer páginas o sin ejecutar skills (F16/F41).
     """
     names = list(BASE_TOOLS)
+    if swarm_active or _SWARM_RE.search(text):
+        names.append("swarm")
     if scripts_loaded:
         names.append("run_skill_script")
     if _TIME_RE.search(text):
@@ -184,6 +195,8 @@ class RuntimeCallbacks:
     prewarm_chain: Callable[[dict[str, Any]], None] = lambda spec: None
     async_launch: bool = False
     pending_tasks: Callable[[], str] = lambda: ""
+    # Modo enjambre (``ezagent.swarm.stack.SwarmStack``) o None si no está montado.
+    swarm: Any = None
     on_confirm_ask: Callable[[str, bool], None] | Callable[[str, bool, str | None], None] | None = (
         None
     )
@@ -194,7 +207,7 @@ class RuntimeCallbacks:
 # DECISION: leer la pantalla de un agente marca el turno como no confiable, pero
 # controlarlo (lanzarlo, configurarlo, escribirle o pulsar teclas) no toca el
 # sistema. Solo las escrituras y el borrado siguen pidiendo confirmación.
-_TAINT_FREE_TOOLS = frozenset({"delegate_to_agent", "voice_control"})
+_TAINT_FREE_TOOLS = frozenset({"delegate_to_agent", "voice_control", "swarm"})
 
 
 class AgentRuntime:
@@ -312,6 +325,7 @@ class AgentRuntime:
                     launch_failed=self._launch_failed,
                 ),
             ),
+            lambda: build_swarm_tools(self.callbacks.swarm),
             lambda: load_tools_d(self.config),
         ]
         for build in builders:
@@ -363,6 +377,13 @@ class AgentRuntime:
         except Exception:
             pass
         return "\n\n".join(parts)
+
+    def _swarm_active(self) -> bool:
+        stack = self.callbacks.swarm
+        try:
+            return bool(stack is not None and stack.active())
+        except Exception:  # noqa: BLE001 - el enjambre es opcional
+            return False
 
     def _launch_failed(self, address: str, agent: str, error: str) -> None:
         """Un lanzamiento asíncrono no llegó a buen puerto: se avisa al usuario."""
@@ -506,6 +527,7 @@ class AgentRuntime:
             scripts_loaded=scripts,
             has_memory=True,
             skill_keywords=self.skills.keywords(),
+            swarm_active=self._swarm_active(),
         )
         # Se conservan un turno las extra del anterior, sin pasar de 14.
         names = list(selected)

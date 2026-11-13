@@ -520,6 +520,8 @@ class Herdr(AgentDriver):
         model: str | None = None,
         effort: str | None = None,
         on_ready: Callable[[dict[str, Any]], None] | None = None,
+        env: dict[str, str] | None = None,
+        path_prepend: list[str] | None = None,
     ) -> dict[str, Any]:
         """Abre un agente como lo haría una persona y le pega la tarea.
 
@@ -536,6 +538,8 @@ class Herdr(AgentDriver):
                 "available": sorted(self.cfg.agents),
             }
         argv = launch.argv
+        if env:
+            launch.env.update(env)  # p. ej. el asiento del enjambre
         folder = cwd or self.cfg.default_cwd
         label = name or f"{key} · voz"
         task = (task or "").strip()
@@ -544,8 +548,13 @@ class Herdr(AgentDriver):
 
         if background:
             run_argv = (
-                ["powershell.exe", "-NoProfile", "-Command", command_line(argv, launch.env)]
-                if launch.env
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-Command",
+                    command_line(argv, launch.env, path_prepend),
+                ]
+                if launch.env or path_prepend
                 else argv
             )
             data = self._json(
@@ -587,7 +596,9 @@ class Herdr(AgentDriver):
             if not address:
                 return {"ok": False, "error": f"tab.new no devolvió terminal: {data}"}
             self.wait_shell_prompt(address)  # sin pausa fija
-            typed = self.send_agent(address, command_line(argv, launch.env), confirmed=True)
+            typed = self.send_agent(
+                address, command_line(argv, launch.env, path_prepend), confirmed=True
+            )
             if not typed.get("ok"):
                 return {
                     "ok": False,

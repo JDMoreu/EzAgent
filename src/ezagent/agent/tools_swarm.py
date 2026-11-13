@@ -1,0 +1,246 @@
+"""Herramienta ``swarm``: varios agentes que colaboran con un tablero común.
+
+Es la vía cara de delegar, así que solo se ofrece al modelo cuando el usuario
+habla de trabajo en equipo o ya hay un enjambre en marcha (ver
+``select_tool_names``). Para una tarea suelta o pasos en fila sigue valiendo
+``delegate_to_agent``.
+
+El modelo solo aporta valores (objetivo, agentes, roles, modelo, esfuerzo); las
+instrucciones de cada agente, los avisos y los resúmenes los genera el código.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from ezagent.agent.registry import ToolInfo, ToolResult, ToolSpec
+from ezagent.swarm.models import MAX_GOAL, MAX_REF, SwarmError, clip, member_name, role_name
+from ezagent.swarm.service import MemberSpec
+from ezagent.swarm.view import board
+
+MAX_MEMBERS = 6
+_ACTIONS = ("start", "status", "tell", "stop")
+_LEVELS = {"start": 1, "status": 0, "tell": 1, "stop": 1}
+_ROLE_ALIASES = {
+    "planificar": "plan",
+    "planificador": "plan",
+    "planner": "plan",
+    "planear": "plan",
+    "desarrollar": "dev",
+    "desarrollador": "dev",
+    "developer": "dev",
+    "implementar": "dev",
+    "validar": "qa",
+    "validador": "qa",
+    "auditar": "qa",
+    "auditor": "qa",
+    "revisar": "qa",
+    "reviewer": "qa",
+}
+
+_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string",
+            "enum": list(_ACTIONS),
+            "description": (
+                "start: crea un enjambre; status: cómo va; tell: recado del usuario "
+                "para el equipo; stop: lo detiene."
+            ),
+        },
+        "goal": {
+            "type": "string",
+            "description": "start: el encargo completo, con las palabras del usuario.",
+        },
+        "members": {
+            "type": "array",
+            "maxItems": MAX_MEMBERS,
+            "description": "start: los agentes, en el orden en que trabajan.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "agent": {"type": "string", "description": "Agente del catálogo."},
+                    "role": {
+                        "type": "string",
+                        "description": "plan (planifica), dev (desarrolla) o qa (valida).",
+                    },
+                    "model": {"type": "string"},
+                    "effort": {"type": "string"},
+                    "name": {"type": "string", "description": "Opcional; por defecto, el rol."},
+                },
+                "required": ["agent", "role"],
+            },
+        },
+        "cwd": {"type": "string", "description": "start: carpeta del proyecto."},
+        "text": {"type": "string", "description": "tell: el recado, en una línea."},
+        "to": {"type": "string", "description": "tell: nombre del miembro; sin él, a todos."},
+        "swarm": {"type": "string", "description": "Id del enjambre; sin él, el más reciente."},
+    },
+    "required": ["action"],
+}
+
+
+def _text(args: dict[str, Any], key: str) -> str:
+    value = args.get(key)
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _members(stack: Any, raw: Any) -> list[MemberSpec]:
+    if not isinstance(raw, list) or not raw:
+        raise SwarmError("Indica los agentes del enjambre en «members».")
+    if len(raw) > MAX_MEMBERS:
+        raise SwarmError(f"Un enjambre admite como máximo {MAX_MEMBERS} agentes.")
+    specs: list[MemberSpec] = []
+    used: set[str] = set()
+    for index, item in enumerate(raw, start=1):
+        if not isinstance(item, dict):
+            raise SwarmError(f"El miembro {index} debe ser un objeto.")
+        asked = _text(item, "agent")
+        agent = stack.herdr.resolve_agent(asked) if asked else None
+        if agent is None:
+            known = ", ".join(sorted(stack.herdr.cfg.agents))
+            raise SwarmError(f"Agente desconocido: {asked!r}. Disponibles: {known}.")
+        role_raw = _text(item, "role").lower()
+        role = role_name(_ROLE_ALIASES.get(role_raw, role_raw))
+        if not role:
+            raise SwarmError(f"El miembro {index} necesita «role» (plan, dev o qa).")
+        base = member_name(_text(item, "name") or role)
+        name, suffix = base, 2
+        while name in used:
+            name, suffix = f"{base}{suffix}", suffix + 1
+        used.add(name)
+        specs.append(MemberSpec(name, role, agent, _text(item, "model"), _text(item, "effort")))
+    return specs
+
+
+def _goal(stack: Any, goal: str) -> str:
+    """Un encargo largo va a un archivo; el tablero guarda el inicio y la ruta."""
+    if len(goal) <= MAX_GOAL:
+        return goal
+    saver = getattr(stack.herdr, "save_context", None)
+    path = saver(goal) if callable(saver) else None
+    if not path or len(str(path)) > MAX_REF:
+        return goal  # el tablero lo recorta
+    note = f" [Encargo completo, léelo antes de empezar: {path}]"
+    head, _ = clip(goal, MAX_GOAL - len(note))
+    return head + note
+
+
+def _start(stack: Any, args: dict[str, Any]) -> ToolResult:
+    goal = _text(args, "goal")
+    if not goal:
+        raise SwarmError("Falta «goal»: el encargo para el enjambre.")
+    specs = _members(stack, args.get("members"))
+    if not stack.command_dir:
+        raise SwarmError("No encuentro el comando ezs; reinstala EzAgent con «uv sync».")
+    cwd = _text(args, "cwd") or str(getattr(stack.herdr.cfg, "default_cwd", "") or "")
+    swarm, _ = stack.service.start(_goal(stack, goal), specs, cwd=cwd)
+    stack.supervisor.poke()
+    team = ", ".join(
+        f"{spec.name} ({spec.agent}{' ' + spec.model if spec.model else ''})" for spec in specs
+    )
+    return ToolResult(
+        ok=True,
+        data={
+            "swarm": swarm,
+            "members": [spec.name for spec in specs],
+            "message": (
+                f"Enjambre {swarm} en marcha: {team}. Abro a cada agente cuando le toca; "
+                "se coordinan solos y aviso al terminar o si algo necesita atención."
+            ),
+        },
+    )
+
+
+def _target(stack: Any, args: dict[str, Any]) -> str:
+    swarm = _text(args, "swarm") or stack.service.latest() or stack.store.latest()
+    if not swarm or stack.store.get(swarm) is None:
+        raise SwarmError("No hay ningún enjambre.")
+    return swarm
+
+
+def _handle(stack: Any, args: dict[str, Any]) -> ToolResult:
+    action = _text(args, "action").lower()
+    try:
+        if action == "start":
+            return _start(stack, args)
+        if action not in _ACTIONS:
+            raise SwarmError(f"Acción desconocida: {action!r}. Usa: {', '.join(_ACTIONS)}.")
+        swarm = _target(stack, args)
+        if action == "status":
+            return ToolResult(
+                ok=True,
+                data={
+                    "swarm": swarm,
+                    "spoken": stack.service.summary(swarm),
+                    "board": board(stack.store, swarm),
+                },
+            )
+        if action == "tell":
+            text = _text(args, "text")
+            if not text:
+                raise SwarmError("Falta «text»: el recado para el equipo.")
+            to = _text(args, "to").lower()
+            if to:
+                stack.service.tell(swarm, text, to=to)
+            else:
+                stack.service.tell(swarm, text)
+            stack.supervisor.poke()
+            return ToolResult(ok=True, data={"swarm": swarm, "message": "Recado entregado."})
+        stack.service.stop(swarm)
+        return ToolResult(
+            ok=True,
+            data={
+                "swarm": swarm,
+                "message": "Enjambre detenido. Las terminales de los agentes siguen abiertas.",
+            },
+        )
+    except SwarmError as exc:
+        return ToolResult(ok=False, error=str(exc))
+    except Exception as exc:  # noqa: BLE001 - se devuelve un error legible
+        return ToolResult(ok=False, error=f"Error del enjambre: {type(exc).__name__}: {exc}")
+
+
+def _info(args: dict[str, Any]) -> ToolInfo:
+    action = _text(args, "action").lower()
+    summaries = {
+        "start": "Crear un enjambre de agentes que colaboran en una tarea.",
+        "status": "Consultar cómo va el enjambre.",
+        "tell": "Pasar un recado al enjambre.",
+        "stop": "Detener el enjambre.",
+    }
+    return ToolInfo(
+        level=_LEVELS.get(action, 2),
+        always_confirm=action not in _LEVELS,
+        summary=summaries.get(action, "Acción desconocida del enjambre."),
+    )
+
+
+def build_swarm_tools(stack: Any) -> list[ToolSpec]:
+    """Herramienta del enjambre; lista vacía si la app no montó el modo."""
+    if stack is None:
+        return []
+    return [
+        ToolSpec(
+            name="swarm",
+            description=(
+                "Enjambre: varios agentes (p. ej. uno planifica, otro desarrolla, otro "
+                "valida) que colaboran solos con un tablero común y se devuelven "
+                "correcciones. start lo crea con goal y members en orden de trabajo; "
+                "status dice cómo va; tell pasa un recado del usuario; stop lo detiene. "
+                "Úsalo solo si el usuario pide trabajo en equipo o validación con ida y "
+                "vuelta; para una tarea suelta usa delegate_to_agent."
+            ),
+            parameters=_PARAMETERS,
+            level=2,
+            handler=lambda args: _handle(stack, args),
+            # El tablero trae texto escrito por los agentes: dato no confiable.
+            untrusted_output=True,
+            timeout_s=20.0,
+            describe_fn=_info,
+        )
+    ]
+
+
+__all__ = ["build_swarm_tools"]

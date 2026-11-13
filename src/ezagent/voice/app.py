@@ -488,6 +488,7 @@ class VoiceApp:
         # Si Herdr o `hc` faltan, se instalan solos en segundo plano; el
         # primer comando que los necesite espera a que termine el instalador.
         self._start_worker(self.herdr.ensure_installed, (), "ez-herdr-install")
+        self.swarm = self._create_swarm()
         self.agent = self._create_agent_runtime(cfg)
         self.messenger = Messenger(
             cfg,
@@ -564,6 +565,31 @@ class VoiceApp:
         self.tray = self._create_tray()
         self._update_tray_title()
 
+    def _create_swarm(self):
+        """Monta el modo enjambre; si falla, la app sigue sin él."""
+        try:
+            from ezagent.swarm.stack import SwarmStack
+
+            return SwarmStack(
+                self.tasks.path.with_name("swarm"),
+                self.herdr,
+                announce=lambda text: self.events.put(("swarm_notice", text)),
+            )
+        except Exception as exc:  # noqa: BLE001
+            log(f"Modo enjambre no disponible: {exc}")
+            return None
+
+    def _pending_block(self) -> str:
+        """Tareas vigiladas y enjambres activos, como datos para el prompt."""
+        parts = [self.tasks.prompt_block()]
+        swarm = getattr(self, "swarm", None)
+        if swarm is not None:
+            try:
+                parts.append(swarm.prompt_block())
+            except Exception as exc:  # noqa: BLE001
+                log(f"No pude leer el estado del enjambre: {exc}")
+        return "\n".join(part for part in parts if part)
+
     def _create_agent_runtime(self, cfg: VoiceConfig):
         """Crea el núcleo agéntico y lo deja caer con elegancia si falla.
 
@@ -590,7 +616,8 @@ class VoiceApp:
                 deliver_answer=self._deliver_answer,
                 prewarm_chain=self._start_prelaunch,
                 async_launch=True,
-                pending_tasks=lambda: self.tasks.prompt_block(),
+                pending_tasks=self._pending_block,
+                swarm=getattr(self, "swarm", None),
                 on_confirm_ask=lambda summary, strong, token: self.events.put(
                     ("confirm_ask", summary, strong, token)
                 ),
@@ -945,6 +972,9 @@ class VoiceApp:
 
     def run(self) -> None:
         self.watcher.start()
+        if getattr(self, "swarm", None) is not None:
+            # Servidor local y supervisor: cada uno en su hilo, sin tocar la UI.
+            self._start_worker(self.swarm.start, (), "ezagent-swarm-start")
         # Las tareas/cadenas pendientes se reanudan en segundo plano: lanzar
         # una cadena puede tardar y no debe bloquear el mainloop.
         self._start_worker(self._resume_pending_tasks, (), "ezagent-resume-tasks")
@@ -985,6 +1015,11 @@ class VoiceApp:
             self._call_stop.set()
         self._signal_tts_stop()
         self.watcher.stop()
+        if getattr(self, "swarm", None) is not None:
+            try:
+                self.swarm.stop()
+            except Exception as exc:  # noqa: BLE001
+                log(f"No pude detener el enjambre: {exc}")
         for hotkey in self.hotkeys:
             hotkey.stop()
         # Da tiempo a que los workers vean la cancelación antes de cerrar audio
@@ -1235,6 +1270,10 @@ class VoiceApp:
             else:
                 self._set_idle()
             self._pump_announcements()
+        elif kind == "swarm_notice":
+            log(f"Enjambre: {event[1]}")
+            if time.time() >= self.mute_until:
+                self._queue_announcement(str(event[1]), reopen_call=False)
         elif kind == "done_answer":
             self._handle_done_answer(*event[1:])
         elif kind == "done_prompt":

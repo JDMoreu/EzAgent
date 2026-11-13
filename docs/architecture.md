@@ -224,6 +224,49 @@ guardar. Detalle en [`llm-providers.md`](llm-providers.md).
 Regla del repositorio: nada bloquea el hilo de UI ni los de audio, y el estado
 compartido va con lock o con colas.
 
+## Modo enjambre
+
+Para trabajo en equipo (uno planifica, otro desarrolla, otro valida y devuelve
+correcciones) EzAgent monta un **tablero compartido** al que los agentes hablan
+con el comando `ezs`. Vive en `src/ezagent/swarm/` y no se usa para tareas
+sueltas ni para pasos en fila: eso sigue siendo `delegate_to_agent`.
+
+```mermaid
+flowchart LR
+    LLM["LLM de voz<br/>herramienta swarm"] --> SVC
+    subgraph EZ["EzAgent"]
+        SVC["SwarmService<br/>comandos por token"] --> DB[("board.db<br/>SQLite")]
+        SRV["Servidor local<br/>127.0.0.1 + token"] --> SVC
+        SUP["Supervisor<br/>abre · despierta · avisa"] --> SVC
+    end
+    A1["Claude Code"] -- ezs --> SRV
+    A2["OpenCode"] -- ezs --> SRV
+    A3["Codex"] -- ezs --> SRV
+    SUP -. "una línea en la terminal<br/>cuando hay algo suyo" .-> A1 & A2 & A3
+    SUP -. "avisos y resumen final" .-> VOZ[Voz]
+```
+
+- **Publicar y suscribirse.** Un agente publica con `ezs done`, `ezs say` o
+  `ezs fix`. Su «suscripción» es su rol: el tablero solo le entrega lo que es de
+  su rol o está a su nombre y ya tiene las dependencias hechas. Como un CLI no
+  puede dejar una conexión abierta, el **supervisor** hace de canal: cuando el
+  agente está libre y hay algo suyo, le escribe una línea en la terminal.
+  Mientras tanto el agente no consulta ni gasta tokens.
+- **Contexto bajo demanda.** Al abrir un agente solo se escribe una línea
+  («Eres «dev»… Ejecuta ahora: ezs next»). Su papel y las reglas llegan con el
+  primer `ezs next`, y `ezs me` las repite. Un pegado largo al arrancar se
+  pierde o queda a medias (verificado con OpenCode y Codex).
+- **Cada miembro se abre cuando le toca**, no antes.
+- **Mensajes de 280 caracteres**; el detalle va en un archivo (`--ref`). Las
+  partes de una tarea cierran en silencio y solo avisa la tarea madre.
+- **Ciclo validar → corregir** con tope de 3 rondas (`ezs fix`).
+- **Salud por reglas** (`swarm/view.py`): agente sin señales, tarea lista que
+  nadie toma, pregunta sin respuesta, tarea fallida. El supervisor dice cada
+  aviso una vez y, al terminar, el resumen de cada etapa.
+- **Identidad.** Cada miembro tiene un token propio guardado en un archivo de
+  asiento; la terminal solo ve su ruta (`EZS_SEAT`). El tablero guarda el
+  resumen del token, nunca el token.
+
 ## Archivos
 
 ```
@@ -237,6 +280,7 @@ compartido va con lock o con colas.
   permissions.toml  política
   system.md         comportamiento editable
   tasks.json        tareas vigiladas
+  swarm\            board.db, endpoint.json y asientos del modo enjambre
   memory\           USER.md, MEMORY.md, history.db
   logs\             audit.jsonl, latency.jsonl
 ```
