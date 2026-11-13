@@ -75,6 +75,10 @@ DEFAULT_AGENT_PROFILES: dict[str, dict[str, object]] = {
         "default_effort": "",
         "model_args": ["--model", "{model}"],
         "effort_args": ["--effort", "{effort}"],
+        # Solo en el enjambre: `ezs` sin pedir permiso en cada llamada.
+        # DECISION: solo la regla de Bash; otra herramienta de shell se
+        # puede añadir en voice.json (agent_profiles.claude.swarm_args).
+        "swarm_args": ["--allowedTools", "Bash(ezs *)"],
         "session_commands": {
             "model": [{"send": "/model {model}", "soft": True}],
             "effort": [{"send": "/effort {effort}", "soft": True}],
@@ -205,6 +209,9 @@ DEFAULT_AGENT_PROFILES: dict[str, dict[str, object]] = {
         "default_effort": "",
         "model_args": ["--model", "{model}"],
         "effort_args": ["-c", "model_reasoning_effort={effort}"],
+        # Solo en el enjambre: el sandbox de Codex no deja ejecutar `ezs`
+        # (bloquea el Python de uv en %APPDATA%). El usuario pidió --yolo.
+        "swarm_args": ["--yolo"],
         # Modelos y niveles por modelo salen del catálogo que Codex descarga
         # con la cuenta (~/.codex/models_cache.json).
         "discover": "codex",

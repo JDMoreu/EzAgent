@@ -83,6 +83,13 @@ class AgentDriver(AgentSession):
                 )
         return ""
 
+    def swarm_args(self, agent: str) -> list[str]:
+        """Argumentos extra del agente cuando trabaja en un enjambre (perfil)."""
+        key = self.resolve_agent(agent)
+        if key is None:
+            return []
+        return [a for a in self._text_list(self._profile(key).get("swarm_args")) if a]
+
     # ----------------------------------------------------------- lanzamiento
     def agent_launch(
         self,

@@ -522,6 +522,7 @@ class Herdr(AgentDriver):
         on_ready: Callable[[dict[str, Any]], None] | None = None,
         env: dict[str, str] | None = None,
         path_prepend: list[str] | None = None,
+        extra_args: list[str] | None = None,
     ) -> dict[str, Any]:
         """Abre un agente como lo haría una persona y le pega la tarea.
 
@@ -537,7 +538,7 @@ class Herdr(AgentDriver):
                 "error": launch.error or f"Agente desconocido: {agent!r}.",
                 "available": sorted(self.cfg.agents),
             }
-        argv = launch.argv
+        argv = launch.argv + [str(arg) for arg in extra_args or []]
         if env:
             launch.env.update(env)  # p. ej. el asiento del enjambre
         folder = cwd or self.cfg.default_cwd
