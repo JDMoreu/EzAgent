@@ -1,7 +1,10 @@
 use super::*;
 
 fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("ez-skills-{}-{name}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!(
+        "ez-skills-{}-{name}",
+        uuid::Uuid::new_v4().simple()
+    ));
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

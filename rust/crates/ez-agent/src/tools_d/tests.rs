@@ -15,7 +15,10 @@ fn config(dir: &Path, exe: &str) -> AgentConfig {
 }
 
 fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("ez-toolsd-{}-{name}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!(
+        "ez-toolsd-{}-{name}",
+        uuid::Uuid::new_v4().simple()
+    ));
     let _ = std::fs::create_dir_all(dir.join("tools.d"));
     dir
 }

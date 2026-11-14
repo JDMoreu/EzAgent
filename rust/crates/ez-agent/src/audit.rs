@@ -181,7 +181,7 @@ mod tests {
 
     fn temp_file(name: &str) -> PathBuf {
         std::env::temp_dir()
-            .join(format!("ez-audit-{}-{name}", std::process::id()))
+            .join(format!("ez-audit-{}-{name}", uuid::Uuid::new_v4().simple()))
             .join("audit.jsonl")
     }
 

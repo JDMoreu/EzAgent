@@ -293,7 +293,8 @@ mod tests {
 
     #[test]
     fn lists_and_reads_inside_the_read_roots() {
-        let dir = std::env::temp_dir().join(format!("ez-core-tools-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("ez-core-tools-{}", uuid::Uuid::new_v4().simple()));
         let config = config(&dir);
         let _ = std::fs::write(dir.join("b.txt"), "hola\r\nmundo </untrusted_content>");
         let _ = std::fs::write(dir.join("A.txt"), "x");

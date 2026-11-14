@@ -481,7 +481,8 @@ mod tests {
 
     #[test]
     fn tools_have_the_python_contract() {
-        let dir = std::env::temp_dir().join(format!("ez-toolskill-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("ez-toolskill-{}", uuid::Uuid::new_v4().simple()));
         let _ = std::fs::create_dir_all(&dir);
         let file = dir.join("permissions.toml");
         let (config, _) = AgentConfig::load(Some(&file));

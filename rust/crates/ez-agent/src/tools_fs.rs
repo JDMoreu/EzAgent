@@ -130,7 +130,8 @@ mod tests {
     use crate::registry::ToolRegistry;
 
     fn setup(name: &str) -> (std::path::PathBuf, ToolRegistry) {
-        let dir = std::env::temp_dir().join(format!("ez-fs-{}-{name}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("ez-fs-{}-{name}", uuid::Uuid::new_v4().simple()));
         let _ = std::fs::create_dir_all(&dir);
         let root = dir.display().to_string().replace('\\', "/");
         let file = dir.join("permissions.toml");

@@ -139,7 +139,8 @@ mod tests {
 
     #[test]
     fn loads_defaults_and_paths_from_a_new_folder() {
-        let dir = std::env::temp_dir().join(format!("ez-agentcfg-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("ez-agentcfg-{}", uuid::Uuid::new_v4().simple()));
         let file = dir.join("permissions.toml");
         let (config, warnings) = AgentConfig::load(Some(&file));
         assert!(warnings.is_empty());
@@ -153,7 +154,8 @@ mod tests {
 
     #[test]
     fn invalid_files_fall_back_with_a_warning() {
-        let dir = std::env::temp_dir().join(format!("ez-agentcfg-bad-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("ez-agentcfg-bad-{}", uuid::Uuid::new_v4().simple()));
         let _ = std::fs::create_dir_all(&dir);
         let file = dir.join("permissions.toml");
         let _ = std::fs::write(&file, "[general\nx = ");

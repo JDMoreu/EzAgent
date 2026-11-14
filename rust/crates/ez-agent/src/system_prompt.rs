@@ -449,7 +449,10 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     fn temp_md(name: &str, text: Option<&str>) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("ez-prompt-{}-{name}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "ez-prompt-{}-{name}",
+            uuid::Uuid::new_v4().simple()
+        ));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("system.md");
         let _ = std::fs::remove_file(&path);
