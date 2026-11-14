@@ -1,0 +1,9 @@
+# freetype-sys 0.23 bundled build compiles its vendored libpng and asks for
+# `libz-sys/src/zlib` relative to its own package directory, which does not
+# exist. The zlib sources cargo downloads live next to it in the registry, so
+# point the C compiler there; the relative path works on any machine whose
+# registry layout is the standard `registry/src/<index>/<crate-version>`.
+# DECISION: a workspace-wide CFLAGS is the only hook freetype-sys exposes for
+# that include; `Cargo.lock` pins libz-sys 1.1.33, which keeps the path valid.
+[env]
+CFLAGS = { value = "-I../libz-sys-1.1.33/src/zlib", force = true }
