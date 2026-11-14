@@ -5,6 +5,8 @@ use std::fmt;
 
 use fancy_regex::Regex;
 
+use crate::casefold::casefold;
+
 /// Mensajes literales de los `ValueError` del Python.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DictionaryError {
@@ -88,9 +90,7 @@ pub fn parse_rules(value: &str) -> Result<Vec<(String, String)>, DictionaryError
         }
         let source = collapse(source);
         let target = collapse(target);
-        // shortcut: `casefold` completo (ß, ligaduras) no está portado; basta
-        // para los idiomas del producto, subir a tablas Unicode si hace falta.
-        if !seen.insert(source.to_lowercase()) {
+        if !seen.insert(casefold(&source)) {
             return Err(DictionaryError::Duplicate);
         }
         rules.push((source, target));
@@ -128,7 +128,7 @@ pub fn transcription_hint(
     let mut seen: HashSet<String> = HashSet::new();
     for candidate in candidates {
         let word: String = collapse(&candidate).chars().take(64).collect();
-        if word.is_empty() || !seen.insert(word.to_lowercase()) {
+        if word.is_empty() || !seen.insert(casefold(&word)) {
             continue;
         }
         let mut joined = words.clone();
