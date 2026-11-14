@@ -12,6 +12,7 @@
 pub mod chat;
 pub mod dpi;
 pub mod drag;
+pub mod drop;
 pub mod frame_stats;
 pub mod keyboard;
 pub mod layered;
