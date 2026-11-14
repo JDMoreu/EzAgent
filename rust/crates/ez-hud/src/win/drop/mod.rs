@@ -17,7 +17,7 @@
 //! `ezagent-card-paint`) y `layered` el suyo de mensajes. `DropUI` no bloquea al
 //! llamador: sus operaciones solo publican estado bajo locks cortos y el hilo
 //! de pintura lo aplica en el cuadro siguiente (cola de un elemento). Esta es
-//! la zona de `ez-hud` donde el contrato permite `unsafe`: aquí solo el registro
+//! la zona de `ez-hud` donde el contrato permite código nativo: aquí solo el registro
 //! de Windows que lee el tema del sistema, con su `// SAFETY:`.
 
 pub mod bar;
