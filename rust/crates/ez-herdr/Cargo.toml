@@ -10,6 +10,7 @@ name = "ez_herdr"
 path = "src/lib.rs"
 
 [dependencies]
+ez-core = { path = "../ez-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 regex = { workspace = true }

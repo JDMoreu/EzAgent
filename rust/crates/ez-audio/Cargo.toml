@@ -10,6 +10,7 @@ name = "ez_audio"
 path = "src/lib.rs"
 
 [dependencies]
+ez-core = { path = "../ez-core" }
 cpal = { workspace = true }
 ndarray = { workspace = true }
 crossbeam-channel = { workspace = true }

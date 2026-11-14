@@ -545,6 +545,7 @@ version = "0.1.0"
 dependencies = [
  "cpal",
  "crossbeam-channel",
+ "ez-core",
  "ndarray",
  "parking_lot 0.13.0",
  "tracing",
@@ -555,6 +556,7 @@ name = "ez-chat"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "ez-core",
  "regex",
  "scraper",
  "serde",
@@ -614,6 +616,7 @@ name = "ez-herdr"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "ez-core",
  "regex",
  "serde",
  "serde_json",
@@ -664,6 +667,7 @@ dependencies = [
 name = "ez-stt"
 version = "0.1.0"
 dependencies = [
+ "ez-core",
  "ez-parity",
  "fancy-regex",
  "reqwest",
@@ -677,6 +681,7 @@ name = "ez-swarm"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "ez-core",
  "rusqlite",
  "serde",
  "serde_json",
@@ -692,6 +697,7 @@ version = "0.1.0"
 dependencies = [
  "cpal",
  "crossbeam-channel",
+ "ez-core",
  "ndarray",
  "ort",
  "parking_lot 0.13.0",

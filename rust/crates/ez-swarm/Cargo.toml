@@ -14,6 +14,7 @@ name = "ezs"
 path = "src/bin/ezs.rs"
 
 [dependencies]
+ez-core = { path = "../ez-core" }
 rusqlite = { workspace = true }
 tiny_http = { workspace = true }
 serde = { workspace = true }
