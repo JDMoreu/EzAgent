@@ -270,7 +270,10 @@ fn follows_redirects_and_reports_the_final_url() {
     let result = run_fetch_page(&config, &format!("{server}/a"), 8000);
     assert!(result.ok, "{result:?}");
     let data = result.data.as_str().unwrap_or_default();
-    assert!(data.contains(&format!("source='{server}/destino'")), "{data}");
+    assert!(
+        data.contains(&format!("source='{server}/destino'")),
+        "{data}"
+    );
     assert!(data.contains("destino"));
 }
 
