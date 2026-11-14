@@ -704,6 +704,7 @@ version = "0.1.0"
 dependencies = [
  "cpal",
  "crossbeam-channel",
+ "ez-audio",
  "ez-core",
  "ndarray",
  "ort",

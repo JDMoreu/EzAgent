@@ -12,6 +12,7 @@ path = "src/lib.rs"
 [dependencies]
 windows = { workspace = true }
 ez-core = { path = "../ez-core" }
+ez-audio = { path = "../ez-audio" }
 ort = { workspace = true }
 cpal = { workspace = true }
 crossbeam-channel = { workspace = true }
