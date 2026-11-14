@@ -527,6 +527,7 @@ dependencies = [
  "ez-audio",
  "ez-chat",
  "ez-core",
+ "ez-gfx",
  "ez-herdr",
  "ez-hud",
  "ez-llm",

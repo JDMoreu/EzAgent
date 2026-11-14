@@ -24,6 +24,7 @@ tracing-subscriber = { workspace = true }
 tracing-appender = { workspace = true }
 ez-core = { path = "../ez-core" }
 ez-hud = { path = "../ez-hud" }
+ez-gfx = { path = "../ez-gfx" }
 ez-audio = { path = "../ez-audio" }
 ez-tts = { path = "../ez-tts" }
 ez-stt = { path = "../ez-stt" }
