@@ -29,3 +29,6 @@ dotenvy = { workspace = true }
 reqwest = { workspace = true }
 rusqlite = { workspace = true }
 trash = { workspace = true }
+
+[dev-dependencies]
+ez-parity = { path = "../ez-parity" }
