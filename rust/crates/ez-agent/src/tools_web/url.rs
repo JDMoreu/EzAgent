@@ -164,29 +164,29 @@ pub fn validate_public_target(
 ) -> Result<PublicTarget, WebToolError> {
     let raw_url = py_strip(url);
     if raw_url.is_empty() {
-        return Err(WebToolError::unsafe_url("La URL no puede estar vacía."));
+        return Err(WebToolError::blocked_url("La URL no puede estar vacía."));
     }
     if raw_url
         .chars()
         .any(|character| is_py_space(character) || (character as u32) < 0x20)
     {
-        return Err(WebToolError::unsafe_url(
+        return Err(WebToolError::blocked_url(
             "La URL contiene espacios o caracteres de control.",
         ));
     }
     let scheme = url_scheme(raw_url);
     if scheme != "http" && scheme != "https" {
-        return Err(WebToolError::unsafe_url(
+        return Err(WebToolError::blocked_url(
             "Solo se permiten URL con esquema http:// o https://.",
         ));
     }
     let Some(authority) = url_authority(raw_url, &scheme) else {
-        return Err(WebToolError::unsafe_url(
+        return Err(WebToolError::blocked_url(
             "La URL no incluye un nombre de host válido.",
         ));
     };
     if authority.is_empty() {
-        return Err(WebToolError::unsafe_url(
+        return Err(WebToolError::blocked_url(
             "La URL no incluye un nombre de host válido.",
         ));
     }
@@ -194,7 +194,7 @@ pub fn validate_public_target(
     // páginas y facilitan el engaño. Se mira la autoridad cruda porque
     // `Url::username()` no distingue `http://@host/` de una URL sin usuario.
     if authority.contains('@') {
-        return Err(WebToolError::unsafe_url(
+        return Err(WebToolError::blocked_url(
             "No se permiten credenciales dentro de la URL.",
         ));
     }
@@ -205,7 +205,7 @@ pub fn validate_public_target(
         .and_then(|inner| inner.strip_suffix(']'))
         .unwrap_or(raw_host);
     if host.is_empty() {
-        return Err(WebToolError::unsafe_url(
+        return Err(WebToolError::blocked_url(
             "La URL no incluye un nombre de host válido.",
         ));
     }
@@ -231,7 +231,7 @@ fn validate_public_host(
 ) -> Result<PublicTarget, WebToolError> {
     let host_clean = host.trim_end_matches('.').to_lowercase();
     if host_clean == "localhost" || host_clean.ends_with(".localhost") {
-        return Err(WebToolError::unsafe_url(format!(
+        return Err(WebToolError::blocked_url(format!(
             "No se permite acceder a direcciones locales: «{host}»."
         )));
     }
@@ -279,12 +279,12 @@ fn url_scheme(raw_url: &str) -> String {
 
 fn url_error_text(text: &str) -> WebToolError {
     if text == "invalid port number" {
-        return WebToolError::unsafe_url("La URL contiene un puerto no válido.");
+        return WebToolError::blocked_url("La URL contiene un puerto no válido.");
     }
     if text == "empty host" {
-        return WebToolError::unsafe_url("La URL no incluye un nombre de host válido.");
+        return WebToolError::blocked_url("La URL no incluye un nombre de host válido.");
     }
-    WebToolError::unsafe_url("La URL no es válida.")
+    WebToolError::blocked_url("La URL no es válida.")
 }
 
 /// Sitio al que se conecta la petición, con la IP ya validada cuando toca.
@@ -330,7 +330,7 @@ pub(super) fn request_target(
 
 fn ensure_public_ip(address: IpAddr, host: &str) -> Result<(), WebToolError> {
     if is_blocked_ip(address) {
-        return Err(WebToolError::unsafe_url(format!(
+        return Err(WebToolError::blocked_url(format!(
             "El host «{host}» apunta a una dirección local, privada o reservada ({address}); acceso bloqueado."
         )));
     }
@@ -349,7 +349,7 @@ fn resolve_ips(host: &str, port: u16, original: &str) -> Result<Vec<IpAddr>, Web
 }
 
 fn unresolved(host: &str) -> WebToolError {
-    WebToolError::unsafe_url(format!("No se pudo resolver el nombre de host «{host}»."))
+    WebToolError::blocked_url(format!("No se pudo resolver el nombre de host «{host}»."))
 }
 
 /// Valida esquema y destino; resuelve DNS y rechaza IPs no globales (ST-21).

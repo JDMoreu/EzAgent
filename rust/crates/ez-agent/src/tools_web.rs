@@ -63,7 +63,7 @@ impl WebToolError {
         }
     }
 
-    pub fn unsafe_url(message: impl Into<String>) -> Self {
+    pub fn blocked_url(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
             kind: WebToolErrorKind::UnsafeUrl,

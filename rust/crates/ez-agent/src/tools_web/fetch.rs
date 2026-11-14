@@ -65,7 +65,7 @@ pub(super) fn hop_target(
         validate_public_url(current_url, config).map(|url| (url, None))
     };
     match result {
-        Err(error) if redirects > 0 => Err(WebToolError::unsafe_url(format!(
+        Err(error) if redirects > 0 => Err(WebToolError::blocked_url(format!(
             "Redirección bloqueada: {}",
             error.message
         ))),
@@ -164,10 +164,10 @@ pub(super) fn redirect_target(base: &str, location: &str) -> Result<String, WebT
     let joined = Url::parse(base)
         .and_then(|url| url.join(location))
         .map_err(|_| {
-            WebToolError::unsafe_url("Redirección bloqueada: la URL de destino no es válida.")
+            WebToolError::blocked_url("Redirección bloqueada: la URL de destino no es válida.")
         })?;
     if joined.scheme() != "http" && joined.scheme() != "https" {
-        return Err(WebToolError::unsafe_url(
+        return Err(WebToolError::blocked_url(
             "Redirección bloqueada: solo se permiten URL con esquema http:// o https://.",
         ));
     }

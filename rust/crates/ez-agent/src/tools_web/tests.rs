@@ -171,7 +171,7 @@ fn blocks_the_same_ips_as_python() {
 }
 
 #[test]
-fn rejects_unsafe_urls_with_the_python_messages() {
+fn rejects_blocked_urls_with_the_python_messages() {
     let (_dir, config) = config(true, 8000);
     let cases = [
         ("", "vacía"),
@@ -262,7 +262,7 @@ fn follows_redirects_and_reports_the_final_url() {
         if path == "/a" {
             http_response("302 Found", &[("Location", "/b")], b"")
         } else if path == "/b" {
-            http_response("302 Found", &[("Location", "/c")], b"")
+            http_response("302 Found", &[("Location", "/destino")], b"")
         } else {
             html_response("<p>destino</p>")
         }
