@@ -5,7 +5,7 @@
 ; generados viven en dist/ y no se versionan.
 
 #define MyAppName "EzAgent"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.1.1"
 #define MyAppExeName "EzAgent.exe"
 
 [Setup]

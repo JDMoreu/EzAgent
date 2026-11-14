@@ -1,6 +1,6 @@
 [project]
 name = "ezagent"
-version = "0.1.0"
+version = "0.1.1"
 description = "Capa de voz local para agentes de código: delega tareas en Claude Code, OpenCode o Codex, vigila el progreso y avisa por voz (whisper.cpp, Kokoro y un LLM configurable)."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
