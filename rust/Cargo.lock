@@ -632,6 +632,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "ez-core",
+ "ez-gfx",
  "image",
  "ndarray",
  "parking_lot 0.13.0",

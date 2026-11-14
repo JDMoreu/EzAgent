@@ -11,6 +11,7 @@ path = "src/lib.rs"
 
 [dependencies]
 ez-core = { path = "../ez-core" }
+ez-gfx = { path = "../ez-gfx" }
 image = { workspace = true }
 png = { workspace = true }
 ndarray = { workspace = true }
