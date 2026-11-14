@@ -42,6 +42,20 @@ def generators() -> list[tuple[str, pathlib.Path]]:
     return found
 
 
+GOLDEN = ROOT / "parity" / "golden"
+
+
+def golden_files() -> dict[str, str]:
+    """Cuadros dorados (PNG y JSON de estado): tambien son oraculo."""
+    if not GOLDEN.exists():
+        return {}
+    found = {}
+    for path in sorted(GOLDEN.rglob("*")):
+        if path.is_file():
+            found[str(path.relative_to(ROOT)).replace("\\", "/")] = sha256(path)
+    return found
+
+
 def run_one(domain: str, path: pathlib.Path) -> list[str]:
     import _common
 
@@ -59,6 +73,30 @@ def run_one(domain: str, path: pathlib.Path) -> list[str]:
     return produced
 
 
+def actual_state() -> dict[str, str]:
+    """Hash de lo que hay hoy en disco: fixtures y cuadros dorados."""
+    found = {}
+    for path in sorted((ROOT / "parity" / "fixtures").glob("*.jsonl")):
+        found[str(path.relative_to(ROOT)).replace("\\", "/")] = sha256(path)
+    found.update(golden_files())
+    return found
+
+
+def report_difference(expected: dict[str, str], current: dict[str, str]) -> bool:
+    missing = sorted(set(expected) - set(current))
+    extra = sorted(set(current) - set(expected))
+    changed = sorted(
+        name for name in expected if name in current and expected[name] != current[name]
+    )
+    for name in missing:
+        print(f"FALTA {name}")
+    for name in extra:
+        print(f"SOBRA {name}")
+    for name in changed:
+        print(f"CAMBIA {name}")
+    return bool(missing or extra or changed)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
@@ -69,6 +107,19 @@ def main(argv: list[str]) -> int:
         print("no hay generadores en parity/gen/")
         return 1
 
+    if args.check:
+        if not MANIFEST.exists():
+            print("falta parity/gen/manifest.json; corre sin --check primero")
+            return 1
+        stored: dict[str, str] = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        if not any(name.endswith(".png") for name in stored):
+            print("FALLO el manifiesto no incluye los cuadros dorados; regeneralo")
+            return 1
+        # 1. lo commiteado tiene que estar intacto (bytes, no solo contenido)
+        if report_difference(stored, actual_state()):
+            print("FALLO el oraculo en disco no coincide con el manifiesto")
+            return 1
+
     current: dict[str, str] = {}
     for domain, path in found:
         try:
@@ -78,29 +129,24 @@ def main(argv: list[str]) -> int:
             print(f"{domain}: FALLA {error}")
             return 1
 
+    golden = golden_files()
+    fixtures = len(current)
+    current.update(golden)
+
     if args.check:
-        if not MANIFEST.exists():
-            print("falta parity/gen/manifest.json; corre sin --check primero")
+        # 2. regenerar tiene que dar exactamente lo mismo
+        if report_difference(stored, current):
+            print("FALLO la regeneracion no reproduce el manifiesto")
             return 1
-        stored = json.loads(MANIFEST.read_text(encoding="utf-8"))
-        missing = sorted(set(stored) - set(current))
-        extra = sorted(set(current) - set(stored))
-        changed = sorted(name for name in stored if name in current and stored[name] != current[name])
-        if missing or extra or changed:
-            for name in missing:
-                print(f"FALTA {name}")
-            for name in extra:
-                print(f"SOBRA {name}")
-            for name in changed:
-                print(f"CAMBIA {name}")
-            return 1
-        print(f"oraculo estable: {len(current)} archivos")
+        print(f"oraculo estable: {fixtures} fixtures + {len(golden)} archivos dorados")
         return 0
 
     MANIFEST.write_text(
-        json.dumps(dict(sorted(current.items())), indent=2) + "\n", encoding="utf-8", newline="\n"
+        json.dumps(dict(sorted(current.items())), indent=2) + chr(10),
+        encoding="utf-8",
+        newline=chr(10),
     )
-    print(f"manifiesto con {len(current)} archivos")
+    print(f"manifiesto con {fixtures} fixtures + {len(golden)} archivos dorados")
     return 0
 
 

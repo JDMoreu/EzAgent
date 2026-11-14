@@ -1,0 +1,34 @@
+{"case": "paths_globs/fnmatch/001", "fn": "fnmatch", "input": {"name": "a.env", "pattern": "**/.env"}, "output": {"match": false}, "error": null}
+{"case": "paths_globs/fnmatch/002", "fn": "fnmatch", "input": {"name": ".env", "pattern": "**/.env"}, "output": {"match": false}, "error": null}
+{"case": "paths_globs/fnmatch/003", "fn": "fnmatch", "input": {"name": "x/.env", "pattern": "**/.env"}, "output": {"match": true}, "error": null}
+{"case": "paths_globs/fnmatch/004", "fn": "fnmatch", "input": {"name": "x/y/.env", "pattern": "**/.env"}, "output": {"match": true}, "error": null}
+{"case": "paths_globs/fnmatch/005", "fn": "fnmatch", "input": {"name": "x/.env.local", "pattern": "**/.env.*"}, "output": {"match": true}, "error": null}
+{"case": "paths_globs/fnmatch/006", "fn": "fnmatch", "input": {"name": "A/B.PEM", "pattern": "**/*.pem"}, "output": {"match": true}, "error": null}
+{"case": "paths_globs/fnmatch/007", "fn": "fnmatch", "input": {"name": "a/b.pem", "pattern": "**/*.pem"}, "output": {"match": true}, "error": null}
+{"case": "paths_globs/fnmatch/008", "fn": "fnmatch", "input": {"name": "a.env", "pattern": "[!x]*.env"}, "output": {"match": true}, "error": null}
+{"case": "paths_globs/fnmatch/009", "fn": "fnmatch", "input": {"name": "x.env", "pattern": "[!x]*.env"}, "output": {"match": false}, "error": null}
+{"case": "paths_globs/fnmatch/010", "fn": "fnmatch", "input": {"name": "a1", "pattern": "[a-c]?"}, "output": {"match": true}, "error": null}
+{"case": "paths_globs/fnmatch/011", "fn": "fnmatch", "input": {"name": "d1", "pattern": "[a-c]?"}, "output": {"match": false}, "error": null}
+{"case": "paths_globs/fnmatch/012", "fn": "fnmatch", "input": {"name": "a", "pattern": "[!]"}, "output": {"match": false}, "error": null}
+{"case": "paths_globs/fnmatch/013", "fn": "fnmatch", "input": {"name": "b", "pattern": "[!]"}, "output": {"match": false}, "error": null}
+{"case": "paths_globs/fnmatch/014", "fn": "fnmatch", "input": {"name": "a", "pattern": "[]a]"}, "output": {"match": true}, "error": null}
+{"case": "paths_globs/fnmatch/015", "fn": "fnmatch", "input": {"name": "]", "pattern": "[]a]"}, "output": {"match": true}, "error": null}
+{"case": "paths_globs/fnmatch/016", "fn": "fnmatch", "input": {"name": "c", "pattern": "[a-c]"}, "output": {"match": true}, "error": null}
+{"case": "paths_globs/fnmatch/017", "fn": "fnmatch", "input": {"name": "z", "pattern": "[!a-c]"}, "output": {"match": true}, "error": null}
+{"case": "paths_globs/fnmatch/018", "fn": "fnmatch", "input": {"name": "file1.txt", "pattern": "file[0-9].txt"}, "output": {"match": true}, "error": null}
+{"case": "paths_globs/fnmatch/019", "fn": "fnmatch", "input": {"name": "filex.txt", "pattern": "file[0-9].txt"}, "output": {"match": false}, "error": null}
+{"case": "paths_globs/fnmatch/020", "fn": "fnmatch", "input": {"name": "id_rsa", "pattern": "**/id_rsa*"}, "output": {"match": false}, "error": null}
+{"case": "paths_globs/fnmatch/021", "fn": "fnmatch", "input": {"name": "clave.kdbx", "pattern": "**/*.kdbx"}, "output": {"match": false}, "error": null}
+{"case": "paths_globs/fnmatch/022", "fn": "fnmatch", "input": {"name": "a[b", "pattern": "a[b"}, "output": {"match": true}, "error": null}
+{"case": "paths_globs/fnmatch/023", "fn": "fnmatch", "input": {"name": "ab", "pattern": "a[b"}, "output": {"match": false}, "error": null}
+{"case": "paths_globs/fnmatch/024", "fn": "fnmatch", "input": {"name": "a*b", "pattern": "a[*]b"}, "output": {"match": true}, "error": null}
+{"case": "paths_globs/fnmatch/025", "fn": "fnmatch", "input": {"name": "axb", "pattern": "a[*]b"}, "output": {"match": false}, "error": null}
+{"case": "paths_globs/resolve/a_.env.1", "fn": "resolve_safe", "input": {"raw": "a/.env", "deny_globs": ["**/.env"]}, "output": {"ok": false, "error": "archivo protegido"}, "error": null}
+{"case": "paths_globs/resolve/a_b.PEM.1", "fn": "resolve_safe", "input": {"raw": "a/b.PEM", "deny_globs": ["**/*.pem"]}, "output": {"ok": false, "error": "archivo protegido"}, "error": null}
+{"case": "paths_globs/resolve/a_b.pem.1", "fn": "resolve_safe", "input": {"raw": "a/b.pem", "deny_globs": ["**/*.pem"]}, "output": {"ok": false, "error": "archivo protegido"}, "error": null}
+{"case": "paths_globs/resolve/a_b.txt.1", "fn": "resolve_safe", "input": {"raw": "a/b.txt", "deny_globs": ["**/*.pem"]}, "output": {"ok": true, "name": "b.txt"}, "error": null}
+{"case": "paths_globs/resolve/a_id_rsa.pub.1", "fn": "resolve_safe", "input": {"raw": "a/id_rsa.pub", "deny_globs": ["**/id_rsa*"]}, "output": {"ok": false, "error": "archivo protegido"}, "error": null}
+{"case": "paths_globs/resolve/a_keep.txt.0", "fn": "resolve_safe", "input": {"raw": "a/keep.txt", "deny_globs": []}, "output": {"ok": true, "name": "keep.txt"}, "error": null}
+{"case": "paths_globs/resolve/a_notes.txt.1", "fn": "resolve_safe", "input": {"raw": "a/notes.txt", "deny_globs": ["[!n]*.txt"]}, "output": {"ok": false, "error": "archivo protegido"}, "error": null}
+{"case": "paths_globs/resolve/a_sub_.env.1", "fn": "resolve_safe", "input": {"raw": "a/sub/.env", "deny_globs": ["**/.env"]}, "output": {"ok": false, "error": "archivo protegido"}, "error": null}
+{"case": "paths_globs/resolve/a_zeta.txt.1", "fn": "resolve_safe", "input": {"raw": "a/zeta.txt", "deny_globs": ["[!n]*.txt"]}, "output": {"ok": false, "error": "archivo protegido"}, "error": null}

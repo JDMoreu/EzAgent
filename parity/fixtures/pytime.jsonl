@@ -1,0 +1,73 @@
+{"case": "pytime/date_local/001", "fn": "date_local", "input": {"t": 0.0}, "output": "1969-12-31", "error": null}
+{"case": "pytime/date_local/002", "fn": "date_local", "input": {"t": 0.5}, "output": "1969-12-31", "error": null}
+{"case": "pytime/date_local/003", "fn": "date_local", "input": {"t": 1.0}, "output": "1969-12-31", "error": null}
+{"case": "pytime/date_local/004", "fn": "date_local", "input": {"t": 1e-06}, "output": "1969-12-31", "error": null}
+{"case": "pytime/date_local/005", "fn": "date_local", "input": {"t": 0.9999995}, "output": "1969-12-31", "error": null}
+{"case": "pytime/date_local/006", "fn": "date_local", "input": {"t": 0.9999999}, "output": "1969-12-31", "error": null}
+{"case": "pytime/date_local/007", "fn": "date_local", "input": {"t": 2.5}, "output": "1969-12-31", "error": null}
+{"case": "pytime/date_local/008", "fn": "date_local", "input": {"t": 1735689600.0}, "output": "2024-12-31", "error": null}
+{"case": "pytime/date_local/009", "fn": "date_local", "input": {"t": 1735689600.5}, "output": "2024-12-31", "error": null}
+{"case": "pytime/date_local/010", "fn": "date_local", "input": {"t": 1735689600.123456}, "output": "2024-12-31", "error": null}
+{"case": "pytime/date_local/011", "fn": "date_local", "input": {"t": 1735689600.000001}, "output": "2024-12-31", "error": null}
+{"case": "pytime/date_local/012", "fn": "date_local", "input": {"t": 1735689600.9999995}, "output": "2024-12-31", "error": null}
+{"case": "pytime/date_local/013", "fn": "date_local", "input": {"t": 1234567890.987654}, "output": "2009-02-13", "error": null}
+{"case": "pytime/date_local/014", "fn": "date_local", "input": {"t": 1000000000.0000005}, "output": "2001-09-08", "error": null}
+{"case": "pytime/date_local/015", "fn": "date_local", "input": {"t": 4102444800.0}, "output": "2099-12-31", "error": null}
+{"case": "pytime/date_local/neg01", "fn": "date_local", "input": {"t": -1.0}, "output": null, "error": "OSError: [Errno 22] Invalid argument"}
+{"case": "pytime/date_local/neg02", "fn": "date_local", "input": {"t": -0.5}, "output": null, "error": "OSError: [Errno 22] Invalid argument"}
+{"case": "pytime/date_local/neg03", "fn": "date_local", "input": {"t": -1735689600.0}, "output": null, "error": "OSError: [Errno 22] Invalid argument"}
+{"case": "pytime/isoformat_local/001", "fn": "isoformat_local", "input": {"t": 0.0}, "output": "1969-12-31T19:00:00", "error": null}
+{"case": "pytime/isoformat_local/002", "fn": "isoformat_local", "input": {"t": 0.5}, "output": "1969-12-31T19:00:00.500000", "error": null}
+{"case": "pytime/isoformat_local/003", "fn": "isoformat_local", "input": {"t": 1.0}, "output": "1969-12-31T19:00:01", "error": null}
+{"case": "pytime/isoformat_local/004", "fn": "isoformat_local", "input": {"t": 1e-06}, "output": "1969-12-31T19:00:00.000001", "error": null}
+{"case": "pytime/isoformat_local/005", "fn": "isoformat_local", "input": {"t": 0.9999995}, "output": "1969-12-31T19:00:01", "error": null}
+{"case": "pytime/isoformat_local/006", "fn": "isoformat_local", "input": {"t": 0.9999999}, "output": "1969-12-31T19:00:01", "error": null}
+{"case": "pytime/isoformat_local/007", "fn": "isoformat_local", "input": {"t": 2.5}, "output": "1969-12-31T19:00:02.500000", "error": null}
+{"case": "pytime/isoformat_local/008", "fn": "isoformat_local", "input": {"t": 1735689600.0}, "output": "2024-12-31T19:00:00", "error": null}
+{"case": "pytime/isoformat_local/009", "fn": "isoformat_local", "input": {"t": 1735689600.5}, "output": "2024-12-31T19:00:00.500000", "error": null}
+{"case": "pytime/isoformat_local/010", "fn": "isoformat_local", "input": {"t": 1735689600.123456}, "output": "2024-12-31T19:00:00.123456", "error": null}
+{"case": "pytime/isoformat_local/011", "fn": "isoformat_local", "input": {"t": 1735689600.000001}, "output": "2024-12-31T19:00:00.000001", "error": null}
+{"case": "pytime/isoformat_local/012", "fn": "isoformat_local", "input": {"t": 1735689600.9999995}, "output": "2024-12-31T19:00:01", "error": null}
+{"case": "pytime/isoformat_local/013", "fn": "isoformat_local", "input": {"t": 1234567890.987654}, "output": "2009-02-13T18:31:30.987654", "error": null}
+{"case": "pytime/isoformat_local/014", "fn": "isoformat_local", "input": {"t": 1000000000.0000005}, "output": "2001-09-08T20:46:40", "error": null}
+{"case": "pytime/isoformat_local/015", "fn": "isoformat_local", "input": {"t": 4102444800.0}, "output": "2099-12-31T19:00:00", "error": null}
+{"case": "pytime/isoformat_local/neg01", "fn": "isoformat_local", "input": {"t": -1.0}, "output": null, "error": "OSError: [Errno 22] Invalid argument"}
+{"case": "pytime/isoformat_local/neg02", "fn": "isoformat_local", "input": {"t": -0.5}, "output": null, "error": "OSError: [Errno 22] Invalid argument"}
+{"case": "pytime/isoformat_local/neg03", "fn": "isoformat_local", "input": {"t": -1735689600.0}, "output": null, "error": "OSError: [Errno 22] Invalid argument"}
+{"case": "pytime/isoformat_millis_utc/001", "fn": "isoformat_millis_utc", "input": {"t": 0.0}, "output": "1970-01-01T00:00:00.000+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/002", "fn": "isoformat_millis_utc", "input": {"t": 0.5}, "output": "1970-01-01T00:00:00.500+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/003", "fn": "isoformat_millis_utc", "input": {"t": 1.0}, "output": "1970-01-01T00:00:01.000+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/004", "fn": "isoformat_millis_utc", "input": {"t": 1e-06}, "output": "1970-01-01T00:00:00.000+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/005", "fn": "isoformat_millis_utc", "input": {"t": 0.9999995}, "output": "1970-01-01T00:00:01.000+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/006", "fn": "isoformat_millis_utc", "input": {"t": 0.9999999}, "output": "1970-01-01T00:00:01.000+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/007", "fn": "isoformat_millis_utc", "input": {"t": 2.5}, "output": "1970-01-01T00:00:02.500+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/008", "fn": "isoformat_millis_utc", "input": {"t": 1735689600.0}, "output": "2025-01-01T00:00:00.000+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/009", "fn": "isoformat_millis_utc", "input": {"t": 1735689600.5}, "output": "2025-01-01T00:00:00.500+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/010", "fn": "isoformat_millis_utc", "input": {"t": 1735689600.123456}, "output": "2025-01-01T00:00:00.123+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/011", "fn": "isoformat_millis_utc", "input": {"t": 1735689600.000001}, "output": "2025-01-01T00:00:00.000+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/012", "fn": "isoformat_millis_utc", "input": {"t": 1735689600.9999995}, "output": "2025-01-01T00:00:01.000+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/013", "fn": "isoformat_millis_utc", "input": {"t": 1234567890.987654}, "output": "2009-02-13T23:31:30.987+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/014", "fn": "isoformat_millis_utc", "input": {"t": 1000000000.0000005}, "output": "2001-09-09T01:46:40.000+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/015", "fn": "isoformat_millis_utc", "input": {"t": 4102444800.0}, "output": "2100-01-01T00:00:00.000+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/neg01", "fn": "isoformat_millis_utc", "input": {"t": -1.0}, "output": "1969-12-31T23:59:59.000+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/neg02", "fn": "isoformat_millis_utc", "input": {"t": -0.5}, "output": "1969-12-31T23:59:59.500+00:00", "error": null}
+{"case": "pytime/isoformat_millis_utc/neg03", "fn": "isoformat_millis_utc", "input": {"t": -1735689600.0}, "output": null, "error": "OSError: [Errno 22] Invalid argument"}
+{"case": "pytime/isoformat_utc/001", "fn": "isoformat_utc", "input": {"t": 0.0}, "output": "1970-01-01T00:00:00+00:00", "error": null}
+{"case": "pytime/isoformat_utc/002", "fn": "isoformat_utc", "input": {"t": 0.5}, "output": "1970-01-01T00:00:00.500000+00:00", "error": null}
+{"case": "pytime/isoformat_utc/003", "fn": "isoformat_utc", "input": {"t": 1.0}, "output": "1970-01-01T00:00:01+00:00", "error": null}
+{"case": "pytime/isoformat_utc/004", "fn": "isoformat_utc", "input": {"t": 1e-06}, "output": "1970-01-01T00:00:00.000001+00:00", "error": null}
+{"case": "pytime/isoformat_utc/005", "fn": "isoformat_utc", "input": {"t": 0.9999995}, "output": "1970-01-01T00:00:01+00:00", "error": null}
+{"case": "pytime/isoformat_utc/006", "fn": "isoformat_utc", "input": {"t": 0.9999999}, "output": "1970-01-01T00:00:01+00:00", "error": null}
+{"case": "pytime/isoformat_utc/007", "fn": "isoformat_utc", "input": {"t": 2.5}, "output": "1970-01-01T00:00:02.500000+00:00", "error": null}
+{"case": "pytime/isoformat_utc/008", "fn": "isoformat_utc", "input": {"t": 1735689600.0}, "output": "2025-01-01T00:00:00+00:00", "error": null}
+{"case": "pytime/isoformat_utc/009", "fn": "isoformat_utc", "input": {"t": 1735689600.5}, "output": "2025-01-01T00:00:00.500000+00:00", "error": null}
+{"case": "pytime/isoformat_utc/010", "fn": "isoformat_utc", "input": {"t": 1735689600.123456}, "output": "2025-01-01T00:00:00.123456+00:00", "error": null}
+{"case": "pytime/isoformat_utc/011", "fn": "isoformat_utc", "input": {"t": 1735689600.000001}, "output": "2025-01-01T00:00:00.000001+00:00", "error": null}
+{"case": "pytime/isoformat_utc/012", "fn": "isoformat_utc", "input": {"t": 1735689600.9999995}, "output": "2025-01-01T00:00:01+00:00", "error": null}
+{"case": "pytime/isoformat_utc/013", "fn": "isoformat_utc", "input": {"t": 1234567890.987654}, "output": "2009-02-13T23:31:30.987654+00:00", "error": null}
+{"case": "pytime/isoformat_utc/014", "fn": "isoformat_utc", "input": {"t": 1000000000.0000005}, "output": "2001-09-09T01:46:40+00:00", "error": null}
+{"case": "pytime/isoformat_utc/015", "fn": "isoformat_utc", "input": {"t": 4102444800.0}, "output": "2100-01-01T00:00:00+00:00", "error": null}
+{"case": "pytime/isoformat_utc/neg01", "fn": "isoformat_utc", "input": {"t": -1.0}, "output": "1969-12-31T23:59:59+00:00", "error": null}
+{"case": "pytime/isoformat_utc/neg02", "fn": "isoformat_utc", "input": {"t": -0.5}, "output": "1969-12-31T23:59:59.500000+00:00", "error": null}
+{"case": "pytime/isoformat_utc/neg03", "fn": "isoformat_utc", "input": {"t": -1735689600.0}, "output": null, "error": "OSError: [Errno 22] Invalid argument"}
+{"case": "pytime/timestamp/001", "fn": "timestamp_shape", "input": {}, "output": {"finite": true, "roughly_now": true}, "error": null}

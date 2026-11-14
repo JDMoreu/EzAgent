@@ -1,0 +1,32 @@
+{"case": "ints/000001", "fn": "_int", "input": {"value": true, "default": 7}, "output": {"int": 1}, "error": null}
+{"case": "ints/000002", "fn": "_int", "input": {"value": false, "default": 7}, "output": {"int": 0}, "error": null}
+{"case": "ints/000003", "fn": "_int", "input": {"value": 0, "default": 7}, "output": {"int": 0}, "error": null}
+{"case": "ints/000004", "fn": "_int", "input": {"value": 1, "default": 7}, "output": {"int": 1}, "error": null}
+{"case": "ints/000005", "fn": "_int", "input": {"value": -3, "default": 7}, "output": {"int": -3}, "error": null}
+{"case": "ints/000006", "fn": "_int", "input": {"value": 12.9, "default": 7}, "output": {"int": 12}, "error": null}
+{"case": "ints/000007", "fn": "_int", "input": {"value": -12.9, "default": 7}, "output": {"int": -12}, "error": null}
+{"case": "ints/000008", "fn": "_int", "input": {"value": 0.0, "default": 7}, "output": {"int": 0}, "error": null}
+{"case": "ints/000009", "fn": "_int", "input": {"value": -0.0, "default": 7}, "output": {"int": 0}, "error": null}
+{"case": "ints/0010", "fn": "_int", "input": {"value": 12.0, "default": 7}, "output": {"int": 12}, "error": null}
+{"case": "ints/0011", "fn": "_int", "input": {"value": 9007199254740993, "default": 7}, "output": {"int": 9007199254740993}, "error": null}
+{"case": "ints/0012", "fn": "_int", "input": {"value": null, "default": 7}, "output": {"int": 7}, "error": null}
+{"case": "ints/0013", "fn": "_int", "input": {"value": [], "default": 7}, "output": {"int": 7}, "error": null}
+{"case": "ints/0014", "fn": "_int", "input": {"value": {}, "default": 7}, "output": {"int": 7}, "error": null}
+{"case": "ints/0015", "fn": "_int", "input": {"value": "12", "default": 7}, "output": {"int": 12}, "error": null}
+{"case": "ints/0016", "fn": "_int", "input": {"value": " 12 ", "default": 7}, "output": {"int": 12}, "error": null}
+{"case": "ints/0017", "fn": "_int", "input": {"value": "+5", "default": 7}, "output": {"int": 5}, "error": null}
+{"case": "ints/0018", "fn": "_int", "input": {"value": "-0", "default": 7}, "output": {"int": 0}, "error": null}
+{"case": "ints/0019", "fn": "_int", "input": {"value": "007", "default": 7}, "output": {"int": 7}, "error": null}
+{"case": "ints/0020", "fn": "_int", "input": {"value": "1_000", "default": 7}, "output": {"int": 1000}, "error": null}
+{"case": "ints/0021", "fn": "_int", "input": {"value": "1__0", "default": 7}, "output": {"int": 7}, "error": null}
+{"case": "ints/0022", "fn": "_int", "input": {"value": "_1", "default": 7}, "output": {"int": 7}, "error": null}
+{"case": "ints/0023", "fn": "_int", "input": {"value": "\uff11\uff12", "default": 7}, "output": {"int": 12}, "error": null}
+{"case": "ints/0024", "fn": "_int", "input": {"value": "\u00a012\u00a0", "default": 7}, "output": {"int": 12}, "error": null}
+{"case": "ints/0025", "fn": "_int", "input": {"value": "1e3", "default": 7}, "output": {"int": 7}, "error": null}
+{"case": "ints/0026", "fn": "_int", "input": {"value": "0x10", "default": 7}, "output": {"int": 7}, "error": null}
+{"case": "ints/0027", "fn": "_int", "input": {"value": "12.7", "default": 7}, "output": {"int": 7}, "error": null}
+{"case": "ints/0028", "fn": "_int", "input": {"value": "", "default": 7}, "output": {"int": 7}, "error": null}
+{"case": "ints/0029", "fn": "_int", "input": {"value": "   ", "default": 7}, "output": {"int": 7}, "error": null}
+{"case": "ints/0030", "fn": "_int", "input": {"value": "\uff11\uff12\uff13\uff14", "default": 7}, "output": {"int": 1234}, "error": null}
+{"case": "ints/0031", "fn": "_int", "input": {"value": "9223372036854775807", "default": 7}, "output": {"int": 9223372036854775807}, "error": null}
+{"case": "ints/0032", "fn": "_int", "input": {"value": "-9223372036854775808", "default": 7}, "output": {"int": -9223372036854775808}, "error": null}

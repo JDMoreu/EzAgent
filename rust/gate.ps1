@@ -4,7 +4,7 @@
 param(
     [string]$Task,
     [switch]$SelfTest,
-    [string]$Base = "rust/main",
+    [string]$Base = "",
     [switch]$SkipPytest
 )
 
@@ -35,7 +35,12 @@ $info = uv run python "rust-migration/tools/taskinfo.py" $Task | ConvertFrom-Jso
 if (-not $info) { Fail "tarea desconocida: $Task" }
 
 Step "1. alcance del diff" {
-    uv run python "rust-migration/tools/scan_diff.py" --task $Task --base $Base
+    # Sin -Base la regla usa el commit anterior de la tarea (nunca un diff vacio).
+    if ($Base) {
+        uv run python "rust-migration/tools/scan_diff.py" --task $Task --base $Base
+    } else {
+        uv run python "rust-migration/tools/scan_diff.py" --task $Task
+    }
 }
 Step "2. cargo fmt" { cargo fmt --all --check --manifest-path "rust/Cargo.toml" }
 Step "3. clippy" { cargo clippy --workspace --all-targets --manifest-path "rust/Cargo.toml" -- -D warnings }

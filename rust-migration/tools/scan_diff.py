@@ -136,28 +136,53 @@ def check_scope(changed: list[str], task: dict) -> list[str]:
     return problems
 
 
-def git_diff(base: str) -> str:
-    result = subprocess.run(
-        ["git", "diff", f"{base}...HEAD", "--", "rust/", "parity/"],
+def git(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
         cwd=ROOT,
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
     )
-    return result.stdout
+
+
+def default_base() -> str:
+    """Base de la tarea: el commit anterior, o el tag congelado si es el primero.
+
+    En esta rama cada tarea aterriza como un commit sobre `rust/main`, así que
+    `rust/main...HEAD` siempre da vacío: la base correcta es `HEAD^`.
+    """
+    for candidate in ("HEAD^", "py-baseline"):
+        if git("rev-parse", "--verify", "--quiet", f"{candidate}^{{commit}}").returncode == 0:
+            return candidate
+    raise SystemExit("no hay base git utilizable (ni HEAD^ ni py-baseline)")
+
+
+def check_base(base: str) -> str:
+    """Falla si la base no existe: un `git diff` roto devolvía un diff vacío."""
+    result = git("rev-parse", "--verify", "--quiet", f"{base}^{{commit}}")
+    if result.returncode != 0:
+        raise SystemExit(f"base git inexistente: {base!r} (usa -Base <ref> válido)")
+    return base
+
+
+def empty_diff_problem(changed: list[str], base: str) -> str | None:
+    """Un diff vacio casi siempre significa base equivocada, no tarea limpia."""
+    if changed:
+        return None
+    return (
+        f"base {base!r}: el diff está vacío; pasa -Base <commit> si la tarea ya "
+        "está commiteada"
+    )
+
+
+def git_diff(base: str) -> str:
+    return git("diff", f"{base}...HEAD", "--", "rust/", "parity/").stdout
 
 
 def git_changed(base: str) -> list[str]:
-    result = subprocess.run(
-        ["git", "diff", "--name-only", f"{base}...HEAD", "--", "rust/", "parity/"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return [line.strip() for line in git("diff", "--name-only", f"{base}...HEAD", "--", "rust/", "parity/").stdout.splitlines() if line.strip()]
 
 
 def selftest() -> int:
@@ -220,7 +245,7 @@ def selftest() -> int:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--task")
-    parser.add_argument("--base", default="rust/main")
+    parser.add_argument("--base", default=None)
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args(argv[1:])
 
@@ -238,9 +263,15 @@ def main(argv: list[str]) -> int:
         print(f"tarea desconocida: {args.task}")
         return 2
 
-    diff = git_diff(args.base)
+    base = check_base(args.base or default_base())
+    changed = git_changed(base)
+    empty = empty_diff_problem(changed, base)
+    if empty:
+        print(f"FALLO {empty}")
+        return 1
+    diff = git_diff(base)
     problems = (
-        check_scope(git_changed(args.base), task)
+        check_scope(changed, task)
         + check_forbidden(diff)
         + check_unwrap(diff)
         + check_sizes(ROOT)
@@ -249,7 +280,7 @@ def main(argv: list[str]) -> int:
     if problems:
         print("\n".join(f"FALLO {p}" for p in problems))
         return 1
-    print(f"reglas de codigo de {args.task}: ok")
+    print(f"reglas de codigo de {args.task}: ok ({len(changed)} archivos contra {base})")
     return 0
 
 

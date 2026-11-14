@@ -1,0 +1,5 @@
+{"case": "paths_junction/anchor-denied", "fn": "resolve_safe", "input": {"raw": "C:/Users/All Users", "roots": ["C:/Users/All Users"]}, "output": {"ok": true, "path": "C:/ProgramData"}, "error": null}
+{"case": "paths_junction/escape-dir", "fn": "resolve_safe", "input": {"raw": "C:/Users/All Users/Packages", "roots": ["C:/Users"]}, "output": {"ok": false, "error": "fuera de las carpetas permitidas"}, "error": null}
+{"case": "paths_junction/escape-file", "fn": "resolve_safe", "input": {"raw": "C:/Users/All Users/Microsoft/Windows/win.ini", "roots": ["C:/Users"]}, "output": {"ok": false, "error": "fuera de las carpetas permitidas"}, "error": null}
+{"case": "paths_junction/exists", "fn": "junction_present", "input": {"path": "C:/Users/All Users"}, "output": {"exists": true, "real": "C:/ProgramData"}, "error": null}
+{"case": "paths_junction/inside-ok", "fn": "resolve_safe", "input": {"raw": "C:/Users/Default User", "roots": ["C:/Users"]}, "output": {"ok": true, "path": "C:/Users/Default"}, "error": null}
