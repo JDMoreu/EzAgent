@@ -1,0 +1,18 @@
+[package]
+name = "ez-chat"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "ez_chat"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+regex = { workspace = true }
+scraper = { workspace = true }
+tracing = { workspace = true }

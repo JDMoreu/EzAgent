@@ -1,0 +1,24 @@
+# Umbrales de paridad (plan 4.4). Solo lectura para los trabajadores.
+
+[pixels.shapes]            # cuadros sin texto
+max_channel_delta_p999 = 1
+max_channel_delta_any = 3
+
+[pixels.text]              # cuadros con texto
+ssim_min = 0.995
+max_channel_delta_p995 = 2
+
+[numeric]
+f64_rel = 1e-9
+f32_rel = 1e-5
+
+[audio.tts]
+same_phonemes = true
+length_tolerance_samples = 0
+waveform_correlation_min = 0.999
+
+[audio.segmenter]
+boundary_tolerance_blocks = 0
+
+[performance]              # Rust / Python, por etapa, P50 y P95
+max_ratio = 1.0

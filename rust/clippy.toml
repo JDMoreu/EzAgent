@@ -1,0 +1,2 @@
+# Port of AGENTS.md: growth limits per function.
+too-many-lines-threshold = 60

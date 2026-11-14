@@ -1,0 +1,75 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ez-core",
+    "crates/ez-gfx",
+    "crates/ez-audio",
+    "crates/ez-stt",
+    "crates/ez-tts",
+    "crates/ez-llm",
+    "crates/ez-agent",
+    "crates/ez-herdr",
+    "crates/ez-swarm",
+    "crates/ez-chat",
+    "crates/ez-hud",
+    "crates/ez-app",
+    "crates/ez-parity",
+    "crates/ez-fakes",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+windows = { version = "=0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Media_Audio",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+cpal = "=0.18.2"
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["load-dynamic", "std"] }
+reqwest = { version = "=0.13.5", default-features = false, features = ["blocking", "json", "rustls", "stream"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = { version = "=1.0.154", features = ["preserve_order"] }
+serde_yaml = "=0.9.34"
+indexmap = { version = "=2.14.2", features = ["serde"] }
+toml = "=1.2.1"
+rusqlite = { version = "=0.42.0", features = ["bundled", "functions"] }
+tiny_http = "=0.12.0"
+crossbeam-channel = "=0.5.17"
+parking_lot = "=0.13.0"
+tracing = "=0.1.44"
+tracing-subscriber = "=0.3.23"
+tracing-appender = "=0.2.5"
+freetype-rs = "=0.38.0"
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+png = "=0.18.1"
+sha2 = "=0.11.1"
+zip = { version = "=9.5.1", default-features = false, features = ["deflate"] }
+trash = "=5.3.0"
+scraper = "=0.29.0"
+regex = "=1.13.1"
+fancy-regex = "=0.20.2"
+unicode-normalization = "=0.1.26"
+chrono = { version = "=0.4.45", features = ["serde"] }
+chrono-tz = "=0.10.4"
+uuid = { version = "=1.29.2", features = ["v4", "serde"] }
+dotenvy = "=0.15.7"
+ndarray = "=0.17.2"
+bytemuck = "=1.25.2"
+anyhow = "=1.0.104"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

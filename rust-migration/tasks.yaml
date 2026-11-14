@@ -1,0 +1,1652 @@
+tasks:
+- id: F0-01
+  title: Congelar la linea base y tag py-baseline
+  phase: F0
+  depends_on: []
+  status: done
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F0-02
+  title: Rama rust/main y rust-migration (contrato, config, tasks)
+  phase: F0
+  depends_on:
+  - F0-01
+  status: done
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files:
+  - docs/rust-migration-plan.md
+  - rust-migration/AGENTS.rust.md
+  - rust-migration/config.toml
+  - rust-migration/tasks.yaml
+  fixtures: []
+  tests: []
+- id: F0-03
+  title: Toolchain, workspace y dependencias fijadas
+  phase: F0
+  depends_on:
+  - F0-02
+  status: done
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files:
+  - rust/Cargo.toml
+  - rust/rust-toolchain.toml
+  - rust/clippy.toml
+  fixtures: []
+  tests: []
+- id: F0-04
+  title: Andamiaje de crates y modulos
+  phase: F0
+  depends_on:
+  - F0-03
+  status: done
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files:
+  - rust/crates
+  fixtures: []
+  tests: []
+- id: F0-05
+  title: gate.ps1 y su autoprueba
+  phase: F0
+  depends_on:
+  - F0-02
+  status: done
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files:
+  - rust/gate.ps1
+  - rust-migration/tools/scan_diff.py
+  fixtures: []
+  tests: []
+- id: F0-06
+  title: Metricas base de Python
+  phase: F0
+  depends_on:
+  - F0-01
+  status: done
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files:
+  - rust-migration/baseline-metrics.json
+  fixtures: []
+  tests: []
+- id: F1-01
+  title: 'Marco del oraculo: gen/_common, regen.ps1, ez-parity'
+  phase: F1
+  depends_on:
+  - F0
+  status: done
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - PNG/SSIM comparator
+  - parity/fixtures JSONL reader
+  - replay trace normalizer
+  files:
+  - rust/crates/ez-parity
+  - parity/gen/_common.py
+  - parity/regen.ps1
+  - parity/thresholds.toml
+  fixtures: []
+  tests: []
+- id: F1-02
+  title: Fixtures de texto (speech_text, redact, tool_json, chat)
+  phase: F1
+  depends_on:
+  - F1-01
+  status: in_progress
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F1-03
+  title: Fixtures de configuracion, proveedores y politica
+  phase: F1
+  depends_on:
+  - F1-01
+  status: in_progress
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F1-04
+  title: Fixtures de prompt, esquemas, confirmaciones y auditoria
+  phase: F1
+  depends_on:
+  - F1-01
+  status: in_progress
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F1-05
+  title: Fixtures de peticiones LLM y SSE
+  phase: F1
+  depends_on:
+  - F1-01
+  - F1-11
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F1-06
+  title: Fixtures del enjambre y de ezs
+  phase: F1
+  depends_on:
+  - F1-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F1-07
+  title: Fixtures de memoria, diario, chat y tareas
+  phase: F1
+  depends_on:
+  - F1-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F1-08
+  title: Fixtures de audio, turn y wake
+  phase: F1
+  depends_on:
+  - F1-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F1-09
+  title: 'Fixtures de TTS: fonemas y PCM'
+  phase: F1
+  depends_on:
+  - F1-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F1-10a
+  title: 'Cuadros dorados: barra, Marea, orbita, botones'
+  phase: F1
+  depends_on:
+  - F1-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F1-10b
+  title: 'Cuadros dorados: menu y ajustes'
+  phase: F1
+  depends_on:
+  - F1-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F1-10c
+  title: 'Cuadros dorados: chat, vista rapida, temas'
+  phase: F1
+  depends_on:
+  - F1-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F1-11
+  title: 'ez-fakes: fake-llm, fake-whisper, fake-hc, fake-agent'
+  phase: F1
+  depends_on:
+  - F0-04
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - fake OpenAI/Anthropic SSE
+  - fake agent screen
+  - fake hc (Herdr)
+  - fake whisper-server
+  files:
+  - rust/crates/ez-fakes
+  - rust/crates/ez-fakes
+  fixtures: []
+  tests: []
+- id: F1-12
+  title: Arnes de reproduccion Python y 25 escenarios
+  phase: F1
+  depends_on:
+  - F1-11
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F1-13
+  title: parity/test-map.csv completo
+  phase: F1
+  depends_on:
+  - F1-01
+  status: done
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files:
+  - parity/test-map.csv
+  fixtures: []
+  tests: []
+- id: F2-01
+  title: 'ez-core: dirs, pyjson, pytime, logging'
+  phase: F2
+  depends_on:
+  - F0
+  - F1-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - datetime/time usages
+  - json.dumps/json.loads
+  - loguru setup
+  - src/ezagent/agent/paths.py
+  - voice/config.py
+  files:
+  - rust/crates/ez-core
+  fixtures: []
+  tests: []
+- id: F2-02
+  title: 'ez-core: config'
+  phase: F2
+  depends_on:
+  - F2-01
+  - F1-03
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/config.py
+  files:
+  - rust/crates/ez-core
+  fixtures: []
+  tests: []
+- id: F2-03
+  title: 'ez-core: llm_providers'
+  phase: F2
+  depends_on:
+  - F2-01
+  - F1-03
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/llm_providers.py
+  files:
+  - rust/crates/ez-core
+  fixtures: []
+  tests: []
+- id: F2-04
+  title: 'ez-core: permissions, paths y policy'
+  phase: F2
+  depends_on:
+  - F2-01
+  - F1-03
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/agent/paths.py
+  - src/ezagent/agent/policy.py
+  files:
+  - rust/crates/ez-agent
+  - rust/crates/ez-core
+  fixtures: []
+  tests: []
+- id: F2-05
+  title: 'ez-core: downloads y models'
+  phase: F2
+  depends_on:
+  - F2-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/core/downloads.py
+  - src/ezagent/core/manifest.toml
+  - tts.py
+  files:
+  - rust/crates/ez-core
+  fixtures: []
+  tests: []
+- id: F2-06
+  title: speech_text, redact y stt_dictionary
+  phase: F2
+  depends_on:
+  - F2-01
+  - F1-02
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/speech_text.py
+  - src/ezagent/voice/redact.py
+  - src/ezagent/voice/stt_dictionary.py
+  files:
+  - rust/crates/ez-core
+  - rust/crates/ez-stt
+  fixtures:
+  - speech_text
+  - redact
+  - stt_dictionary
+  tests: []
+- id: F2-07
+  title: 'ez-gfx: raster y composite'
+  phase: F2
+  depends_on:
+  - F0
+  - F1-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - Pillow Image.alpha_composite/linear_gradient
+  - Pillow Image.new/fromarray
+  - numpy
+  files:
+  - rust/crates/ez-gfx
+  fixtures:
+  - gfx_raster
+  tests: []
+- id: F2-08
+  title: 'ez-gfx: sdf y draw'
+  phase: F2
+  depends_on:
+  - F2-07
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - Pillow ImageDraw
+  - src/ezagent/voice/hud/menu.py 382-699
+  files:
+  - rust/crates/ez-gfx
+  fixtures:
+  - gfx_draw
+  tests: []
+- id: F2-09
+  title: 'ez-gfx: resample y blur'
+  phase: F2
+  depends_on:
+  - F2-07
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - Pillow BoxBlur.c (GaussianBlur)
+  - Pillow Resample.c (LANCZOS/BICUBIC)
+  files:
+  - rust/crates/ez-gfx
+  fixtures:
+  - gfx_resample
+  tests: []
+- id: F2-10
+  title: 'ez-gfx: text (FreeType 2.14.3)'
+  phase: F2
+  depends_on:
+  - F2-07
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/text.py
+  - chat/render_base.py
+  files:
+  - rust/crates/ez-gfx
+  fixtures:
+  - gfx_text
+  tests: []
+- id: F2-11
+  title: 'ez-gfx: icons y brand'
+  phase: F2
+  depends_on:
+  - F2-08
+  - F2-09
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/brand.py
+  - src/ezagent/voice/hud/icons.py
+  files:
+  - rust/crates/ez-gfx
+  fixtures:
+  - gfx_icons
+  tests: []
+- id: F2-12
+  title: 'ez-hud: tokens, theme, anim, motion, geometry, layout, pacing'
+  phase: F2
+  depends_on:
+  - F2-01
+  - F1-10a
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/anim.py
+  - src/ezagent/voice/hud/bar_motion.py
+  - src/ezagent/voice/hud/bar_theme.py
+  - theme_accent.py
+  - src/ezagent/voice/hud/chat_geometry.py
+  - src/ezagent/voice/hud/layered.py frame_due..paint_mark
+  - src/ezagent/voice/hud/menu_layout.py
+  - src/ezagent/voice/hud/tokens.py
+  files:
+  - rust/crates/ez-hud
+  fixtures:
+  - hud_geometry
+  tests: []
+- id: F3-01
+  title: 'ez-llm: tool_json, tool_markup, context, condenser'
+  phase: F3
+  depends_on:
+  - F2-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/condenser.py
+  - src/ezagent/voice/context.py
+  - src/ezagent/voice/tool_json.py
+  - src/ezagent/voice/tool_markup.py
+  files:
+  - rust/crates/ez-llm
+  fixtures:
+  - tool_json
+  - tool_markup
+  - condenser
+  - context
+  tests: []
+- id: F3-02
+  title: 'ez-agent: handoff, handoff_packet, orchestration'
+  phase: F3
+  depends_on:
+  - F2-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/agent/handoff.py
+  - src/ezagent/agent/handoff_packet.py
+  - src/ezagent/agent/orchestration.py
+  files:
+  - rust/crates/ez-agent
+  fixtures: []
+  tests: []
+- id: F3-03
+  title: 'ez-agent: registry'
+  phase: F3
+  depends_on:
+  - F2-04
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/agent/registry.py
+  files:
+  - rust/crates/ez-agent
+  fixtures:
+  - registry
+  tests: []
+- id: F3-04
+  title: 'ez-agent: confirm, audit, journal'
+  phase: F3
+  depends_on:
+  - F2-01
+  - F2-04
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/agent/audit.py
+  - src/ezagent/agent/confirm.py
+  - src/ezagent/agent/journal.py
+  files:
+  - rust/crates/ez-agent
+  fixtures:
+  - confirm
+  - audit
+  tests: []
+- id: F3-05
+  title: 'ez-agent: system_prompt'
+  phase: F3
+  depends_on:
+  - F3-03
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/agent/system_prompt.py
+  files:
+  - rust/crates/ez-agent
+  fixtures:
+  - system_prompt
+  tests: []
+- id: F3-06
+  title: 'ez-agent: skills y tools_skills'
+  phase: F3
+  depends_on:
+  - F3-03
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/agent/skills.py
+  - src/ezagent/agent/tools_skills.py
+  files:
+  - rust/crates/ez-agent
+  fixtures:
+  - skills
+  tests: []
+- id: F3-07
+  title: 'ez-agent: tools_core y tools_fs'
+  phase: F3
+  depends_on:
+  - F3-03
+  - F3-04
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/agent/tools_core.py
+  - src/ezagent/agent/tools_fs.py
+  files:
+  - rust/crates/ez-agent
+  fixtures:
+  - tools_fs
+  - tools_core
+  tests: []
+- id: F3-08
+  title: 'ez-agent: tools_d'
+  phase: F3
+  depends_on:
+  - F3-03
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/agent/tools_d.py
+  files:
+  - rust/crates/ez-agent
+  fixtures: []
+  tests: []
+- id: F3-09a
+  title: 'ez-agent: memory schema y store (FTS5)'
+  phase: F3
+  depends_on:
+  - F2-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/agent/memory.py
+  - src/ezagent/agent/memory.py 1-562
+  files:
+  - rust/crates/ez-agent
+  fixtures:
+  - memory_db
+  tests: []
+- id: F3-09b
+  title: 'ez-agent: memory ops, recall y tools_memory'
+  phase: F3
+  depends_on:
+  - F3-09a
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/agent/memory.py 563-1102
+  - src/ezagent/agent/tools_memory.py
+  files:
+  - rust/crates/ez-agent
+  fixtures:
+  - memory_ops
+  tests: []
+- id: F3-10
+  title: 'ez-agent: search y tools_web'
+  phase: F3
+  depends_on:
+  - F3-03
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/agent/search.py
+  - src/ezagent/agent/tools_web.py
+  files:
+  - rust/crates/ez-agent
+  fixtures: []
+  tests: []
+- id: F3-11
+  title: 'ez-swarm: models, protocol, db, incident_db, mail'
+  phase: F3
+  depends_on:
+  - F2-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/swarm/db.py
+  - src/ezagent/swarm/incident_db.py
+  - src/ezagent/swarm/mail.py
+  - src/ezagent/swarm/models.py
+  - src/ezagent/swarm/protocol.py
+  files:
+  - rust/crates/ez-swarm
+  fixtures:
+  - swarm_schema
+  tests: []
+- id: F3-12
+  title: 'ez-swarm: store, service, view, progress, incidents'
+  phase: F3
+  depends_on:
+  - F3-11
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/swarm/incidents.py
+  - src/ezagent/swarm/progress.py
+  - src/ezagent/swarm/service.py
+  - src/ezagent/swarm/store.py
+  - src/ezagent/swarm/view.py
+  files:
+  - rust/crates/ez-swarm
+  fixtures:
+  - swarm_commands
+  tests: []
+- id: F3-13
+  title: 'ez-swarm: server y bin ezs'
+  phase: F3
+  depends_on:
+  - F3-12
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/swarm/cli.py
+  - src/ezagent/swarm/server.py
+  files:
+  - rust/crates/ez-swarm
+  fixtures:
+  - swarm_cli
+  tests: []
+- id: F3-14
+  title: ez-chat completo
+  phase: F3
+  depends_on:
+  - F2-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/chat/contexts.py
+  - src/ezagent/voice/chat/markdown.py
+  - src/ezagent/voice/chat/media.py
+  - src/ezagent/voice/chat/session.py
+  - src/ezagent/voice/chat/speech.py
+  - src/ezagent/voice/chat/store.py
+  - src/ezagent/voice/chat/text_input.py
+  - src/ezagent/voice/chat/trace.py
+  files:
+  - rust/crates/ez-chat
+  fixtures:
+  - chat
+  tests: []
+- id: F3-15
+  title: 'ez-herdr: tasks, activity; ez-core: metrics'
+  phase: F3
+  depends_on:
+  - F2-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/activity.py
+  - src/ezagent/voice/metrics.py
+  - src/ezagent/voice/tasks.py
+  files:
+  - rust/crates/ez-core
+  - rust/crates/ez-herdr
+  fixtures:
+  - tasks
+  - activity
+  - metrics
+  tests: []
+- id: F3-16
+  title: wake, fast, sentences
+  phase: F3
+  depends_on:
+  - F2-06
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/app.py (_Sentences)
+  - src/ezagent/voice/app.py (_fast_command)
+  - src/ezagent/voice/wake.py
+  files:
+  - rust/crates/ez-app
+  - rust/crates/ez-audio
+  fixtures:
+  - app_text
+  tests: []
+- id: F4-01
+  title: 'ez-audio: capture, segmenter, barge_in, resample'
+  phase: F4
+  depends_on:
+  - F2-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/audio.py
+  - src/ezagent/voice/audio.py (Segmenter)
+  - src/ezagent/voice/audio.py (resample)
+  files:
+  - rust/crates/ez-audio
+  fixtures:
+  - audio
+  tests: []
+- id: F4-02
+  title: 'ez-audio: turn (Smart Turn)'
+  phase: F4
+  depends_on:
+  - F4-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/turn.py
+  files:
+  - rust/crates/ez-audio
+  fixtures:
+  - turn
+  tests: []
+- id: F4-03
+  title: 'ez-stt: server y client'
+  phase: F4
+  depends_on:
+  - F2-02
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/stt.py
+  - src/ezagent/voice/stt.py
+  - voice/app.py 285-383
+  files:
+  - rust/crates/ez-stt
+  fixtures: []
+  tests: []
+- id: F4-04
+  title: 'ez-tts: phonemes, kokoro, voices'
+  phase: F4
+  depends_on:
+  - F2-05
+  - F2-06
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - kokoro_onnx inference
+  - kokoro_onnx phonemizer (espeak-ng)
+  - src/ezagent/voice/tts.py (voice styles)
+  files:
+  - rust/crates/ez-tts
+  fixtures:
+  - tts
+  tests: []
+- id: F4-05
+  title: 'ez-tts: speaker y queue'
+  phase: F4
+  depends_on:
+  - F4-04
+  - F4-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/speech_queue.py
+  - src/ezagent/voice/tts.py (Speaker)
+  files:
+  - rust/crates/ez-tts
+  fixtures: []
+  tests: []
+- id: F4-06
+  title: 'ez-llm: openai, anthropic, sse, errors'
+  phase: F4
+  depends_on:
+  - F2-03
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - SSE parsing in llm.py
+  - friendly_llm_error in llm.py
+  - openai SDK usage in llm.py
+  - src/ezagent/voice/anthropic_client.py
+  files:
+  - rust/crates/ez-llm
+  fixtures:
+  - llm_sse
+  tests: []
+- id: F4-07
+  title: 'ez-llm: messenger request, history, recovery'
+  phase: F4
+  depends_on:
+  - F4-06
+  - F3-01
+  - F3-05
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/llm.py
+  - src/ezagent/voice/llm.py 1-489
+  - src/ezagent/voice/llm.py 1064-1283
+  files:
+  - rust/crates/ez-llm
+  fixtures:
+  - llm_request
+  tests: []
+- id: F4-08
+  title: 'ez-llm: messenger tool_loop'
+  phase: F4
+  depends_on:
+  - F4-07
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/llm.py 490-1063
+  files:
+  - rust/crates/ez-llm
+  fixtures:
+  - llm_tools
+  tests: []
+- id: F4-09
+  title: 'ez-llm: notices; ez-agent: runtime'
+  phase: F4
+  depends_on:
+  - F4-08
+  - F3-02
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/agent/runtime.py
+  - src/ezagent/voice/llm.py 1283-1319
+  files:
+  - rust/crates/ez-agent
+  - rust/crates/ez-llm
+  fixtures: []
+  tests: []
+- id: F4-10
+  title: 'ez-herdr: herdr, watcher, prelaunch'
+  phase: F4
+  depends_on:
+  - F3-15
+  - F1-11
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/agent_prelaunch.py
+  - src/ezagent/voice/herdr.py
+  - src/ezagent/voice/watcher.py
+  files:
+  - rust/crates/ez-herdr
+  fixtures:
+  - herdr
+  tests: []
+- id: F4-11
+  title: 'ez-herdr: driver y session'
+  phase: F4
+  depends_on:
+  - F4-10
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/agent_driver.py
+  - src/ezagent/voice/agent_session.py
+  files:
+  - rust/crates/ez-herdr
+  fixtures:
+  - agent_driver
+  tests: []
+- id: F4-12a
+  title: 'ez-agent: tools_herdr args y summaries'
+  phase: F4
+  depends_on:
+  - F4-11
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/agent/tools_herdr.py
+  - src/ezagent/agent/tools_herdr.py 1-595
+  files:
+  - rust/crates/ez-agent
+  fixtures:
+  - tools_herdr
+  tests: []
+- id: F4-12b
+  title: 'ez-agent: tools_herdr delegate, voice, builder'
+  phase: F4
+  depends_on:
+  - F4-12a
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/agent/tools_herdr.py 596-1043
+  files:
+  - rust/crates/ez-agent
+  fixtures: []
+  tests: []
+- id: F4-13a
+  title: 'ez-swarm: supervisor y stack'
+  phase: F4
+  depends_on:
+  - F3-13
+  - F4-10
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/swarm/stack.py
+  - src/ezagent/swarm/supervisor.py
+  files:
+  - rust/crates/ez-swarm
+  fixtures: []
+  tests: []
+- id: F4-13b
+  title: 'ez-swarm: recovery; ez-agent: tools_swarm'
+  phase: F4
+  depends_on:
+  - F4-13a
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/agent/tools_swarm.py
+  - src/ezagent/swarm/recovery.py
+  files:
+  - rust/crates/ez-agent
+  - rust/crates/ez-swarm
+  fixtures: []
+  tests: []
+- id: F5-01
+  title: 'ez-hud::win: layered, wndproc, dpi, monitor, input'
+  phase: F5
+  depends_on:
+  - F2-12
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/frame_stats.py
+  - src/ezagent/voice/hud/layered.py
+  files:
+  - rust/crates/ez-hud
+  fixtures: []
+  tests: []
+- id: F5-02
+  title: 'ez-hud::paint: state, flow, marks'
+  phase: F5
+  depends_on:
+  - F2-12
+  - F2-07
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/flow.py
+  - src/ezagent/voice/hud/marks.py
+  - src/ezagent/voice/hud/state.py
+  files:
+  - rust/crates/ez-hud
+  fixtures: []
+  tests: []
+- id: F5-03
+  title: ez-hud::model::drop (geometria)
+  phase: F5
+  depends_on:
+  - F2-12
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/drop.py 62-552
+  files:
+  - rust/crates/ez-hud
+  fixtures:
+  - hud_drop_model
+  tests: []
+- id: F5-04
+  title: ez-hud::paint::drop
+  phase: F5
+  depends_on:
+  - F5-02
+  - F5-03
+  - F2-11
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/drop.py 553-844
+  files:
+  - rust/crates/ez-hud
+  fixtures: []
+  tests: []
+- id: F5-05
+  title: ez-hud::win::drop (bar, card, ui)
+  phase: F5
+  depends_on:
+  - F5-01
+  - F5-04
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/drop.py 845-2246
+  files:
+  - rust/crates/ez-hud
+  fixtures: []
+  tests: []
+- id: F5-06
+  title: 'ez-hud: peek'
+  phase: F5
+  depends_on:
+  - F5-01
+  - F5-02
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/peek.py
+  - src/ezagent/voice/hud/peek_paint.py
+  files:
+  - rust/crates/ez-hud
+  fixtures: []
+  tests: []
+- id: F5-07
+  title: 'ez-hud::model::menu: geometry, clock, external'
+  phase: F5
+  depends_on:
+  - F2-08
+  - F2-12
+  - F5-11
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/menu.py 699-1342
+  - src/ezagent/voice/hud/menu.py 699-2338
+  files:
+  - rust/crates/ez-hud
+  fixtures: []
+  tests: []
+- id: F5-08
+  title: 'ez-hud::model::menu: selectors, rects, hit, pointer'
+  phase: F5
+  depends_on:
+  - F5-07
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/menu.py 1343-1887
+  files:
+  - rust/crates/ez-hud
+  fixtures:
+  - hud_menu_hit
+  tests: []
+- id: F5-09
+  title: 'ez-hud::model::menu: sliders, wheel, edit, voice_test'
+  phase: F5
+  depends_on:
+  - F5-08
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/menu.py 1888-2338
+  files:
+  - rust/crates/ez-hud
+  fixtures: []
+  tests: []
+- id: F5-10a
+  title: ez-hud::paint::menu (primera mitad)
+  phase: F5
+  depends_on:
+  - F5-07
+  - F2-10
+  - F2-11
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/menu.py 2339-3100
+  - src/ezagent/voice/hud/menu.py 2339-3872
+  files:
+  - rust/crates/ez-hud
+  fixtures: []
+  tests: []
+- id: F5-10b
+  title: ez-hud::paint::menu (segunda mitad)
+  phase: F5
+  depends_on:
+  - F5-10a
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/menu.py 3101-3499
+  - src/ezagent/voice/hud/menu.py 3500-3872
+  files:
+  - rust/crates/ez-hud
+  fixtures: []
+  tests: []
+- id: F5-11
+  title: ez-hud::model::settings
+  phase: F5
+  depends_on:
+  - F2-02
+  - F2-03
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/settings.py
+  files:
+  - rust/crates/ez-hud
+  fixtures:
+  - hud_settings
+  tests: []
+- id: F5-12
+  title: 'ez-hud: settings_window y hotkey_field'
+  phase: F5
+  depends_on:
+  - F5-01
+  - F5-11
+  - F2-10
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/hotkey_field.py
+  - src/ezagent/voice/hud/settings_window.py
+  files:
+  - rust/crates/ez-hud
+  fixtures: []
+  tests: []
+- id: F5-13
+  title: ez-hud::paint::chat render
+  phase: F5
+  depends_on:
+  - F2-10
+  - F3-14
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/chat/render*.py
+  - src/ezagent/voice/chat/render.py
+  - src/ezagent/voice/chat/render_rich.py
+  - src/ezagent/voice/hud/chat_labels.py
+  files:
+  - rust/crates/ez-hud
+  fixtures: []
+  tests: []
+- id: F5-14
+  title: ez-hud::model::chat (vista, cabecera, pie)
+  phase: F5
+  depends_on:
+  - F5-13
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/chat_footer.py
+  - src/ezagent/voice/hud/chat_header.py
+  - src/ezagent/voice/hud/chat_view.py
+  files:
+  - rust/crates/ez-hud
+  fixtures: []
+  tests: []
+- id: F5-15
+  title: ez-hud::win::chat (compose, window)
+  phase: F5
+  depends_on:
+  - F5-14
+  - F5-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hud/chat_paint.py
+  - src/ezagent/voice/hud/chat_paint.py
+  - chat_ui.py
+  - src/ezagent/voice/hud/chat_ui.py
+  files:
+  - rust/crates/ez-hud
+  fixtures: []
+  tests: []
+- id: F5-16
+  title: 'ez-app: tray y hotkeys'
+  phase: F5
+  depends_on:
+  - F0-04
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/hotkeys.py
+  - src/ezagent/voice/tray.py
+  files:
+  - rust/crates/ez-app
+  fixtures: []
+  tests: []
+- id: F6-01
+  title: 'ez-app: core, startup y bucle Win32'
+  phase: F6
+  depends_on:
+  - F4-03
+  - F4-05
+  - F4-09
+  - F5-05
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/app.py
+  - src/ezagent/voice/app.py 384-699
+  - src/ezagent/voice/app.py 927-1125
+  files:
+  - rust/crates/ez-app
+  fixtures: []
+  tests: []
+- id: F6-02
+  title: 'ez-app: tray_wiring'
+  phase: F6
+  depends_on:
+  - F6-01
+  - F5-16
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/app.py 700-926
+  files:
+  - rust/crates/ez-app
+  fixtures: []
+  tests: []
+- id: F6-03
+  title: 'ez-app: events y call'
+  phase: F6
+  depends_on:
+  - F6-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/app.py 1126-1673
+  files:
+  - rust/crates/ez-app
+  fixtures: []
+  tests: []
+- id: F6-04
+  title: 'ez-app: states y workers'
+  phase: F6
+  depends_on:
+  - F6-03
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/app.py 1674-2013
+  files:
+  - rust/crates/ez-app
+  fixtures: []
+  tests: []
+- id: F6-05
+  title: 'ez-app: chat y watch'
+  phase: F6
+  depends_on:
+  - F6-04
+  - F5-15
+  - F4-10
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/app.py 2014-2450
+  files:
+  - rust/crates/ez-app
+  fixtures: []
+  tests: []
+- id: F6-06a
+  title: 'ez-app: settings_apply'
+  phase: F6
+  depends_on:
+  - F6-01
+  - F5-11
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/app.py 2451-2657
+  files:
+  - rust/crates/ez-app
+  fixtures: []
+  tests: []
+- id: F6-06b
+  title: 'ez-app: menu_wiring'
+  phase: F6
+  depends_on:
+  - F6-06a
+  - F5-10b
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/app.py 2658-3396
+  files:
+  - rust/crates/ez-app
+  fixtures: []
+  tests: []
+- id: F6-07
+  title: 'ez-app: pause, activity, demo, main'
+  phase: F6
+  depends_on:
+  - F6-05
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python:
+  - src/ezagent/voice/app.py 3397-3986
+  - src/ezagent/voice/app.py 3987-4085
+  files:
+  - rust/crates/ez-app
+  fixtures: []
+  tests: []
+- id: F7-01
+  title: 'Reproduccion: feature replay y 25 escenarios'
+  phase: F7
+  depends_on:
+  - F6-07
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files:
+  - rust/crates/ez-app/src/replay
+  fixtures: []
+  tests: []
+- id: F7-02
+  title: Barrido de cuadros dorados e interaccion
+  phase: F7
+  depends_on:
+  - F5-15
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F7-03
+  title: Compatibilidad de datos y enjambre mixto
+  phase: F7
+  depends_on:
+  - F3-13
+  - F6-07
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F7-04
+  title: Rendimiento contra baseline-metrics.json
+  phase: F7
+  depends_on:
+  - F6-07
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F7-05
+  title: Robustez (2 h, fallos de red y hardware)
+  phase: F7
+  depends_on:
+  - F6-07
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F7-06
+  title: Prueba en vivo con hardware real (usuario)
+  phase: F7
+  depends_on:
+  - F7-01
+  - F7-02
+  - F7-03
+  - F7-04
+  - F7-05
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F8-01
+  title: Instalador y empaquetado release
+  phase: F8
+  depends_on:
+  - F7-06
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files:
+  - packaging/EzAgent.iss
+  - EzAgent.bat
+  fixtures: []
+  tests: []
+- id: F8-02
+  title: Modo eval y proveedor de promptfoo
+  phase: F8
+  depends_on:
+  - F7-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F8-03
+  title: Documentacion Rust
+  phase: F8
+  depends_on:
+  - F8-01
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []
+- id: F9-01
+  title: Auditoria final (Claude)
+  phase: F9
+  depends_on:
+  - F8-03
+  status: todo
+  round: 0
+  worker: null
+  worktree: null
+  python: []
+  files: []
+  fixtures: []
+  tests: []

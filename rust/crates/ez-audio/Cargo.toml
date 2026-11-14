@@ -1,0 +1,17 @@
+[package]
+name = "ez-audio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "ez_audio"
+path = "src/lib.rs"
+
+[dependencies]
+cpal = { workspace = true }
+ndarray = { workspace = true }
+crossbeam-channel = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }

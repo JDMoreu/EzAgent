@@ -1,0 +1,39 @@
+{"case": "pyjson/0001", "fn": "dumps", "input": {"value": {}, "options": {}}, "output": {"text": "{}"}, "error": null}
+{"case": "pyjson/0002", "fn": "dumps", "input": {"value": [], "options": {}}, "output": {"text": "[]"}, "error": null}
+{"case": "pyjson/0003", "fn": "dumps", "input": {"value": {"a": 1}, "options": {}}, "output": {"text": "{\"a\": 1}"}, "error": null}
+{"case": "pyjson/0004", "fn": "dumps", "input": {"value": {"b": 1, "a": 2}, "options": {}}, "output": {"text": "{\"b\": 1, \"a\": 2}"}, "error": null}
+{"case": "pyjson/0005", "fn": "dumps", "input": {"value": {"z": [1, 2, 3], "a": {"n": null}}, "options": {}}, "output": {"text": "{\"z\": [1, 2, 3], \"a\": {\"n\": null}}"}, "error": null}
+{"case": "pyjson/0006", "fn": "dumps", "input": {"value": null, "options": {}}, "output": {"text": "null"}, "error": null}
+{"case": "pyjson/0007", "fn": "dumps", "input": {"value": true, "options": {}}, "output": {"text": "true"}, "error": null}
+{"case": "pyjson/0008", "fn": "dumps", "input": {"value": false, "options": {}}, "output": {"text": "false"}, "error": null}
+{"case": "pyjson/0009", "fn": "dumps", "input": {"value": "texto plano", "options": {}}, "output": {"text": "\"texto plano\""}, "error": null}
+{"case": "pyjson/0010", "fn": "dumps", "input": {"value": "tildes: \u00f1\u00e1\u00e9\u00ed\u00f3\u00fa", "options": {}}, "output": {"text": "\"tildes: \\u00f1\\u00e1\\u00e9\\u00ed\\u00f3\\u00fa\""}, "error": null}
+{"case": "pyjson/0011", "fn": "dumps", "input": {"value": "comillas \" y \\ barras", "options": {}}, "output": {"text": "\"comillas \\\" y \\\\ barras\""}, "error": null}
+{"case": "pyjson/0012", "fn": "dumps", "input": {"value": "emoji \ud83d\ude42\ud83d\ude80", "options": {}}, "output": {"text": "\"emoji \\ud83d\\ude42\\ud83d\\ude80\""}, "error": null}
+{"case": "pyjson/0013", "fn": "dumps", "input": {"value": "salto\nde l\u00ednea\ttabulador", "options": {}}, "output": {"text": "\"salto\\nde l\\u00ednea\\ttabulador\""}, "error": null}
+{"case": "pyjson/0014", "fn": "dumps", "input": {"value": 0.1, "options": {}}, "output": {"text": "0.1"}, "error": null}
+{"case": "pyjson/0015", "fn": "dumps", "input": {"value": 1.0, "options": {}}, "output": {"text": "1.0"}, "error": null}
+{"case": "pyjson/0016", "fn": "dumps", "input": {"value": -0.0, "options": {}}, "output": {"text": "-0.0"}, "error": null}
+{"case": "pyjson/0017", "fn": "dumps", "input": {"value": 1e-05, "options": {}}, "output": {"text": "1e-05"}, "error": null}
+{"case": "pyjson/0018", "fn": "dumps", "input": {"value": 1e-07, "options": {}}, "output": {"text": "1e-07"}, "error": null}
+{"case": "pyjson/0019", "fn": "dumps", "input": {"value": 1.5e+20, "options": {}}, "output": {"text": "1.5e+20"}, "error": null}
+{"case": "pyjson/0020", "fn": "dumps", "input": {"value": 123456789012345678, "options": {}}, "output": {"text": "123456789012345678"}, "error": null}
+{"case": "pyjson/0021", "fn": "dumps", "input": {"value": 0.30000000000000004, "options": {}}, "output": {"text": "0.30000000000000004"}, "error": null}
+{"case": "pyjson/0022", "fn": "dumps", "input": {"value": {"latencia": 0.000123, "tts": 1.05}, "options": {}}, "output": {"text": "{\"latencia\": 0.000123, \"tts\": 1.05}"}, "error": null}
+{"case": "pyjson/0023", "fn": "dumps", "input": {"value": {"clave con espacios": "valor"}, "options": {}}, "output": {"text": "{\"clave con espacios\": \"valor\"}"}, "error": null}
+{"case": "pyjson/0024", "fn": "dumps", "input": {"value": [{"case": "x", "fn": "y"}], "options": {}}, "output": {"text": "[{\"case\": \"x\", \"fn\": \"y\"}]"}, "error": null}
+{"case": "pyjson/0025", "fn": "dumps", "input": {"value": {"ts": 1735689600.5, "kind": "turn"}, "options": {"ensure_ascii": true}}, "output": {"text": "{\"ts\": 1735689600.5, \"kind\": \"turn\"}"}, "error": null}
+{"case": "pyjson/0026", "fn": "dumps", "input": {"value": {"nombre": "Jos\u00e9"}, "options": {"ensure_ascii": true}}, "output": {"text": "{\"nombre\": \"Jos\\u00e9\"}"}, "error": null}
+{"case": "pyjson/0027", "fn": "dumps", "input": {"value": {"nombre": "Jos\u00e9"}, "options": {"ensure_ascii": false}}, "output": {"text": "{\"nombre\": \"Jos\u00e9\"}"}, "error": null}
+{"case": "pyjson/0028", "fn": "dumps", "input": {"value": {"a": 1, "b": 2}, "options": {"indent": 2}}, "output": {"text": "{\n  \"a\": 1,\n  \"b\": 2\n}"}, "error": null}
+{"case": "pyjson/0029", "fn": "dumps", "input": {"value": {"a": [1, {"b": 2}]}, "options": {"indent": 2, "sort_keys": true}}, "output": {"text": "{\n  \"a\": [\n    1,\n    {\n      \"b\": 2\n    }\n  ]\n}"}, "error": null}
+{"case": "pyjson/0030", "fn": "dumps", "input": {"value": [1, 2, 3], "options": {"separators": [",", ":"]}}, "output": {"text": "[1,2,3]"}, "error": null}
+{"case": "pyjson/0031", "fn": "dumps", "input": {"value": {"a": "\u00f1"}, "options": {"separators": [",", ":"]}}, "output": {"text": "{\"a\":\"\\u00f1\"}"}, "error": null}
+{"case": "pyjson/0032", "fn": "dumps", "input": {"value": ["a", "b"], "options": {"indent": 4}}, "output": {"text": "[\n    \"a\",\n    \"b\"\n]"}, "error": null}
+{"case": "pyjson/0033", "fn": "dumps", "input": {"value": {"n": 1e-05, "m": 2.5}, "options": {"indent": 2}}, "output": {"text": "{\n  \"n\": 1e-05,\n  \"m\": 2.5\n}"}, "error": null}
+{"case": "pyjson/0034", "fn": "dumps", "input": {"value": {"unicode": "\u00e1\nb"}, "options": {"indent": 2, "ensure_ascii": true}}, "output": {"text": "{\n  \"unicode\": \"\\u00e1\\nb\"\n}"}, "error": null}
+{"case": "pyjson/0035", "fn": "dumps", "input": {"value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "options": {}}, "output": {"text": "\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""}, "error": null}
+{"case": "pyjson/0036", "fn": "dumps", "input": {"value": {"lista": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]}, "options": {"indent": 1}}, "output": {"text": "{\n \"lista\": [\n  0,\n  1,\n  2,\n  3,\n  4,\n  5,\n  6,\n  7,\n  8,\n  9,\n  10,\n  11,\n  12,\n  13,\n  14,\n  15,\n  16,\n  17,\n  18,\n  19\n ]\n}"}, "error": null}
+{"case": "pyjson/rt001", "fn": "round_trip", "input": {"value": {"kind": "turn", "vad_wait_ms": 1297.0, "stt_ready_ms": 125.0}}, "output": {"text": "{\"kind\": \"turn\", \"vad_wait_ms\": 1297.0, \"stt_ready_ms\": 125.0}", "back": {"kind": "turn", "vad_wait_ms": 1297.0, "stt_ready_ms": 125.0}}, "error": null}
+{"case": "pyjson/rt002", "fn": "round_trip", "input": {"value": {"voice": "ef_dora", "speed": 1.1, "silence_secs": 1.3}}, "output": {"text": "{\"voice\": \"ef_dora\", \"speed\": 1.1, \"silence_secs\": 1.3}", "back": {"voice": "ef_dora", "speed": 1.1, "silence_secs": 1.3}}, "error": null}
+{"case": "pyjson/rt003", "fn": "round_trip", "input": {"value": {"ok": true, "items": [{"id": "a", "n": 1}], "none": null}}, "output": {"text": "{\"ok\": true, \"items\": [{\"id\": \"a\", \"n\": 1}], \"none\": null}", "back": {"ok": true, "items": [{"id": "a", "n": 1}], "none": null}}, "error": null}

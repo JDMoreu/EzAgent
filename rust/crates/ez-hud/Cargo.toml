@@ -1,0 +1,19 @@
+[package]
+name = "ez-hud"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "ez_hud"
+path = "src/lib.rs"
+
+[dependencies]
+image = { workspace = true }
+png = { workspace = true }
+ndarray = { workspace = true }
+bytemuck = { workspace = true }
+windows = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }

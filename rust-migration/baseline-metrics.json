@@ -1,0 +1,199 @@
+{
+  "generated_at": "2026-11-13T23:35:16-0500",
+  "python": "3.12.15",
+  "source": "tag py-baseline",
+  "code": {
+    "python_files": 116,
+    "python_lines": 45056,
+    "files_over_900_lines": [
+      {
+        "file": "src/ezagent/voice/app.py",
+        "lines": 4085
+      },
+      {
+        "file": "src/ezagent/voice/hud/menu.py",
+        "lines": 3872
+      },
+      {
+        "file": "src/ezagent/voice/hud/drop.py",
+        "lines": 2246
+      },
+      {
+        "file": "src/ezagent/voice/hud/layered.py",
+        "lines": 1564
+      },
+      {
+        "file": "src/ezagent/voice/llm.py",
+        "lines": 1319
+      },
+      {
+        "file": "src/ezagent/voice/hud/settings.py",
+        "lines": 1171
+      },
+      {
+        "file": "src/ezagent/agent/memory.py",
+        "lines": 1102
+      },
+      {
+        "file": "src/ezagent/agent/tools_herdr.py",
+        "lines": 1043
+      },
+      {
+        "file": "src/ezagent/agent/tools_fs.py",
+        "lines": 916
+      }
+    ]
+  },
+  "tests": {
+    "test_files": 62,
+    "collected_tests": 1882,
+    "last_run": "1881 passed, 1 skipped"
+  },
+  "latency": {
+    "source": "C:\\Users\\JDMoreu\\AppData\\Roaming\\EzAgent\\logs\\latency.jsonl",
+    "turns": 252,
+    "kind": [
+      "command",
+      "turn"
+    ],
+    "stages": {
+      "first_ack_ms": {
+        "p50": 1594.0,
+        "p95": 1922.0,
+        "mean": 1658.5
+      },
+      "first_sentence_ms": {
+        "p50": 63.0,
+        "p95": 281.0,
+        "mean": 121.665
+      },
+      "first_sound_ms": {
+        "p50": 594.0,
+        "p95": 8188.0,
+        "mean": 1810.09
+      },
+      "first_token_ms": {
+        "p50": 1953.0,
+        "p95": 6250.0,
+        "mean": 2873.747
+      },
+      "handled_ms": {
+        "p50": 0.0,
+        "p95": 16.0,
+        "mean": 4.182
+      },
+      "llm_ms": {
+        "p50": 3813.0,
+        "p95": 13750.0,
+        "mean": 5678.151
+      },
+      "llm_ttft_ms": {
+        "p50": 2079.0,
+        "p95": 5734.0,
+        "mean": 2728.032
+      },
+      "rounds": {
+        "p50": 2.0,
+        "p95": 3.0,
+        "mean": 1.706
+      },
+      "stt_ready_ms": {
+        "p50": 157.0,
+        "p95": 484.0,
+        "mean": 205.602
+      },
+      "total_ms": {
+        "p50": 3968.0,
+        "p95": 15109.0,
+        "mean": 5824.412
+      },
+      "ttfa_ms": {
+        "p50": 3968.0,
+        "p95": 15109.0,
+        "mean": 5824.412
+      },
+      "tts_play_ms": {
+        "p50": 6532.0,
+        "p95": 24328.0,
+        "mean": 9149.558
+      },
+      "tts_synth_ms": {
+        "p50": 1876.0,
+        "p95": 7391.0,
+        "mean": 2716.962
+      },
+      "turn_end_ms": {
+        "p50": 4578.0,
+        "p95": 28610.0,
+        "mean": 8962.32
+      },
+      "turn_total_ms": {
+        "p50": 12641.0,
+        "p95": 40047.0,
+        "mean": 15783.037
+      },
+      "vad_wait_ms": {
+        "p50": 422.0,
+        "p95": 1297.0,
+        "mean": 813.266
+      }
+    },
+    "how": "P50/P95 sobre las marcas de LatencyStats de las sesiones reales ya registradas"
+  },
+  "audio": {
+    "startup_to_list_mics_ms": 1865.8,
+    "returncode": 0,
+    "stderr": "",
+    "device_lines": [
+      {
+        "line": "0  Asignador de sonido Microsoft - Input          44100 Hz  2 canales"
+      },
+      {
+        "line": "1  Micrófono (TA82)                               44100 Hz  1 canales"
+      },
+      {
+        "line": "2  Micrófono (Webcam AC410)                       44100 Hz  2 canales"
+      },
+      {
+        "line": "8  Controlador primario de captura de sonido      44100 Hz  2 canales"
+      },
+      {
+        "line": "9  Micrófono (TA82)                               44100 Hz  1 canales"
+      },
+      {
+        "line": "10  Micrófono (Webcam AC410)                       44100 Hz  2 canales"
+      },
+      {
+        "line": "20  Micrófono (Webcam AC410)                       48000 Hz  2 canales"
+      },
+      {
+        "line": "21  Micrófono (TA82)                               48000 Hz  1 canales"
+      },
+      {
+        "line": "22  Línea de entrada (Realtek HD Audio Line input)  44100 Hz  2 canales"
+      },
+      {
+        "line": "23  Micrófono (Realtek HD Audio Mic input)         44100 Hz  2 canales"
+      },
+      {
+        "line": "24  Mezcla estéreo (Realtek HD Audio Stereo input)  44100 Hz  2 canales"
+      },
+      {
+        "line": "28  Micrófono (TA82)                               48000 Hz  1 canales"
+      },
+      {
+        "line": "31  Input (Steam Streaming Speakers Wave)          44100 Hz  8 canales"
+      },
+      {
+        "line": "33  Micrófono (Webcam AC410)                       48000 Hz  2 canales"
+      }
+    ],
+    "how": "subprocess `python -m ezagent.voice.app --list-mics`, cronometrado desde el proceso padre"
+  },
+  "pending": {
+    "hud_frame_stats": "requiere `ezagent-voice --demo-ui` con sesión gráfica; lo corre el usuario",
+    "cpu_idle_percent": "requiere la app en reposo con HUD visible",
+    "ram_rss_mb": "requiere la app en reposo con HUD visible",
+    "startup_full_ms": "requiere arranque completo (micrófono + whisper + modelo de voz)"
+  }
+}

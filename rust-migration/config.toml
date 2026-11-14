@@ -1,0 +1,30 @@
+# Comandos de los CLIs, verificados en esta máquina con `--help` (F0-02).
+# opencode  (opencode run --help): flags usados: --model/-m, --title, --auto,
+#   --format json, --worktree/-w, --session/-s. El mensaje va como argumento.
+# codex     (codex exec --help): flags usados: --dangerously-bypass-approvals-and-sandbox,
+#   -C/--cd, -o/--output-last-message, --json, -m.
+# Modelo DeepSeek V4.1 Flash en OpenCode: `opencode-go/deepseek-v4.1-flash`
+#   (variantes low|high|max; `opencode models` lista también
+#   `opencode/deepseek-v4.1-flash-free`).
+
+max_parallel_workers = 6
+worktree_root = "../EzAgent-wt"
+max_rounds_before_split = 3
+max_rounds_before_escalation = 5
+
+worker_model = "opencode-go/deepseek-v4.1-flash"
+worker_cmd = ["opencode", "run", "--model", "{model}", "--title", "{task}", "--auto", "{prompt}"]
+validator_cmd = ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "-C", "{worktree}", "-o", "{report}", "{prompt}"]
+
+# Puerta de calidad por tarea
+gate_cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "rust/gate.ps1", "-Task", "{task}"]
+
+# Rutas del oráculo
+baseline_tag = "py-baseline"
+branch = "rust/main"
+fixtures_dir = "parity/fixtures"
+golden_dir = "parity/golden"
+thresholds = "parity/thresholds.toml"
+
+# Verificación de la línea base (debe seguir verde siempre)
+python_tests_cmd = ["uv", "run", "pytest", "-q"]
