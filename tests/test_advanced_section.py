@@ -8,10 +8,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from ezagent.voice.notch import settings_window as sw
-from ezagent.voice.notch.menu import ACTION_KEYS, Menu
-from ezagent.voice.notch.menu_layout import ADVANCED_ROWS, GROUP_LABELS, GROUPS
-from ezagent.voice.notch.settings import DEFAULT_VALUES, LABELS, MenuSettings
+from ezagent.voice.hud import settings_window as sw
+from ezagent.voice.hud.menu import ACTION_KEYS, Menu
+from ezagent.voice.hud.menu_layout import ADVANCED_ROWS, GROUP_LABELS, GROUPS
+from ezagent.voice.hud.settings import DEFAULT_VALUES, LABELS, MenuSettings
 
 FILE_ACTIONS = ("open_config_dir", "open_system_md", "open_permissions", "open_voice_json")
 

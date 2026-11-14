@@ -55,6 +55,14 @@ class Watcher:
         self._events: queue.Queue[tuple[str, str, str, str] | None] = queue.Queue()
         self._prev: dict[str, tuple[str, str]] = {}
         self._primed = False
+        # Último estado visto de cada terminal; lo lee el hilo de UI (globo).
+        self._live: dict[str, str] = {}
+        self._live_lock = threading.Lock()
+
+    def state_of(self, address: str) -> str | None:
+        """Estado de la terminal en la última consulta buena; None si no existe."""
+        with self._live_lock:
+            return self._live.get(address)
 
     def start(self) -> None:
         if self._delivery is None or not self._delivery.is_alive():
@@ -165,6 +173,8 @@ class Watcher:
             if not address:
                 continue
             current[address] = (state, agent)
+        with self._live_lock:
+            self._live = {address: state for address, (state, _) in current.items()}
 
         if not self._primed:
             self._prev = dict(current)

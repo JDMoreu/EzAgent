@@ -12,7 +12,8 @@ from ..chat import markdown as md
 from ..chat.render_base import STYLES, Ctx, wrap
 from .icons import draw_icon
 from .menu import _fill_circle, _fill_round_rect, _stroke_round_rect
-from .tokens import FS_MICRO, FS_ROW, FS_SECONDARY
+from .text import baseline_top, cap_height
+from .tokens import FS_MICRO, FS_SECONDARY
 
 PAD = 16.0
 BTN = 32.0
@@ -21,6 +22,11 @@ INPUT_LINE = 21.0
 INPUT_MAX_LINES = 6
 HINT_H = 0.0
 AUDIO_W = BTN * 2 + 16.0
+
+
+def input_box_height(rows: int) -> float:
+    """Alto de la caja: una línea mide ``INPUT_MIN`` y cada línea más suma ``INPUT_LINE``."""
+    return INPUT_MIN + max(0, rows - 1) * INPUT_LINE
 
 
 class FooterMixin:
@@ -39,7 +45,7 @@ class FooterMixin:
         width = self.g.width - 2 * PAD - AUDIO_W - 12 - BTN - 14
         self._input_lines = self._wrap_input(width)
         rows = min(len(self._input_lines), INPUT_MAX_LINES)
-        box = max(INPUT_MIN, rows * INPUT_LINE + 24)
+        box = input_box_height(rows)
         extra = 0.0
         if self.model.confirm is not None:
             extra += 84.0
@@ -64,8 +70,8 @@ class FooterMixin:
             self._draw_confirm(buf, y + 2)
             y += 84
         rows = min(len(self._input_lines), INPUT_MAX_LINES)
-        box_h = max(INPUT_MIN, rows * INPUT_LINE + 24)
-        box = (PAD + AUDIO_W, y + 6, g.width - PAD, y + 6 + box_h)
+        box_h = input_box_height(rows)
+        box = (PAD + AUDIO_W, y + HINT_H + 6, g.width - PAD, y + HINT_H + 6 + box_h)
         self._input_box = box
         _fill_round_rect(buf, *box, 16.0, self._color("GROUP")[:3], g.scale)
         _stroke_round_rect(
@@ -83,7 +89,7 @@ class FooterMixin:
 
     def _draw_composer_tools(self, buf, cy: float) -> None:
         """Place audio controls to the left, aligned with the composer row."""
-        muted, voice = self.model.mic_muted, self.model.voice_replies
+        muted, voice = self.model.mic_muted or not self.in_call, self.model.voice_replies
         self._icon_button(
             buf,
             "microphone-slash" if muted else "microphone",
@@ -101,15 +107,28 @@ class FooterMixin:
             active=voice,
         )
 
+    def _baseline(self, box, row: int) -> float:
+        """Línea base de la fila ``row``: la franja mayúscula–base queda centrada en la caja.
+
+        Con una línea, el espacio sobre las mayúsculas y bajo la base es el mismo;
+        con más, la primera y la última guardan ese mismo margen.
+        """
+        cap = cap_height(STYLES["body"], self.g.scale)
+        return box[1] + (INPUT_MIN + cap) / 2 + row * INPUT_LINE
+
     def _draw_input_text(self, buf, box, now: float) -> None:
-        x0, y0 = box[0] + 14, box[1] + 12
+        x0 = box[0] + 14
+        body = STYLES["body"]
         first = max(0, len(self._input_lines) - INPUT_MAX_LINES)
         if self.input.empty and not self.input.text:
-            self._text(buf, "Escribe un mensaje…", FS_ROW, self._color("TEXT_3"), x0, y0 + 1)
+            hint = "Escribe un mensaje…"
+            y = baseline_top(hint, body, self._baseline(box, 0), self.g.scale)
+            self._text(buf, hint, body, self._color("TEXT_3"), x0, y)
         sel = self.input.selection()
         ctx = self._ctx(1000.0)
+        cap = cap_height(body, self.g.scale)
         for row, (a, b) in enumerate(self._input_lines[first:]):
-            y = y0 + row * INPUT_LINE
+            base = self._baseline(box, row)
             if sel and sel[0] < b + 1 and sel[1] > a:
                 s0, s1 = max(sel[0], a), min(sel[1], b)
                 x_a, x_b = (
@@ -119,18 +138,21 @@ class FooterMixin:
                 _fill_round_rect(
                     buf,
                     x0 + x_a,
-                    y - 1,
+                    base - cap - 5,
                     x0 + x_b + 3,
-                    y + 19,
+                    base + 6,
                     4.0,
                     self._color("MINT")[:3],
                     self.g.scale,
                     0.28,
                 )
-            self._text(buf, self.input.text[a:b], STYLES["body"], self._color("TEXT"), x0, y)
-        self._draw_caret(buf, x0, y0, first, now)
+            line = self.input.text[a:b]
+            if line.strip():
+                y = baseline_top(line, body, base, self.g.scale)
+                self._text(buf, line, body, self._color("TEXT"), x0, y)
+        self._draw_caret(buf, x0, box, first, now)
 
-    def _draw_caret(self, buf, x0: float, y0: float, first: int, now: float) -> None:
+    def _draw_caret(self, buf, x0: float, box, first: int, now: float) -> None:
         if int((now - self._focus_t0) * 2.0) % 2:
             return
         cur = self.input.cursor
@@ -142,9 +164,17 @@ class FooterMixin:
                 if row < first:
                     return
                 x = x0 + self._ctx(1000.0).length(self.input.text[a:cur], "body")
-                y = y0 + (row - first) * INPUT_LINE
+                base = self._baseline(box, row - first)
+                cap = cap_height(STYLES["body"], self.g.scale)
                 _fill_round_rect(
-                    buf, x, y, x + 1.6, y + 18, 0.8, self._color("MINT")[:3], self.g.scale
+                    buf,
+                    x,
+                    base - cap - 3,
+                    x + 1.6,
+                    base + 4,
+                    0.8,
+                    self._color("MINT")[:3],
+                    self.g.scale,
                 )
                 return
 
@@ -212,7 +242,8 @@ class FooterMixin:
     def _place_caret(self, x: float, y: float) -> None:
         box = self._input_box
         first = max(0, len(self._input_lines) - INPUT_MAX_LINES)
-        row = int((y - (box[1] + 12)) // INPUT_LINE)
+        # La banda de cada fila se centra en su franja mayúscula–base.
+        row = int((y - (box[1] + (INPUT_MIN - INPUT_LINE) / 2)) // INPUT_LINE)
         row = max(0, min(row, len(self._input_lines) - first - 1)) + first
         a, b = self._input_lines[row]
         ctx = self._ctx(1000.0)

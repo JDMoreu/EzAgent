@@ -10,9 +10,9 @@ from test_chat_ui import CURSOR, WORK, FakeUI, FakeWindow, alpha_box, local_to_w
 
 from ezagent.voice.chat.session import ChatModel
 from ezagent.voice.chat.store import ChatStore
-from ezagent.voice.notch import chat_geometry as geo
-from ezagent.voice.notch import chat_ui as cu
-from ezagent.voice.notch.chat_ui import ChatPanel
+from ezagent.voice.hud import chat_geometry as geo
+from ezagent.voice.hud import chat_ui as cu
+from ezagent.voice.hud.chat_ui import ChatPanel
 
 
 @pytest.fixture

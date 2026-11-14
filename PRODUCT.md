@@ -8,7 +8,7 @@ desktop (Windows)
 
 ## Stack
 
-Python voice messenger with a Win32 layered notch. VAD and turn segmentation run
+Python voice messenger with a Win32 layered HUD (sphere or pill). VAD and turn segmentation run
 locally; whisper.cpp provides STT, Kokoro provides TTS, and the LLM is selected
 from any OpenAI-compatible provider. The pipeline is EzAgent's own: **Pipecat is
 not used**. There is no Tauri/React app, dashboard, call panel, or secondary
@@ -18,7 +18,7 @@ settings window.
 
 A single Spanish-speaking power user on their own Windows 11 desktop with a GPU
 and headphones, working alongside Herdr. They want hands-free spoken control of
-their agents, with a compact always-available notch and a menu for adjusting
+their agents, with a compact always-available HUD and a menu for adjusting
 audio, voice and conversation behavior.
 
 ## Product Purpose
@@ -30,7 +30,7 @@ EzAgent is the **local voice layer for your coding agents**: you speak, it
 dispatches the task to Claude Code, OpenCode, Codex or any configured CLI
 (directly or through Herdr), watches it and tells you when it finishes or gets
 blocked. It does not do the work itself and is not a general assistant. The
-notch is the visible witness: two eyes that show attention and agent state.
+HUD is the visible witness: a living orb that shows attention and agent state.
 Success is a sub-second spoken reply and an agent launched with one sentence.
 
 ## Positioning
@@ -42,27 +42,24 @@ optional backend.
 
 ## Operating Context
 
-Windows 11, an always-on-top layered notch, a global hotkey, a system tray icon,
+Windows 11, an always-on-top layered HUD, a global hotkey, a system tray icon,
 an external whisper-server, and an optional Herdr app for agent orchestration.
-The notch is dragged like a floating pill and only becomes a notch at the top
-edge; the pill can sit over the taskbar. Provider keys and models can be
-configured through `.env`, `llm.json` or the notch menu; the notch only takes
+The HUD is dragged like a floating sphere or pill; it can sit over the taskbar. Provider keys and models can be
+configured through `.env`, `llm.json` or the HUD menu; the HUD only takes
 keyboard focus while an inline text field is being edited.
 
 ## Capabilities and Constraints
 
 - Start/stop the voice call; the app starts listening when opened.
 - Mute the microphone; the muted icon is red and crossed.
-- Open the settings menu in the same expanding notch: microphone, VAD,
+- Open the settings menu in the same expanding HUD: microphone, VAD,
   silence, voice, TTS, Whisper/STT, LLM/API, interruption, optional confirmations
   and voice preview. Long content scrolls; all labels are Spanish.
 - Edit provider, model, endpoint and API key inline; save providers and switch
-  between saved profiles without leaving the notch.
-- Drag the notch anywhere, including over the Windows taskbar, where the
-  floating pill stays above it. It attaches to the top edge as a notch only
-  when it is practically glued to it. The last position is restored on the
-  next launch.
-- Show the real microphone state in the notch: normal while listening, gray
+  between saved profiles without leaving the HUD.
+- Drag the HUD anywhere, including over the Windows taskbar, where it stays
+  above it. The last position is restored on the next launch.
+- Show the real microphone state in the HUD: normal while listening, gray
   crossed out when listening is off, and red crossed out when muted. Clicking
   the crossed-out microphone resumes listening and clears the mute.
 - Keep a Windows system tray icon while the app is running, with options to
@@ -106,19 +103,19 @@ Name: EzAgent. Voice: direct, calm, technical without jargon, Spanish from
 Spain. The interface is an instrument, not a marketing surface. The identity is
 «the instrument that looks back»: graphite body, two capsule eyes as the only
 symbol, one mint signal for attention, amber for processing or pause, red for
-failure. The notch is the product; there is no desktop panel behind it.
+failure. The HUD is the product; there is no desktop panel behind it.
 
 ## Evidence on Hand
 
-- `README.md` documents the notch, installation and provider configuration.
+- `README.md` documents the HUD, installation and provider configuration.
 - `docs/llm-providers.md` documents provider selection.
-- `DESIGN.md` is the visual contract for the notch and its menu.
+- `DESIGN.md` is the visual contract for the HUD and its menu.
 - `assets/icon.svg` is the eyes-in-rounded-square mark.
 - No customer logos, testimonials, pricing, or invented benchmarks.
 
 ## Product Principles
 
-1. The notch is the product; every control lives in it or its menu.
+1. The HUD is the product; every control lives in it or its menu.
 2. State is never ambiguous: idle, listening, thinking, speaking, notice,
    muted, error or hidden.
 3. Settings are explicit, reversible, and saved only when requested.

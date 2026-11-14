@@ -9,7 +9,6 @@ import pytest
 
 from ezagent.agent.registry import ToolResult
 from ezagent.voice.llm import (
-    ACK_FILLERS,
     MAX_HISTORY_MESSAGES,
     TOOL_MAX_TOKENS,
     Messenger,
@@ -233,7 +232,8 @@ def test_ciclo_completo_de_herramienta() -> None:
     messenger = make(client, runtime)
     spoken = say(messenger, "qué hora es")
     assert runtime.executed == [("get_datetime", '{"tz":"UTC"}')]
-    assert spoken.endswith("Son las 14:05.") and spoken.split()[0:2] == ACK_FILLERS[0].split()[0:2]
+    # get_datetime es instantánea: sin aviso previo, directo a la respuesta.
+    assert spoken == "Son las 14:05."
     assistant, tool = messenger.messages[-3], messenger.messages[-2]
     assert assistant["tool_calls"][0] == {
         "id": "call_1",
@@ -248,29 +248,38 @@ def test_ciclo_completo_de_herramienta() -> None:
     assert len(messenger.last_rounds) == 2 and "get_datetime" in messenger.last_rounds[0]
 
 
-def test_sin_texto_previo_el_codigo_dice_un_acuse_y_rota_entre_ellos() -> None:
-    messenger = make(Client())
-    seen = []
-    for i in range(len(ACK_FILLERS) + 1):
-        messenger.client = Client(tool_round("web_search", "{}", f"c{i}"), [text("Hecho.")])
-        seen.append(say(messenger, "busca").split(" Hecho.")[0].strip())
-    assert seen[: len(ACK_FILLERS)] == list(ACK_FILLERS)
-    assert seen[len(ACK_FILLERS)] == ACK_FILLERS[0]  # y vuelve a empezar
+@pytest.mark.parametrize(
+    ("name", "arguments", "ack"),
+    [
+        ("web_search", "{}", "Busco en la web."),
+        ("delegate_to_agent", '{"action":"send","address":"t1"}', "Le escribo al agente."),
+        ("delegate_to_agent", '{"action":"run","agent":"claude"}', "Se lo paso a Claude Code."),
+    ],
+)
+def test_las_herramientas_lentas_avisan_con_lo_que_hacen(name, arguments, ack) -> None:
+    client = Client(tool_round(name, arguments), [text("Hecho.")])
+    assert say(make(client), "hazlo") == f"{ack} Hecho."
 
 
-def test_si_el_modelo_ya_hablo_no_se_agrega_un_acuse() -> None:
+@pytest.mark.parametrize(
+    ("name", "arguments"),
+    [
+        ("voice_control", '{"action":"mute"}'),
+        ("delegate_to_agent", '{"action":"list"}'),
+        ("read_file", '{"path":"a.txt"}'),
+    ],
+)
+def test_las_herramientas_rapidas_no_avisan(name, arguments) -> None:
+    client = Client(tool_round(name, arguments), [text("Listo.")])
+    assert say(make(client), "hazlo") == "Listo."
+
+
+def test_si_el_modelo_ya_hablo_no_se_agrega_aviso() -> None:
     client = Client(
-        tool_round("web_search", "{}", preface="Un momento, lo busco."), [text("Encontré tres.")]
+        tool_round("web_search", "{}", preface="Busco precios de GPU."), [text("Encontré tres.")]
     )
     spoken = say(make(client), "busca")
-    assert not any(filler in spoken for filler in ACK_FILLERS)
-    assert spoken == "Un momento, lo busco. Encontré tres."  # separado por un espacio
-
-
-def test_voice_control_no_lleva_acuse() -> None:
-    client = Client(tool_round("voice_control", '{"action":"mute"}'), [text("Silenciado.")])
-    spoken = say(make(client), "silénciate")
-    assert not any(filler in spoken for filler in ACK_FILLERS) and spoken == "Silenciado."
+    assert spoken == "Busco precios de GPU. Encontré tres."  # separado por un espacio
 
 
 def test_varias_herramientas_en_una_ronda_se_ejecutan_en_orden_de_indice() -> None:
@@ -575,7 +584,6 @@ def test_el_bloque_del_chat_no_se_arrastra_al_turno_de_voz_siguiente() -> None:
 def test_el_chat_no_dice_acuses_de_relleno() -> None:
     client = Client(tool_round("web_search", "{}", "c1"), [text("Encontré tres resultados.")])
     out = "".join(make(client).ask_stream("busca", mode="chat"))
-    assert not any(filler in out for filler in ACK_FILLERS)
     assert out == "Encontré tres resultados."
 
 
@@ -598,3 +606,32 @@ def test_sin_runtime_el_chat_tampoco_deja_su_prompt_pegado() -> None:
     say(messenger, "adiós")
     assert CHAT_MODE_PROMPT not in client.requests[1]["messages"][0]["content"]
     assert "núcleo agéntico no está disponible" in client.requests[1]["messages"][0]["content"]
+
+
+def test_el_marcado_de_herramienta_escrito_como_texto_no_se_dice_ni_se_guarda() -> None:
+    from ezagent.voice.tool_markup import TOOL_MARKUP_NOTICE
+
+    dsml = '<｜DSML｜ calls> <｜DSML｜ invoke name="delegate_to_agent">'
+    client = Client([text("Se lo paso. "), text(dsml[:5]), text(dsml[5:] + "basura")])
+    messenger = make(client)
+    spoken = say(messenger, "dile a claude")
+    assert "DSML" not in spoken and "invoke" not in spoken
+    assert spoken == "Se lo paso. " + TOOL_MARKUP_NOTICE
+    assert all("DSML" not in str(m.get("content")) for m in messenger.messages)
+
+
+def test_si_falla_la_seleccion_de_herramientas_se_usan_las_base() -> None:
+    class Registry:
+        def schemas(self, names=None, limit=None):
+            return [{"type": "function", "function": {"name": n}} for n in names or ()]
+
+    class Broken(Runtime):
+        registry = Registry()
+
+        def tools_for(self, text):
+            raise TypeError("expected string or bytes-like object, got 'NoneType'")
+
+    client = Client([text("Hecho.")])
+    assert say(make(client, Broken()), "hola") == "Hecho."
+    names = [t["function"]["name"] for t in client.requests[0]["tools"]]
+    assert "delegate_to_agent" in names  # no se queda sin herramientas

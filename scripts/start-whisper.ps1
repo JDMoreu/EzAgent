@@ -36,7 +36,11 @@ if (-not $Server) {
     }
     if ($Server -and $Server -like "*\cpu\whisper-server.exe") { $Engine = "cpu" }
 }
-if (-not $Model)  { $Model  = Join-Path $WhisperHome "models\ggml-large-v3-turbo-q5_0.bin" }
+if (-not $Model)  {
+    # q8_0 por defecto (más preciso); si no está descargado, cae al q5_0.
+    $Model = Join-Path $WhisperHome "models\ggml-large-v3-turbo-q8_0.bin"
+    if (-not (Test-Path $Model)) { $Model = Join-Path $WhisperHome "models\ggml-large-v3-turbo-q5_0.bin" }
+}
 
 # VAD Silero dentro del servidor: sin voz, Whisper devuelve texto vacio en vez de
 # alucinar «Gracias.». Anade ~3 ms por frase. Si falta el modelo, arranca sin VAD.

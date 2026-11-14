@@ -24,7 +24,7 @@ typography:
 
 # Sistema de diseño: EzAgent
 
-La fuente de verdad es el código: `src/ezagent/voice/notch/` (`drop.py`,
+La fuente de verdad es el código: `src/ezagent/voice/hud/` (`drop.py`,
 `flow.py`, `bar_motion.py`, `bar_theme.py`, `tokens.py`, `menu.py`). Este
 documento resume sus reglas; si algo no coincide, manda el código.
 
@@ -75,6 +75,37 @@ ventana de ajustes sigue la escala de pantalla de Windows.
 - Se puede arrastrar por la forma. La posición se guarda por disposición
   (`drop_x`, `drop_y`, `drop_layout`).
 
+### Actividad: órbita y vista rápida
+
+El estado de los agentes delegados se lee sin texto en la barra
+(`activity.py`, `hud/marks.py`, `hud/peek.py`).
+
+- **Órbita.** Una marca por tarea (máximo 5), en orden de prioridad: arcos
+  cortos arriba a la derecha de la esfera, o guiones bajo la píldora.
+  Sustituye al globo con número, que cambiaba de significado.
+
+  | Estado | Forma | Color | Movimiento o peso |
+  |---|---|---|---|
+  | Necesita tu respuesta | guion | ámbar | fijo, más grueso |
+  | Falló | guion | rojo | fijo |
+  | En curso | guion | menta | respira |
+  | En espera (de otra tarea) | guion | neutro | fijo, atenuado |
+  | Sin actualización reciente | guion | neutro | fijo, tenue |
+  | Completada sin ver | punto | menta | fijo |
+
+- **Vista rápida.** Con el puntero quieto sobre la forma 280 ms aparece una
+  tarjeta compacta que sale de la barra: filas con indicador, tarea y
+  «estado · agente · tiempo», hasta 4 y «y N más». Sin encabezado ni botón de
+  cerrar; se va 350 ms después de que el puntero sale de la forma y de la
+  tarjeta. Un clic en una fila la da por vista y trae su terminal al frente.
+  No aparece con el menú o el chat abiertos, durante una pregunta ni al arrastrar.
+- **Avisos.** Un desenlace nuevo abre la tarjeta solo con esa fila: 3,2 s si
+  terminó, 6 s si te necesita o falló. Hablar o escribir da todo por visto.
+  «¿Qué tareas tengo pendientes?» la abre con la lista completa 8 s.
+- **Estados honestos.** Nada se da por terminado porque dejó de emitir salida
+  ni se muestran porcentajes. Una terminal que desaparece queda como «Sin
+  actualización reciente».
+
 ## Color
 
 ### Fluido Marea (según estado y tema)
@@ -116,7 +147,22 @@ de confirmación y error; no se utilizan como acentos decorativos.
 
 ### Tema
 
-`theme` en `voice.json`: `auto` (sigue a Windows), `light` o `dark`.
+`theme` en `voice.json`: `auto` (sigue a Windows), `light`, `dark` o `custom`.
+
+Con `custom`, la paleta elegida (`theme_primary`, `theme_background`…) no solo
+pinta el fluido: `hud/theme_accent.py` re-tiñe toda la paleta de `tokens.py`,
+que usan el chat, los ajustes, los botones de la barra, la órbita y la vista
+rápida.
+
+- **Acento** (las claves `MINT*`): toma el tono del color principal y ajusta su
+  luminosidad hasta leerse a 4,5:1 sobre el cuerpo en claro y a 6:1 en oscuro.
+  La tinta sobre botones de acento también cumple 4,5:1.
+- **Superficies y textos secundarios**: conservan luminosidad y saturación, pero
+  toman el tono del color de fondo, como Marea lo hace con el verde azulado.
+- **Ámbar y rojo** no cambian, porque tienen significado.
+
+Cada cambio sube `tokens.palette_version()`, que forma parte de las claves de
+caché de quien dibuja con la paleta.
 
 ## Tipografía
 
@@ -202,8 +248,10 @@ un ✕ forman la cabecera.
   editables (la clave del LLM se enmascara).
 - **Pie:** muestra `TODO GUARDADO` o `● CAMBIOS SIN GUARDAR`. Guardar usa el
   acento cuando hay cambios y confirma con un check.
-- **Iconos:** vectoriales, rejilla de 24 px, trazo 1,8 (1,6 por debajo de 18 px),
-  rasterizados con supermuestreo ×4.
+- **Iconos:** una sola familia (`hud/icons.py`) para barra, chat y ajustes:
+  vectoriales, rejilla de 24 px, trazo 1,8 (1,6 por debajo de 18 px). Se
+  rasterizan analíticamente al tamaño físico final; nunca se reescalan después
+  ni se usa una fuente de iconos engrosada.
 
 ### Modelos y configuraciones guardadas
 
@@ -250,7 +298,7 @@ cadena. No se entrena Whisper ni se añade una llamada de red. Límite: 100 regl
 
 - Contraste WCAG: texto y texto de acento ≥ 4,5:1 sobre las superficies de la
   tarjeta; botones de acento con su tinta ≥ 4,5:1. Lo comprueban
-  `tests/test_settings_window.py` y el validador `notch/a11y.py`.
+  `tests/test_settings_window.py` y el validador `hud/a11y.py`.
 - Nunca solo color: la pose cambia también el movimiento.
 - Movimiento reducido respetado (ver arriba).
 - Las acciones principales tienen atajo global (`Ctrl+Alt+Space`,

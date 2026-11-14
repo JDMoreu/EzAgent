@@ -1,6 +1,6 @@
 """Vista del chat: cabecera, mensajes con scroll, entrada de texto, confirmaciones e historial.
 
-Es pura: dibuja en un buffer float32 RGBA premultiplicado (como el resto del notch) y devuelve
+Es pura: dibuja en un buffer float32 RGBA premultiplicado (como el resto del HUD) y devuelve
 *acciones* («enviar», «cerrar», «copiar»…) en vez de tocar Windows, el portapapeles o la app.
 Así se prueba entera; ``chat_ui.py`` la lleva a una ventana y ejecuta las acciones.
 
@@ -17,8 +17,8 @@ import numpy as np
 from PIL import Image
 
 from ..chat import markdown as md
-from ..chat.render import render_message
-from ..chat.render_base import Ctx, Hit, paint_lines, round_rect, wrap
+from ..chat.render import LIST_MARKER, LIST_STEP, render_message
+from ..chat.render_base import LINE_K, Ctx, Hit, paint_lines, round_rect, wrap
 from ..chat.session import ChatMessage, ChatModel
 from ..chat.store import SessionInfo
 from ..chat.text_input import TextInput
@@ -33,15 +33,17 @@ from .chat_footer import (
     _break,
 )
 from .chat_header import DELETE_SECS, HEADER_H, HeaderMixin
+from .chat_labels import draw_label, draw_stamp, stamp_height
 from .icons import draw_icon
 from .menu import _fill_circle, _fill_round_rect
 from .settings_window import composite_over
 from .text import draw_text
-from .tokens import FS_MICRO
 
 GAP = 14.0
 KEYED = ("session", "delete_ask", "delete_yes", "delete_no")  # el hover lleva su fila
 COPY_W = 30.0  # ancho (px lógicos) de la zona del icono de copiar
+COPY_SLOT = 26.0  # hueco libre a la derecha de la última línea para que quepa el icono
+COPY_ROW = 24.0  # fila extra bajo el texto cuando el icono no cabe en la última línea
 SCROLL_STEP = 56.0
 STREAM_REFRESH = 0.05
 
@@ -105,6 +107,7 @@ class ChatView(HeaderMixin, FooterMixin):
         self.input = TextInput()
         self.scroll = 0.0  # px lógicos desde el final (0 = pegado al último mensaje)
         self.mode = "chat"  # «chat» | «history»
+        self.in_call = False
         self._pending_delete: int | None = None  # fila del historial pidiendo confirmar
         self._deleting: tuple[int, SessionInfo, float] | None = None  # fila que se desvanece
         self.hover: str | None = None
@@ -126,8 +129,8 @@ class ChatView(HeaderMixin, FooterMixin):
         # Los mensajes dependen del ancho, no del alto: estirar hacia arriba o abajo no los rehace.
         key = (round(width, 1), round(scale, 3), theme)
         old = self.g
-        if (round(old.width, 1), round(old.scale, 3), old.theme) != key:
-            self._cache.clear()
+        if (round(old.width, 1), round(old.scale, 3), old.theme) != key or old.pal != pal:
+            self._cache.clear()  # los colores también rehacen los mensajes (tema personalizado)
         self.g = _Geometry(width, height, scale, theme, pal)
 
     @property
@@ -179,6 +182,25 @@ class ChatView(HeaderMixin, FooterMixin):
         paint_lines(img, ctx, lines, "small", 0.0, 4.0, ctx.color("TEXT_3"))
         return _Entry(height, _premult(img), PAD + self.content_w * 0.04, plain=msg.text)
 
+    def _tail_right(self, blocks: list[md.Block], width: float) -> float | None:
+        """Hasta dónde llega la última línea del texto (``None`` si el cierre no es texto)."""
+        block = blocks[-1] if blocks else None
+        if isinstance(block, md.Paragraph):
+            indent, room = 0.0, width
+        elif isinstance(block, md.ListItem):
+            indent = 4.0 + block.level * LIST_STEP + LIST_MARKER
+            room = width - indent
+        elif isinstance(block, md.Quote):
+            indent, room = 14.0, width - 16
+        else:
+            return None
+        last = wrap(self._ctx(width), block.spans, "body", room)[-1]
+        return indent + max((r.x + r.width for r in last), default=0.0)
+
+    def _copy_row_h(self) -> float:
+        """Alto de una línea de texto del cuerpo."""
+        return self._ctx(1.0).size("body") * LINE_K
+
     def _user_entry(self, msg: ChatMessage) -> _Entry:
         blocks = md.parse(msg.text)
         rich = any(isinstance(b, (md.Document, md.Image, md.Table, md.Code)) for b in blocks)
@@ -190,22 +212,39 @@ class ChatView(HeaderMixin, FooterMixin):
                 for runs in wrap(measure, block.spans, "body", limit - 24):
                     natural = max(natural, max((r.x + r.width for r in runs), default=0.0))
         inner = limit - 24 if rich else min(limit - 24, max(natural + 2, 30.0))
+        tail = self._tail_right(blocks, inner)
+        if tail is not None and tail + COPY_SLOT > inner and inner < limit - 24:
+            # La burbuja se ensancha lo justo para que el icono quepa en la última línea.
+            wider = min(limit - 24, tail + COPY_SLOT)
+            wider_tail = self._tail_right(blocks, wider)
+            if wider_tail is not None and wider_tail + COPY_SLOT <= wider:
+                inner, tail = wider, wider_tail
+        inline = tail is not None and tail + COPY_SLOT <= inner
         rendered = render_message(
             msg.text, self.g.pal, inner, self.g.scale, self.roots, self.base_dirs
         )
-        bw, bh = inner + 24, rendered.height + 42
+        bw = inner + 24
+        body_h = rendered.height + (18 if inline else 18 + COPY_ROW)
+        bh = body_h + 18
+        if inline:  # el icono centrado en la última línea, dentro de la misma caja
+            cy = 9 + rendered.height - self._copy_row_h() / 2
+            caption = (bw - COPY_W - 6, cy + 8, bw - 6, cy + 28)
+        else:
+            caption = (bw - COPY_W - 6, bh - 28, bw - 6, bh - 4)
         sc = self.g.scale
         img = Image.new("RGBA", (round(bw * sc), round(bh * sc)), (0, 0, 0, 0))
         ctx = self._ctx(bw)
-        round_rect(img, ctx, (0, 0, bw, bh), 16.0, ctx.color("MINT", 0.15), ctx.color("MINT", 0.34))
-        img.alpha_composite(rendered.image, (round(12 * sc), round(9 * sc)))
-        hits = tuple(_shift(h, 12.0, 9.0) for h in rendered.hits)
+        round_rect(
+            img, ctx, (0, 18, bw, bh), 16.0, ctx.color("MINT", 0.15), ctx.color("MINT", 0.34)
+        )
+        img.alpha_composite(rendered.image, (round(12 * sc), round(27 * sc)))
+        hits = tuple(_shift(h, 12.0, 27.0) for h in rendered.hits)
         return _Entry(
             bh,
             _premult(img),
             self.g.width - PAD - bw,
             hits,
-            caption_hit=(bw - COPY_W - 6, bh - 28, bw - 6, bh - 4),
+            caption_hit=caption,
             plain=msg.text,  # lo escrito, tal cual (sin interpretar markdown)
         )
 
@@ -213,17 +252,19 @@ class ChatView(HeaderMixin, FooterMixin):
         pal = dict(self.g.pal)
         if msg.error:
             pal["TEXT"] = pal["ERR"]
+        has_copy = bool(msg.text and not msg.streaming and not msg.error)
+        # DECISION: reserve a narrow icon gutter on every answer line so the
+        # copy control never adds a bottom row to the card.
+        text_width = self.content_w - 24 - (COPY_SLOT if has_copy else 0)
         rendered = render_message(
-            msg.text, pal, self.content_w - 24, self.g.scale, self.roots, self.base_dirs
+            msg.text, pal, text_width, self.g.scale, self.roots, self.base_dirs
         )
         sc = self.g.scale
         caption = 20.0
-        has_copy = bool(msg.text and not msg.streaming and not msg.error)
-        height = caption + 12 + (rendered.height if msg.text else 16.0) + 4.0
+        # DECISION: equal vertical inset keeps the answer text centred in its card.
+        height = caption + 12 + (rendered.height if msg.text else 16.0) + 12.0
         img = Image.new("RGBA", (round(self.content_w * sc), round(height * sc)), (0, 0, 0, 0))
         ctx = self._ctx(self.content_w)
-        # DECISION: the copy icon shares the last text row (bottom-right corner)
-        # instead of reserving a new row when streaming finishes.
         round_rect(
             img,
             ctx,
@@ -236,11 +277,10 @@ class ChatView(HeaderMixin, FooterMixin):
             img.alpha_composite(rendered.image, (round(12 * sc), round((caption + 12) * sc)))
         hits = tuple(_shift(h, 12.0, caption + 12) for h in rendered.hits)
         arr = _premult(img)
-        copy_rect = (
-            (self.content_w - COPY_W - 6, height - 24, self.content_w - 6, height - 4)
-            if has_copy
-            else None
-        )
+        copy_rect = None
+        if has_copy:
+            cy = caption + 12 + rendered.height - self._copy_row_h() / 2
+            copy_rect = (self.content_w - COPY_W - 6, cy - 10, self.content_w - 6, cy + 10)
         return _Entry(height, arr, PAD, hits, copy_rect, rendered.plain)
 
     # -------------------------------------------------------------- dibujo
@@ -305,13 +345,18 @@ class ChatView(HeaderMixin, FooterMixin):
             self._max_scroll = 0.0
             return
         entries = [self._entry(m, now) for m in messages]
-        total = PAD + sum(e.height for e in entries) + GAP * (len(entries) - 1) + GAP
+        stamps = [stamp_height(m) for m in messages]  # fecha y hora bajo cada mensaje
+        total = PAD + sum(e.height + s for e, s in zip(entries, stamps, strict=True))
+        total += GAP * (len(entries) - 1) + GAP
         self._max_scroll = max(0.0, total - viewport)
         self.scroll = max(0.0, min(self.scroll, self._max_scroll))
         y = top - (self._max_scroll - self.scroll) + PAD
-        for msg, entry in zip(messages, entries, strict=True):
+        for msg, entry, stamp_h in zip(messages, entries, stamps, strict=True):
             self._draw_message(buf, msg, entry, y, top, bottom, now)
-            y += entry.height + GAP
+            if stamp_h and y + entry.height >= top and y + entry.height + stamp_h <= bottom:
+                width = entry.arr.shape[1] / self.g.scale
+                draw_stamp(self._drawer(buf), msg, entry.x, width, y + entry.height, *self._ink())
+            y += entry.height + stamp_h + GAP
         if self._max_scroll > 0:
             self._draw_scrollbar(buf, top, viewport, total)
 
@@ -321,12 +366,24 @@ class ChatView(HeaderMixin, FooterMixin):
         self._blit(buf, entry.arr, entry.x, y, top, bottom)
         # Los rótulos se pintan enteros o no se pintan: nunca asoman bajo la cabecera.
         if msg.role == "assistant" and y >= top - 1 and y + 16 <= bottom:
-            label = "EZAGENT"
-            self._text(buf, label, FS_MICRO, self._color("TEXT_3"), PAD, y + 2)
+            draw_label(self._drawer(buf), "EZAGENT", PAD, y, *self._ink(), right=False)
             if msg.streaming and not msg.text and y + 34 <= bottom:
                 self._draw_dots(buf, PAD + 12, y + 40, now)
+        elif msg.role == "user" and y >= top - 1 and y + 16 <= bottom:
+            label = "TÚ · AUDIO" if msg.source == "voice" else "TÚ"
+            edge = entry.x + entry.arr.shape[1] / self.g.scale
+            draw_label(self._drawer(buf), label, edge, y, *self._ink(), right=True)
         self._draw_copy_label(buf, msg, entry, y, top, bottom, now)
         self._register_message_hits(msg, entry, y, top, bottom)
+
+    def _drawer(self, buf):
+        """``draw`` para ``chat_labels``: el ``_text`` de la vista sobre ``buf``."""
+        return lambda text, style, color, x, y, align: self._text(
+            buf, text, style, color, x, y, align
+        )
+
+    def _ink(self) -> tuple:
+        return (self._color("TEXT_3"), self.g.scale)
 
     def _draw_copy_label(self, buf, msg, entry: _Entry, y: float, top, bottom, now: float) -> None:
         """Draw copy/check inside the bottom-right corner of each message card."""
@@ -414,13 +471,16 @@ class ChatView(HeaderMixin, FooterMixin):
     def _activate(self, kind: str, data: object) -> Action | None:
         if kind == "send":
             return self._send()
-        simple = {"close": Action("close"), "stop": Action("stop"), "new": Action("new")}
+        if kind == "new":
+            self.mode, self.scroll, self._pending_delete = "chat", 0.0, None
+            return Action("new")
+        simple = {"close": Action("close"), "stop": Action("stop")}
         if kind in simple:
             return simple[kind]
         if kind == "voice":
             return Action("voice", not self.model.voice_replies)
         if kind == "mic":
-            return Action("mic", not self.model.mic_muted)
+            return Action("mic", self.in_call and not self.model.mic_muted)
         if kind == "settings":
             return Action("settings")
         if kind == "history":
@@ -482,6 +542,8 @@ class ChatView(HeaderMixin, FooterMixin):
             return self._escape()
         if ctrl and vk in (65, 67, 88):
             return self._clipboard_key(vk)
+        if ctrl and vk == 78:  # Ctrl+N: nueva conversación (si la actual ya tiene algo)
+            return self._activate("new", None) if self.can_start_new() else None
         moves = {37: "left", 39: "right", 38: "up", 40: "down", 36: "home", 35: "end"}
         if vk in moves:
             self.input.move(moves[vk], select=shift, word=ctrl)  # type: ignore[arg-type]

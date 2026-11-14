@@ -27,10 +27,12 @@ from .models import (
     BROADCAST,
     DEFAULT_LEASE_SECS,
     MAX_ROUNDS,
+    MAX_TITLE,
     SYSTEM,
     Member,
     SwarmError,
     Task,
+    clip,
     task_id,
 )
 from .store import SwarmStore
@@ -62,6 +64,8 @@ class MemberSpec:
     agent: str
     model: str = ""
     effort: str = ""
+    task: str = ""  # su primera tarea; sin ella, la del rol
+    parallel: bool = False  # trabaja a la vez que el miembro anterior
 
 
 @dataclass(frozen=True)
@@ -112,6 +116,27 @@ def _parse(args: Sequence[str]) -> tuple[list[str], dict[str, str]]:
     return words, options
 
 
+def _stages(specs: Sequence[MemberSpec]) -> list[list[tuple[str, str, str]]]:
+    """Tareas iniciales por etapas: (título, rol, dueño).
+
+    Cada miembro abre una etapa, salvo ``parallel``, que se suma a la anterior
+    (p. ej. backend y frontend a la vez). Cada etapa espera a toda la anterior.
+    Con ``task`` propia la tarea es solo de ese miembro; sin ella, los miembros
+    del mismo rol en una etapa comparten la tarea del rol.
+    """
+    stages: list[list[tuple[str, str, str]]] = []
+    for spec in specs:
+        if not stages or not spec.parallel:
+            stages.append([])
+        stage = stages[-1]
+        if spec.task:
+            title, _ = clip(spec.task, MAX_TITLE)
+            stage.append((title, spec.role, spec.name))
+        elif not any(role == spec.role and not owner for _, role, owner in stage):
+            stage.append((protocol.role_task(spec.role), spec.role, ""))
+    return [stage for stage in stages if stage]
+
+
 class SwarmService:
     """Punto de entrada único para EzAgent (en proceso) y los agentes (por token)."""
 
@@ -158,7 +183,8 @@ class SwarmService:
     ) -> tuple[str, list[Seat]]:
         """Crea un enjambre. ``tasks``: (título, rol); los miembros, en orden de trabajo.
 
-        Las tareas quedan encadenadas en orden; sin ``tasks`` hay una por rol.
+        Con ``tasks`` las tareas quedan encadenadas en orden. Sin ellas salen de
+        los miembros (ver ``_stages``).
         """
         if not members:
             raise SwarmError("Un enjambre necesita al menos un miembro.")
@@ -191,11 +217,14 @@ class SwarmService:
                 model=spec.model,
                 effort=spec.effort,
             )
-        plan = tasks if tasks is not None else protocol.default_tasks([s.role for s in specs])
+        stages = [[(title, role, "")] for title, role in tasks] if tasks is not None else None
         previous: list[int] = []
-        for title, role in plan:
-            task = self.store.add_task(swarm, title, role=role, deps=previous)
-            previous = [task.id]
+        for stage in stages or _stages(specs):
+            ids = [
+                self.store.add_task(swarm, title, role=role, owner=owner, deps=previous).id
+                for title, role, owner in stage
+            ]
+            previous = ids
         return [
             Seat(m.name, self.issue_token(swarm, m.name), self.briefing(swarm, m.name))
             for m in self.store.members(swarm)

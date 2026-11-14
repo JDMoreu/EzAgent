@@ -13,7 +13,7 @@ CLI (directamente o vía Herdr), vigila el progreso y te avisa por voz. No es un
 asistente general. El trabajo real lo hacen los agentes delegados.
 
 Pipeline: micrófono → VAD → whisper.cpp (local) → LLM compatible con OpenAI
-(barato y rápido) → Kokoro TTS (local) → altavoz. UI: un notch flotante.
+(barato y rápido) → Kokoro TTS (local) → altavoz. UI: un HUD flotante (esfera o píldora).
 
 ## 2. Cómo trabajar
 
@@ -105,8 +105,8 @@ Al terminar, responde con este formato:
 | `src/ezagent/voice/llm.py` | `Messenger`: bucle LLM + herramientas en streaming (el que se usa) |
 | `src/ezagent/voice/herdr.py`, `watcher.py`, `tasks.py` | Adaptador Herdr, vigilancia y tareas pendientes |
 | `src/ezagent/voice/agent_driver.py`, `agent_session.py`, `agent_prelaunch.py`, `condenser.py` | Lanzamiento y lectura de agentes delegados, y condensación de su salida |
-| `src/ezagent/voice/notch/` | UI: la barra (`drop.py`), su menú y la ventana layered Win32 dibujada con numpy/Pillow |
+| `src/ezagent/voice/hud/` | UI: la barra (`drop.py`), su órbita de actividad (`marks.py`) y vista rápida (`peek.py`), su menú y la ventana layered Win32 dibujada con numpy/Pillow |
 | `src/ezagent/agent/` | Núcleo agéntico: runtime, política, herramientas, memoria, skills, handoff y orquestación |
-| `src/ezagent/swarm/` | Modo enjambre: tablero SQLite (`store.py`), servicio de comandos por token (`service.py`), servidor local (`server.py`), cliente `ezs` (`cli.py`) y supervisor que abre y despierta a los agentes (`supervisor.py`), incidentes y recuperación (`incidents.py`, `recovery.py`) |
+| `src/ezagent/swarm/` | Modo enjambre: tablero SQLite (`store.py`), servicio de comandos por token (`service.py`), servidor local (`server.py`), cliente `ezs` (`cli.py`) y supervisor que abre y despierta a los agentes (`supervisor.py`), incidentes y recuperación (`incidents.py`, `recovery.py`) y avisos de avance (`progress.py`) |
 | `src/ezagent/llm_providers.py` | Perfiles y presets de proveedores LLM |
 | `tests/` | pytest (`uv run pytest -q`) |

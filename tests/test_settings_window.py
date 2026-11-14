@@ -8,17 +8,17 @@ import numpy as np
 import pytest
 
 from ezagent.voice.config import VoiceConfig
-from ezagent.voice.notch import settings_window as sw
-from ezagent.voice.notch.drop import DropUI, layout_size
-from ezagent.voice.notch.menu import Menu
-from ezagent.voice.notch.menu_layout import (
+from ezagent.voice.hud import settings_window as sw
+from ezagent.voice.hud.drop import DropUI, layout_size
+from ezagent.voice.hud.menu import Menu
+from ezagent.voice.hud.menu_layout import (
     ADVANCED_ROWS,
     CUSTOM_THEME_ROWS,
     GROUP_LABELS,
     GROUPS,
     SECTIONS,
 )
-from ezagent.voice.notch.settings import (
+from ezagent.voice.hud.settings import (
     DEFAULT_VALUES,
     INSTANT_KEYS,
     LABELS,
@@ -34,9 +34,9 @@ WORK = (0, 0, 1920, 1040)
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_shared_surfaces_and_semantic_states_have_accessible_contrast(theme: str) -> None:
-    from ezagent.voice.notch.a11y import validate_palette
-    from ezagent.voice.notch.bar_theme import card_palette, contrast
-    from ezagent.voice.notch.tokens import palette
+    from ezagent.voice.hud.a11y import validate_palette
+    from ezagent.voice.hud.bar_theme import card_palette, contrast
+    from ezagent.voice.hud.tokens import palette
 
     colors = card_palette(theme)
     assert colors == palette(theme)
@@ -71,6 +71,16 @@ def test_section_groups_resolve_and_fallback() -> None:
         groups = sw.section_groups(name)
         assert groups and all(rows for _g, rows in groups)
     assert sw.section_groups("no-existe") == sw.section_groups("appearance")
+
+
+def test_every_settings_section_stays_visible_and_clickable() -> None:
+    ui = DropUI(None, cfg=None)
+
+    def point(rect):
+        return (round((rect[0] + rect[2]) * ui.s / 2), round((rect[1] + rect[3]) * ui.s / 2))
+
+    for index, (name, _title) in enumerate(sw.sections()):
+        assert ui._sidebar_item(*point(sw.item_rect(index))) == name
 
 
 def test_every_row_has_one_label_and_is_unique() -> None:
@@ -305,10 +315,10 @@ def test_content_size_matches_window() -> None:
 
 
 def test_save_status_and_resize_grip_share_the_footer_row() -> None:
-    from ezagent.voice.notch.bar_theme import card_palette
-    from ezagent.voice.notch.menu import FOOTER_STATUS_X, SAVE_BUTTON_X0, SAVE_BUTTON_X1
-    from ezagent.voice.notch.menu_layout import Rect
-    from ezagent.voice.notch.tokens import H_ISLAND
+    from ezagent.voice.hud.bar_theme import card_palette
+    from ezagent.voice.hud.menu import FOOTER_STATUS_X, SAVE_BUTTON_X0, SAVE_BUTTON_X1
+    from ezagent.voice.hud.menu_layout import Rect
+    from ezagent.voice.hud.tokens import H_ISLAND
 
     menu = Menu(_settings(), scale=1.0)
     menu.set_max_height(sw.content_size(sw.DEFAULT_W, sw.DEFAULT_H)[1])
@@ -379,7 +389,7 @@ class _FakeUser32:
     ("ctrl", "delta", "expected"), [(True, 120, 1.05), (True, -120, 0.95), (False, 120, 1.0)]
 )
 def test_ctrl_wheel_changes_bar_size(monkeypatch, ctrl: bool, delta: int, expected: float) -> None:
-    from ezagent.voice.notch import drop
+    from ezagent.voice.hud import drop
 
     monkeypatch.setattr(drop._shell, "_u32", _FakeUser32(ctrl))
     lives: list[tuple[str, float]] = []
@@ -393,9 +403,19 @@ def test_ctrl_wheel_changes_bar_size(monkeypatch, ctrl: bool, delta: int, expect
 
 
 def test_wheel_outside_the_bar_is_ignored(monkeypatch) -> None:
-    from ezagent.voice.notch import drop
+    from ezagent.voice.hud import drop
 
     monkeypatch.setattr(drop._shell, "_u32", _FakeUser32(True))
     ui = DropUI(None, cfg=SimpleNamespace(ui_layout="pill", ui_scale=1.0))
     assert ui.bar_wheel(-500.0, -500.0, 120) is False
     assert ui.bar_scale == 1.0
+
+
+def test_changing_section_repaints_the_content() -> None:
+    """La huella de capas incluye la sección: antes se veía la anterior en caché."""
+    menu = Menu(_settings(), scale=1.0)
+    menu.set_groups(sw.section_groups("appearance"), "Aspecto", 0.0)
+    menu.open(0.0)
+    first = menu._layer_signature_value(5.0)
+    menu.set_groups(sw.section_groups("listening"), "Escucha", 5.0)
+    assert menu._layer_signature_value(5.0) != first

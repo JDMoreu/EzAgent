@@ -1,4 +1,4 @@
-"""Máquina de estados visual del notch.
+"""Máquina de estados visual del HUD.
 
 La función ``display_state`` es pura y prueba la prioridad de la sección 9.2:
 ``off > error > speak > think > notice > mute > listen > idle``.

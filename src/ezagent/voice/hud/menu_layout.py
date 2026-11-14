@@ -1,4 +1,4 @@
-"""Layout vertical del menú del notch.
+"""Layout vertical del menú del HUD.
 
 Implementa la tabla 7.3 de la especificación. Todas las medidas están en
 píxeles lógicos a 96 DPI. El layout devuelve rectángulos en coordenadas de

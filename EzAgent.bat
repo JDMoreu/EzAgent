@@ -24,11 +24,11 @@ if not "%~1"=="" goto usage
 cls
 echo.
 echo   ============================================
-echo      EzAgent - mensajero con notch
+echo      EzAgent - mensajero con HUD
 echo   ============================================
 echo.
 echo     1. Iniciar mensajero de voz
-echo        (notch + whisper + Kokoro)
+echo        (HUD + whisper + Kokoro)
 echo     2. Detener mensajero + whisper
 echo     3. Estado del sistema
 echo     4. Instalar / actualizar dependencias

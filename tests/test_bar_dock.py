@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from ezagent.voice.notch import drop as D
-from ezagent.voice.notch.drop import (
+from ezagent.voice.hud import drop as D
+from ezagent.voice.hud.drop import (
     BUTTONS,
     DEFAULT_DOCK,
     DOCKS,
@@ -335,3 +335,27 @@ def test_clicking_the_chat_button_asks_the_app_to_toggle_the_chat() -> None:
     bar._asking = True
     bar._activate("chat")
     assert actions == ["chat"]  # con una confirmación pendiente no abre el chat
+
+
+@pytest.mark.parametrize(("layout", "dock"), CASES)
+@pytest.mark.parametrize("mic", [1.0, 0.0])
+def test_call_button_keeps_the_same_spacing_as_the_others(
+    layout: str, dock: str, mic: float
+) -> None:
+    """Al colgar, el micro se pliega y «llamar» queda a la misma distancia que el resto."""
+    from ezagent.voice.hud import drop as D
+
+    circle = layout == "circle"
+    sl = slots(layout, mic, dock)
+    row_y = sl["hang"][1]
+    names = [n for n in sl if abs(sl[n][1] - row_y) < 0.01 and not (n == "mic" and mic == 0.0)]
+    names.sort(key=lambda n: sl[n][0])
+
+    def half(name: str) -> float:
+        if name == "pill":
+            return (D.CIRCLE_D if circle else D.PILL_W) / 2
+        return D.BTN * (mic if name == "mic" else 1.0) / 2
+
+    for a, b in zip(names, names[1:], strict=False):
+        gap = sl[b][0] - half(b) - (sl[a][0] + half(a))
+        assert gap == pytest.approx(D._gap(a, b, circle), abs=1e-6), (a, b, gap)

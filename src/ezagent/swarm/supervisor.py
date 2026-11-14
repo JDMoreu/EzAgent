@@ -13,7 +13,8 @@ Qué hace en cada pasada:
 - **Despierta** al miembro libre con mensajes o tareas, y le recuerda cerrar una
   tarea que dejó abierta al terminar su turno.
 - **Marca actividad**: si Herdr ve al agente trabajando, cuenta como latido.
-- **Avisa al usuario** solo de lo que necesita atención y del final.
+- **Avisa al usuario** de cada etapa que termina y la que empieza, de lo que
+  necesita atención y del final (con la pregunta de qué hacer después).
 
 Corre en su propio hilo; nunca en el de UI ni en los de audio.
 """
@@ -32,6 +33,7 @@ from loguru import logger
 
 from . import protocol
 from .models import Member, SwarmInfo
+from .progress import Progress
 from .recovery import Recovery
 from .service import SwarmService
 
@@ -93,7 +95,13 @@ class Supervisor:
         self.herdr = herdr
         self.seat_dir = Path(seat_dir)
         self.announce = announce
+        self.ask = ask or announce
         self.command_dir = command_dir
+        # Enjambres activos en la última pasada (lo lee la UI para su órbita y su
+        # vista rápida). Se reasigna una tupla entera: la lectura no necesita lock.
+        self.running = 0
+        self.active_view: tuple[tuple[str, str], ...] = ()
+        self.progress = Progress()
         self._clock = clock
         self._lock = threading.Lock()
         self._wake = threading.Event()
@@ -165,8 +173,12 @@ class Supervisor:
             finished, self._finished = self._finished, []
         for swarm in finished:
             self._announced.pop(swarm, None)
-            self.announce(self.service.summary(swarm))
+            self.progress.forget(swarm)
+            # Reabre la escucha: el usuario decide qué hacer con el resultado.
+            self.ask(f"{self.service.summary(swarm)} {protocol.FINAL_OFFER}")
         active = self.service.store.active()
+        self.running = len(active)
+        self.active_view = tuple((info.id, info.goal) for info in active)
         if not active:
             return False
         states = self._herdr_states()
@@ -231,6 +243,8 @@ class Supervisor:
                 if self.recovery.inspect(info, member, error=False, stuck=stuck):
                     continue
                 self._nudge(info, member)
+        for text in self.progress.check(info.id, store.tasks(info.id)):
+            self.announce(text)
         self._announce_issues(info.id)
 
     def _probe(self, address: str) -> str:

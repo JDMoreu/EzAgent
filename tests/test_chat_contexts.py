@@ -13,9 +13,9 @@ from test_chat_window import M, opened
 from ezagent.voice.chat.contexts import ChatContexts
 from ezagent.voice.chat.session import ChatModel
 from ezagent.voice.chat.store import ChatStore
-from ezagent.voice.notch import chat_ui as cu
-from ezagent.voice.notch import icons
-from ezagent.voice.notch.chat_ui import ChatPanel
+from ezagent.voice.hud import chat_ui as cu
+from ezagent.voice.hud import icons
+from ezagent.voice.hud.chat_ui import ChatPanel
 
 
 @pytest.fixture
@@ -377,7 +377,7 @@ def test_the_trash_icon_draws_and_differs_from_the_others() -> None:
 
 def test_the_copy_button_in_code_blocks_is_an_icon_not_text() -> None:
     from ezagent.voice.chat import render as R
-    from ezagent.voice.notch.bar_theme import card_palette
+    from ezagent.voice.hud.bar_theme import card_palette
 
     pal = card_palette("dark")
     out = R.render_message("```py\nprint(1)\n```", pal, 380.0, 1.0)

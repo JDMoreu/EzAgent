@@ -11,14 +11,24 @@ instrucciones de cada agente, los avisos y los resúmenes los genera el código.
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from typing import Any
 
 from ezagent.agent.registry import ToolInfo, ToolResult, ToolSpec
-from ezagent.swarm.models import MAX_GOAL, MAX_REF, SwarmError, clip, member_name, role_name
+from ezagent.swarm.models import (
+    MAX_GOAL,
+    MAX_REF,
+    MAX_TITLE,
+    SwarmError,
+    clip,
+    member_name,
+    role_name,
+)
 from ezagent.swarm.service import MemberSpec
 from ezagent.swarm.view import board
 
-MAX_MEMBERS = 6
+MAX_MEMBERS = 8
 _ACTIONS = ("start", "status", "tell", "resolve", "pause", "resume", "stop")
 _LEVELS = {
     "start": 1,
@@ -29,22 +39,24 @@ _LEVELS = {
     "resume": 1,
     "stop": 1,
 }
+# Sin tildes ni mayúsculas (ver ``_role``). Un rol que no esté aquí se usa tal
+# cual, como nombre corto: el equipo es libre.
 _ROLE_ALIASES = {
-    "planificar": "plan",
-    "planificador": "plan",
-    "planner": "plan",
-    "planear": "plan",
-    "desarrollar": "dev",
-    "desarrollador": "dev",
-    "developer": "dev",
-    "implementar": "dev",
-    "validar": "qa",
-    "validador": "qa",
-    "auditar": "qa",
-    "auditor": "qa",
-    "revisar": "qa",
-    "reviewer": "qa",
+    "plan": ("planificar", "planificador", "planner", "planear", "planeacion", "planificacion"),
+    "arch": ("arquitecto", "arquitectura", "architect", "arquitecta"),
+    "lead": ("orquestador", "orquestar", "coordinador", "coordinar", "lider", "orchestrator"),
+    "dev": ("desarrollar", "desarrollador", "developer", "implementar", "programador"),
+    "back": ("backend", "back-end", "servidor", "api"),
+    "front": ("frontend", "front-end", "interfaz web", "cliente"),
+    "ux": ("ui", "disenador", "diseno", "designer", "ux/ui", "ui/ux"),
+    "data": ("datos", "data engineer", "base de datos"),
+    "ops": ("devops", "despliegue", "desplegar", "deploy", "infraestructura"),
+    "docs": ("documentar", "documentador", "documentacion", "writer"),
+    "qa": ("validar", "validador", "auditar", "auditor", "revisar", "reviewer", "revisor"),
+    "test": ("tester", "pruebas", "probar", "testing"),
+    "sec": ("seguridad", "security", "pentester"),
 }
+_ALIAS = {alias: role for role, names in _ROLE_ALIASES.items() for alias in names}
 
 _PARAMETERS: dict[str, Any] = {
     "type": "object",
@@ -64,14 +76,29 @@ _PARAMETERS: dict[str, Any] = {
         "members": {
             "type": "array",
             "maxItems": MAX_MEMBERS,
-            "description": "start: los agentes, en el orden en que trabajan.",
+            "description": (
+                "start: los agentes, en el orden en que trabajan; cada etapa espera a "
+                "la anterior salvo los marcados parallel."
+            ),
             "items": {
                 "type": "object",
                 "properties": {
                     "agent": {"type": "string", "description": "Agente del catálogo."},
                     "role": {
                         "type": "string",
-                        "description": "plan (planifica), dev (desarrolla) o qa (valida).",
+                        "description": (
+                            "plan, arch (arquitecto), lead (orquestador), dev, back "
+                            "(backend), front (frontend), ux, data, ops, docs, qa, test, "
+                            "sec u otro nombre corto."
+                        ),
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": "Opcional: qué hace este miembro, si no basta su rol.",
+                    },
+                    "parallel": {
+                        "type": "boolean",
+                        "description": "true: trabaja a la vez que el miembro anterior.",
                     },
                     "model": {"type": "string"},
                     "effort": {"type": "string"},
@@ -122,17 +149,40 @@ def _members(stack: Any, raw: Any) -> list[MemberSpec]:
         if agent is None:
             known = ", ".join(sorted(stack.herdr.cfg.agents))
             raise SwarmError(f"Agente desconocido: {asked!r}. Disponibles: {known}.")
-        role_raw = _text(item, "role").lower()
-        role = role_name(_ROLE_ALIASES.get(role_raw, role_raw))
+        role = _role(_text(item, "role"))
         if not role:
-            raise SwarmError(f"El miembro {index} necesita «role» (plan, dev o qa).")
-        base = member_name(_text(item, "name") or role)
+            raise SwarmError(f"El miembro {index} necesita «role» (p. ej. plan, dev o qa).")
+        base = member_name(_slug(_text(item, "name")) or role)
         name, suffix = base, 2
         while name in used:
             name, suffix = f"{base}{suffix}", suffix + 1
         used.add(name)
-        specs.append(MemberSpec(name, role, agent, _text(item, "model"), _text(item, "effort")))
+        task, _ = clip(_text(item, "task"), MAX_TITLE)
+        specs.append(
+            MemberSpec(
+                name,
+                role,
+                agent,
+                _text(item, "model"),
+                _text(item, "effort"),
+                task=task,
+                parallel=item.get("parallel") is True and bool(specs),
+            )
+        )
     return specs
+
+
+def _slug(text: str) -> str:
+    """Nombre corto válido para el tablero: sin tildes, a-z, 0-9, «-» y «_»."""
+    plain = unicodedata.normalize("NFKD", text.lower())
+    plain = "".join(c for c in plain if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9_-]+", "-", plain).strip("-_")[:32]
+
+
+def _role(raw: str) -> str:
+    plain = unicodedata.normalize("NFKD", raw.strip().lower())
+    plain = "".join(c for c in plain if not unicodedata.combining(c))
+    return role_name(_ALIAS.get(plain) or _slug(plain))
 
 
 def _goal(stack: Any, goal: str) -> str:
@@ -277,9 +327,10 @@ def build_swarm_tools(stack: Any) -> list[ToolSpec]:
         ToolSpec(
             name="swarm",
             description=(
-                "Enjambre: varios agentes (p. ej. uno planifica, otro desarrolla, otro "
-                "valida) que colaboran solos con un tablero común y se devuelven "
-                "correcciones. start lo crea con goal y members en orden de trabajo; "
+                "Enjambre: varios agentes con roles (planificador, arquitecto, "
+                "orquestador, backend, frontend, QA…) que colaboran solos con un tablero "
+                "común, se hablan entre sí y se devuelven correcciones. EzAgent avisa "
+                "cada etapa. start lo crea con goal y members en orden de trabajo; "
                 "status dice cómo va; tell pasa un recado del usuario; resolve aplica la "
                 "decisión del usuario sobre un incidente (I3); pause/resume; stop lo detiene. "
                 "Úsalo solo si el usuario pide trabajo en equipo o validación con ida y "

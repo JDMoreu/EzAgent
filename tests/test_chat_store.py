@@ -135,3 +135,21 @@ def test_as_messages_keeps_only_user_and_assistant(tmp_path: Path) -> None:
 def test_default_path_lives_next_to_the_rest_of_the_app_data(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("APPDATA", str(tmp_path))
     assert default_chat_path() == tmp_path / "EzAgent" / "history" / "chat.jsonl"
+
+
+def test_replace_last_swaps_only_the_final_entry_of_that_role(tmp_path: Path) -> None:
+    path = tmp_path / "chat.jsonl"
+    store = ChatStore(path)
+    store.append("user", "una", t=1.0)
+    store.append("assistant", "respuesta", t=2.0)
+    store.append("user", "frase cortada", "voice", t=3.0)
+    assert not store.replace_last("user", "una", "otra")  # no es la última de su rol
+    assert store.replace_last("user", "frase cortada", "frase completa")
+    again = ChatStore(path)
+    assert [(e.role, e.text) for e in again.entries()] == [
+        ("user", "una"),
+        ("assistant", "respuesta"),
+        ("user", "frase completa"),
+    ]
+    store.append("user", "siguiente", t=4.0)
+    assert [e.text for e in ChatStore(path).entries()][-1] == "siguiente"

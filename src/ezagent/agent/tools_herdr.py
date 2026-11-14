@@ -27,7 +27,7 @@ from ezagent.agent.orchestration import (
     parse_steps,
 )
 from ezagent.agent.registry import ToolInfo, ToolResult, ToolSpec
-from ezagent.voice.herdr import Herdr, HerdrError
+from ezagent.voice.herdr import Herdr, HerdrError, visible_name
 
 _DELEGATE_ACTIONS = (
     "list",
@@ -151,8 +151,9 @@ _DELEGATE_PARAMETERS: dict[str, Any] = {
         "task": {
             "type": "string",
             "description": (
-                "Tarea o mensaje que se entrega al agente. En run es "
-                "opcional: sin tarea solo se abre el agente."
+                "Tarea o mensaje que se entrega al agente, como instrucción directa del "
+                "usuario con los errores de transcripción corregidos y sin encabezados "
+                "(nada de «Mensaje para…»). En run es opcional: sin tarea solo se abre el agente."
             ),
         },
         "cwd": {"type": "string", "description": "Carpeta de trabajo."},
@@ -175,7 +176,10 @@ _DELEGATE_PARAMETERS: dict[str, Any] = {
         },
         "notify_on_done": {
             "type": "boolean",
-            "description": "Avisar por voz cuando el agente termine.",
+            "description": (
+                "Avisar por voz cuando el agente termine (y en cada etapa de then). "
+                "Por defecto sí; false solo si el usuario no quiere aviso."
+            ),
         },
         "deliver_answer": {
             "type": "boolean",
@@ -414,10 +418,25 @@ def _wants_close(text: str) -> bool:
     return any(word in text for word in _CLOSE_WORDS)
 
 
+LabelFor = Callable[[str], str]
+
+
+def _shown(address: str, label_for: LabelFor | None) -> str:
+    """Cómo se nombra un agente ante el usuario: su pestaña, nunca la dirección («t51»)."""
+    label = ""
+    if address and label_for is not None:
+        try:
+            label = str(label_for(address) or "").strip()
+        except Exception:  # noqa: BLE001 - un nombre nunca rompe una confirmación
+            label = ""
+    return label or "el agente indicado"
+
+
 # ---------------------------------------------------------------- resúmenes
-def _delegate_summary(args: dict[str, Any]) -> str:
+def _delegate_summary(args: dict[str, Any], label_for: LabelFor | None = None) -> str:
     action = _action(args)
     address = str(args.get("address") or "").strip()
+    shown = _shown(address, label_for)
     agent = str(args.get("agent") or "").strip()
     task = str(args.get("task") or "").strip()
     name = str(args.get("name") or "").strip()
@@ -426,20 +445,20 @@ def _delegate_summary(args: dict[str, Any]) -> str:
         return "Listar los agentes vivos de Herdr."
     if action == "get":
         if address:
-            return f"Consultar el agente {address}."
+            return f"Consultar {shown}."
         return "Consultar un agente de Herdr."
     if action == "read":
         lines = args.get("lines")
         if address and isinstance(lines, int) and not isinstance(lines, bool):
-            return f"Leer las últimas {lines} líneas del agente {address}."
+            return f"Leer las últimas {lines} líneas d{shown}."
         if address:
-            return f"Leer el buffer del agente {address}."
+            return f"Leer el buffer d{shown}."
         return "Leer el buffer de un agente de Herdr."
     if action == "send":
         if address and task:
-            return f"Enviar al agente {address} la tarea: {task}"
+            return f"Enviar a {shown} la tarea: {task}"
         if address:
-            return f"Enviar una tarea al agente {address}."
+            return f"Enviar una tarea a {shown}."
         return "Enviar una tarea a un agente de Herdr."
     if action == "agents":
         return "Consultar los agentes disponibles y sus modelos."
@@ -448,14 +467,14 @@ def _delegate_summary(args: dict[str, Any]) -> str:
     if action == "keys":
         pressed = args.get("keys")
         shown = " ".join(str(k) for k in pressed) if isinstance(pressed, list) else "teclas"
-        return f"Pulsar {shown} en el agente {address or 'indicado'}."
+        return f"Pulsar {shown} en {shown}."
     if action == "configure":
         wanted = [
             f"{label} {str(args.get(key)).strip()}"
             for key, label in (("model", "modelo"), ("effort", "esfuerzo"))
             if str(args.get(key) or "").strip()
         ]
-        target = address or "un agente"
+        target = shown if address else "un agente"
         return f"Cambiar {' y '.join(wanted) or 'la configuración'} de {target}."
     if action == "run":
         target = agent or "un agente"
@@ -472,7 +491,9 @@ def _delegate_summary(args: dict[str, Any]) -> str:
             if str(args.get("effort") or "").strip():
                 details.append(f"esfuerzo {str(args.get('effort')).strip()}")
             if str(args.get("input_from") or "").strip():
-                details.append(f"a partir de {str(args.get('input_from')).strip()}")
+                details.append(
+                    f"a partir de {_shown(str(args.get('input_from')).strip(), label_for)}"
+                )
             extra = f" ({', '.join(details)})" if details else ""
             try:
                 steps = parse_steps(args.get("then"))
@@ -488,28 +509,29 @@ def _delegate_summary(args: dict[str, Any]) -> str:
         return "Abrir una terminal en Herdr."
     if action == "focus":
         if address:
-            return f"Enfocar el agente {address}."
+            return f"Enfocar {shown}."
         return "Enfocar un agente de Herdr."
     if action == "kill":
         if address:
-            return f"Terminar el agente {address}."
+            return f"Terminar {shown}."
         return "Terminar un agente de Herdr."
     if action == "watch":
         if address:
-            return f"Vigilar el agente {address} y avisar al terminar."
+            return f"Vigilar {shown} y avisar al terminar."
         return "Vigilar un agente y avisar al terminar."
     return "Acción desconocida para Herdr."
 
 
-def _voice_summary(args: dict[str, Any]) -> str:
+def _voice_summary(args: dict[str, Any], label_for: LabelFor | None = None) -> str:
     action = _action(args)
     address = str(args.get("address") or "").strip()
+    shown = _shown(address, label_for)
 
     if action == "close":
         return "Cerrar la escucha al terminar de hablar."
     if action == "close_and_watch":
         if address:
-            return f"Cerrar la escucha y avisar cuando termine el agente {address}."
+            return f"Cerrar la escucha y avisar cuando termine {shown}."
         return "Cerrar la escucha y avisar cuando termine el agente."
     if action == "mic_mute":
         if args.get("muted") is True:
@@ -527,18 +549,48 @@ def _voice_summary(args: dict[str, Any]) -> str:
     return "Acción desconocida de control por voz."
 
 
-def _delegate_info(args: dict[str, Any]) -> ToolInfo:
+def _delegate_info(args: dict[str, Any], label_for: LabelFor | None = None) -> ToolInfo:
     action = _action(args)
     known = action in _DELEGATE_LEVELS
     return ToolInfo(
         level=_DELEGATE_LEVELS.get(action, 2),
         always_confirm=(action == "kill" or not known),
-        summary=_delegate_summary(args),
+        summary=_delegate_summary(args, label_for),
     )
 
 
-def _voice_info(args: dict[str, Any]) -> ToolInfo:
-    return ToolInfo(level=1, summary=_voice_summary(args))
+def _voice_info(args: dict[str, Any], label_for: LabelFor | None = None) -> ToolInfo:
+    return ToolInfo(level=1, summary=_voice_summary(args, label_for))
+
+
+# Campos de Herdr con los que el modelo armaba nombres dobles («Claude Code en EzAgent /
+# Claude Code»): ya están resumidos en ``label`` y no le llegan sueltos.
+_RAW_NAME_FIELDS = ("where", "name", "labels", "title")
+
+
+def _labelled(herdr: Herdr, item: dict[str, Any]) -> dict[str, Any]:
+    """``item`` con su ``label`` (nombre visible) y sin los campos crudos de nombre."""
+    if item.get("address") and not item.get("label"):
+        resolver = getattr(herdr, "label_for", None)
+        label = resolver(str(item["address"])) if callable(resolver) else ""
+        item["label"] = label or visible_name(item)
+    if item.get("label"):
+        for key in _RAW_NAME_FIELDS:
+            item.pop(key, None)
+    return item
+
+
+def _with_labels(herdr: Herdr, handler: Callable[[dict[str, Any]], ToolResult], args):
+    """Cada agente del resultado lleva su ``label`` y solo ese nombre (ver ``_labelled``)."""
+    result = handler(args)
+    data = getattr(result, "data", None)
+    if isinstance(data, dict):
+        _labelled(herdr, data)
+    elif isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                _labelled(herdr, item)
+    return result
 
 
 # ------------------------------------------------------------------ delegate
@@ -584,7 +636,13 @@ def _handle_run(
                 )
     background = _optional_bool(args, "background", action)
     gui = _optional_bool(args, "gui", action)
-    notify_on_done = _optional_bool(args, "notify_on_done", action)
+    # DECISION: avisar es lo normal. Sin aviso, una tarea larga terminaba en
+    # silencio y el usuario se enteraba solo al preguntar.
+    notify_on_done = (
+        _optional_bool(args, "notify_on_done", action)
+        if args.get("notify_on_done") is not None
+        else True
+    )
     close_listening = _optional_bool(args, "close_listening", action)
     cwd = _optional_text(args, "cwd", action)
     name = _optional_text(args, "name", action)
@@ -691,6 +749,7 @@ def _handle_run(
                     notify=notify,
                     deliver=deliver,
                     chain_id=chain_id,
+                    flow=[name or agent],
                 )
             )
         elif notify and task:
@@ -951,7 +1010,7 @@ def build_herdr_tools(herdr: Herdr, callbacks: HerdrCallbacks) -> list[ToolSpec]
         # El nivel estático es el máximo de la herramienta para que cualquier
         # consumidor que no use describe() sea restrictivo, nunca permisivo.
         level=2,
-        handler=partial(_handle_delegate, herdr, callbacks, state),
+        handler=partial(_with_labels, herdr, partial(_handle_delegate, herdr, callbacks, state)),
         # DECISION: ToolSpec solo permite un booleano para toda la
         # herramienta. «read» debe marcar taint; marcar también list/get es lo
         # conservador y no pierde la garantía de la sección 5.4.
@@ -960,7 +1019,7 @@ def build_herdr_tools(herdr: Herdr, callbacks: HerdrCallbacks) -> list[ToolSpec]
         # el agente (hasta 30 s) y escribe modelo, esfuerzo y tarea; 120 s
         # evita que el registro corte un lanzamiento válido.
         timeout_s=120.0,
-        describe_fn=_delegate_info,
+        describe_fn=partial(_delegate_info, label_for=getattr(herdr, "label_for", None)),
     )
 
     voice = ToolSpec(
@@ -975,10 +1034,10 @@ def build_herdr_tools(herdr: Herdr, callbacks: HerdrCallbacks) -> list[ToolSpec]
         ),
         parameters=_VOICE_PARAMETERS,
         level=1,
-        handler=partial(_handle_voice, callbacks, state),
+        handler=partial(_with_labels, herdr, partial(_handle_voice, callbacks, state)),
         untrusted_output=False,
         timeout_s=10.0,
-        describe_fn=_voice_info,
+        describe_fn=partial(_voice_info, label_for=getattr(herdr, "label_for", None)),
     )
 
     return [delegate, voice]

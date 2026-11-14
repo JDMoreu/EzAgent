@@ -13,12 +13,17 @@ from .chat_footer import BTN, PAD
 from .icons import draw_icon
 from .menu import _fill_circle, _fill_round_rect, _fit_text
 from .settings_window import composite_over
-from .text import draw_text  # noqa: F401  (los métodos usan ``self._text``)
+from .text import (
+    baseline_top,
+    cap_height,
+    draw_text,  # noqa: F401  (los métodos usan ``self._text``)
+)
 from .tokens import FS_MICRO, FS_ROW, FS_SECONDARY, FS_TITLE
 
 HEADER_H = 56.0
 DELETE_SECS = 0.18  # fila del historial que se desvanece al borrarla
 ORB_D = 28.0  # diámetro (px lógicos) del orbe vivo que acompaña al título
+NEW_ROW_H = 46.0  # «Nueva conversación» en el historial: del alto de una fila compacta
 _MONTHS = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
 
 
@@ -29,6 +34,17 @@ def _date(t: float) -> str:
 
 class HeaderMixin:
     """Cabecera con botones, lista de conversaciones y pantalla de bienvenida."""
+
+    def _conversation_title(self) -> str:
+        # DECISION: reuse the title derived from the first request and stored
+        # for history, so reopening a session shows the same name.
+        selected = self.model.viewing or self.model.current_session
+        for session in self.model.sessions():
+            if session.session == selected:
+                return session.title or "Nueva conversación"
+        _, messages = self.model.snapshot()
+        first = next((item.text for item in messages if item.role == "user"), "")
+        return " ".join(first.split()) or "Nueva conversación"
 
     def _draw_empty(self, buf, top: float, bottom: float) -> None:
         mid = (top + bottom) / 2 - 18
@@ -63,6 +79,10 @@ class HeaderMixin:
                 self._deleting = ghost = None
             else:
                 sessions.insert(min(ghost[0], len(sessions)), ghost[1])
+        y = top + 8 - self.scroll
+        self._draw_new_conversation(buf, y, bottom)
+        y += 56
+        total = 64.0
         if not sessions:
             self._text(
                 buf,
@@ -70,13 +90,12 @@ class HeaderMixin:
                 FS_ROW,
                 self._color("TEXT_3"),
                 PAD,
-                top + 24,
+                y + 16,
             )
+            self._max_scroll = 0.0
             return
         busy = self.model.busy
         current = self.model.current_session
-        y = top + 8 - self.scroll
-        total = 8.0
         if busy:  # no se cambia ni se borra nada mientras el modelo responde
             self._text(
                 buf,
@@ -106,6 +125,32 @@ class HeaderMixin:
             y += row_h
         self._max_scroll = max(0.0, total - (bottom - top))
         self.scroll = max(0.0, min(self.scroll, self._max_scroll))
+
+    def can_start_new(self) -> bool:
+        """¿Tiene sentido empezar otra? No si la conversación actual sigue vacía."""
+        return self.model.viewing is not None or bool(self.model.snapshot()[1])
+
+    def _draw_new_conversation(self, buf, y: float, bottom: float) -> None:
+        """Una fila más del historial, en el acento: no un bloque que grita más que el contenido."""
+        if y < HEADER_H or y + NEW_ROW_H > bottom:
+            return
+        x0, x1 = 8.0, self.g.width - 8.0
+        hovered = self.hover == "new"
+        mint = self._color("MINT")
+        # Superficie de tarjeta y, encima, un velo del acento: se lee como fila en ambos temas.
+        _fill_round_rect(
+            buf, x0, y, x1, y + NEW_ROW_H, 12.0, self._color("GROUP")[:3], self.g.scale
+        )
+        _fill_round_rect(
+            buf, x0, y, x1, y + NEW_ROW_H, 12.0, mint[:3], self.g.scale, 0.18 if hovered else 0.1
+        )
+        cy = y + NEW_ROW_H / 2
+        draw_icon(buf, "compose", 20 + 9, cy, 18.0, mint[:3], self.g.scale)
+        label = "Nueva conversación"
+        base = cy + cap_height(FS_ROW, self.g.scale) / 2
+        top = baseline_top(label, FS_ROW, base, self.g.scale)
+        self._text(buf, label, FS_ROW, mint, 20 + 28, top)
+        self._hit((x0, y, x1, y + NEW_ROW_H), "new")
 
     def _draw_ghost_row(
         self, buf, info, y: float, height: float, busy: bool, is_current: bool, alpha: float
@@ -170,25 +215,26 @@ class HeaderMixin:
         else:  # el orbe vivo se pinta encima (el panel lo anima); aquí solo se le deja el sitio
             self.orb = (PAD + ORB_D / 2, cy, ORB_D)
             x = PAD + ORB_D + 10
-        title = "Historial" if self.mode == "history" else ("Anterior" if viewing else "EzAgent")
+        title = "Historial" if self.mode == "history" else self._conversation_title()
+        available = max(0.0, g.width - PAD - 4 * (BTN + 2) - x)
+        title = _fit_text(title, FS_TITLE, available, sc)
         if self.status and not back:
             self._text(buf, title, FS_TITLE, self._color("TEXT"), x, cy - 15)
-            available = g.width - PAD - 4 * (BTN + 2) - x
             status = _fit_text(self.status, FS_SECONDARY, available, sc)
             self._text(buf, status, FS_SECONDARY, self._color("MINT"), x, cy + 4)
         else:
             self._text(buf, title, FS_TITLE, self._color("TEXT"), x, cy - 9)
         right = g.width - PAD - BTN / 2 + 6
-        # DECISION: conversation actions belong in the header; audio controls
-        # stay beside the composer so compact windows retain a readable title.
+        # DECISION: direct settings and history controls avoid a menu overlay on messages.
         for name, key, active, alert in (
-            ("minus", "close", False, False),
-            ("plus", "new", False, False),
-            ("clock", "history", self.mode == "history", False),
+            ("chevron-down", "close", False, False),
             ("sliders", "settings", False, False),
+            ("clock", "history", self.mode == "history", False),
         ):
             self._icon_button(buf, name, right, cy, key, active, alert)
             right -= BTN + 2
+        # Nueva conversación a un clic (y Ctrl+N); apagado si la actual sigue vacía.
+        self._icon_button(buf, "compose", right, cy, "new", enabled=self.can_start_new())
         line = np.asarray(self._color("LINE"), np.float32) / 255.0
         buf[
             round((HEADER_H - 1) * sc) : round(HEADER_H * sc),
@@ -204,8 +250,12 @@ class HeaderMixin:
         key: str,
         active: bool = False,
         alert: bool = False,
+        enabled: bool = True,
     ) -> None:
         rect = (cx - BTN / 2, cy - BTN / 2, cx + BTN / 2, cy + BTN / 2)
+        if not enabled:
+            draw_icon(buf, name, cx, cy, 18.0, self._color("TEXT_3")[:3], self.g.scale, 0.45)
+            return
         hovered = self.hover == key
         if hovered or active:
             tone = "MINT" if active else "GROUP_HOVER"

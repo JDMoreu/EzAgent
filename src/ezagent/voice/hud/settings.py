@@ -1,4 +1,4 @@
-"""Modelo de vista de los ajustes del menú del notch.
+"""Modelo de vista de los ajustes del menú del HUD.
 
 Este módulo no conoce Tk, Win32, audio ni el sistema de archivos: solo guarda
 los valores editables, su copia persistida y las opciones que el menú necesita
@@ -250,7 +250,7 @@ LABELS: Final[dict[str, str]] = {
     "mute_hotkey": "Atajo de silencio",
     "menu_hotkey": "Atajo de ajustes",
     "chat_hotkey": "Atajo de chat",
-    "chat_voice": "Responder por voz en el chat",
+    "chat_voice": "Responder por voz",
     "open_config_dir": "Abrir carpeta de datos",
     "open_system_md": "Abrir system.md",
     "open_permissions": "Abrir permissions.toml",
@@ -284,7 +284,7 @@ DEFAULT_VALUES: Final[dict[str, Any]] = {
     "kokoro_model_path": "",
     "kokoro_voices_path": "",
     "whisper_url": "http://127.0.0.1:8088/inference",
-    "stt_model": "ggml-large-v3-turbo-q5_0",
+    "stt_model": "ggml-large-v3-turbo-q8_0",
     "stt_prompt": "",
     "stt_dictionary": "",
     "stt_timeout_secs": 60.0,

@@ -11,9 +11,9 @@ from ezagent.voice.chat import markdown as md
 from ezagent.voice.chat.render_base import Ctx, wrap
 from ezagent.voice.chat.session import ChatModel
 from ezagent.voice.chat.store import ChatStore
-from ezagent.voice.notch import chat_view as cv
-from ezagent.voice.notch.bar_theme import card_palette
-from ezagent.voice.notch.chat_view import Action, ChatView
+from ezagent.voice.hud import chat_view as cv
+from ezagent.voice.hud.bar_theme import card_palette
+from ezagent.voice.hud.chat_view import Action, ChatView
 
 W, H = 440.0, 600.0
 
@@ -62,24 +62,48 @@ def test_the_panel_renders_at_the_right_size(tmp_path: Path, scale: float, theme
 def test_the_empty_state_invites_to_write(tmp_path: Path) -> None:
     _, view = make(tmp_path)
     assert view.render(1.0)[..., 3].max() > 0
-    assert {"close", "voice", "mic", "settings", "history", "new", "send", "input"} <= kinds(view)
+    assert {"close", "settings", "history", "voice", "mic", "send", "input"} <= kinds(view)
+    assert {"call", "more", "new"}.isdisjoint(kinds(view))
+
+
+def test_header_uses_the_first_request_as_the_conversation_title(
+    tmp_path: Path, monkeypatch
+) -> None:
+    model, view = make(tmp_path)
+    _, texts = record_drawing(view, monkeypatch)
+    view.render(1.0)
+    assert "Nueva conversación" in texts and "EzAgent" not in texts
+    assert "AUDIO" not in texts and "MENSAJE" not in texts
+    texts.clear()
+    model.add_user("Revisar el proyecto")
+    old = model.current_session
+    view.render(1.0)
+    assert "Revisar el proyecto" in texts
+    texts.clear()
+    model.new_session()
+    view.render(1.0)
+    assert "Nueva conversación" in texts
+    texts.clear()
+    model.switch_session(old)
+    view.render(1.0)
+    assert "Revisar el proyecto" in texts
 
 
 def test_header_buttons_exist_in_every_state(tmp_path: Path) -> None:
     model, view = make(tmp_path)
     reply(model, "a", "b")
     view.render(1.0)
-    assert {"close", "voice", "mic", "settings", "history", "new"} <= kinds(view)
+    assert {"close", "settings", "history", "voice", "mic"} <= kinds(view)
     view.mode = "history"
     view.render(1.0)
-    assert {"close", "voice", "mic", "settings", "history", "new", "back"} <= kinds(view)
+    assert {"close", "settings", "history", "new", "voice", "mic", "back"} <= kinds(view)
 
 
 @pytest.mark.parametrize("width", [340.0, 440.0, 760.0])
 def test_navigation_and_audio_controls_are_separated_and_do_not_overlap(
     tmp_path: Path, width: float
 ) -> None:
-    from ezagent.voice.notch.chat_header import HEADER_H
+    from ezagent.voice.hud.chat_header import HEADER_H
 
     _, view = make(tmp_path)
     view.configure(width, H, 1.0, "dark", card_palette("dark"))
@@ -88,9 +112,9 @@ def test_navigation_and_audio_controls_are_separated_and_do_not_overlap(
     controls = {
         key: rect
         for rect, key, _ in view._hits
-        if key in {"mic", "voice", "settings", "history", "new", "close"}
+        if key in {"mic", "voice", "settings", "history", "close"}
     }
-    for key in ("settings", "history", "new", "close"):
+    for key in ("settings", "history", "close"):
         assert controls[key][3] <= HEADER_H
     for key in ("mic", "voice"):
         assert controls[key][2] < view._input_box[0]
@@ -168,7 +192,9 @@ def test_a_table_header_is_never_split_by_a_rounding_error() -> None:
 def test_close_and_new_and_voice_buttons(tmp_path: Path) -> None:
     model, view = make(tmp_path)
     assert click(view, "close") == Action("close")
+    click(view, "history")
     assert click(view, "new") == Action("new")
+    assert view.mode == "chat"
     assert click(view, "voice") == Action("voice", True)
     model.set_voice_replies(True)
     assert click(view, "voice") == Action("voice", False)
@@ -176,6 +202,8 @@ def test_close_and_new_and_voice_buttons(tmp_path: Path) -> None:
 
 def test_the_mic_button_toggles_the_same_pause_as_the_bar(tmp_path: Path) -> None:
     model, view = make(tmp_path)
+    assert click(view, "mic") == Action("mic", False)
+    view.in_call = True
     assert click(view, "mic") == Action("mic", True)
     model.set_mic_muted(True)
     view.render(1.0)  # el icono tachado se dibuja sin romper
@@ -227,6 +255,19 @@ def test_empty_history_says_so(tmp_path: Path) -> None:
     _, view = make(tmp_path)
     click(view, "history")
     assert view.render(1.0)[..., 3].max() > 0 and "session" not in kinds(view)
+    assert click(view, "new") == Action("new")
+    assert view.mode == "chat"
+
+
+def test_new_conversation_stands_above_saved_sessions(tmp_path: Path) -> None:
+    model, view = make(tmp_path)
+    reply(model, "Revisar proyecto", "Listo")
+    click(view, "history")
+    view.render(1.0)
+    new = next(rect for rect, kind, _ in view._hits if kind == "new")
+    saved = next(rect for rect, kind, _ in view._hits if kind == "session")
+    assert new[3] < saved[1]
+    assert new[2] - new[0] > saved[2] - saved[0]
 
 
 def test_hover_and_hand_cursor(tmp_path: Path) -> None:
@@ -556,13 +597,45 @@ def test_message_copy_targets_stay_inside_the_bottom_right_of_the_card(
         width, height = entry.arr.shape[1] / scale, entry.arr.shape[0] / scale
         assert 0 <= x0 < x1 <= width and 0 <= y0 < y1 <= height
         assert width - x1 == pytest.approx(6, abs=1 / scale)
-        assert height - y1 == pytest.approx(4, abs=1 / scale)
+        # En la última fila de texto, no en una fila propia debajo (≤ una línea del fondo).
+        assert height - y1 < view._copy_row_h()
+
+
+@pytest.mark.parametrize("scale", [1.0, 2.0])
+def test_a_short_message_keeps_the_copy_icon_on_its_only_line(tmp_path: Path, scale: float) -> None:
+    model, view = make(tmp_path, scale=scale)
+    reply(model, "hola", "Listo.")
+    user, assistant = model.snapshot()[1]
+    row = view._copy_row_h()
+    bubble, card = view._entry(user, 1.0), view._entry(assistant, 1.0)
+    assert bubble.height == pytest.approx(row + 36)  # nombre fuera de la caja y copia en línea
+    assert card.height == pytest.approx(20 + 12 + row + 12)
+    for entry in (bubble, card):
+        x0, y0, x1, y1 = entry.caption_hit
+        assert (y0 + y1) / 2 < entry.height - row / 2 + 1  # centrado en esa única línea
+
+
+def test_long_answers_keep_equal_padding_without_a_copy_row(tmp_path: Path) -> None:
+    from ezagent.voice.chat.render import render_message
+    from ezagent.voice.hud.chat_view import COPY_SLOT
+
+    model, view = make(tmp_path)
+    room = view.content_w - 24 - COPY_SLOT
+    for words in range(30, 60):
+        text = " ".join(["palabra"] * words)
+        reply(model, "x", text)
+        card = view._entry(model.snapshot()[1][-1], 1.0)
+        text_h = render_message(text, view.g.pal, room, view.g.scale).height
+        assert card.height == pytest.approx(20 + 12 + text_h + 12)
+        assert card.caption_hit is not None
+        assert card.caption_hit[3] <= card.height - 4
+        model.new_session()
 
 
 def test_header_uses_a_minimize_icon_and_composer_has_no_enter_hint(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from ezagent.voice.notch import chat_header
+    from ezagent.voice.hud import chat_header
 
     _, view = make(tmp_path)
     icons, texts = record_drawing(view, monkeypatch)
@@ -574,7 +647,7 @@ def test_header_uses_a_minimize_icon_and_composer_has_no_enter_hint(
 
     monkeypatch.setattr(chat_header, "draw_icon", record_icon)
     view.render(1.0)
-    assert "minus" in icons and "close" not in icons
+    assert "chevron-down" in icons and "minus" not in icons and "close" not in icons
     assert not any("Enter" in text for text in texts)
     assert click(view, "close") == Action("close")
 
@@ -606,3 +679,31 @@ def test_a_note_that_wraps_stays_inside_the_column(tmp_path: Path) -> None:
     entry = view._entry(msg, 1.0)
     assert entry.height > 30
     assert entry.x + entry.arr.shape[1] / view.g.scale <= W
+
+
+def _input_gaps(tmp_path: Path, text: str, scale: float = 1.0) -> tuple[float, float, int]:
+    """(aire sobre las mayúsculas, aire bajo la línea base, fila de la base) en px físicos."""
+    _, view = make(tmp_path, scale=scale)
+    view.paste(text)
+    view.render(0.6)  # el cursor parpadea apagado en este instante
+    buf = view.render(0.6)
+    x0, y0, x1, y1 = (round(v * scale) for v in view._input_box)
+    text_rgb = np.asarray(card_palette("dark")["TEXT"][:3], np.float32)
+    region = buf[y0:y1, x0 + 8 : x1 - 60, :3].astype(np.float32)
+    if region.max() > 1.5:  # BGRA uint8 → RGB 0..1
+        region = region[..., ::-1] / 255.0
+    ink = np.abs(region - text_rgb / 255.0).sum(axis=2) < 0.35
+    rows = np.nonzero(ink.any(axis=1))[0]
+    return float(rows[0]), float((y1 - y0) - 1 - rows[-1]), int(rows[-1])
+
+
+@pytest.mark.parametrize("scale", [1.0, 1.5])
+def test_the_input_text_has_the_same_air_above_and_below(tmp_path: Path, scale: float) -> None:
+    above, below, _ = _input_gaps(
+        tmp_path, "Hola", scale
+    )  # sin descendentes: tinta = mayúscula–base
+    assert abs(above - below) <= 1.5 * scale
+
+
+def test_lines_without_capitals_sit_on_the_same_baseline(tmp_path: Path) -> None:
+    assert _input_gaps(tmp_path / "a", "Hola")[2] == _input_gaps(tmp_path / "b", "ace")[2]

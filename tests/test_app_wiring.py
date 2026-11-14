@@ -53,3 +53,23 @@ def test_every_self_attribute_used_by_voice_app_is_defined() -> None:
         if name not in defined and not hasattr(app_module.VoiceApp, name)
     }
     assert not missing, f"VoiceApp usa atributos que no existen: {missing}"
+
+
+def test_filler_detection_only_matches_short_waiting_phrases() -> None:
+    from ezagent.voice.llm import tool_ack
+
+    is_filler = app_module._is_filler_sentence
+    for sentence in ("Un momento, lo reviso.", "Pensando…", "Va, déjame ver.", "A ver."):
+        assert is_filler(sentence)
+    assert not is_filler("Sí, está abierto.")
+    assert not is_filler("Un momento: el agente t51 terminó y dejó tres archivos nuevos.")
+    # Los avisos concretos del código nunca se confunden con muletillas.
+    for name, args in (
+        ("web_search", "{}"),
+        ("fetch_page", "{}"),
+        ("run_skill_script", "{}"),
+        ("delegate_to_agent", '{"action":"send"}'),
+        ("delegate_to_agent", '{"action":"run","agent":"codex"}'),
+    ):
+        ack = tool_ack(name, args)
+        assert ack and not is_filler(ack)

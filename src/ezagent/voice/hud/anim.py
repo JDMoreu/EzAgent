@@ -1,4 +1,4 @@
-"""Motor de animación del notch.
+"""Motor de animación del HUD.
 
 La matemática de las curvas, ``Tween``, ``LevelFollower`` y ``lerp_rgb`` está
 copiada de la especificación (12.1, 12.2 y 12.7) sin cambiar su comportamiento.

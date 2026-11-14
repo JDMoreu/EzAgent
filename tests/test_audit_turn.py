@@ -263,7 +263,7 @@ def test_cancelar_la_espera_no_dice_nada() -> None:
     assert results["dos"] == ""
 
 
-def test_el_aviso_de_espera_en_voz_se_muestra_y_se_dice() -> None:
+def test_el_aviso_de_espera_respeta_el_altavoz_y_el_turno() -> None:
     notes: list[str] = []
     spoken: list[str] = []
     stub = SimpleNamespace(
@@ -273,11 +273,15 @@ def test_el_aviso_de_espera_en_voz_se_muestra_y_se_dice() -> None:
     )
     VoiceApp._handle_event(stub, ("busy_notice", 5, "voice"))
     assert notes == ["Termino lo anterior y sigo."]
+    assert spoken == []
+
+    stub.chat.voice_replies = True
+    VoiceApp._handle_event(stub, ("busy_notice", 5, "voice"))
     assert spoken == ["Termino lo anterior y sigo."]
 
     # Un aviso de un turno ya cancelado no se dice ni se muestra.
     VoiceApp._handle_event(stub, ("busy_notice", 4, "voice"))
-    assert len(notes) == 1 and len(spoken) == 1
+    assert len(notes) == 2 and len(spoken) == 1
 
 
 def test_el_aviso_de_espera_en_chat_sin_voz_solo_deja_la_nota() -> None:

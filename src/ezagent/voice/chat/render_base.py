@@ -1,7 +1,7 @@
 """Base del dibujo del chat: contexto, fuentes, formas suaves y texto con estilos.
 
 Todo se maqueta en píxeles lógicos y se pinta a tamaño físico (``× scale``), igual
-que el resto del notch, para que el texto salga nítido a cualquier DPI. Los mensajes
+que el resto del HUD, para que el texto salga nítido a cualquier DPI. Los mensajes
 se dibujan una vez en un ``PIL.Image`` RGBA y la ventana solo los compone.
 """
 
@@ -16,9 +16,9 @@ from typing import Final
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
-from ..notch.icons import draw_icon
-from ..notch.text import _load_font
-from ..notch.tokens import Color, FontStyle
+from ..hud.icons import draw_icon
+from ..hud.text import _load_font
+from ..hud.tokens import Color, FontStyle
 from .markdown import Span
 
 # Estilos de texto del chat: la misma familia (Geist) que el resto de la interfaz.
@@ -158,7 +158,7 @@ def draw_icon_at(
     size: float,
     color: tuple[int, int, int, int],
 ) -> None:
-    """Icono vectorial de la interfaz (``notch.icons``) centrado en ``(cx, cy)`` lógicos."""
+    """Icono vectorial de la interfaz (``hud.icons``) centrado en ``(cx, cy)`` lógicos."""
     side = max(4, ctx.px(size) + 4)
     buf = np.zeros((side, side, 4), np.float32)
     draw_icon(buf, name, side / 2 / ctx.scale, side / 2 / ctx.scale, size, color, ctx.scale)

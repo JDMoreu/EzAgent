@@ -36,7 +36,8 @@ def card_palette(theme: str) -> dict[str, Color]:
 
 
 def body_top(theme: str) -> Color:
-    return BODY_TOP[_theme(theme)]
+    """Arriba del degradado del cuerpo; con el tema personalizado, en su tono."""
+    return token_palette(_theme(theme)).get("BODY_TOP", BODY_TOP[_theme(theme)])
 
 
 def _luminance(rgb: Color) -> float:

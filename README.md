@@ -105,7 +105,7 @@ borde: la marca es el propio líquido en movimiento.
 | Pregunta · error · pausa | Ámbar · rojo · gris lento |
 
 Los colores siguen al estado y al tema, claro u oscuro; con movimiento reducido
-el fluido queda quieto. El código vive en `src/ezagent/voice/notch/flow.py`.
+el fluido queda quieto. El código vive en `src/ezagent/voice/hud/flow.py`.
 
 Los botones solo aparecen al acercar el puntero: la forma crece un poco y ☰,
 🎤 y ✕ nacen desde detrás de ella, escalonados y con un rebote suave. La barra

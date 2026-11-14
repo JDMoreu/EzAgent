@@ -1,4 +1,4 @@
-"""Texto del notch renderizado con Pillow.
+"""Texto del HUD renderizado con Pillow.
 
 Cinco estilos cerrados (``FS_*`` de :mod:`tokens`), fuentes Geist del proyecto,
 anti-alias nativo de FreeType y composición sobre un buffer float32 RGBA
@@ -99,7 +99,7 @@ def _load_font(style: FontStyle, scale: float) -> ImageFont.FreeTypeFont | Image
         font = ImageFont.truetype(str(path), size_px)
     except Exception:
         # DECISION: si faltan Geist y los respaldos del sistema, Pillow usa su
-        # fuente interna. Es preferible a romper el render del notch.
+        # fuente interna. Es preferible a romper el render del HUD.
         try:
             font = ImageFont.load_default(size=max(1, round(size_px)))
         except TypeError:  # Pillow antiguo no acepta ``size``.
@@ -202,6 +202,33 @@ def text_size(
     else:
         w, h = bitmap.width_px, bitmap.line_h_px
     return (w / scale, h / scale)
+
+
+def cap_height(style: str | FontStyle, scale: float = 1.0) -> float:
+    """Altura de las mayúsculas en px lógicos (la franja que el ojo centra)."""
+    font = _load_font(_resolve_style(style), scale)
+    try:
+        top, bottom = font.getbbox("H")[1], font.getbbox("H")[3]
+    except Exception:
+        return _resolve_style(style).size * 0.7
+    return (bottom - top) / scale
+
+
+def baseline_top(text: str, style: str | FontStyle, baseline: float, scale: float = 1.0) -> float:
+    """``y`` para :func:`draw_text` que deja ``text`` sobre ``baseline`` (px lógicos).
+
+    ``draw_text`` pone en ``y`` el borde superior de la tinta, que depende de las
+    letras: «ace» quedaba más arriba que «Abc». Esto ancla todo a la línea base.
+    """
+    resolved = _resolve_style(style)
+    display = text.upper() if resolved.uppercase else text
+    font = _load_font(resolved, scale)
+    try:
+        ascent = font.getmetrics()[0]
+        ink_top = font.getbbox(display or "H")[1]
+    except Exception:
+        return baseline - resolved.size * 0.7
+    return baseline + (ink_top - ascent) / scale
 
 
 def draw_text(

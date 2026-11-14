@@ -1,4 +1,4 @@
-"""Tokens visuales del notch de EzAgent.
+"""Tokens visuales del HUD de EzAgent.
 
 Este módulo es la **única** fuente de verdad para colores, medidas, tipografía,
 movimiento y coordenadas de la base visual. Ningún otro módulo de la interfaz
@@ -92,15 +92,40 @@ def palette(theme: str) -> dict[str, Color]:
     """Devuelve la paleta del tema.
 
     ``auto`` se resuelve en la capa de configuración; si llega aquí sin
-    resolver se asume oscuro, que es el tema base del notch.
+    resolver se asume oscuro, que es el tema base del HUD.
     """
     # DECISION: ``auto`` no se consulta al registro desde este módulo puro;
     # la resolución pertenece a la capa de configuración. Aquí cae a oscuro.
     if theme == "light":
-        return LIGHT
-    if theme in ("dark", "auto"):
-        return DARK
-    raise ValueError(f"tema desconocido: {theme!r}")
+        base = LIGHT
+    elif theme in ("dark", "auto"):
+        base = DARK
+        theme = "dark"
+    else:
+        raise ValueError(f"tema desconocido: {theme!r}")
+    over = _THEMED.get(theme)
+    return {**base, **over} if over else base
+
+
+# Tema personalizado (``theme_accent``): sobrescrituras por tema y su versión. Se
+# reasigna el dict entero (lectura sin lock); la versión entra en las claves de caché
+# de quien dibuja con la paleta, para repintar al cambiarla.
+_THEMED: dict[str, dict[str, Color]] = {}
+_VERSION = [0]
+
+
+def set_themed(overrides: dict[str, dict[str, Color]] | None) -> None:
+    """Activa (o quita, con ``None``) la paleta derivada del tema personalizado."""
+    global _THEMED
+    new = dict(overrides or {})
+    if new != _THEMED:
+        _THEMED = new
+        _VERSION[0] += 1
+
+
+def palette_version() -> int:
+    """Sube cada vez que cambia la paleta: úsese en las claves de caché."""
+    return _VERSION[0]
 
 
 def glow_max(theme: str) -> float:
@@ -115,7 +140,7 @@ def glow_max(theme: str) -> float:
 
 @dataclass(frozen=True, slots=True)
 class FontStyle:
-    """Estilo tipográfico cerrado del notch."""
+    """Estilo tipográfico cerrado del HUD."""
 
     token: str
     family: str

@@ -167,6 +167,35 @@ class ChatStore:
             )
         return entry
 
+    def replace_last(self, role: Role, old: str, new: str) -> bool:
+        """Cambia el texto de la última entrada ``role`` de la conversación actual.
+
+        Sirve para unir una frase de voz que se cortó en una pausa con su
+        continuación: queda una sola entrada, no dos. ``False`` si no existe o
+        no se pudo guardar.
+        """
+        wanted = str(old or "")[:MAX_ENTRY_CHARS]
+        clean = str(new or "")[:MAX_ENTRY_CHARS]
+        with self._lock:
+            for index in range(len(self._entries) - 1, -1, -1):
+                entry = self._entries[index]
+                if entry.session != self._session:
+                    continue
+                if entry.role != role:
+                    continue  # p. ej. la respuesta parcial que dejó el turno cortado
+                if entry.text != wanted:
+                    break  # solo la última de ese rol; no se reescribe historia vieja
+                entries = list(self._entries)
+                entries[index] = replace(entry, text=clean)
+                rewritten = self._rewrite(entries, self._starts)
+                if rewritten is None:
+                    return False
+                self._entries, self._activity = rewritten
+                self._by_session = _index(self._entries)
+                self._seq = max(self._activity.values(), default=0)
+                return True
+        return False
+
     def new_session(self) -> int:
         """Empieza otra conversación (las anteriores se conservan)."""
         with self._lock:

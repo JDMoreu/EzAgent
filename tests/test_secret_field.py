@@ -5,10 +5,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ezagent.voice.notch import settings_window as sw
-from ezagent.voice.notch.icons import draw_icon
-from ezagent.voice.notch.menu import COPIED_SECS, Menu
-from ezagent.voice.notch.settings import DEFAULT_VALUES, MenuSettings
+from ezagent.voice.hud import settings_window as sw
+from ezagent.voice.hud.icons import draw_icon
+from ezagent.voice.hud.menu import COPIED_SECS, Menu
+from ezagent.voice.hud.settings import DEFAULT_VALUES, MenuSettings
 
 KEY = "sk-test-SECRET-0123456789"
 

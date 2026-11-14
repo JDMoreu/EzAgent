@@ -8,11 +8,11 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from ezagent.voice.notch import settings_window as sw
-from ezagent.voice.notch.drop import CardWindow, DropUI
-from ezagent.voice.notch.layered import LayeredWindow, paint_due
-from ezagent.voice.notch.menu import Menu
-from ezagent.voice.notch.settings import DEFAULT_VALUES, MenuSettings
+from ezagent.voice.hud import settings_window as sw
+from ezagent.voice.hud.drop import CardWindow, DropUI
+from ezagent.voice.hud.layered import LayeredWindow, paint_due
+from ezagent.voice.hud.menu import Menu
+from ezagent.voice.hud.settings import DEFAULT_VALUES, MenuSettings
 
 LW, LH = 640, 520
 

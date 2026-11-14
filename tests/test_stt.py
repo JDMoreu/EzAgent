@@ -148,10 +148,11 @@ def test_transcribe_envia_el_audio_y_devuelve_el_texto_limpio(
     (call,) = post.calls
     assert call["url"] == "http://127.0.0.1:8080/inference" and call["timeout"] == 5.0
     assert call["data"] == {
-        "model": "ggml-large-v3-turbo-q5_0",
+        "model": "ggml-large-v3-turbo-q8_0",
         "language": "es",
         "response_format": "json",
         "temperature": "0.00",
+        "beam_size": "5",
         "prompt": "EzAgent, OpenCode",
     }
     assert call["files"] == {"file": ("utterance.wav", b"RIFFwav", "audio/wav")}
@@ -183,6 +184,23 @@ def test_vocabulary_hints_are_bounded_and_respect_explicit_prompts() -> None:
     dictionary = "; ".join(f"source{i} → {'word' * 20}{i}" for i in range(100))
     assert len(transcription_hint("", dictionary)) <= 512
     assert transcription_hint("Mi vocabulario", dictionary) == "Mi vocabulario"
+
+
+def test_beam_size_is_configurable_and_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
+    for value, expected in ((1, None), (3, "3"), (50, "8"), ("raro", "5")):
+        post = Post(reply(payload={"text": "hola"}))
+        monkeypatch.setattr(httpx, "post", post)
+        transcribe(cfg(stt_beam_size=value), b"x")
+        assert post.calls[0]["data"].get("beam_size") == expected
+
+
+def test_default_hint_is_a_natural_spanish_sentence() -> None:
+    from ezagent.voice.stt_dictionary import transcription_hint
+
+    hint = transcription_hint("", "", {"claude": ["claude"]})
+    # Whisper copia el estilo del prompt: tildes, puntuación y jerga técnica.
+    assert "bugueado" in hint and "quedó" in hint and "Claude Code" in hint
+    assert hint.endswith(".")
 
 
 def test_un_404_prueba_la_ruta_alternativa_de_openai(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -261,17 +279,17 @@ def models(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_los_modelos_se_listan_en_orden_de_calidad_con_etiquetas(models: Path) -> None:
-    for name in ("ggml-large-v3-turbo-q5_0", "ggml-tiny-q5_1", "mi-modelo-raro", "ggml-base-q5_1"):
+    for name in ("ggml-large-v3-turbo-q8_0", "ggml-tiny-q5_1", "mi-modelo-raro", "ggml-base-q5_1"):
         (models / f"{name}.bin").write_bytes(b"x")
     (models / "ggml-small-q5_1.txt").write_text("no es un modelo")
     listed = stt.available_whisper_models()
     assert [key for key, _ in listed] == [
         "ggml-tiny-q5_1",
         "ggml-base-q5_1",
-        "ggml-large-v3-turbo-q5_0",
+        "ggml-large-v3-turbo-q8_0",
         "mi-modelo-raro",
     ]
-    assert dict(listed)["ggml-large-v3-turbo-q5_0"].endswith("recomendada")
+    assert dict(listed)["ggml-large-v3-turbo-q8_0"].endswith("recomendada")
     assert dict(listed)["mi-modelo-raro"] == "Whisper mi modelo raro"
 
 

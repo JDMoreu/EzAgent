@@ -34,6 +34,16 @@ def normalize_rules(value: str) -> str:
     return "; ".join(f"{source} → {target}" for source, target in parse_rules(value))
 
 
+# Whisper conditions on the prompt as if it were the previous sentence: a
+# natural Spanish line with accents, punctuation and developer jargon steers
+# it better than a bare list of names (which also loses accents).
+HINT_LEAD = (
+    "Dile a Claude Code que revise el bug: el pop-up del HUD se quedó bugueado "
+    "después del commit. Agentes y herramientas: "
+)
+_HINT_LIMIT = 512
+
+
 def transcription_hint(prompt: str, dictionary: str, agents: Iterable[str] = ()) -> str:
     """Suggest spellings to Whisper without rewriting ambiguous spoken names."""
     if prompt.strip():
@@ -58,13 +68,13 @@ def transcription_hint(prompt: str, dictionary: str, agents: Iterable[str] = ())
         word = " ".join(candidate.split())[:64]
         if not word or word.casefold() in seen:
             continue
-        if len(", ".join([*words, word])) > 512 or len(words) >= 24:
+        if len(HINT_LEAD) + len(", ".join([*words, word])) + 1 > _HINT_LIMIT or len(words) >= 24:
             break
         words.append(word)
         seen.add(word.casefold())
     # DECISION: these are spelling hints only; uncertain brand names are never
     # replaced automatically unless the user configured a dictionary rule.
-    return ", ".join(words)
+    return HINT_LEAD + ", ".join(words) + "."
 
 
 @lru_cache(maxsize=32)

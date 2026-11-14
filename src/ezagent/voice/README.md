@@ -14,7 +14,7 @@ No hace las tareas de código: solo escucha, consulta, delega y narra.
 
 - Windows 11.
 - Herdr en marcha y `hc` en el PATH.
-- `whisper-server` con Vulkan y el modelo `ggml-large-v3-turbo-q5_0.bin` en
+- `whisper-server` con Vulkan y el modelo `ggml-large-v3-turbo-q8_0.bin` en
   `%LOCALAPPDATA%\EzAgent\whisper` (la carpeta contiene `whisper-server.exe` y
   `models\`). EzAgent lo arranca solo en un puerto local libre; para usar un
   servidor externo, define `WHISPER_URL`.
@@ -84,7 +84,7 @@ aplican al guardar y los de modelo TTS recargan Kokoro. El pie muestra `TODO GUA
 `● CAMBIOS SIN GUARDAR`; Guardar es ámbar cuando hay cambios y confirma con un
 check. El menú solo usa texto para las etiquetas de ajustes y el pie.
 
-El código de la interfaz vive en `notch/`: `tokens.py` (tokens), `anim.py`
+El código de la interfaz vive en `hud/`: `tokens.py` (tokens), `anim.py`
 (curvas y tween), `bar_motion.py` y `bar_theme.py` (movimiento y tema de la
 barra), `flow.py` (Marea, el gradiente vivo), `drop.py` (ventanas y composición),
 `settings_window.py` (ventana de ajustes centrada con secciones), `menu.py`
@@ -109,10 +109,12 @@ estados). No hay panel Tk ni segunda ventana de ajustes.
   cláusula corta para que el primer audio llegue antes.
 - **Cola de voz**: Kokoro sintetiza la frase siguiente mientras suena la actual,
   así no quedan silencios entre frases.
-- **Acuse inmediato**: si hace falta una herramienta o un agente, el modelo
-  empieza con una frase corta («Va, lo reviso.») antes de trabajar. Si no lo
-  hace, el código dice una de una lista fija. Con varias llamadas al LLM, el log
-  añade `LLM por llamada: …` con el tiempo de cada llamada y herramienta.
+- **Sin muletillas**: ni el modelo ni el código dicen «un momento» o «déjame
+  ver»; si el modelo abre con una, no se pronuncia. Solo las herramientas lentas
+  (delegar o escribir a un agente, buscar en la web, abrir una página, ejecutar
+  un script) llevan un aviso concreto del código, una vez por turno («Le escribo
+  al agente.»). Con varias llamadas al LLM, el log añade `LLM por llamada: …`
+  con el tiempo de cada llamada y herramienta.
 - La hora va al **final** del system prompt para no invalidar la caché por
   prefijo del proveedor a cada minuto.
 - Al transcribir, el log muestra `Tiempos: VAD # ms | STT # ms`. Al terminar
@@ -129,14 +131,14 @@ estados). No hay panel Tk ni segunda ventana de ajustes.
 
 - **“Ciérrate y avísame cuando termine X”**: el mensajero registra el aviso,
   dice que cierra la escucha, **apaga el STT** y espera en segundo plano.
-  Cuando el agente termina, **reabre solo la escucha/notch** y pregunta:
+  Cuando el agente termina, **reabre solo la escucha/HUD** y pregunta:
   “He terminado la tarea. ¿Quieres que te diga la salida, te resuma lo que
   hizo, o quieres darme otra instrucción?”.
 - Puedes responder “sí”, “dime solo la salida”, “resume”, “haz esto ahora” o
   cualquier otra indicación. Si dices “deja de escuchar” o “cierra”, se cierra.
 - Solo se avisa de los agentes que pides explícitamente (`announce_all=false`).
-- **Ctrl+Alt+M** silencia el micrófono. El notch muestra un micrófono con una
-  barra roja mientras está muteado y el micrófono normal al reactivarlo. El
+- **Ctrl+Alt+M** silencia el micrófono. El HUD se vuelve gris y se encoge un
+  poco mientras está muteado, y recupera su color al reactivarlo. El
   ruido de fondo no se transcribe.
 - También puedes decir “mute” / “desmute” y el mensajero usa
   `voice_mic_mute`.
@@ -149,7 +151,7 @@ estados). No hay panel Tk ni segunda ventana de ajustes.
   el TTS y se procesa tu nueva frase.
 - **El asistente no te interrumpe**: espera a que hagas una pausa antes de
   responder o de dar cualquier aviso.
-- Cuando un agente termina, **reabre la escucha/notch** y pregunta si quieres
+- Cuando un agente termina, **reabre la escucha/HUD** y pregunta si quieres
   la salida, un resumen o dar otra instrucción. No da el resumen hasta que se
   lo pidas.
 - Los avisos de agente **se entregan aunque cuelgues**: la cola no se borra al
@@ -172,7 +174,7 @@ Hay micrófonos con poca ganancia (los de portátil) y webcams que quedan lejos.
 El VAD parte de `min_rms = 0.0006` (antes 0.0015) y solo aprende ruido de los
 niveles cercanos al suelo, para que una frase floja no se confunda con ruido ni
 suba el umbral del siguiente intento. Si aun así no te detecta, baja
-`min_rms` a `0.0003` en el menú del notch o en `voice.json`; si el ruido de
+`min_rms` a `0.0003` en el menú del HUD o en `voice.json`; si el ruido de
 fondo abre turnos falsos, súbelo. No hay AGC de software: si el dispositivo
 tiene poca ganancia, conviene elegir otro micrófono en el menú.
 
@@ -196,7 +198,7 @@ uv run ezagent-voice --say "Hola, soy el mensajero de Herdr."
 
 Las órdenes explícitas de nivel 0 y 1 se ejecutan directamente; las
 destructivas (matar, borrar, sobrescribir) o masivas piden confirmación por voz
-o con la fila Sí/No del notch. El asistente responde en una frase corta con qué
+o con la fila Sí/No del HUD. El asistente responde en una frase corta con qué
 abre y dónde.
 
 ## Núcleo agéntico
@@ -266,7 +268,7 @@ EzAgent no usa Pipecat; el pipeline es propio.
 | `menu_hotkey` | `ctrl+alt+o` | Abrir / cerrar el menú |
 | `repeat_hotkey` | `ctrl+alt+r` | Repetir último resumen |
 | `whisper_url` | `http://127.0.0.1:8088/inference` | STT |
-| `stt_model` | `ggml-large-v3-turbo-q5_0` | Modelo de whisper-server |
+| `stt_model` | `ggml-large-v3-turbo-q8_0` | Modelo de whisper-server |
 | `stt_engine` | `auto` | `auto`, `vulkan` o `cpu` |
 | `stt_prompt` | `""` | Contexto opcional para whisper |
 | `stt_timeout_secs` | `60` | Timeout del STT |
@@ -310,7 +312,7 @@ EzAgent no usa Pipecat; el pipeline es propio.
 
 ## Límites del MVP
 
-- Solo Windows (notch Win32 y `RegisterHotKey`).
+- Solo Windows (HUD Win32 y `RegisterHotKey`).
 - Sin icono de bandeja: se ejecuta en segundo plano; se para con
   `scripts\stop-voice.ps1`.
 - Sin wake word: el mensajero arranca en modo escucha (`Ctrl+Alt+Space` cuelga o
@@ -320,7 +322,7 @@ EzAgent no usa Pipecat; el pipeline es propio.
   Usa auriculares o pon `barge_in: false`.
 - El STT es por turnos (whisper batch); el streaming es del LLM/TTS. Para STT
   palabra a palabra haría falta un modelo streaming (Nemotron 3.5).
-- El notch se basa en la capa layered de **Dicta** (MIT).
+- El HUD se basa en la capa layered de **Dicta** (MIT).
 
 ## Siguiente iteración
 

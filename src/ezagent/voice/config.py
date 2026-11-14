@@ -323,13 +323,16 @@ class VoiceConfig:
     # STT / TTS.
     whisper_url: str = "http://127.0.0.1:8088/inference"
     auto_start_whisper: bool = True
-    stt_model: str = "ggml-large-v3-turbo-q5_0"
+    stt_model: str = "ggml-large-v3-turbo-q8_0"
     stt_engine: str = "auto"
     # Carpeta con whisper-server.exe y models/ (vacío = autodetección).
     whisper_home: str = ""
     stt_prompt: str = ""
     stt_dictionary: str = ""
     stt_vocabulary_hints: bool = True
+    # Beam search de whisper.cpp: 1 = greedy (más rápido); 5 acierta más
+    # palabras técnicas a costa de unos cientos de ms en GPU.
+    stt_beam_size: int = 5
     stt_timeout_secs: float = 10.0
     voice: str = "em_alex"
     speed: float = 0.95
@@ -385,7 +388,7 @@ class VoiceConfig:
     # responde a cuentagotas aunque cada lectura aislada no venza.
     llm_turn_timeout_secs: float = 120.0
     llm_max_tool_rounds: int = 8
-    # True cuando el usuario elige proveedor/modelo desde el menú del notch.
+    # True cuando el usuario elige proveedor/modelo desde el menú del HUD.
     # A partir de ahí voice.json manda sobre LLM_PROVIDER del .env, para que
     # el cambio sobreviva al reinicio.
     llm_pinned: bool = False
@@ -402,7 +405,7 @@ class VoiceConfig:
     agent_profiles_version: int = AGENT_PROFILES_VERSION
     announce_all: bool = False
     max_read_lines: int = 40
-    notch_hidden: bool = False
+    hud_hidden: bool = False
 
     # La barra guarda su propia posición física al terminar un arrastre.
     drop_x: int | None = None
@@ -436,7 +439,7 @@ class VoiceConfig:
     voice_wake: bool = True
     wake_phrase: str = "EzAgent, escúchame"
 
-    # Tema del notch: auto (sigue a Windows), dark, light o custom. Se guarda al
+    # Tema del HUD: auto (sigue a Windows), dark, light o custom. Se guarda al
     # instante y no cuenta para «cambios sin guardar».
     theme: str = "auto"
     # Tema personalizado: los cuatro colores del gradiente (Marea por defecto)
@@ -457,6 +460,10 @@ class VoiceConfig:
             except Exception:
                 data = {}
         cfg = cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        # DECISION: «notch_hidden» pasó a «hud_hidden»; se lee la clave vieja una vez
+        # para no perder el ajuste guardado (save() ya escribe solo la nueva).
+        if "hud_hidden" not in data and "notch_hidden" in data:
+            cfg.hud_hidden = bool(data["notch_hidden"])
         # Los perfiles de agente se mezclan con los valores de fábrica para
         # que añadir un agente no borre los modelos/esfuerzos de los demás.
         cfg.agent_profiles = merge_agent_profiles(
@@ -603,12 +610,13 @@ class VoiceConfig:
         path = path or config_path()
         data = self._read_json(path)
         data.update(asdict(self))
+        data.pop("notch_hidden", None)  # clave anterior, sustituida por hud_hidden
         # La clave vive en .env; no se duplica en voice.json.
         data["api_key"] = ""
         self._write_json(path, data)
 
     def save_key(self, key: str, value, path: Path | None = None) -> None:
-        """Persiste una sola clave instantánea (notch_hidden o theme).
+        """Persiste una sola clave instantánea (hud_hidden o theme).
 
         No vuelca el resto del dataclass: así ocultar la barra no guarda por
         accidente cambios del menú que aún no se han confirmado (spec 10.1).

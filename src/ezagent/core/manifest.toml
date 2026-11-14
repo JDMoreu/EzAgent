@@ -19,12 +19,33 @@ license = "MIT"
 
 [[asset]]
 id = "whisper-model-turbo"
-label = "Modelo Whisper large-v3-turbo (q5_0)"
+label = "Modelo Whisper large-v3-turbo (q8_0)"
+url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin"
+sha256 = "317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1"
+size = 874188075
+dest = "whisper/models/ggml-large-v3-turbo-q8_0.bin"
+license = "MIT"
+
+# Variante más ligera para GPU con poca VRAM: algo menos precisa.
+[[asset]]
+id = "whisper-model-turbo-q5"
+label = "Modelo Whisper large-v3-turbo (q5_0, más ligero)"
 url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin"
 sha256 = "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
 size = 574041195
 dest = "whisper/models/ggml-large-v3-turbo-q5_0.bin"
 license = "MIT"
+optional = true
+
+[[asset]]
+id = "whisper-model-small"
+label = "Modelo Whisper small (q8_0, rápido)"
+url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q8_0.bin"
+sha256 = "49c8fb02b65e6049d5fa6c04f81f53b867b5ec9540406812c643f177317f779f"
+size = 264464607
+dest = "whisper/models/ggml-small-q8_0.bin"
+license = "MIT"
+optional = true
 
 [[asset]]
 id = "whisper-vad-silero"

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from ..notch.tokens import Color
+from ..hud.tokens import Color
 from . import markdown as md
 from .render_base import (
     PARA_GAP,

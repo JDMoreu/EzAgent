@@ -13,6 +13,7 @@ from typing import Any
 from loguru import logger
 from openai import OpenAI
 
+from ..agent.runtime import BASE_TOOLS
 from ..llm_providers import capabilities_for
 from . import context as ctx_mgr
 from .anthropic_client import AnthropicChatClient
@@ -26,6 +27,7 @@ from .tool_json import (
     repair_structure,
     sanitize_history,
 )
+from .tool_markup import TOOL_MARKUP_NOTICE, ToolMarkupGuard
 
 
 # Un turno cancelado no es un error del proveedor: la app lo descarta en silencio.
@@ -56,20 +58,41 @@ class _TurnToken:
         self.id = uuid.uuid4().hex
 
 
-# Acuse que dice el código si el modelo pide una herramienta sin haber dicho
-# nada en el turno: así no queda un silencio mientras trabaja.
-ACK_FILLERS: tuple[str, ...] = (
-    "Un momento, lo reviso.",
-    "Dale, ya lo veo.",
-    "Va, dame un segundo.",
-    "Listo, déjame ver.",
-)
+# Aviso que dice el código, una vez por turno, solo cuando el modelo lanza
+# trabajo lento sin haber dicho nada: describe la acción en vez de una
+# muletilla («un momento», «déjame ver»). Las herramientas rápidas no avisan.
+_AGENT_NAMES = {"claude": "Claude Code", "opencode": "OpenCode", "codex": "Codex"}
+
+
+def tool_ack(name: str, raw_args: str) -> str | None:
+    """Frase corta que anuncia una herramienta lenta, o None si no hace falta."""
+    try:
+        args = json.loads(raw_args or "{}")
+    except ValueError:
+        args = {}
+    if not isinstance(args, dict):
+        args = {}
+    if name == "web_search":
+        return "Busco en la web."
+    if name == "fetch_page":
+        return "Abro la página."
+    if name == "run_skill_script":
+        return "Ejecuto el script."
+    if name != "delegate_to_agent":
+        return None
+    action = str(args.get("action") or "")
+    if action == "send":
+        return "Le escribo al agente."
+    if action == "run":
+        agent = str(args.get("agent") or "").strip().lower()
+        label = _AGENT_NAMES.get(agent, agent)
+        return f"Se lo paso a {label}." if label else "Se lo paso a un agente."
+    return None
+
+
 # Aviso de espera: si el turno anterior sigue ocupando el lock, se avisa una vez.
 BUSY_WAIT_SECS = 1.5
 BUSY_POLL_SECS = 0.1
-
-# Herramientas instantáneas que no merecen acuse (silenciar, cerrar…).
-_NO_ACK_TOOLS = frozenset({"voice_control"})
 
 # Avisos internos: viajan como dato del usuario, nunca como `system` a mitad
 # del historial (hay modelos que solo aceptan un system al principio y otros
@@ -78,7 +101,7 @@ CLOSE_NOTICE = (
     "Cierra ahora con los resultados ya obtenidos, sin herramientas. "
     "No repitas consultas, no prometas seguir en otro turno ni pidas reformular. "
     "Distingue lo verificado, lo pendiente y los archivos realmente creados. "
-    "Si delegaste, informa su dirección real y que la tarea sigue pendiente. "
+    "Si delegaste, di en qué pestaña está (su nombre visible) y que la tarea sigue pendiente. "
     "Por voz usa como máximo dos frases."
 )
 EMPTY_ANSWER = (
@@ -187,7 +210,6 @@ class Messenger:
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": self._system_prompt()}]
         self._last_user_text = ""
         self._last_agent_address: str | None = None
-        self._filler_index = 0
         # Resumen de lo que ya salió del historial por la ventana de contexto.
         self.summary = ""
         # Aviso de contexto («conversación compactada») para el chat; la app lo conecta.
@@ -211,11 +233,6 @@ class Messenger:
         self._turn_active = False
         self._pending_notes: list[dict[str, Any]] = []
         self._deferred_history: tuple[list[dict[str, Any]], str, str] | None = None
-
-    def _next_filler(self) -> str:
-        filler = ACK_FILLERS[self._filler_index % len(ACK_FILLERS)]
-        self._filler_index += 1
-        return filler
 
     def _configure_client(self) -> None:
         headers = {"User-Agent": "EzAgent-Voice/0.1"}
@@ -629,6 +646,7 @@ class Messenger:
                     self._active_stream = stream
                 finish_reason: str | None = None
                 tool_calls: dict[int, dict[str, Any]] = {}
+                guard = ToolMarkupGuard()
                 try:
                     for chunk in stream:
                         self._check_cancel(token)
@@ -646,14 +664,12 @@ class Messenger:
                         if first_chunk is None and (delta.content or delta.tool_calls):
                             first_chunk = time.monotonic() - began
                         if delta.content:
-                            partial.append(delta.content)
-                            spoke = spoke or bool(delta.content.strip())
-                            yield delta.content
+                            safe = guard.feed(delta.content)
+                            if safe:
+                                partial.append(safe)
+                                spoke = spoke or bool(safe.strip())
+                                yield safe
                         for call in delta.tool_calls or []:
-                            name = call.function.name if call.function else ""
-                            if not spoke and name and name not in _NO_ACK_TOOLS:
-                                spoke = True
-                                yield self._next_filler() + " "
                             index = int(call.index or 0)
                             item = tool_calls.setdefault(
                                 index,
@@ -670,6 +686,10 @@ class Messenger:
                                     item["function"]["name"] += call.function.name
                                 if call.function.arguments:
                                     item["function"]["arguments"] += call.function.arguments
+                    tail = guard.flush()
+                    if tail:
+                        partial.append(tail)
+                        yield tail
                 except (GeneratorExit, TurnCancelled):
                     raise
                 except Exception as exc:  # noqa: BLE001
@@ -692,8 +712,26 @@ class Messenger:
                 )
                 if tool_calls:
                     if partial:
-                        yield " "  # separa el acuse del modelo de lo que siga
+                        yield " "  # separa el texto del modelo de lo que siga
                     ordered = [tool_calls[i] for i in sorted(tool_calls)]
+                    if not spoke:
+                        # Los argumentos ya están completos: el aviso puede
+                        # decir qué se hace (y callar si es rápido).
+                        ack = next(
+                            (
+                                text
+                                for c in ordered
+                                if (
+                                    text := tool_ack(
+                                        c["function"]["name"], c["function"]["arguments"]
+                                    )
+                                )
+                            ),
+                            None,
+                        )
+                        if ack:
+                            spoke = True
+                            yield ack + " "
                     complete = self._seal_tool_calls(ordered, finish_reason)
                     self.messages.append(
                         {
@@ -752,6 +790,11 @@ class Messenger:
                     continue
                 self.last_rounds.append(round_note)
 
+                if guard.tripped:
+                    # «Llamó» a una herramienta solo en texto: no se ejecutó nada.
+                    logger.warning("El modelo escribió marcado de herramienta como texto.")
+                    partial.append(TOOL_MARKUP_NOTICE)
+                    yield TOOL_MARKUP_NOTICE
                 content = "".join(partial).strip()
                 if finish_reason == "length" and content:
                     content += LENGTH_NOTICE
@@ -811,7 +854,16 @@ class Messenger:
         try:
             return runtime.tools_for(text)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("No pude cargar las herramientas: {}", exc)
+            # Con la traza completa: «expected string…, got NoneType» solo no dice dónde.
+            logger.opt(exception=exc).warning("No pude cargar las herramientas")
+            return self._base_tools(runtime)
+
+    @staticmethod
+    def _base_tools(runtime: Any) -> list[dict[str, Any]]:
+        """Sin selección por intención: las herramientas base, para no quedar sin ninguna."""
+        try:
+            return runtime.registry.schemas(names=list(BASE_TOOLS), limit=14)
+        except Exception:  # noqa: BLE001 - peor caso: el turno sigue sin herramientas
             return []
 
     @staticmethod

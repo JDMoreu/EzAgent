@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from ezagent.voice.notch.menu_layout import GROUPS
-from ezagent.voice.notch.settings import (
+from ezagent.voice.hud.menu_layout import GROUPS
+from ezagent.voice.hud.settings import (
     DEFAULT_VALUES,
     EDITABLE_KEYS,
     INSTANT_KEYS,
@@ -96,8 +96,8 @@ def test_every_visible_row_with_a_real_setting_can_activate_save() -> None:
 # ------------------------------------------------------------------- app
 def _app_stub(saved: list):
     cfg = SimpleNamespace(save_key=lambda key, value: saved.append((key, value)), theme="light")
-    notch = SimpleNamespace(set_bar_scale=lambda value: None, set_theme=lambda value: None)
-    return SimpleNamespace(cfg=cfg, notch=notch, _push_custom_colors=lambda: None)
+    hud = SimpleNamespace(set_bar_scale=lambda value: None, set_theme=lambda value: None)
+    return SimpleNamespace(cfg=cfg, hud=hud, _push_custom_colors=lambda: None)
 
 
 def test_live_changes_from_settings_are_not_written_until_save() -> None:

@@ -1,0 +1,72 @@
+<div id="ez-activity-concept" class="viz-dotted-background">
+  <style>
+    #ez-activity-concept { --ez-bg:light-dark(#fafdfc,#0d161a); --ez-panel:light-dark(#ffffff,#18272d); --ez-ink:light-dark(#102226,#e4f2f0); --ez-muted:light-dark(#52696d,#aec1c4); --ez-line:light-dark(#d6e2df,#34464c); --ez-accent:light-dark(#0c7075,#5ee2c4); --ez-soft:light-dark(#edf6f4,#21373d); --ez-amber:light-dark(#875400,#f0c47b); font-family:Segoe UI,system-ui,sans-serif; color:var(--ez-ink); padding:28px 12px; min-height:480px; box-sizing:border-box; }
+    #ez-activity-concept * { box-sizing:border-box; }
+    #ez-activity-concept .ez-stage { max-width:380px; margin:0 auto; }
+    #ez-activity-concept button { font:inherit; color:inherit; }
+    #ez-activity-concept .ez-anchor { display:flex; align-items:center; justify-content:center; gap:12px; padding-bottom:12px; }
+    #ez-activity-concept .ez-orb { display:block; width:58px; height:58px; border:1px solid color-mix(in srgb,var(--ez-accent) 40%,transparent); border-radius:50%; background:radial-gradient(circle at 30% 25%,#92efcf 0%,#479f9b 30%,#28627b 65%,#173344 100%); box-shadow:inset 0 1px 2px #ffffff66,0 4px 12px #00000020; flex-shrink:0; }
+    #ez-activity-concept .ez-summary { text-align:left; padding:9px 14px; background:var(--ez-bg); border:1px solid var(--ez-line); border-radius:18px; }
+    #ez-activity-concept .ez-summary strong { display:block; font-size:14px; font-weight:600; }
+    #ez-activity-concept .ez-summary span { display:block; font-size:12px; color:var(--ez-muted); margin-top:3px; }
+    #ez-activity-concept .ez-panel { background:var(--ez-panel); border:1px solid var(--ez-line); border-radius:20px; box-shadow:0 12px 34px #00000020; padding:16px; }
+    #ez-activity-concept .ez-panel[hidden] { display:none; }
+    #ez-activity-concept .ez-head { display:flex; align-items:center; gap:8px; padding-bottom:14px; }
+    #ez-activity-concept .ez-head strong { font-size:15px; margin-right:auto; }
+    #ez-activity-concept .ez-tool { background:transparent; border:0; border-radius:8px; padding:8px; display:flex; gap:5px; align-items:center; font-size:12px; color:var(--ez-muted); }
+    #ez-activity-concept button:hover { filter:brightness(1.07); }
+    #ez-activity-concept .ez-tool:hover,#ez-activity-concept .ez-row:hover { background:var(--ez-soft); }
+    #ez-activity-concept .ez-row { width:100%; border:0; border-top:1px solid var(--ez-line); background:transparent; display:flex; gap:12px; padding:15px 2px; text-align:left; align-items:flex-start; }
+    #ez-activity-concept .ez-symbol { flex-shrink:0; color:var(--ez-accent); margin-top:3px; }
+    #ez-activity-concept .ez-row.attention .ez-symbol { color:var(--ez-amber); }
+    #ez-activity-concept .ez-row.wait .ez-symbol { color:var(--ez-muted); }
+    #ez-activity-concept .ez-row strong { display:block; font-size:14px; line-height:1.4; font-weight:600; }
+    #ez-activity-concept .ez-meta { display:block; font-size:12px; line-height:1.5; color:var(--ez-muted); margin-top:3px; }
+    #ez-activity-concept .ez-detail { background:var(--ez-soft); padding:12px; border-radius:10px; font-size:13px; line-height:1.5; margin-bottom:10px; }
+    #ez-activity-concept .ez-detail[hidden] { display:none; }
+    #ez-activity-concept .ez-foot { font-size:12px; color:var(--ez-muted); padding-top:10px; border-top:1px solid var(--ez-line); }
+    #ez-activity-concept svg { width:18px; height:18px; }
+    @media (max-width:360px) { #ez-activity-concept { padding:20px 4px; } #ez-activity-concept .ez-panel { padding:12px; } }
+  </style>
+  <div class="ez-stage" aria-label="Propuesta del panel de actividad de EzAgent">
+    <div class="ez-anchor">
+      <button type="button" class="ez-orb cursor-interaction" aria-label="Mostrar actividad" aria-expanded="true"></button>
+      <button type="button" class="ez-summary cursor-interaction" aria-expanded="true"><strong>Una tarea necesita tu respuesta</strong><span>1 en curso · 1 en espera</span></button>
+    </div>
+    <section class="ez-panel" aria-label="Actividad">
+      <div class="ez-head"><strong>Actividad</strong><button type="button" class="ez-tool ez-pin cursor-interaction" aria-pressed="true"><i data-lucide="pin" aria-hidden="true"></i><span>Fijado</span></button><button type="button" class="ez-tool ez-close cursor-interaction" aria-label="Cerrar actividad"><i data-lucide="x" aria-hidden="true"></i></button></div>
+      <button type="button" class="ez-row attention cursor-interaction" aria-expanded="false"><i class="ez-symbol" data-lucide="message-circle-question" aria-hidden="true"></i><span><strong>Revisar permisos del proyecto</strong><span class="ez-meta">Necesita tu respuesta · Codex</span></span></button>
+      <div class="ez-detail" hidden>Espera tu autorización para continuar. La acción «Responder» abriría la confirmación existente en el chat.</div>
+      <button type="button" class="ez-row cursor-interaction" aria-expanded="false"><i class="ez-symbol" data-lucide="loader-circle" aria-hidden="true"></i><span><strong>Mejorar la interfaz del chat</strong><span class="ez-meta">En curso · Ajustando componentes</span></span></button>
+      <div class="ez-detail" hidden>Último avance: revisando el espaciado y los controles. La aplicación mostraría la última actualización recibida, sin inventar un porcentaje.</div>
+      <button type="button" class="ez-row wait cursor-interaction" aria-expanded="false"><i class="ez-symbol" data-lucide="clock-3" aria-hidden="true"></i><span><strong>Verificar los cambios</strong><span class="ez-meta">En espera · Depende del diseño</span></span></button>
+      <div class="ez-detail" hidden>Esta tarea puede comenzar cuando termine «Mejorar la interfaz del chat».</div>
+      <button type="button" class="ez-row cursor-interaction" aria-expanded="false"><i class="ez-symbol" data-lucide="circle-check" aria-hidden="true"></i><span><strong>Organizar las conversaciones</strong><span class="ez-meta">Completada · Resultado sin abrir</span></span></button>
+      <div class="ez-detail" hidden>Historial y nueva conversación reunidos en una sola vista. Abrir el resultado marcaría esta novedad como vista.</div>
+      <div class="ez-foot">Vista conceptual · tareas de ejemplo</div>
+    </section>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById('ez-activity-concept');
+      const stage = root.querySelector('.ez-stage');
+      const panel = root.querySelector('.ez-panel');
+      const pin = root.querySelector('.ez-pin');
+      const triggers = root.querySelectorAll('.ez-orb,.ez-summary');
+      let pinned = true, timer;
+      const show = value => { panel.hidden = !value; triggers.forEach(b => b.setAttribute('aria-expanded',String(value))); };
+      triggers.forEach(b => b.addEventListener('click',() => { clearTimeout(timer); show(panel.hidden); }));
+      stage.addEventListener('pointerenter',() => { clearTimeout(timer); timer = setTimeout(() => show(true),300); });
+      stage.addEventListener('pointerleave',() => { clearTimeout(timer); if (!pinned) timer = setTimeout(() => show(false),350); });
+      pin.addEventListener('click',() => { pinned = !pinned; pin.setAttribute('aria-pressed',String(pinned)); pin.querySelector('span').textContent = pinned ? 'Fijado' : 'Fijar'; });
+      root.querySelector('.ez-close').addEventListener('click',() => { clearTimeout(timer); show(false); });
+      root.addEventListener('keydown',event => { if (event.key === 'Escape') { show(false); triggers[0].focus(); } });
+      root.querySelectorAll('.ez-row').forEach(row => row.addEventListener('click',() => { const detail = row.nextElementSibling; detail.hidden = !detail.hidden; row.setAttribute('aria-expanded',String(!detail.hidden)); }));
+      const design = { shape:'Esfera' };
+      if (globalThis.Tweak) {
+        const tweak = new Tweak({container:stage,onChange:() => { const orb=root.querySelector('.ez-orb'); orb.style.width=design.shape==='Píldora'?'96px':'58px'; orb.style.height=design.shape==='Píldora'?'38px':'58px'; orb.style.borderRadius=design.shape==='Píldora'?'24px':'50%'; }});
+        tweak.addSelect(design,'shape',{label:'Forma del HUD',options:['Esfera','Píldora']});
+      }
+    })();
+  </script>
+</div>

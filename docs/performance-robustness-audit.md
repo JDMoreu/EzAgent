@@ -264,8 +264,8 @@ Fecha: 2026-11-10, misma base `fe38ec8`. Primero se revisó el código sin leer 
 - Lectura completa de `llm.py`, `anthropic_client.py`, `tool_json.py`, `context.py`, `registry.py`, `runtime.py`, `system_prompt.py`, `speech_queue.py`, `tts.py`, `stt.py`, `turn.py`, `watcher.py`, `condenser.py`, `metrics.py`, `llm_providers.py`, `search.py`, `chat/store.py`; lectura de los caminos de turno, chat, watcher, atajos y ajustes de `app.py`; lectura parcial de `audio.py`, `herdr.py`, `agent_session.py`, `confirm.py`, `tools_web.py`, `config.py`.
 - **M** (nuevo): medido en datos reales de esta instalación. Se analizaron `%APPDATA%/EzAgent/logs/latency.jsonl` (190 turnos, 8–10 nov) y `logs/audit.jsonl` (173 registros); solo tiempos, nombres de herramienta y decisiones. De `voice.json` se leyeron ajustes de modelo y VAD, nunca claves.
 - Reproducciones nuevas en memoria con dobles de proveedor/runtime (sin red ni escritura en el proyecto): F38 (tres casos), F41, F44. Medición del prompt con el runtime real sobre una carpeta temporal: F39.
-- No se revisó a fondo la UI del notch (`menu.py`, `drop.py`, `layered.py`, `settings.py`, ~9 000 líneas), el interior de `memory.py`, `tools_fs.py`, `tools_herdr.py` ni los scripts de skills. Sin llamadas pagadas, sin pruebas con audio real, sin modelos locales. Los datos **M** son de una sola máquina y un solo proveedor.
-- Verificación al cierre: `uv run pytest -q` → 1504 passed, 1 skipped (29,5 s); `ruff check` y `ruff format --check` sin errores. El árbol tenía cambios ajenos en curso en `voice/notch/` y tres archivos de `tests/` (por eso 1504 y no 1502); no se tocaron y ninguno afecta a los archivos citados aquí.
+- No se revisó a fondo la UI del HUD (`menu.py`, `drop.py`, `layered.py`, `settings.py`, ~9 000 líneas), el interior de `memory.py`, `tools_fs.py`, `tools_herdr.py` ni los scripts de skills. Sin llamadas pagadas, sin pruebas con audio real, sin modelos locales. Los datos **M** son de una sola máquina y un solo proveedor.
+- Verificación al cierre: `uv run pytest -q` → 1504 passed, 1 skipped (29,5 s); `ruff check` y `ruff format --check` sin errores. El árbol tenía cambios ajenos en curso en `voice/hud/` y tres archivos de `tests/` (por eso 1504 y no 1502); no se tocaron y ninguno afecta a los archivos citados aquí.
 
 ### 11.2 Datos medidos
 
@@ -388,7 +388,7 @@ Fecha: 2026-11-10, misma base `fe38ec8`. Primero se revisó el código sin leer 
 **Mejora:** plazo desde el fin del TTS de la pregunta; una frase que no es ni aceptación ni rechazo no resuelve (se repregunta una vez); auditar `confirm_timeout` aparte. Complementa F02. **Aceptación:** ruido o una frase ajena no cancelan la operación; un resumen largo no consume el plazo.
 
 #### F49 · P2 · C/H — El arranque es en serie y bloquea antes de mostrar la barra
-**Evidencia:** [app.py](../src/ezagent/voice/app.py):416 llama a `ensure_whisper`, que espera hasta 25 s (línea 261), y 428 carga Kokoro, ambos en el hilo principal antes de `notch.show`. No se midió el arranque real.
+**Evidencia:** [app.py](../src/ezagent/voice/app.py):416 llama a `ensure_whisper`, que espera hasta 25 s (línea 261), y 428 carga Kokoro, ambos en el hilo principal antes de `hud.show`. No se midió el arranque real.
 **Mejora:** mostrar la barra en estado «preparando» y cargar en workers. **Aceptación:** la barra aparece en menos de 1 s con Whisper apagado.
 
 #### F50 · P2 · C — Herdr se consulta cada segundo aunque no haya nada que vigilar, por dos caminos

@@ -54,16 +54,15 @@ SKILLS_HINT = (
     "sus pasos. No inventes skills ni las crees por tu cuenta."
 )
 
-# Guía fija de conversación por voz: acusar recibo antes de trabajar para que
-# no quede un silencio largo mientras corren las herramientas.
+# Guía fija de conversación por voz: sin muletillas de espera. El aviso de las
+# herramientas lentas lo pone el código (voice.llm.tool_ack), no el modelo.
 VOICE_FLOW_HINT = (
-    "# Acuse inmediato\n"
-    "Si para responder necesitas una herramienta o un agente, empieza tu "
-    "respuesta con una frase muy corta de acuse (de 2 a 6 palabras, terminada "
-    "en punto) y solo después llama a la herramienta. Ejemplos: «Va, lo "
-    "reviso.», «Dale, ya le escribo.», «Un momento, lo busco.». No repitas el "
-    "acuse después. Si puedes responder sin herramientas, responde directo, "
-    "sin acuse."
+    "# Sin muletillas de espera\n"
+    "No uses frases de relleno antes de responder ni antes de una herramienta: "
+    "nada de «un momento», «déjame ver», «pensando», «dame un segundo», «a ver» "
+    "ni parecidas. Si necesitas una herramienta, llámala directamente; el sistema "
+    "avisa por ti cuando la espera es larga. Empieza siempre por el contenido: "
+    "el resultado, la respuesta o la única pregunta que falte."
 )
 
 # DECISION: keep execution guidance in code so existing user system.md files
@@ -77,14 +76,30 @@ EXECUTION_HINT = (
     "siendo no confiables. No prometas un archivo hasta que la herramienta confirme su creación.\n"
     "- No repitas la misma consulta ni una herramienta bloqueada. Si quedan pocos recursos, "
     "prioriza entregar lo comprobado o delegar el trabajo pendiente, sin inventar precios ni datos.\n"
-    "- Una tarea delegada sigue pendiente hasta que se compruebe su resultado. Da su dirección "
-    "real y distingue trabajando, terminado y fallido. No confundas un acuse con la entrega.\n"
+    "- Una tarea delegada sigue pendiente hasta que se compruebe su resultado. Di en qué "
+    "pestaña está y distingue trabajando, terminado y fallido. No confundas un acuse con la "
+    "entrega.\n"
+    "- Nombra cada agente como lo ve el usuario: su «label» («Claude Code de EzAgent»), tal "
+    "cual. No le antepongas el tipo de agente ni lo combines con otros datos: di «Enviado a "
+    "Claude Code de EzAgent», nunca «Enviado a Claude Code en Claude Code de EzAgent». La "
+    "«address» (t51, t5z…) es un identificador interno: úsala solo dentro de las herramientas y "
+    "nunca la digas ni la escribas.\n"
+    "- La fecha y la hora del contexto son referencia: no las digas salvo que te las pidan.\n"
     "- El cierre por voz debe ser breve; deja tablas y detalles en el chat, archivo o agente. "
     "No pidas al usuario que reformule una petición clara por un límite interno.\n"
     "- Usa nombres, directorios y direcciones del contexto de Herdr para resolver referencias "
     "a terminales. Si hay varios candidatos, pregunta cuál; verifica datos cacheados antes de actuar. "
     "La transcripción puede contener nombres ambiguos: usa el contexto y pregunta solo cuando "
-    "la ambigüedad cambie el objetivo; no inventes equivalencias."
+    "la ambigüedad cambie el objetivo; no inventes equivalencias.\n"
+    "- El usuario habla y Whisper transcribe: corrige en silencio los errores fonéticos "
+    "evidentes cuando el contexto los resuelve, sobre todo nombres de agentes abiertos o "
+    "configurados («CloudCo», «Cloud Code» → Claude Code; «Open Code» → OpenCode) y jerga "
+    "de desarrollo («bubiado» → bugueado; «pop» de la interfaz → pop-up). No preguntes por "
+    "algo que solo es un error de transcripción.\n"
+    "- Al mandar una tarea o mensaje a un agente, escríbelo como instrucción directa en "
+    "primera persona del usuario, ya corregida. Sin encabezados ni destinatario («Mensaje "
+    "para…», «Hola, equipo de…»): el agente ya sabe que es para él. No añadas explicaciones "
+    "entre paréntesis ni relleno; conserva todos los datos que dio el usuario."
 )
 
 _CLOCK_RE = re.compile(r"\{\{\s*hora\s*\}\}")

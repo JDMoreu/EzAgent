@@ -78,6 +78,7 @@ class PaintMixin:
             view.input.cursor,
             view.input.anchor,
             view.mode,
+            view.in_call,
             view.pending_delete,
             view.status,
             view.flash_token,

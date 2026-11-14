@@ -41,23 +41,27 @@ from functools import lru_cache
 
 import numpy as np
 from loguru import logger
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
+from ..activity import orbit
 from . import layered as _shell
 from .anim import animations_enabled
 from .bar_motion import Choreo, Spring, emerge
 from .bar_theme import CARD_RADIUS, body_top, card_overrides, card_palette
 from .chat_ui import ChatPanel, fluid_array
 from .flow import CUSTOM_POSES, FlowField, colors_for, custom_palette
+from .icons import colorize, icon_mask, slash_masks
+from .marks import breath, orbit_tile
+from .peek import Peek
 from .settings import UI_SCALE_MAX, UI_SCALE_MIN, UI_SCALE_STEP
 from .state import UiState
-from .tokens import FLARE, H_ISLAND, R_MENU
+from .theme_accent import derive as derive_themed
+from .tokens import FLARE, H_ISLAND, R_MENU, palette_version, set_themed
 from .tokens import palette as token_palette
 
 # ----------------------------------------------------------------- geometría
 BTN = 36.0  # diámetro de los botones redondos
 GAP = 8.0  # separación entre elementos de la fila
-CALL_GAP = 10.0  # respiro extra de «llamar» cuando el micro está plegado
 PAD = 12.0  # margen para sombras dentro de la ventana
 PILL_W, PILL_H = 108.0, 38.0  # la píldora es compacta: ni más ancha ni más alta
 CIRCLE_D = 58.0
@@ -126,6 +130,11 @@ def layout_size(layout: str, dock: str | None = None) -> tuple[float, float]:
     return (NB * BTN + PILL_W + NB * GAP + 2 * PAD, 2 * PAD + max(BTN, PILL_H))
 
 
+def _gap(a: str, b: str, circle: bool) -> float:
+    """Separación normal entre dos vecinos de la fila."""
+    return ORB_GAP if circle and "pill" in (a, b) else GAP
+
+
 def _row_x(order: tuple[str, ...], mic: float, circle: bool) -> dict[str, float]:
     """Centro x de cada elemento de una fila; ``mic`` es el hueco del micrófono."""
     form_w = CIRCLE_D if circle else PILL_W
@@ -135,14 +144,14 @@ def _row_x(order: tuple[str, ...], mic: float, circle: bool) -> dict[str, float]
         width = form_w if name == "pill" else (BTN * mic if name == "mic" else BTN)
         out[name] = x + width / 2
         if i + 1 < len(order):
-            # Al plegarse el micro, su espacio se convierte en un respiro más ancho
-            # (GAP + CALL_GAP): «llamar» no queda pegado a la forma ni a ☰.
-            if name == "mic":
-                gap = GAP * mic + CALL_GAP * (1.0 - mic)
-            elif circle and "pill" in (name, order[i + 1]):
-                gap = ORB_GAP
-            else:
-                gap = GAP
+            nxt = order[i + 1]
+            gap = _gap(name, nxt, circle)
+            if name == "mic" and i > 0:
+                # Plegado, el micro no deja hueco: sus dos separaciones se funden en la
+                # normal entre sus vecinos, igual que entre los demás botones.
+                prev = order[i - 1]
+                folded = _gap(prev, nxt, circle) - _gap(prev, name, circle)
+                gap = gap * mic + folded * (1.0 - mic)
             x += width + gap
     return out
 
@@ -156,8 +165,7 @@ def slots(layout: str, mic: float = 1.0, dock: str | None = None) -> dict[str, t
     circle = layout == "circle"
     if circle and dock in ("bottom", "top"):
         widths = [BTN, BTN, BTN * mic, BTN]
-        gap_mic = GAP * mic + CALL_GAP * (1.0 - mic)
-        gaps = (GAP, GAP, gap_mic, 0.0)  # mic-hang = respiro mayor si el micro está plegado
+        gaps = (GAP, GAP, GAP * mic, 0.0)  # plegado, el micro no deja hueco extra
         total = sum(widths) + sum(gaps)
         x = w / 2 - total / 2
         bottom = dock == "bottom"
@@ -278,8 +286,10 @@ UI = {
         "hover": (28, 45, 51, 255),
         "icon": (228, 242, 240),
         "fault": (255, 120, 118),
-        "hang": (228, 242, 240, 255),
-        "hang_icon": (13, 22, 26),
+        # DECISION: an elevated dark disc, not the inverted near-white one: on the
+        # dark theme it was the only white patch on the bar and drew the eye.
+        "hang": (48, 66, 72, 255),
+        "hang_icon": (236, 244, 242),
         "call": (94, 226, 196, 255),
         "call_icon": (6, 34, 30),
         "ring": (232, 238, 250, 30),
@@ -512,8 +522,13 @@ class DropModel:
         Usa los huecos completos, no la posición animada: acercarse a donde
         estará un botón oculto también lo hace aparecer.
         """
+        x0, y0, x1, y1 = self.hub_rect()
+        return (x0 - HOVER_MARGIN, y0 - HOVER_MARGIN, x1 + HOVER_MARGIN, y1 + HOVER_MARGIN)
+
+    def hub_rect(self, mic: float = 1.0) -> tuple[float, float, float, float]:
+        """Rectángulo lógico de la forma y los huecos de sus botones (todo el hub)."""
         xs, ys = [], []
-        for name, (cx, cy) in slots(self.layout, 1.0, self.dock).items():
+        for name, (cx, cy) in slots(self.layout, mic, self.dock).items():
             if name == "pill":
                 half_w, half_h = (
                     (PILL_W / 2, PILL_H / 2)
@@ -522,14 +537,11 @@ class DropModel:
                 )
             else:
                 half_w = half_h = BTN / 2
+            if name == "mic" and mic < 0.01:
+                continue  # plegado: no ocupa sitio
             xs += [cx - half_w, cx + half_w]
             ys += [cy - half_h, cy + half_h]
-        return (
-            min(xs) - HOVER_MARGIN,
-            min(ys) - HOVER_MARGIN,
-            max(xs) + HOVER_MARGIN,
-            max(ys) + HOVER_MARGIN,
-        )
+        return (min(xs), min(ys), max(xs), max(ys))
 
     def near(self, x: float, y: float) -> bool:
         if self.form_hidden:
@@ -539,64 +551,72 @@ class DropModel:
 
 
 # ------------------------------------------------------------------- dibujo
-def _stroke(d: ImageDraw.ImageDraw, pts, width: float, fill) -> None:
-    d.line(pts, fill=fill, width=max(1, round(width)), joint="curve")
-    r = width / 2.0
-    for x, y in (pts[0], pts[-1]):
-        d.ellipse((x - r, y - r, x + r, y + r), fill=fill)
-
-
-def _glyph(
-    d,
-    name: str,
-    cx: float,
-    cy: float,
-    u: float,
-    color,
-    width: float,
-    muted: float = 0.0,
-    fault=None,
-) -> None:
-    """Glifos en un cuadro de 24 unidades escalado por ``u`` px/unidad."""
-
-    def P(px, py):
-        return (cx + (px - 12) * u, cy + (py - 12) * u)
-
-    w = max(1, round(width))
-    if name == "mic":
-        d.rounded_rectangle((*P(9, 3), *P(15, 14)), radius=3 * u, outline=color, width=w)
-        d.arc((*P(5, 4), *P(19, 18)), 0, 180, fill=color, width=w)
-        _stroke(d, [P(12, 18), P(12, 21)], width, color)
-        if muted > 0.0:
-            # La raya de la pausa se dibuja de arriba abajo según el progreso.
-            end = 4 + 16 * min(1.0, float(muted))
-            _stroke(d, [P(4, 4), P(end, end)], width * 1.15, fault)
-    elif name == "gear":
-        # DECISION: hamburguesa (tres rayas) en vez de rueda dentada: a 36 px un
-        # engranaje de 8 dientes se leía como un sol («brillo»).
-        for y in (6.5, 12, 17.5):
-            _stroke(d, [P(5, y), P(19, y)], width, color)
-    elif name == "chat":
-        # Burbuja con cola y dos líneas de texto: «escribir».
-        d.rounded_rectangle((*P(2.8, 3.6), *P(21.2, 17.4)), radius=5 * u, outline=color, width=w)
-        _stroke(d, [P(8.0, 17.4), P(6.2, 21.8), P(12.8, 17.4)], width, color)
-        _stroke(d, [P(7.4, 8.6), P(16.6, 8.6)], width * 0.9, color)
-        _stroke(d, [P(7.4, 12.4), P(13.6, 12.4)], width * 0.9, color)
-    elif name == "repeat":
-        d.arc((*P(4, 4), *P(20, 20)), -132.5, 180, fill=color, width=w)
-        _stroke(d, [P(4, 4), P(4, 8.5), P(8.5, 8.5)], width, color)
-    elif name in ("no", "hang"):
-        _stroke(d, [P(6, 6), P(18, 18)], width, color)
-        _stroke(d, [P(18, 6), P(6, 18)], width, color)
-    elif name == "yes":
-        _stroke(d, [P(5, 12.5), P(9.5, 17), P(19, 7)], width, color)
-    elif name == "call":
-        # Ondas de voz: «empezar a hablar» (sustituye a ✕ cuando no hay llamada).
-        for x, half in ((5.8, 2.8), (9.9, 7.0), (14.1, 4.9), (18.2, 2.0)):
-            _stroke(d, [P(x, 12 - half), P(x, 12 + half)], width * 1.3, color)
-
-
+BAR_ICON = 16.0  # lado lógico del icono dentro de un botón de 36 px
+# Botón de la barra → icono de la familia única de ``icons``.
+_BAR_GLYPH = {
+    "gear": "menu",
+    "chat": "chat",
+    "mic": "microphone",
+    "hang": "close",
+    "no": "close",
+    "yes": "check",
+    "call": "waves",
+}
+_DISCS: dict[tuple, np.ndarray] = {}
 _SPRITES: dict[tuple, Image.Image] = {}
+
+
+def _ui(theme: str) -> dict:
+    """Colores de los botones: los de ``UI`` con superficies, texto y acento de la paleta.
+
+    Con el tema de fábrica dan los mismos valores; con el personalizado siguen su paleta.
+    """
+    pal = token_palette(theme)
+    ui = dict(UI[theme])
+    ui["call"] = (*pal["MINT"][:3], 255)
+    ui["call_icon"] = tuple(pal["MINT_INK"][:3])
+    ui["signal"] = tuple(pal["MINT"][:3])
+    ui["icon"] = tuple(pal["TEXT"][:3])
+    if theme == "dark":
+        ui["disc"] = (*pal["GROUP"][:3], 245)
+        ui["hover"] = (*pal["GROUP_HOVER"][:3], 255)
+        ui["hang"] = (*pal["TRACK"][:3], 255)
+        ui["hang_icon"] = tuple(pal["TEXT"][:3])
+    else:
+        ui["hang"] = (*pal["TEXT"][:3], 255)
+    return ui
+
+
+def _disc(theme: str, scale: float, kind: str) -> np.ndarray:
+    """Disco con sombra y sin icono: float32 RGBA premultiplicado (0..1)."""
+    key = (theme, round(scale * 1000), kind, palette_version())
+    cached = _DISCS.get(key)
+    if cached is not None:
+        return cached
+    ui = _ui(theme)
+    q = BUD_SS
+    size = round((BTN + 2 * SHADOW) * scale)
+    big = size * q
+    c, r = big / 2, BTN * scale * q / 2
+    shadow = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).ellipse(
+        (c - r, c - r + 3 * scale * q, c + r, c + r + 3 * scale * q), fill=ui["shadow"]
+    )
+    shadow = shadow.filter(ImageFilter.GaussianBlur(4 * scale * q))
+    disc = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    ring = ui["ring"] if (kind in ("hang", "call") or theme == "dark") else None
+    ImageDraw.Draw(disc).ellipse(
+        (c - r, c - r, c + r, c + r),
+        fill=ui[kind],
+        outline=ring,
+        width=max(1, round(1.0 * scale * q)),
+    )
+    out = Image.alpha_composite(shadow, disc).convert("RGBa").reduce(q)
+    arr = np.asarray(out).astype(np.float32) / 255.0
+    if len(_DISCS) > 64:
+        _DISCS.clear()
+    _DISCS[key] = arr
+    return arr
 
 
 def button_sprite(
@@ -612,55 +632,59 @@ def button_sprite(
 ) -> Image.Image:
     """Botón redondo con sombra suave (RGBA recto). Se dibuja una vez y se reutiliza.
 
+    El icono se rasteriza a su tamaño físico final (``icons``), centrado en la
+    misma rejilla de píxeles que el disco: nunca se reescala después.
     ``muted`` (0..1) es el progreso de la raya de pausa; se cuantiza en 8 pasos
     para que la animación reutilice sprites en caché.
     """
     muted = round(max(0.0, min(1.0, float(muted))) * 8) / 8
     theme = "light" if theme == "light" else "dark"
-    key = (glyph, theme, round(scale * 100), hang, hover, muted, signal, call)
+    key = (glyph, theme, round(scale * 1000), hang, hover, muted, signal, call, palette_version())
     sp = _SPRITES.get(key)
     if sp is not None:
         return sp
-    ui = UI[theme]
-    q = BUD_SS
-    size = round((BTN + 2 * SHADOW) * scale)
-    big = size * q
-    c, r = big / 2, BTN * scale * q / 2
-    shadow = Image.new("RGBA", (big, big), (0, 0, 0, 0))
-    ImageDraw.Draw(shadow).ellipse(
-        (c - r, c - r + 3 * scale * q, c + r, c + r + 3 * scale * q), fill=ui["shadow"]
-    )
-    shadow = shadow.filter(ImageFilter.GaussianBlur(4 * scale * q))
-    disc = Image.new("RGBA", (big, big), (0, 0, 0, 0))
-    d = ImageDraw.Draw(disc)
-    fill = ui["call"] if call else (ui["hang"] if hang else (ui["hover"] if hover else ui["disc"]))
-    ring = ui["ring"] if (hang or call or theme == "dark") else None
-    d.ellipse(
-        (c - r, c - r, c + r, c + r), fill=fill, outline=ring, width=max(1, round(1.0 * scale * q))
-    )
+    ui = _ui(theme)
+    kind = "call" if call else ("hang" if hang else ("hover" if hover else "disc"))
+    out = _disc(theme, scale, kind).copy()
     if call:
-        icon = ui["call_icon"]
+        ink = ui["call_icon"]
     elif hang:
-        icon = ui["hang_icon"]
+        ink = ui["hang_icon"]
     else:
-        icon = ui["fault"] if muted >= 0.5 else (SIGNAL[theme] if signal else ui["icon"])
-    k = BTN / 46.0
-    _glyph(
-        d,
-        glyph,
-        c,
-        c,
-        (20 / 24) * k * scale * q * 0.95,
-        (*icon, 255),
-        1.8 * k * scale * q,
-        muted=muted,
-        fault=(*ui["fault"], 255),
-    )
-    out = Image.alpha_composite(shadow, disc).convert("RGBa").reduce(q).convert("RGBA")
-    if len(_SPRITES) > 120:
+        ink = ui["fault"] if muted >= 0.5 else (ui["signal"] if signal else ui["icon"])
+    size = out.shape[0]
+    side = max(1, round(BAR_ICON * scale))
+    side += (size - side) % 2  # misma paridad: el centro cae en el mismo píxel
+    mask = icon_mask(_BAR_GLYPH.get(glyph, glyph), BAR_ICON, scale, side)
+    layers = [(mask, ink)]
+    if glyph == "mic" and muted > 0.0:
+        gap, line = slash_masks(BAR_ICON, scale, muted, side)
+        layers = [(mask * (1.0 - gap), ink), (line, ui["fault"])]
+    o = (size - side) // 2
+    region = out[o : o + side, o : o + side]
+    for cover, color in layers:
+        ink_px = colorize(cover, color)
+        region[:] = ink_px + region * (1.0 - ink_px[..., 3:4])
+    img = Image.fromarray((np.clip(out, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8), "RGBa")
+    sp = img.convert("RGBA")
+    if len(_SPRITES) > 320:
         _SPRITES.clear()
-    _SPRITES[key] = out
-    return out
+    _SPRITES[key] = sp
+    return sp
+
+
+# Micro en pausa: la forma pierde el color y se encoge un poco. Son señales que no
+# dependen del fondo (un rojo fijo se perdía sobre algunos), y el fluido ya va
+# más lento con la pose «mute».
+MUTE_SHRINK = 0.14  # cuánto se encoge la forma (0..1)
+MUTE_KEEP = 0.10  # color que conserva el interior (0 = gris puro)
+MUTE_DIM = 0.92  # brillo que conserva el interior
+
+
+def _mute_tint(interior: Image.Image, k: float) -> Image.Image:
+    """Interior gris según el progreso ``k`` (0..1) de la pausa."""
+    gray = ImageEnhance.Color(interior).enhance(1.0 - (1.0 - MUTE_KEEP) * k)
+    return ImageEnhance.Brightness(gray).enhance(1.0 - (1.0 - MUTE_DIM) * k)
 
 
 class _Canvas:
@@ -705,8 +729,14 @@ def render_model(
     now: float | None = None,
     hover_item: str | None = None,
     chat_open: bool = False,
+    orbit: tuple[str, ...] = (),
+    pulse: float = 1.0,
 ) -> np.ndarray:
-    """Dibuja un fotograma BGRA premultiplicado de ``w``×``h`` px físicos."""
+    """Dibuja un fotograma BGRA premultiplicado de ``w``×``h`` px físicos.
+
+    ``orbit`` son los estados de las marcas de actividad (``marks``) y ``pulse``
+    la opacidad actual de las que respiran (tareas en curso).
+    """
     now = time.monotonic() if now is None else now
     cv = _Canvas(w, h)
     s = scale
@@ -715,7 +745,7 @@ def render_model(
     # 1) botones primero: al nacer quedan detrás de la forma y salen de ella
     ask = max(0.0, min(1.0, model.ask.x))
     mp = model.mute_p
-    mute_progress = mp.x if (mp.t > 0 or not muted) else 1.0
+    mute_progress = max(0.0, min(1.0, mp.x if (mp.t > 0 or not muted) else 1.0))
     # Los lejanos primero: al salir pasan por detrás de los cercanos, no encima.
     draw_order = [n for g in reversed(emerge_order(model.layout, model.dock)) for n in g]
     for name in () if model.form_hidden else draw_order:
@@ -723,38 +753,57 @@ def render_model(
         if sc <= 0.02 or al <= 0.01:
             continue
         hov = hover_item == name
+        # Cerca del tamaño de reposo (puntero encima, pulsado) el sprite se dibuja ya a
+        # ese tamaño, en pasos de 2 %: reescalarlo con BILINEAR emborronaba justo el
+        # botón que se está mirando. Solo la aparición (lejos de 1) se reescala.
+        ts, zoom = s, sc
+        if 0.85 <= sc <= 1.15:
+            zq = round(sc * 50) / 50
+            ts, zoom = s * zq, sc / zq
         if name == "gear":
-            tiles = [(button_sprite("gear", theme, s, hover=hov, signal=menu_open), 1.0)]
+            tiles = [(button_sprite("gear", theme, ts, hover=hov, signal=menu_open), 1.0)]
         elif name == "chat":
-            tiles = [(button_sprite("chat", theme, s, hover=hov, signal=chat_open), 1.0)]
+            tiles = [(button_sprite("chat", theme, ts, hover=hov, signal=chat_open), 1.0)]
         elif name == "hang":  # al preguntar, ✕ significa «no»
             call = 0.0 if model.asking else max(0.0, min(1.0, model.call.x))
             tiles = [
-                (button_sprite("hang", theme, s, hang=True, hover=hov), 1.0 - call),
-                (button_sprite("call", theme, s, call=True, hover=hov), call),
+                (button_sprite("hang", theme, ts, hang=True, hover=hov), 1.0 - call),
+                (button_sprite("call", theme, ts, call=True, hover=hov), call),
             ]
         else:  # mic / ✓
             tiles = [
-                (button_sprite("mic", theme, s, hover=hov, muted=mute_progress), 1.0 - ask),
-                (button_sprite("yes", theme, s, hover=hov, signal=True), ask),
+                (button_sprite("mic", theme, ts, hover=hov, muted=mute_progress), 1.0 - ask),
+                (button_sprite("yes", theme, ts, hover=hov, signal=True), ask),
             ]
         for tile, share in tiles:
-            cv.paste(tile, cx * s, cy * s, sc, al * share)
+            if share > 0.004:
+                cv.paste(tile, cx * s, cy * s, zoom, al * share)
 
     # 2) la forma: interior fluido + máscara exacta (contorno nítido a cualquier escala)
     fx, fy, grow, _ = pos["pill"]
     if not model.form_hidden:
+        grow *= 1.0 - MUTE_SHRINK * mute_progress  # micro en pausa: la forma se encoge
         mask = form_mask(model.layout, s * grow)
         interior = Image.fromarray(render_fluid(model, now), "RGB").resize(mask.size, Image.BICUBIC)
+        if mute_progress > 0.01:
+            interior = _mute_tint(interior, mute_progress)  # ...y se vuelve gris
         interior.putalpha(mask)
         cv.paste(interior, fx * s, fy * s)
+        if orbit:
+            fw, fh = _form_dims(model.layout)
+            gq = round(grow, 2)  # el crecimiento al acercar, cuantizado para la caché
+            tile = orbit_tile(model.layout, orbit, fw * gq, fh * gq, s, theme, pulse)
+            if tile is not None:
+                cv.paste(tile, fx * s, fy * s)
 
     arr = np.asarray(cv.img.convert("RGBa"))
     return np.ascontiguousarray(arr[..., [2, 1, 0, 3]])
 
 
 @lru_cache(maxsize=48)
-def render_card_body(w: int, h: int, scale: float, theme: str, fresh: bool = False) -> np.ndarray:
+def render_card_body(
+    w: int, h: int, scale: float, theme: str, fresh: bool = False, version: int = 0
+) -> np.ndarray:
     """Cuerpo redondeado de la tarjeta de ajustes: float32 RGBA premultiplicado (0..1).
 
     Con ``fresh`` usa las superficies de la barra (``bar_theme``); sin él, los tokens.
@@ -762,6 +811,7 @@ def render_card_body(w: int, h: int, scale: float, theme: str, fresh: bool = Fal
     Se cachea: con la tarjeta abierta el cuerpo no cambia y rehacerlo con Pillow en
     cada cuadro costaba ~17 ms (el 40 % del cuadro) en el hilo que atiende el ratón.
     El resultado es de solo lectura: quien lo use debe copiarlo, no modificarlo.
+    ``version`` (``tokens.palette_version``) solo entra en la clave de la caché.
     """
     pal = card_palette(theme) if fresh else token_palette(theme)
     body = tuple(pal["BODY"][:3])
@@ -959,6 +1009,10 @@ class DropUI:
         self._rms = 0.0
         self._mic_level = 0.0
         self._muted = False
+        self._activity: tuple = ()  # ActivityItem en orden de prioridad (``activity``)
+        self._peek = Peek(self)  # vista rápida de la actividad
+        self.on_activity_open = lambda key: None
+        self.on_activity_dismiss = lambda key: None
         self._in_call = False
         self._menu_open = False
         self._chat_open = False  # el chat escrito está abierto (el 💬 se ilumina)
@@ -1064,6 +1118,22 @@ class DropUI:
         fx, fy = form_center(self.layout, self.dock)
         return (win.x + fx * self.bs, win.y + fy * self.bs)
 
+    def hub_extent(self) -> tuple[float, float, float, float] | None:
+        """Rectángulo en pantalla (px físicos) de todo el hub: la forma y sus botones."""
+        win = self._win
+        if win is None:
+            return None
+        x0, y0, x1, y1 = self.model.hub_rect(max(0.0, min(1.0, self.model.mic_space.x)))
+        bs = self.bs
+        return (win.x + x0 * bs, win.y + y0 * bs, win.x + x1 * bs, win.y + y1 * bs)
+
+    def form_extent(self) -> tuple[float, float, float] | None:
+        """Centro de la forma en pantalla y su medio alto (px físicos), o None."""
+        anchor = self._form_anchor()
+        if anchor is None:
+            return None
+        return (*anchor, _form_dims(self.layout)[1] / 2 * self.bs)
+
     def _retarget(self, anchor: tuple[float, float]) -> None:
         """Recoloca la ventana con la forma en ``anchor``, con el dock que quepa en pantalla."""
         win = self._win
@@ -1138,12 +1208,14 @@ class DropUI:
 
     def hide(self, close_eyes: bool = True) -> None:
         self._visible = False
+        self._peek.hide_now()
         self._chat.close_now()
         self._close_card_now()
         if self._win is not None:
             self._win.hide()
 
     def close(self) -> None:
+        self._peek.stop()
         self._chat.close_now()
         self._close_card_now()
         if self._win is not None:
@@ -1159,6 +1231,24 @@ class DropUI:
         self._ui.set_muted(self._muted)
         if self.chat_model is not None:
             self.chat_model.set_mic_muted(self._muted)
+
+    def set_activity(self, items) -> None:
+        """Foto de la actividad (``activity.snapshot``): órbita y vista rápida.
+
+        Se reasigna una tupla entera: el hilo de la barra la lee sin lock.
+        """
+        self._activity = tuple(items or ())
+        self._peek.refresh(self._activity)
+
+    def show_activity(self) -> None:
+        """Abre la vista rápida con todo un momento (se pidió por voz)."""
+        if self._activity and not (self._menu_open or self._chat_open or self._asking):
+            self._peek.reveal(time.monotonic())
+
+    def announce_activity(self, item) -> None:
+        """Un desenlace nuevo: la vista rápida lo muestra un momento."""
+        if not (self._menu_open or self._chat_open or self._asking):
+            self._peek.toast(item, time.monotonic())
 
     def set_in_call(self, in_call: bool) -> None:
         self._in_call = bool(in_call)
@@ -1183,6 +1273,14 @@ class DropUI:
         palette = custom_palette(primary, secondary, accent, background)
         with self._custom_lock:
             self._custom_palette = palette
+        self._custom_hex = (primary, background)
+        self._apply_themed()
+
+    def _apply_themed(self) -> None:
+        """Con el tema personalizado, su paleta tiñe también chat, ajustes, botones y avisos."""
+        hexes = getattr(self, "_custom_hex", None)
+        custom = getattr(self, "_theme_setting", "auto") == "custom" and hexes
+        set_themed(derive_themed(*hexes) if custom else None)
 
     def _custom_for_frame(self) -> np.ndarray | None:
         if self._theme_setting != "custom":
@@ -1202,6 +1300,7 @@ class DropUI:
     def set_theme(self, theme: str) -> None:
         self._theme_setting = theme if theme in ("auto", "dark", "light", "custom") else "auto"
         self._theme_cache = ("dark", 0.0)
+        self._apply_themed()
         menu = self._menu
         if menu is not None:
             try:
@@ -1289,11 +1388,14 @@ class DropUI:
             self._reduced_at = now
         cur = self._cursor_logical()
         self._hover_item = None
+        over_form = False
         if cur is not None:
             if self.model.near(*cur):
                 self._hover_until = now + HOVER_HOLD
             item = self.model.item_at(*cur)
+            over_form = item == "pill"
             self._hover_item = item if item not in (None, "pill") else None
+        self._peek.tick(now, over_form, self._peek_blocked())
         hover = now < self._hover_until
         pose = self._pose(now)
         self.model.update(
@@ -1332,6 +1434,21 @@ class DropUI:
             now,
             self._hover_item,
             self._chat_open,
+            orbit(self._activity),
+            breath(now, self._reduced),
+        )
+
+    def _peek_blocked(self) -> bool:
+        """La vista rápida no compite con el menú, el chat, una pregunta ni un arrastre."""
+        win = self._win
+        dragging = win is not None and win._dragging and win._drag_moved
+        return (
+            not self._visible
+            or self._menu_open
+            or self._chat_open
+            or self._asking
+            or self.model.form_hidden
+            or dragging
         )
 
     def target_fps(self, pose: str, hover: bool, now: float) -> float:
@@ -1887,7 +2004,16 @@ class DropUI:
         still = menu.frame_key(now)
         key = None
         if still is not None:
-            key = (w, h, round(s, 4), theme, self._section, self._sidebar_hover, still)
+            key = (
+                w,
+                h,
+                round(s, 4),
+                theme,
+                palette_version(),
+                self._section,
+                self._sidebar_hover,
+                still,
+            )
         cached = self._card_cache
         if key is not None and cached is not None and cached[0] == key:
             base = cached[1]
@@ -1911,7 +2037,10 @@ class DropUI:
         """Compone el cuadro completo sin la marca viva (BGRA uint8) o ``None`` si falla."""
         from .settings_window import SIDEBAR_W, composite_over, draw_grip, fade
 
-        frame = np.array(render_card_body(w, h, s, theme, fresh=True), dtype=np.float32)
+        frame = np.array(
+            render_card_body(w, h, s, theme, fresh=True, version=palette_version()),
+            dtype=np.float32,
+        )
         try:
             self._sidebar.draw(
                 frame,

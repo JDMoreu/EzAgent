@@ -6,10 +6,10 @@ import numpy as np
 import pytest
 
 from ezagent.voice.hotkeys import parse_hotkey
-from ezagent.voice.notch import hotkey_field as hk
-from ezagent.voice.notch import settings_window as sw
-from ezagent.voice.notch.menu import Menu
-from ezagent.voice.notch.settings import DEFAULT_VALUES, LABELS, MenuSettings
+from ezagent.voice.hud import hotkey_field as hk
+from ezagent.voice.hud import settings_window as sw
+from ezagent.voice.hud.menu import Menu
+from ezagent.voice.hud.settings import DEFAULT_VALUES, LABELS, MenuSettings
 
 VK_E, VK_K, VK_F8, VK_SPACE, VK_ESC, VK_CTRL, VK_SEMICOLON = 69, 75, 119, 32, 27, 17, 186
 

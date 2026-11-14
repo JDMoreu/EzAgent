@@ -1,7 +1,7 @@
 """Icono de la bandeja del sistema de EzAgent.
 
 El icono vive en su propio hilo (pystray). Los clics del menú no tocan Tk ni el
-notch: publican una intención en la cola de la aplicación, que la ejecuta en el
+HUD: publican una intención en la cola de la aplicación, que la ejecuta en el
 hilo principal. Si pystray no está disponible, la app sigue funcionando sin
 bandeja.
 """

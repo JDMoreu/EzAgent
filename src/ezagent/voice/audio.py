@@ -577,7 +577,7 @@ class MicCapture:
             while not stop_event.is_set():
                 chunk = stream.read(frames, exception_on_overflow=False)
                 level = pcm_rms(chunk)
-                # Umbrales en vivo desde el menú del notch (spec 10.3).
+                # Umbrales en vivo desde el menú del HUD (spec 10.3).
                 segmenter.min_rms = self.min_rms
                 segmenter.silence_secs = self.silence_secs
                 segmenter.noise_multiplier = self.noise_multiplier

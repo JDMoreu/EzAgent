@@ -89,21 +89,31 @@ def _forget_endpoint(primary: str, url: str) -> None:
 
 _WHISPER_ORDER = (
     "ggml-tiny-q5_1",
+    "ggml-tiny-q8_0",
     "ggml-base-q5_1",
+    "ggml-base-q8_0",
     "ggml-small-q5_1",
+    "ggml-small-q8_0",
     "ggml-medium-q5_0",
+    "ggml-medium-q8_0",
     "ggml-large-v3-q5_0",
     "ggml-large-v3-turbo-q5_0",
     "ggml-large-v3-turbo-q8_0",
 )
+# q8_0 apenas pierde precisión frente al modelo completo; q5_0/q5_1 ocupan
+# menos pero fallan más con nombres propios y jerga técnica.
 _WHISPER_LABELS = {
     "ggml-tiny-q5_1": "Whisper Tiny · la más rápida",
+    "ggml-tiny-q8_0": "Whisper Tiny q8 · muy rápida",
     "ggml-base-q5_1": "Whisper Base · rápida",
+    "ggml-base-q8_0": "Whisper Base q8 · rápida",
     "ggml-small-q5_1": "Whisper Small · equilibrada",
+    "ggml-small-q8_0": "Whisper Small q8 · equilibrada",
     "ggml-medium-q5_0": "Whisper Medium · precisa",
+    "ggml-medium-q8_0": "Whisper Medium q8 · precisa",
     "ggml-large-v3-q5_0": "Whisper Large v3 · máxima precisión",
-    "ggml-large-v3-turbo-q5_0": "Whisper Large v3 Turbo · recomendada",
-    "ggml-large-v3-turbo-q8_0": "Whisper Large v3 Turbo · alta calidad",
+    "ggml-large-v3-turbo-q5_0": "Whisper Large v3 Turbo q5 · más ligera",
+    "ggml-large-v3-turbo-q8_0": "Whisper Large v3 Turbo q8 · recomendada",
 }
 
 
@@ -203,13 +213,28 @@ def _derive_fallback(url: str) -> str | None:
     return urlunsplit((parts.scheme, parts.netloc, new_path, parts.query, ""))
 
 
+def _beam_size(value: Any) -> int:
+    """Beam válido para whisper.cpp (1–8); un valor raro vuelve a 5."""
+    try:
+        beam = int(value)
+    except (TypeError, ValueError):
+        return 5
+    # DECISION: cap at 8; larger beams barely help and multiply STT latency.
+    return max(1, min(8, beam))
+
+
 def _form(cfg: VoiceConfig) -> dict[str, str]:
     form = {
-        "model": cfg.stt_model or "ggml-large-v3-turbo-q5_0",
+        "model": cfg.stt_model or "ggml-large-v3-turbo-q8_0",
         "language": "es",
         "response_format": "json",
         "temperature": "0.00",
     }
+    beam = _beam_size(getattr(cfg, "stt_beam_size", 5))
+    if beam > 1:
+        # whisper-server acepta beam_size por petición; greedy confunde jerga
+        # técnica («bugueado», «Claude Code») con palabras parecidas.
+        form["beam_size"] = str(beam)
     prompt = cfg.stt_prompt
     if getattr(cfg, "stt_vocabulary_hints", True):
         try:

@@ -131,12 +131,21 @@ def test_correccion_avisa_al_desarrollador_y_el_final_se_anuncia(rig: Rig) -> No
         "[EzAgent] Tienes 1 tarea lista en el enjambre. Ejecuta: ezs next",
     )
     rig.run("qa", "next")
-    rig.run("qa", "done", "Todo validado")
-    assert rig.said == []
-    rig.tick()
+    # Cada etapa se avisa al pasar, sin reabrir la escucha.
     assert rig.said == [
+        "Enjambre: terminó la planificación. Ahora empieza el desarrollo.",
+        "Enjambre: terminó el desarrollo. Ahora empieza la validación.",
+        "Enjambre: devolvieron el desarrollo para corregir (ronda 1 de 3).",
+        "Enjambre: terminó el desarrollo. Ahora empieza la validación.",
+    ]
+    rig.run("qa", "done", "Todo validado")
+    rig.tick()
+    assert len(rig.said) == 4  # la última etapa no se dice aparte: va en el resumen
+    # El final reabre la escucha: el usuario decide qué hacer con el resultado.
+    assert rig.asked == [
         "El enjambre terminó: 3 de 3 tareas hechas. Planificar: Plan listo. "
-        "Desarrollar: Límite añadido. Validar: Todo validado."
+        "Desarrollar: Límite añadido. Validar: Todo validado. "
+        "¿Quieres más detalle o que te muestre el resultado?"
     ]
 
 
@@ -162,7 +171,8 @@ def test_bloqueado_sin_trabajo_no_molesta(rig: Rig) -> None:
     rig.herdr.states[rig.address("plan")] = "error"  # p. ej. agotó su límite de uso
     rig.tick(launches=2)
     rig.tick()
-    assert rig.said == []  # ya no tiene nada pendiente: el enjambre sigue
+    # Ya no tiene nada pendiente: el enjambre sigue y solo se avisa del avance.
+    assert rig.said == ["Enjambre: terminó la planificación. Ahora empieza el desarrollo."]
 
 
 def test_terminal_cerrada_y_lanzamiento_fallido(rig: Rig) -> None:

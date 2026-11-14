@@ -36,7 +36,8 @@ _HEX: dict[str, dict[str, tuple[str, str, str, str, str]]] = {
         "speak": ("#08706F", "#14B898", "#C4EE6A", "#FF7A59", "#FFFFFF"),
         "ask": ("#C2661A", "#EE9A34", "#FFD48A", "#FF6B4A", "#FFF4E0"),
         "error": ("#B92635", "#E2525A", "#FFAFA6", "#FF8A65", "#FFE6E3"),
-        "mute": ("#646D7D", "#8E97A7", "#C3C9D4", "#A3ABBA", "#EEF0F4"),
+        # Pausa: los colores de reposo; ``drop.render_model`` la vuelve gris y la encoge: «no escucho».
+        "mute": ("#0E6F7C", "#1FAE9F", "#8FE3C0", "#FF8A65", "#F1FFF8"),
     },
     "dark": {
         "idle": ("#05262E", "#0C6670", "#29BFA9", "#FF7A59", "#8CF5DA"),
@@ -45,7 +46,7 @@ _HEX: dict[str, dict[str, tuple[str, str, str, str, str]]] = {
         "speak": ("#032C2A", "#0B8576", "#78E59A", "#FF8A65", "#DAFFB4"),
         "ask": ("#371C05", "#A15710", "#F0A038", "#FF6B4A", "#FFD68E"),
         "error": ("#36090F", "#9E222C", "#E2525A", "#FF8A65", "#FFB0A8"),
-        "mute": ("#13161D", "#2C323E", "#5B6373", "#485060", "#8A92A3"),
+        "mute": ("#05262E", "#0C6670", "#29BFA9", "#FF7A59", "#8CF5DA"),
     },
 }
 THEMES = ("light", "dark")
@@ -80,7 +81,7 @@ PRESET_LABELS: dict[str, str] = {
 }
 # Con el tema personalizado, los estados de aviso conservan su color propio
 # (ámbar, rojo, gris): comunican algo, no son decoración.
-CUSTOM_POSES = frozenset({"idle", "listen", "think", "speak", "done", "sleep"})
+CUSTOM_POSES = frozenset({"idle", "listen", "think", "speak", "done", "sleep", "mute"})
 
 
 def parse_hex(value: str) -> tuple[float, float, float] | None:

@@ -33,7 +33,7 @@ from loguru import logger
 
 from ezagent.agent.handoff import answer_or_tail, compose_handoff
 from ezagent.agent.handoff_packet import Packet, build_packet, packet_text
-from ezagent.agent.orchestration import chain_spec
+from ezagent.agent.orchestration import FLOW_PREFIX, chain_spec, flow_task
 from ezagent.llm_providers import (
     fetch_models,
     load_provider_catalog,
@@ -45,6 +45,7 @@ from ezagent.llm_providers import (
     save_provider_profile,
 )
 
+from . import activity as _activity
 from .audio import MicCapture, list_input_devices, pcm_is_weak, pcm_to_wav
 from .chat.contexts import ChatContexts
 from .chat.session import ChatModel
@@ -52,11 +53,11 @@ from .chat.speech import spoken_version
 from .chat.store import ChatStore
 from .condenser import Condenser
 from .config import VoiceConfig, config_path
-from .herdr import Herdr
+from .herdr import Herdr, HerdrNotFound, visible_name
 from .hotkeys import GlobalHotkey, parse_hotkey
+from .hud.drop import create_ui
 from .llm import Messenger, TurnCancelled, friendly_llm_error
 from .metrics import LatencyStats, TurnTimings, format_stt
-from .notch.drop import create_ui
 from .redact import redact
 from .speech_queue import SpeechQueue
 from .stt import (
@@ -90,7 +91,7 @@ HOTKEY_KEYS = (
 )
 
 # Apariencia y escucha: el menú los aplica y guarda al instante (sin «Guardar»).
-# Debe coincidir con notch.settings.INSTANT_KEYS (lo comprueba una prueba).
+# Debe coincidir con hud.settings.INSTANT_KEYS (lo comprueba una prueba).
 INSTANT_SETTINGS = (
     "ui_layout",
     "theme",
@@ -119,6 +120,37 @@ MENU_VOICES = (
     ("ef_dora", "Dora · femenina"),
     ("em_santa", "Santa · masculina grave"),
 )
+
+# Muletillas de espera («Un momento, lo reviso.», «Pensando…»), sin tildes y
+# en minúsculas. Los avisos concretos del código («Busco en la web.») no las usan.
+_FILLER_MARKERS = (
+    "un momento",
+    "un segundo",
+    "dame un",
+    "dejame ver",
+    "dejame revisar",
+    "dejame pensar",
+    "pensando",
+    "lo reviso",
+    "ya lo veo",
+    "lo busco",
+    "lo miro",
+    "ya lo hago",
+    "enseguida",
+    "veamos",
+    "a ver",
+)
+
+
+def _is_filler_sentence(sentence: str) -> bool:
+    """True si la frase es solo una muletilla de espera, sin contenido propio."""
+    raw = unicodedata.normalize("NFKD", sentence.lower())
+    plain = "".join(c for c in raw if not unicodedata.combining(c))
+    words = re.sub(r"[^a-z0-9ñ ]+", " ", plain).split()
+    if not words or len(words) > 6:
+        return False
+    text = " ".join(words)
+    return any(f" {marker} " in f" {text} " for marker in _FILLER_MARKERS)
 
 
 class _Sentences:
@@ -181,6 +213,7 @@ class _Sentences:
 # Ventana tras cerrar un turno en la que, si el usuario vuelve a hablar
 # mientras el modelo piensa, se une la frase nueva con la anterior.
 RESUME_SECS = 3.0
+ACTIVITY_TICK_MS = 1500  # cada cuánto se actualiza la actividad de la barra
 
 # Cortesías que se quitan al principio antes de buscar un atajo local:
 # «Ok, gracias. Mutéate» debe silenciar igual que «mutéate».
@@ -302,7 +335,7 @@ def ensure_whisper(cfg: VoiceConfig, wait_secs: float = 25.0) -> subprocess.Pope
     )
     if not has_server and model_path is None:
         # DECISION: app.py usa log() propio (sin niveles); el aviso hablado lo
-        # emite la capa que trata el estado "error" del notch.
+        # emite la capa que trata el estado "error" del HUD.
         log("No encuentro whisper. Descárgalo con: uv run python -m ezagent.core.downloads --all")
         return None
     port = _free_local_port()
@@ -368,6 +401,10 @@ class VoiceApp:
         # se transcribe junto con la anterior en vez de perder la primera.
         self._last_turn_audio: tuple[bytes, int, float] | None = None
         self._resume_pcm: tuple[bytes, int] | None = None
+        # Caja de voz del turno: si sigues hablando tras una pausa, la frase
+        # completa sustituye a la cortada en vez de añadir otra caja.
+        self._last_voice_user_id: int | None = None
+        self._merge_user_id: int | None = None
         self.last_summary = ""
         # El chat escrito comparte hilo con la voz: todo lo que se dice o escribe entra aquí.
         self.chat = ChatModel(ChatStore(), voice_replies=bool(getattr(cfg, "chat_voice", False)))
@@ -409,13 +446,13 @@ class VoiceApp:
         # Hilos propios de la app, para drenarlos en el apagado.
         self._workers: set[threading.Thread] = set()
         self._latency = LatencyStats(jsonl_path=config_path().parent / "logs" / "latency.jsonl")
-        self._notch_hidden = bool(cfg.notch_hidden)
+        self._hud_hidden = bool(cfg.hud_hidden)
         self._restarting = False
         self._shutdown_done = False
         self.tray = None
         self.events: queue.Queue[tuple] = queue.Queue()
         self.hotkey_events: queue.Queue[str] = queue.Queue()
-        # El menú del notch corre en el hilo de su ventana Win32: nunca toca
+        # El menú del HUD corre en el hilo de su ventana Win32: nunca toca
         # Tk, PyAudio ni disco directamente. Publica intenciones aquí y el
         # hilo principal las aplica en _tick.
         self.menu_events: queue.Queue[tuple] = queue.Queue()
@@ -437,7 +474,7 @@ class VoiceApp:
 
         self.root = tk.Tk()
         self.root.withdraw()
-        self.notch = create_ui(self.root, cfg)
+        self.hud = create_ui(self.root, cfg)
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
                 signal.signal(sig, lambda *_: self.root.after(0, self.root.quit))
@@ -447,8 +484,8 @@ class VoiceApp:
         self._whisper_proc = ensure_whisper(cfg)
         if not _whisper_ready(cfg.whisper_url):
             # DECISION: sin whisper la app arranca igual; el aviso hablado usa
-            # el canal de errores que ya existe y el notch queda en error.
-            self.notch.set_state("error")
+            # el canal de errores que ya existe y el HUD queda en error.
+            self.hud.set_state("error")
             self.events.put(
                 (
                     "error",
@@ -526,40 +563,42 @@ class VoiceApp:
         self.hotkeys = self._build_hotkeys()
         for hotkey in self.hotkeys:
             hotkey.start()
-        self.notch.on_action = self._on_notch_action
-        self.notch.on_menu_action = lambda action: self.events.put(("menu_action", action))
-        self.notch.on_hotkey_capture = lambda active: self.events.put(
+        self.hud.on_action = self._on_hud_action
+        self.hud.on_menu_action = lambda action: self.events.put(("menu_action", action))
+        self.hud.on_hotkey_capture = lambda active: self.events.put(
             ("hotkey_capture", bool(active))
         )
-        self.notch.menu_settings_provider = self._notch_menu_settings
-        self.notch.chat_model = self.chat
-        self.notch.chat_hotkey = cfg.chat_hotkey
+        self.hud.menu_settings_provider = self._hud_menu_settings
+        self.hud.chat_model = self.chat
+        self.hud.chat_hotkey = cfg.chat_hotkey
         if cfg.chat_width > 0 and cfg.chat_height > 0:
-            self.notch.chat_size = (float(cfg.chat_width), float(cfg.chat_height))
-        self.notch.chat_roots, self.notch.chat_base_dirs = self._chat_media_roots()
-        self.notch.on_chat_new = lambda: self.events.put(("chat_new",))
-        self.notch.on_chat_stop = lambda: self.events.put(("chat_stop",))
-        self.notch.on_chat_switch = lambda session: self.events.put(("chat_switch", int(session)))
-        self.notch.on_chat_delete = lambda session: self.events.put(("chat_delete", int(session)))
-        self.notch.on_chat_confirm = lambda yes: self.events.put(("confirm_click", bool(yes)))
-        self.notch.on_chat_send = lambda text: self.events.put(("chat_send", text))
-        self.notch.on_chat_voice = self._set_chat_voice
-        self.notch.on_chat_mic = lambda muted: self.events.put(("chat_mute", bool(muted)))
-        self.notch.on_chat_menu = lambda: self.events.put(("notch_action", "panel"))
-        self.notch.on_live_setting = self._notch_live_setting
-        self.notch.on_save_settings = self._notch_save_settings
-        self.notch.on_test_voice = self._notch_test_voice
-        self.notch.on_hide = self._notch_hide
+            self.hud.chat_size = (float(cfg.chat_width), float(cfg.chat_height))
+        self.hud.chat_roots, self.hud.chat_base_dirs = self._chat_media_roots()
+        self.hud.on_chat_new = lambda: self.events.put(("chat_new",))
+        self.hud.on_chat_stop = lambda: self.events.put(("chat_stop",))
+        self.hud.on_chat_switch = lambda session: self.events.put(("chat_switch", int(session)))
+        self.hud.on_chat_delete = lambda session: self.events.put(("chat_delete", int(session)))
+        self.hud.on_chat_confirm = lambda yes: self.events.put(("confirm_click", bool(yes)))
+        self.hud.on_chat_send = lambda text: self.events.put(("chat_send", text))
+        self.hud.on_activity_open = lambda key: self.events.put(("activity_open", key))
+        self.hud.on_activity_dismiss = lambda key: self.events.put(("activity_dismiss", key))
+        self.hud.on_chat_voice = self._set_chat_voice
+        self.hud.on_chat_mic = lambda muted: self.events.put(("chat_mute", bool(muted)))
+        self.hud.on_chat_menu = lambda: self.events.put(("hud_action", "panel"))
+        self.hud.on_live_setting = self._hud_live_setting
+        self.hud.on_save_settings = self._hud_save_settings
+        self.hud.on_test_voice = self._hud_test_voice
+        self.hud.on_hide = self._hud_hide
         try:
             self._push_custom_colors()
-            self.notch.set_custom_base(self.cfg.theme_base)
-            self.notch.set_theme(self.cfg.theme)
+            self.hud.set_custom_base(self.cfg.theme_base)
+            self.hud.set_theme(self.cfg.theme)
         except Exception:
             pass
         threading.Thread(target=self._refresh_devices, daemon=True).start()
-        self.notch.set_in_call(False)
-        if not self._notch_hidden:
-            self.notch.show(IDLE)
+        self.hud.set_in_call(False)
+        if not self._hud_hidden:
+            self.hud.show(IDLE)
         self.root.after(120, self._report_hotkeys)
         self.root.after(30, self._tick)
         self.tray = self._create_tray()
@@ -695,18 +734,18 @@ class VoiceApp:
 
     def _tray_action_ui(self, action: str) -> None:
         if action == "config":
-            if self._notch_hidden:
-                self._notch_hidden = False
-                self.cfg.notch_hidden = False
-                self.cfg.save_key("notch_hidden", False)
+            if self._hud_hidden:
+                self._hud_hidden = False
+                self.cfg.hud_hidden = False
+                self.cfg.save_key("hud_hidden", False)
             current = self.state if self.in_call else IDLE
             try:
-                self.notch.show(current)
-                self.notch.open_menu()
+                self.hud.show(current)
+                self.hud.open_menu()
             except Exception as exc:  # noqa: BLE001
                 log(f"No pude abrir Ajustes desde la bandeja: {exc}")
         elif action == "shape":
-            toggle = getattr(self.notch, "toggle_layout", None)
+            toggle = getattr(self.hud, "toggle_layout", None)
             if callable(toggle):
                 try:
                     toggle()
@@ -982,6 +1021,7 @@ class VoiceApp:
         self._start_worker(self._resume_pending_tasks, (), "ezagent-resume-tasks")
         # La app nace en modo escucha: no hace falta pulsar nada al abrirla.
         self.root.after(600, self._start_listening_on_launch)
+        self.root.after(ACTIVITY_TICK_MS, self._activity_tick)
         try:
             self.root.mainloop()
         finally:
@@ -990,13 +1030,13 @@ class VoiceApp:
     def _start_listening_on_launch(self) -> None:
         if self.in_call:
             return
-        if self._notch_hidden:
+        if self._hud_hidden:
             # Si la barra estaba oculta de la sesión anterior, este arranque la
             # devuelve: el usuario pidió abrir la app escuchando.
-            self._notch_hidden = False
-            self.cfg.notch_hidden = False
-            self.cfg.save_key("notch_hidden", False)
-            self.notch.show(IDLE)
+            self._hud_hidden = False
+            self.cfg.hud_hidden = False
+            self.cfg.save_key("hud_hidden", False)
+            self.hud.show(IDLE)
         self._start_call()
         log("Escuchando al iniciar.")
 
@@ -1056,7 +1096,7 @@ class VoiceApp:
             except Exception:
                 pass
         try:
-            self.notch.close()
+            self.hud.close()
         except Exception:
             pass
         agent = getattr(self, "agent", None)
@@ -1136,11 +1176,11 @@ class VoiceApp:
         elif event == "mute":
             self._set_mic_muted(not self.muted, source="atajo")
         elif event == "menu":
-            if self._notch_hidden:
-                self._notch_hidden = False
-                self.cfg.notch_hidden = False
-                self.cfg.save_key("notch_hidden", False)
-                self.notch.show(IDLE)
+            if self._hud_hidden:
+                self._hud_hidden = False
+                self.cfg.hud_hidden = False
+                self.cfg.save_key("hud_hidden", False)
+                self.hud.show(IDLE)
             self._toggle_menu()
         elif event == "chat":
             self._show_bar_if_hidden()
@@ -1148,23 +1188,28 @@ class VoiceApp:
 
     def _show_bar_if_hidden(self) -> None:
         """Si la barra estaba oculta, vuelve a mostrarla (el chat sale de ella)."""
-        if self._notch_hidden:
-            self._notch_hidden = False
-            self.cfg.notch_hidden = False
-            self.cfg.save_key("notch_hidden", False)
-            self.notch.show(IDLE)
+        if self._hud_hidden:
+            self._hud_hidden = False
+            self.cfg.hud_hidden = False
+            self.cfg.save_key("hud_hidden", False)
+            self.hud.show(IDLE)
 
     def _handle_event(self, event: tuple) -> None:
         kind = event[0]
-        if kind == "notch_action":
-            self._notch_action_ui(str(event[1]))
+        if kind == "hud_action":
+            self._hud_action_ui(str(event[1]))
         elif kind == "tray_action":
             self._tray_action_ui(str(event[1]))
         elif kind == "menu_action":
             self._menu_action_ui(str(event[1]))
         elif kind == "hotkey_capture":
             self._suspend_hotkeys(bool(event[1]))
+        elif kind == "activity_open":
+            _open_activity(self, str(event[1]))
+        elif kind == "activity_dismiss":
+            _dismiss_activity(self, str(event[1]))
         elif kind == "chat_send":
+            _news_seen(self)
             self._chat_send(str(event[1]))
         elif kind == "audio_speech_start":
             self._on_speech_start(float(event[1]))
@@ -1176,13 +1221,13 @@ class VoiceApp:
             self._speak(str(event[1]), "answer")
         elif kind == "busy_notice":
             gen = event[1] if len(event) > 1 else self._turn_gen
-            mode = str(event[2]) if len(event) > 2 else "voice"
             if gen != self._turn_gen:
                 return
             text = "Termino lo anterior y sigo."
             self.chat.add_note(text)
-            # En el chat escrito solo se habla si el usuario activó la voz.
-            if mode == "chat" and not self.chat.voice_replies:
+            # DECISION: the speaker switch also silences progress notices for
+            # microphone turns; their text remains visible in the chat.
+            if not self.chat.voice_replies:
                 return
             self._speak_busy(text, gen)
         elif kind == "busy_done":
@@ -1207,7 +1252,10 @@ class VoiceApp:
         elif kind == "chat_stop":
             self._chat_stop()
         elif kind == "chat_mute":
-            self._set_mic_muted(bool(event[1]), source="chat")
+            if not self.in_call and not event[1]:
+                self._resume_listening_from_mic()
+            elif self.in_call:
+                self._set_mic_muted(bool(event[1]), source="chat")
         elif kind == "transcribed":
             _, text, gen = event
             text = (text or "").strip()
@@ -1215,6 +1263,8 @@ class VoiceApp:
             # inicia un turno que ya no existe (F02/F29).
             if not self.in_call or gen != self._turn_gen:
                 return
+            if text:
+                _news_seen(self)  # el usuario ya está atendiendo
             agent = getattr(self, "agent", None)
             if agent is not None and agent.confirm_pending and text:
                 token = getattr(self, "_confirm_token", "") or None
@@ -1236,7 +1286,7 @@ class VoiceApp:
                 log(f"Comando local: {handled_ms:.0f} ms")
                 return
             self._set_state(THINKING)
-            self.chat.add_user(text, "voice")
+            self._show_voice_text(text)
             self._start_worker(self._answer_worker, (text, gen), "ezagent-answer")
         elif kind == "speaking":
             gen = event[1]
@@ -1276,6 +1326,8 @@ class VoiceApp:
             log(f"Enjambre: {event[1]}")
             asks = bool(event[2]) if len(event) > 2 else False
             # Una pregunta no se silencia: el enjambre espera la respuesta.
+            if asks:
+                _news_arrived(self, "swarm:ask", "enjambre", str(event[1]), "blocked")
             if asks or time.time() >= self.mute_until:
                 self._queue_announcement(str(event[1]), reopen_call=asks)
         elif kind == "done_answer":
@@ -1338,7 +1390,7 @@ class VoiceApp:
             if not old_muted and self.muted:
                 self._set_mic_muted(False)
             try:
-                self.notch.set_testing(False)
+                self.hud.set_testing(False)
             except Exception:
                 pass
             if self.in_call:
@@ -1351,7 +1403,7 @@ class VoiceApp:
         elif kind == "confirm_done":
             self.chat.clear_confirm()
             try:
-                self.notch.hide_confirmation()
+                self.hud.hide_confirmation()
             except Exception:
                 pass
         elif kind == "confirm_click":
@@ -1373,8 +1425,8 @@ class VoiceApp:
             # de configuración; queda en el log. Fuera de llamada sí se dice.
             if not self.in_call:
                 self._speak(message, "answer")
-        elif kind == "notch_error":
-            log(f"Notch: {event[1]}")
+        elif kind == "hud_error":
+            log(f"HUD: {event[1]}")
         elif kind == "close_request":
             self._close_after_answer = True
             self._close_mode = str(event[1])
@@ -1391,7 +1443,7 @@ class VoiceApp:
         self._user_speaking = False
         _advance_turn(self)
         self._call_stop = threading.Event()
-        self.notch.set_in_call(True)
+        self.hud.set_in_call(True)
         self._set_state(LISTENING)
         log("Llamada iniciada. Habla cuando quieras; Ctrl+Alt+E para colgar.")
         self._call_thread = threading.Thread(
@@ -1412,14 +1464,14 @@ class VoiceApp:
             except Exception:
                 pass
         try:
-            self.notch.hide_confirmation()
+            self.hud.hide_confirmation()
         except Exception:
             pass
         if not self.in_call:
             return
         self.in_call = False
         try:
-            self.notch.set_mic_level(0.0)
+            self.hud.set_mic_level(0.0)
         except Exception:
             pass
         self._user_speaking = False
@@ -1432,7 +1484,7 @@ class VoiceApp:
         _advance_turn(self)
         self._signal_tts_stop()
         self._speaking_kind = None
-        self.notch.set_in_call(False)
+        self.hud.set_in_call(False)
         self._set_idle()
         log("Llamada terminada.")
         self.root.after(200, self._pump_announcements)
@@ -1455,11 +1507,11 @@ class VoiceApp:
 
     def _on_mic_level(self, level: float) -> None:
         try:
-            self.notch.set_mic_level(0.0 if self.muted else level)
+            self.hud.set_mic_level(0.0 if self.muted else level)
         except Exception:
             pass
         if self.in_call and self.state == LISTENING:
-            self.notch.draw(0.0 if self.muted else level, LISTENING)
+            self.hud.draw(0.0 if self.muted else level, LISTENING)
 
     def _is_speaking(self) -> bool:
         """El aviso de espera también cuenta como TTS para el detector de barge-in."""
@@ -1545,6 +1597,7 @@ class VoiceApp:
         # Un arranque anterior que no llegó a frase (ruido corto) no debe
         # pegar audio viejo a esta.
         self._resume_pcm = None
+        self._merge_user_id = None
         if self.state == THINKING:
             # No hay eco: el usuario puede corregir o repetir mientras el
             # modelo piensa. La respuesta pendiente se descarta.
@@ -1553,6 +1606,7 @@ class VoiceApp:
                 # Seguramente el turno se cerró en una pausa: se une la frase
                 # anterior con la que viene para no perder la primera parte.
                 self._resume_pcm = (last[0], last[1])
+                self._merge_user_id = getattr(self, "_last_voice_user_id", None)
                 log("Sigues hablando: uno esta frase con la anterior.")
             _advance_turn(self)
             self._signal_tts_stop()
@@ -1626,22 +1680,22 @@ class VoiceApp:
         if state == IDLE:
             # La barra queda como control compacto: micrófono, ojos y ajustes.
             # El icono del micro refleja el estado real de la escucha.
-            self.notch.set_in_call(self.in_call)
+            self.hud.set_in_call(self.in_call)
             try:
-                self.notch.set_mic_level(0.0)
+                self.hud.set_mic_level(0.0)
             except Exception:
                 pass
-            if not self._notch_hidden:
-                self.notch.show(IDLE)
-                self.notch.draw(0.0, IDLE)
+            if not self._hud_hidden:
+                self.hud.show(IDLE)
+                self.hud.draw(0.0, IDLE)
         else:
-            if self._notch_hidden:
-                self._notch_hidden = False
-                self.cfg.notch_hidden = False
-                self.cfg.save_key("notch_hidden", False)
-            self.notch.set_in_call(self.in_call)
-            self.notch.show(state)
-            self.notch.draw(0.0, state)
+            if self._hud_hidden:
+                self._hud_hidden = False
+                self.cfg.hud_hidden = False
+                self.cfg.save_key("hud_hidden", False)
+            self.hud.set_in_call(self.in_call)
+            self.hud.show(state)
+            self.hud.draw(0.0, state)
         self._update_tray_title()
 
     def _set_idle(self) -> None:
@@ -1763,7 +1817,7 @@ class VoiceApp:
         self.chat.ask_confirm(summary, strong)
         token = getattr(self, "_confirm_token", "")
         try:
-            self.notch.show_confirmation(
+            self.hud.show_confirmation(
                 summary,
                 strong,
                 lambda: self.events.put(("confirm_click", True, token)),
@@ -1805,6 +1859,14 @@ class VoiceApp:
         self._speak(text, "announce")
 
     # --------------------------------------------------------------- workers
+    def _show_voice_text(self, text: str) -> None:
+        """Una sola caja por frase: si continúa la anterior, la actualiza."""
+        merge_id, self._merge_user_id = self._merge_user_id, None
+        if merge_id is not None and self.chat.revise_user(merge_id, text):
+            self._last_voice_user_id = merge_id
+            return
+        self._last_voice_user_id = self.chat.add_user(text, "voice").id
+
     def _start_stt(self, pcm: bytes, rate: int, gen: int, timing: TurnTimings) -> None:
         """Una sola transcripción en vuelo; si llega otra, sustituye a la pendiente."""
         lock = getattr(self, "_stt_lock", None)
@@ -1838,7 +1900,7 @@ class VoiceApp:
                 self._start_stt(*pending)
 
     def _answer_worker(self, text: str, gen: int) -> None:
-        """Consume el LLM en streaming y habla cada frase en cuanto llega."""
+        """Stream a microphone turn to chat and optionally speak its sentences."""
         stop_event = self._new_tts_stop()
         self._speaking_kind = "answer"
         sentences = _Sentences()
@@ -1847,39 +1909,32 @@ class VoiceApp:
         timing = self._turn_timing if gen == self._turn_gen else None
         first_token = False
         first_audio = False
-        speech = self._speech_queue(stop_event, timing)
+        # DECISION: the speaker switch controls spoken answers for microphone
+        # turns too; transcription and the visible reply are always retained.
+        speech = self._speech_queue(stop_event, timing) if self.chat.voice_replies else None
         finished = False
         chat_msg = self.chat.begin_assistant("voice")
         chat_done = False
         outcome = "ok"
-        first_delta = threading.Event()
+        opening_checked = False
 
-        def local_ack() -> None:
-            """Acuse local si el modelo tarda: no afirma que la acción ya empezó."""
-            if first_delta.is_set() or stop_event.is_set() or gen != self._turn_gen:
-                return
-            try:
-                if timing is not None:
-                    timing.mark("first_ack")
-                speech.say("Un momento.")
-            except Exception:  # noqa: BLE001 - el acuse es opcional
-                pass
-
+        # DECISION: no timed «Un momento.» any more; the HUD already shows
+        # the thinking state and slow tools get a specific notice (llm.tool_ack).
         def speak_sentence(sentence: str) -> None:
-            nonlocal first_audio
+            nonlocal first_audio, opening_checked
+            if not opening_checked:
+                opening_checked = True
+                # Si el modelo igual abre con una muletilla («Un momento,
+                # déjame ver.»), no se dice: suena tosco y no informa nada.
+                if _is_filler_sentence(sentence):
+                    return
             if timing is not None and not first_audio:
                 timing.mark("first_sentence")
                 first_audio = True
             # La cola sintetiza en su hilo: este sigue leyendo el LLM.
-            speech.say(sentence)
+            if speech is not None:
+                speech.say(sentence)
 
-        def ack_worker() -> None:
-            if first_delta.wait(1.4):
-                return
-            local_ack()
-
-        ack_thread = threading.Thread(target=ack_worker, daemon=True, name="ezagent-ack")
-        ack_thread.start()
         try:
             if timing is not None:
                 timing.mark("llm_start")
@@ -1890,11 +1945,9 @@ class VoiceApp:
                 if timing is not None and not first_token and delta.strip():
                     timing.mark("first_token")
                     first_token = True
-                if delta.strip() and not first_delta.is_set():
-                    first_delta.set()
                 full.append(delta)
                 self.chat.append(chat_msg.id, delta)
-                for sentence in sentences.feed(delta):
+                for sentence in sentences.feed(delta) if speech is not None else ():
                     if gen != self._turn_gen or stop_event.is_set():
                         outcome = "cancelled"
                         return
@@ -1907,7 +1960,7 @@ class VoiceApp:
                         outcome = "error"
                         self.events.put(("error", f"Kokoro: {exc}", gen))
                         return
-            for sentence in sentences.flush():
+            for sentence in sentences.flush() if speech is not None else ():
                 if gen != self._turn_gen or stop_event.is_set():
                     outcome = "cancelled"
                     return
@@ -1932,7 +1985,8 @@ class VoiceApp:
                 log("LLM por llamada: " + " | ".join(rounds))
             try:
                 # answer_done sale cuando termina de sonar, como antes.
-                speech.finish()
+                if speech is not None:
+                    speech.finish()
                 finished = True
             except Exception as exc:  # noqa: BLE001
                 outcome = "error"
@@ -1948,11 +2002,11 @@ class VoiceApp:
             chat_done = True
             self.events.put(("error", reason, gen))
         finally:
-            first_delta.set()  # libera el acuse pendiente
             if not chat_done:  # turno interrumpido: se conserva lo que llegó
                 self.chat.cancel(chat_msg.id)
             if not finished:
-                speech.abort()
+                if speech is not None:
+                    speech.abort()
             if outcome == "ok" and not "".join(full).strip():
                 outcome = "empty"
             self.events.put(("answer_done", gen, outcome))
@@ -1961,12 +2015,12 @@ class VoiceApp:
     def _toggle_chat(self) -> None:
         """El chat escrito vive en la barra: se abre con el botón 💬 o con el atajo."""
         try:
-            self.notch.toggle_chat()
+            self.hud.toggle_chat()
         except Exception as exc:  # noqa: BLE001
             log(f"No pude abrir el chat: {exc}")
 
     def _set_chat_voice(self, enabled: bool) -> None:
-        """Interruptor «responder por voz» del chat: se aplica ya y se guarda."""
+        """Apply the speaker choice to typed and microphone turns and persist it."""
         self.cfg.chat_voice = bool(enabled)
         self.chat.set_voice_replies(bool(enabled))
         try:
@@ -2132,7 +2186,7 @@ class VoiceApp:
                 samples,
                 rate,
                 stop_event,
-                on_level=lambda level: self.notch.draw(level, SPEAKING),
+                on_level=lambda level: self.hud.draw(level, SPEAKING),
                 on_start=on_start,
             ),
             stop_event,
@@ -2150,7 +2204,7 @@ class VoiceApp:
             self.speaker.speak(
                 text,
                 stop_event,
-                on_level=lambda level: self.notch.draw(level, SPEAKING),
+                on_level=lambda level: self.hud.draw(level, SPEAKING),
             )
         except Exception as exc:  # noqa: BLE001
             self.events.put(("error", f"Kokoro: {exc}", generation))
@@ -2335,8 +2389,10 @@ class VoiceApp:
         text = f"{self._agent_label(agent)} respondió: {spoken}"
         if more:
             text += " El resto está en su terminal."
+        # El aviso nombra la pestaña; no repite lo que pidió el usuario.
+        _news_arrived(self, address, "", self._visible_agent(address, agent), "done")
         try:
-            self.notch.notice()
+            self.hud.notice()
         except Exception:  # noqa: BLE001
             pass
         self._queue_announcement(text)
@@ -2351,27 +2407,46 @@ class VoiceApp:
     ) -> None:
         log(f"Aviso de {agent} ({reason}); reabro la escucha para preguntar.")
         self.messenger.note_done(address, agent, reason, output, task=task)
-        spoken = " ".join(str(task or "").split())
-        if len(spoken) > 140:
-            spoken = spoken[:139].rstrip() + "…"
-        label = f"«{spoken}»" if spoken else "la tarea"
-        if reason == "done":
-            question = (
-                f"Oye, ya terminé {label}. ¿Quieres que te resuma qué hizo, "
-                "que te lea la salida o que te la muestre?"
-            )
-        else:
-            question = (
-                f"El agente {agent} necesita tu atención con {label}. "
-                "¿Quieres que te diga qué pasa o le das una instrucción?"
-            )
+        question = self._done_question(address, agent, reason, task)
         # El aviso visual (spec 9.3) y la pregunta esperan su turno en la cola:
         # así tres tareas que terminan a la vez no se cortan entre ellas.
+        _news_arrived(self, address, "", self._visible_agent(address, agent), reason)
         try:
-            self.notch.notice()
+            self.hud.notice()
         except Exception:
             pass
         self._queue_announcement(question)
+
+    def _visible_agent(self, address: str, agent: str) -> str:
+        """Cómo se nombra al agente en un aviso: su pestaña de Herdr, o su tipo."""
+        label_for = getattr(getattr(self, "herdr", None), "label_for", None)
+        shown = label_for(address) if callable(label_for) else ""
+        return shown or visible_name({"agent": agent})
+
+    def _done_question(self, address: str, agent: str, reason: str, task: str) -> str:
+        """Pregunta al terminar: nombra la pestaña y no repite lo que pidió el usuario."""
+        flow = " ".join(str(task or "").split())
+        if reason == "done" and flow.startswith(FLOW_PREFIX):
+            # Los nombres de las etapas no son el mensaje del usuario: se conservan.
+            return (
+                f"Oye, terminó {flow}. ¿Quieres que te lo resuma, que te muestre "
+                "el resultado o que haga algo más con él?"
+            )
+        shown = self._visible_agent(address, agent)
+        if reason == "done":
+            return (
+                f"Oye, {shown} terminó. ¿Quieres que te resuma qué hizo, "
+                "que te lea la salida o que te la muestre?"
+            )
+        lead = shown[:1].upper() + shown[1:]  # abre la frase: «El agente…», no «el agente…»
+        if reason == "lost":
+            return (
+                f"{lead} se cerró antes de que pudiera confirmar que terminó. "
+                "¿Quieres que lo revise?"
+            )
+        return (
+            f"{lead} necesita tu atención. ¿Quieres que te diga qué pasa o le das una instrucción?"
+        )
 
     # ------------------------------------------------------- atajos y ajustes
     @staticmethod
@@ -2448,6 +2523,9 @@ class VoiceApp:
             "tareas pendientes",
             "que tareas sigues",
             "que tareas hay pendientes",
+            "que esta pendiente",
+            "que hay pendiente",
+            "como van las tareas",
         }
         if key in greet_words:
             log("Atajo local: saludo.")
@@ -2475,12 +2553,12 @@ class VoiceApp:
                 }
                 parts = []
                 for agent in agents[:4]:
-                    name = agent.get("agent") or "agente"
-                    address = agent.get("address") or "?"
+                    # El nombre que se ve en Herdr, nunca la dirección interna.
+                    shown = agent.get("label") or visible_name(agent)
                     state = state_names.get(
                         str(agent.get("state") or ""), str(agent.get("state") or "—")
                     )
-                    parts.append(f"{name} en {address}, {state}")
+                    parts.append(f"{shown}, {state}")
                 extra = len(agents) - len(parts)
                 suffix = f", y {extra} más" if extra > 0 else ""
                 self.events.put(
@@ -2491,19 +2569,26 @@ class VoiceApp:
             return True
         if key in task_words:
             log("Atajo local: listar tareas pendientes.")
+            _refresh_activity(self)
+            reveal = getattr(getattr(self, "hud", None), "show_activity", None)
+            if callable(reveal):
+                reveal()  # lo mismo, a la vista: la tarjeta de actividad
             registry = getattr(self, "tasks", None)
             tasks = registry.all() if registry is not None else []
             if not tasks:
                 self._speak("No tengo tareas pendientes.", "answer")
                 return True
             parts: list[str] = []
+            label_for = getattr(getattr(self, "herdr", None), "label_for", None)
             for item in tasks[:4]:
-                agent = item.get("agent") or "agente"
-                address = item.get("address") or "?"
+                address = str(item.get("address") or "")
+                shown = (label_for(address) if callable(label_for) else "") or self._agent_label(
+                    str(item.get("agent") or "agente")
+                )
                 task = " ".join(str(item.get("task") or "").split())
                 if len(task) > 100:
                     task = task[:99].rstrip() + "…"
-                parts.append(f"{agent} en {address}: {task or 'sin descripción'}")
+                parts.append(f"{shown}: {task or 'sin descripción'}")
             extra = len(tasks) - len(parts)
             suffix = f"; y {extra} más" if extra > 0 else ""
             self._speak(
@@ -2534,13 +2619,13 @@ class VoiceApp:
             return True
         return False
 
-    def _on_notch_action(self, action: str) -> None:
-        # El WndProc del notch entrega el clic en un hilo nativo. No se toca
+    def _on_hud_action(self, action: str) -> None:
+        # El WndProc del HUD entrega el clic en un hilo nativo. No se toca
         # Tk desde ahí: la intención se publica y _tick la aplica.
-        log(f"Notch: {action}")
-        self.events.put(("notch_action", action))
+        log(f"HUD: {action}")
+        self.events.put(("hud_action", action))
 
-    def _notch_action_ui(self, action: str) -> None:
+    def _hud_action_ui(self, action: str) -> None:
         if action == "mute":
             self._set_mic_muted(not self.muted, source="boton")
         elif action == "listen":
@@ -2554,20 +2639,20 @@ class VoiceApp:
         elif action == "hangup":
             self._handle_hotkey("cancel")
         elif action == "hide":
-            self.hide_notch()
+            self.hide_hud()
 
     def _toggle_menu(self) -> None:
         """El menú vive dentro de la barra; no hay panel Tk."""
         try:
-            self.notch.toggle_menu()
+            self.hud.toggle_menu()
         except Exception as exc:  # noqa: BLE001
             log(f"No pude abrir el menú: {exc}")
 
-    def hide_notch(self, close_eyes: bool = True) -> None:
-        self._notch_hidden = True
-        self.cfg.notch_hidden = True
-        self.cfg.save_key("notch_hidden", True)
-        self.notch.hide(close_eyes=close_eyes)
+    def hide_hud(self, close_eyes: bool = True) -> None:
+        self._hud_hidden = True
+        self.cfg.hud_hidden = True
+        self.cfg.save_key("hud_hidden", True)
+        self.hud.hide(close_eyes=close_eyes)
         log("Isla oculta hasta la próxima llamada.")
 
     # ------------------------------------------------------- menú embebido
@@ -2577,10 +2662,10 @@ class VoiceApp:
         except Exception:
             pass
 
-    def _notch_menu_settings(self):
+    def _hud_menu_settings(self):
         """Instantánea para el menú; se ejecuta al abrirlo."""
         try:
-            from .notch.settings import EDITABLE_KEYS, MenuSettings
+            from .hud.settings import EDITABLE_KEYS, MenuSettings
         except Exception as exc:  # noqa: BLE001
             log(f"Menú no disponible: {exc}")
             return None
@@ -2640,20 +2725,20 @@ class VoiceApp:
                 pass
         return settings
 
-    def _notch_live_setting(self, key: str, value) -> None:
+    def _hud_live_setting(self, key: str, value) -> None:
         self.menu_events.put(("live", key, value))
 
-    def _notch_save_settings(self, values: dict) -> None:
+    def _hud_save_settings(self, values: dict) -> None:
         # El guardado real se aplica en _tick (hilo Tk). El menú recibe el
-        # resultado por notch.set_save_result(); None = pendiente.
+        # resultado por hud.set_save_result(); None = pendiente.
         self.menu_events.put(("save", dict(values)))
 
-    def _notch_test_voice(self, values: dict) -> None:
+    def _hud_test_voice(self, values: dict) -> None:
         self.menu_events.put(("test", dict(values)))
 
     def _push_custom_colors(self) -> None:
         """Pasa a la barra los cuatro colores del tema personalizado."""
-        setter = getattr(self.notch, "set_custom_colors", None)
+        setter = getattr(self.hud, "set_custom_colors", None)
         if callable(setter):
             setter(
                 self.cfg.theme_primary,
@@ -2664,7 +2749,7 @@ class VoiceApp:
 
     def _apply_custom_theme(self, key: str, value) -> None:
         """Un color o una paleta base: se guardan y el tema pasa a «Personalizado»."""
-        from .notch.flow import PRESETS
+        from .hud.flow import PRESETS
 
         if key == "theme_preset":
             preset = PRESETS.get(str(value))
@@ -2694,7 +2779,7 @@ class VoiceApp:
         Ajustes pasan ``persist=False`` y se guardan con «Guardar» como los demás.
         """
         try:
-            from .notch.settings import normalize_setting
+            from .hud.settings import normalize_setting
 
             value = normalize_setting(key, value)
         except Exception as exc:  # noqa: BLE001
@@ -2715,7 +2800,7 @@ class VoiceApp:
         }.get(key)
         if key == "chat_voice":  # el interruptor de Ajustes y el del chat son el mismo
             self.chat.set_voice_replies(bool(value))
-        method = getattr(self.notch, setter, None) if setter else None
+        method = getattr(self.hud, setter, None) if setter else None
         if callable(method):
             try:
                 method(value)
@@ -2727,7 +2812,7 @@ class VoiceApp:
                 self._apply_instant_setting("theme", "custom", persist=persist)
         log(f"Ajuste {key} = {'(frase)' if key == 'wake_phrase' else value}")
 
-    def _notch_hide(self) -> None:
+    def _hud_hide(self) -> None:
         self.menu_events.put(("hide",))
 
     def _handle_menu_event(self, event: tuple) -> None:
@@ -2740,7 +2825,7 @@ class VoiceApp:
             self._test_voice_from_menu(dict(event[1]))
         elif kind == "hide":
             # El botón «–» oculta con retirada, sin cerrar los ojos (A-02).
-            self.hide_notch(close_eyes=False)
+            self.hide_hud(close_eyes=False)
 
     def _apply_live_setting(self, key: str, value) -> None:
         """Aplica un control del menú en vivo, sin persistir todavía."""
@@ -2894,11 +2979,11 @@ class VoiceApp:
             log(f"No pude guardar los ajustes: {exc}")
         if ok:
             try:
-                self.notch.refresh_menu_settings()
+                self.hud.refresh_menu_settings()
             except Exception:
                 pass
         try:
-            self.notch.set_save_result(ok)
+            self.hud.set_save_result(ok)
         except Exception:
             pass
 
@@ -2912,7 +2997,7 @@ class VoiceApp:
         if not old_muted:
             self._set_mic_muted(True)
         try:
-            self.notch.set_testing(True)
+            self.hud.set_testing(True)
         except Exception:
             pass
         self._set_state(SPEAKING)
@@ -2927,7 +3012,7 @@ class VoiceApp:
                 self.speaker.speak(
                     phrase,
                     threading.Event(),
-                    on_level=lambda level: self.notch.draw(level, SPEAKING),
+                    on_level=lambda level: self.hud.draw(level, SPEAKING),
                 )
             except Exception as exc:  # noqa: BLE001
                 log(f"Prueba de voz: {exc}")
@@ -3040,7 +3125,7 @@ class VoiceApp:
             # «qwen/qwen3-32b»), el hilo principal lo corrige y lo guarda.
             self.events.put(("llm_models_ready", provider, models))
             try:
-                self.notch.update_llm_models(provider, models)
+                self.hud.update_llm_models(provider, models)
             except Exception:
                 pass
 
@@ -3390,7 +3475,7 @@ class VoiceApp:
 
     def _set_mic_muted(self, muted: bool, source: str = "") -> None:
         self.muted = bool(muted)
-        self.notch.set_muted(self.muted)
+        self.hud.set_muted(self.muted)
         self._reset_capture.set()
         if self.muted:
             self._ignore_utterance = True
@@ -3534,6 +3619,7 @@ class VoiceApp:
             if address:
                 self._sent_map()[address] = handoff
             launched += 1
+            flow = [*(spec.get("flow") or [self._agent_label(source)]), self._stage_label(spec)]
             rest = spec.get("then")
             if address and isinstance(rest, list) and rest:
                 # Siguiente paso del flujo: espera a que termine este.
@@ -3545,18 +3631,45 @@ class VoiceApp:
                         space=spec.get("space") or None,
                         notify=bool(spec.get("notify_final")),
                         deliver=bool(spec.get("deliver_final")),
+                        flow=flow,
                     )
                 )
+            if spec.get("notify_final"):
+                self._stage_notice(flow)
             if address and spec.get("deliver_answer"):
                 self._deliver_answer(address)
             if address and (spec.get("notify_on_done") or spec.get("deliver_answer")):
                 shown = task.replace("{output}", "").strip(" :")
+                if len(flow) > 1:
+                    shown = flow_task(flow)
                 self._remember_task(address, agent, shown or task)
                 self._watch(address)
                 log(f"Cadena lanzada: {source} → {agent} ({address}); avisaré al terminar.")
             else:
                 log(f"Cadena lanzada: {source} → {agent}.")
         return launched
+
+    # ------------------------------------------------- actividad de la barra
+    def _activity_tick(self) -> None:
+        """Hilo de UI: solo lee estados ya calculados por otros hilos."""
+        if getattr(self, "_shutdown_done", False):
+            return
+        _refresh_activity(self)
+        self.root.after(ACTIVITY_TICK_MS, self._activity_tick)
+
+    def _stage_label(self, spec: dict) -> str:
+        """Nombre de una etapa de cadena: su nombre de terminal o el del agente."""
+        return str(spec.get("name") or "").strip() or self._agent_label(
+            str(spec.get("agent") or "")
+        )
+
+    def _stage_notice(self, flow: list[str]) -> None:
+        """Aviso breve al pasar de etapa; no reabre la escucha ni pregunta nada."""
+        if len(flow) < 2:
+            return
+        self._queue_announcement(
+            f"Terminó «{flow[-2]}». Ahora empieza «{flow[-1]}».", reopen_call=False
+        )
 
     def _resume_pending_tasks(self) -> None:
         """Recupera tareas y cadenas pendientes tras un reinicio."""
@@ -3577,6 +3690,9 @@ class VoiceApp:
         """Si el agente ya terminó, emite el aviso o lanza su cadena."""
         try:
             agent = self.herdr.get_agent(address)
+        except HerdrNotFound:
+            self._forget_gone(address)
+            return
         except Exception:
             return
         state = agent.get("state")
@@ -3633,8 +3749,19 @@ class VoiceApp:
             )
         )
 
+    def _forget_gone(self, address: str) -> None:
+        """Deja de vigilar una terminal que Herdr ya no tiene (cerrada o de otra sesión)."""
+        # DECISION: se olvida en silencio. Suele ser una tarea de hace días que
+        # quedó guardada; preguntar por ella en cada arranque sería ruido, y
+        # dejarla vigilada mantenía el globo de la barra con un número fijo.
+        self.watched.discard(address)
+        self.tasks.remove_chains_for(address)
+        self.tasks.remove(address)
+        log(f"La terminal {address} ya no existe en Herdr; dejo de vigilarla.")
+
     def _watch(self, address: str) -> None:
         self.watched.add(address)
+        _activity_log(self).forget(address)  # un desenlace viejo no tapa la tarea nueva
         if self.tasks.get(address) is None:
             user_text = ""
             messenger = getattr(self, "messenger", None)
@@ -3646,6 +3773,83 @@ class VoiceApp:
     def _mute(self, minutes: int) -> None:
         self.mute_until = time.time() + max(1, minutes) * 60
         log(f"Avisos silenciados {minutes} min.")
+
+
+# ------------------------------------------------------- actividad de la barra
+# Funciones sueltas (no métodos): los manejadores de eventos también se prueban
+# con objetos mínimos que no tienen todo lo de VoiceApp.
+def _activity_log(app: object) -> _activity.ActivityLog:
+    log_ = getattr(app, "_activity_records", None)
+    if log_ is None:
+        log_ = _activity.ActivityLog()
+        app._activity_records = log_
+    return log_
+
+
+def _news_arrived(app: object, key: str, agent: str, title: str, reason: str) -> None:
+    """Un desenlace que pide atención: queda en la actividad como no visto y se avisa."""
+    item = _activity_log(app).record(key, agent, title, reason)
+    _refresh_activity(app)
+    announce = getattr(getattr(app, "hud", None), "announce_activity", None)
+    if callable(announce):
+        try:
+            announce(item)
+        except Exception:  # noqa: BLE001 - el aviso visual nunca tumba la app
+            pass
+
+
+def _news_seen(app: object) -> None:
+    if _activity_log(app).seen_all():
+        _refresh_activity(app)
+
+
+def _open_activity(app: object, key: str) -> None:
+    """Clic en una fila de la vista rápida: se da por vista y se trae su terminal."""
+    _news_seen(app)
+    if not key or key.startswith(("chain:", "swarm:")):  # sin terminal propia
+        return
+    herdr = getattr(app, "herdr", None)
+    focus = getattr(herdr, "focus_agent", None)
+    if callable(focus):
+        app._start_worker(_focus_quietly, (focus, key), "ezagent-focus")
+
+
+def _dismiss_activity(app: object, key: str) -> None:
+    """× en la vista rápida: la tarea sale de la actividad y de los pendientes.
+
+    Una tarea vigilada deja de vigilarse (el agente sigue en su terminal; no se
+    mata nada) junto con las etapas que esperaban por ella; una etapa en espera
+    se cancela; un desenlace se olvida.
+    """
+    _activity_log(app).forget(key)
+    tasks = getattr(app, "tasks", None)
+    watched = getattr(app, "watched", None)
+    if tasks is not None and key.startswith("chain:"):
+        for spec in tasks.chains():
+            if _activity.chain_key(spec) == key:
+                tasks.remove_chain(spec)
+    elif tasks is not None and watched is not None and key in watched:
+        watched.discard(key)
+        tasks.remove_chains_for(key)
+        tasks.remove(key)
+    log(f"Actividad: quité «{key}» de la vista.")
+    _refresh_activity(app)
+
+
+def _focus_quietly(focus, address: str) -> None:
+    try:
+        focus(address)
+    except Exception as exc:  # noqa: BLE001 - Herdr caído o terminal cerrada
+        log(f"No pude traer la terminal {address}: {exc}")
+
+
+def _refresh_activity(app: object) -> None:
+    setter = getattr(getattr(app, "hud", None), "set_activity", None)
+    if callable(setter):
+        try:
+            setter(_activity.snapshot(app, _activity_log(app)))
+        except Exception:  # noqa: BLE001 - la actividad nunca tumba la app
+            pass
 
 
 def _print_agents(cfg: VoiceConfig) -> None:
@@ -3674,10 +3878,10 @@ def run_demo() -> None:
     """
     root = tk.Tk()
     root.withdraw()
-    notch = create_ui(root, VoiceConfig())
-    notch.set_theme(VoiceConfig().theme)
+    hud = create_ui(root, VoiceConfig())
+    hud.set_theme(VoiceConfig().theme)
     try:
-        from .notch.settings import MenuSettings
+        from .hud.settings import MenuSettings
 
         settings = MenuSettings.from_app(
             {
@@ -3693,9 +3897,9 @@ def run_demo() -> None:
             [],
             MENU_VOICES,
         )
-        notch.menu_settings_provider = lambda: settings
-        notch.on_save_settings = lambda values: True
-        notch.on_hide = lambda: notch.hide()
+        hud.menu_settings_provider = lambda: settings
+        hud.on_save_settings = lambda values: True
+        hud.on_hide = lambda: hud.hide()
     except Exception:
         pass
 
@@ -3720,27 +3924,27 @@ def run_demo() -> None:
 
     def enter(state: str) -> None:
         if state == "open":
-            notch.show(IDLE)
+            hud.show(IDLE)
             return
         if state == "close":
-            notch.hide()
+            hud.hide()
             return
         if state == "menu":
-            notch.toggle_menu()
+            hud.toggle_menu()
             return
         if state == "notice":
-            notch.set_muted(False)
-            notch.notice()
+            hud.set_muted(False)
+            hud.notice()
             return
         if state == "mute":
-            notch.set_muted(True)
-            notch.set_state(IDLE)
+            hud.set_muted(True)
+            hud.set_state(IDLE)
             return
         if state == "error":
-            notch.set_state("error")
+            hud.set_state("error")
             return
-        notch.set_muted(False)
-        notch.set_state(
+        hud.set_muted(False)
+        hud.set_state(
             {"idle": IDLE, "listen": LISTENING, "think": THINKING, "speak": SPEAKING}.get(
                 state, IDLE
             )
@@ -3749,7 +3953,7 @@ def run_demo() -> None:
     def step() -> None:
         nonlocal index
         if index >= len(steps):
-            notch.close()
+            hud.close()
             root.destroy()
             return
         state, _ = steps[index]
@@ -3762,7 +3966,7 @@ def run_demo() -> None:
         state = steps[min(index - 1, len(steps) - 1)][0] if index else "idle"
         if state in ("listen", "speak"):
             rms = 0.004 + 0.016 * (0.5 + 0.5 * math.sin(t * 5.1))
-            notch.draw(rms, LISTENING if state == "listen" else SPEAKING)
+            hud.draw(rms, LISTENING if state == "listen" else SPEAKING)
         root.after(33, tick)
 
     step()
@@ -3771,7 +3975,7 @@ def run_demo() -> None:
         root.mainloop()
     finally:
         try:
-            notch.close()
+            hud.close()
         except Exception:
             pass
         try:
@@ -3783,7 +3987,7 @@ def run_demo() -> None:
 def main() -> None:
     # Antes de crear Tk o cualquier ventana Win32.
     try:
-        from .notch.layered import enable_dpi_awareness
+        from .hud.layered import enable_dpi_awareness
 
         enable_dpi_awareness()
     except Exception:
@@ -3805,7 +4009,7 @@ def main() -> None:
     parser.add_argument(
         "--demo-ui",
         action="store_true",
-        help="Recorre los estados del notch sin micrófono ni servidores",
+        help="Recorre los estados del HUD sin micrófono ni servidores",
     )
     parser.add_argument("--mic", type=int, default=None, help="Índice de micrófono")
     parser.add_argument(

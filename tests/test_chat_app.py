@@ -76,7 +76,7 @@ def make(tmp_path: Path, *deltas, voice: bool = False, boom=None, store: bool = 
         events=events,
         messenger=Messenger(*deltas, boom=boom),
         speaker=speaker,
-        notch=SimpleNamespace(draw=lambda level, state: None),
+        hud=SimpleNamespace(draw=lambda level, state: None),
         cfg=SimpleNamespace(
             chat_voice=voice,
             llm_provider="openai",
@@ -222,7 +222,7 @@ def test_an_empty_answer_leaves_no_blank_bubble(tmp_path: Path) -> None:
 
 # -------------------------------------------------- lo hablado también se ve
 def test_a_spoken_turn_is_mirrored_into_the_chat(tmp_path: Path) -> None:
-    stub, _ = make(tmp_path, "Son ", "las tres.")
+    stub, _ = make(tmp_path, "Son ", "las tres.", voice=True)
     stub.chat.add_user("qué hora es", "voice")
     sentences_said: list[str] = []
     stub._speech_queue = lambda stop, timing: SimpleNamespace(
@@ -236,6 +236,29 @@ def test_a_spoken_turn_is_mirrored_into_the_chat(tmp_path: Path) -> None:
         ("assistant", "voice", "Son las tres."),
     ]
     assert sentences_said == ["Son las tres."]  # la voz sigue funcionando como siempre
+
+
+def test_a_spoken_turn_can_reply_only_in_text(tmp_path: Path) -> None:
+    stub, _ = make(tmp_path, "Respuesta escrita.")
+    stub._turn_timing = None
+    app.VoiceApp._answer_worker(stub, "pregunta por audio", 4)
+    _, messages = stub.chat.snapshot()
+    assert messages[-1].text == "Respuesta escrita."
+    assert stub.speaker.said == []
+
+
+def test_chat_microphone_starts_listening_then_toggles_mute() -> None:
+    calls: list[str] = []
+    stub = SimpleNamespace(
+        in_call=False,
+        _resume_listening_from_mic=lambda: calls.append("listen"),
+        _set_mic_muted=lambda muted, source: calls.append(f"mute={muted}"),
+    )
+    app.VoiceApp._handle_event(stub, ("chat_mute", False))
+    stub.in_call = True
+    app.VoiceApp._handle_event(stub, ("chat_mute", True))
+    app.VoiceApp._handle_event(stub, ("chat_mute", False))
+    assert calls == ["listen", "mute=True", "mute=False"]
 
 
 def test_a_failed_spoken_turn_shows_the_reason_in_the_chat(tmp_path: Path) -> None:
@@ -263,7 +286,7 @@ def test_the_voice_switch_applies_now_and_is_saved(tmp_path: Path) -> None:
 def test_the_settings_switch_updates_the_open_chat(tmp_path: Path) -> None:
     stub, _ = make(tmp_path)
     stub.cfg.save_key = lambda key, value: None
-    stub.notch = SimpleNamespace()
+    stub.hud = SimpleNamespace()
     stub._push_custom_colors = lambda: None
     app.VoiceApp._apply_instant_setting(stub, "chat_voice", True, persist=False)
     assert stub.chat.voice_replies is True
@@ -315,24 +338,39 @@ def test_the_chat_hotkey_opens_the_chat_even_with_the_bar_hidden(tmp_path: Path)
 def test_a_hidden_bar_comes_back_for_the_chat(tmp_path: Path) -> None:
     stub, states = make(tmp_path)
     shown: list[str] = []
-    stub._notch_hidden = True
-    stub.notch = SimpleNamespace(show=shown.append)
+    stub._hud_hidden = True
+    stub.hud = SimpleNamespace(show=shown.append)
     app.VoiceApp._show_bar_if_hidden(stub)
-    assert stub._notch_hidden is False and shown == [app.IDLE] and "notch_hidden=False" in states
+    assert stub._hud_hidden is False and shown == [app.IDLE] and "hud_hidden=False" in states
 
 
 def test_toggle_chat_never_raises_if_the_window_is_not_ready(tmp_path: Path) -> None:
     stub, _ = make(tmp_path)
-    stub.notch = SimpleNamespace()  # sin toggle_chat
+    stub.hud = SimpleNamespace()  # sin toggle_chat
     app.VoiceApp._toggle_chat(stub)
     opened: list[bool] = []
-    stub.notch = SimpleNamespace(toggle_chat=lambda: opened.append(True))
+    stub.hud = SimpleNamespace(toggle_chat=lambda: opened.append(True))
     app.VoiceApp._toggle_chat(stub)
     assert opened == [True]
 
 
 def test_chat_hotkey_is_part_of_the_checked_hotkeys() -> None:
-    from ezagent.voice.notch.hotkey_field import HOTKEY_KEYS
+    from ezagent.voice.hud.hotkey_field import HOTKEY_KEYS
 
     assert "chat_hotkey" in app.HOTKEY_KEYS and "chat_hotkey" in HOTKEY_KEYS
     assert "chat_voice" in app.INSTANT_SETTINGS
+
+
+def test_legacy_notch_hidden_key_migrates_to_hud_hidden(tmp_path) -> None:
+    import json
+
+    from ezagent.voice.config import VoiceConfig
+
+    path = tmp_path / "voice.json"
+    path.write_text(json.dumps({"notch_hidden": True, "notch_x": 5}), encoding="utf-8")
+    cfg = VoiceConfig.load(path)
+    assert cfg.hud_hidden is True  # el ajuste guardado no se pierde
+    cfg.save(path)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["hud_hidden"] is True and "notch_hidden" not in saved
+    assert saved["notch_x"] == 5  # lo demás del archivo no se toca

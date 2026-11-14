@@ -80,10 +80,16 @@ _MOVE_RE = re.compile(
     re.IGNORECASE,
 )
 # Trabajo en equipo: solo entonces se ofrece la herramienta del enjambre.
+_ROLE_WORDS = (
+    r"planificador\w*|desarrollador\w*|programador\w*|qa|tester|validador\w*|auditor\w*|"
+    r"arquitect[oa]s?|orquestador\w*|coordinador\w*|backend|frontend|devops|revisor\w*"
+)
 _SWARM_RE = re.compile(
     r"\b(enjambre|swarm|cooperativ[oa]s?|colabor\w+|en equipo|equipo de agentes|"
-    r"entre (?:ellos|s[ií])|se coordinen|trabajen juntos)\b|"
-    r"\bplan\w*\b.*\b(valid\w+|audit\w+|revis\w+)\b",
+    r"entre (?:ellos|s[ií])|se coordinen|trabajen juntos|el rol de|roles)\b|"
+    r"\bplan\w*\b.*\b(valid\w+|audit\w+|revis\w+)\b|"
+    # Dos roles distintos nombrados: «un planificador, un desarrollador y un QA».
+    rf"\b({_ROLE_WORDS})\b.*\b(?!\3\b)({_ROLE_WORDS})\b",
     re.IGNORECASE | re.DOTALL,
 )
 _UNDO_RE = re.compile(

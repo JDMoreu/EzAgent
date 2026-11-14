@@ -82,6 +82,21 @@ class ChatModel:
             self._bump()
             return message
 
+    def revise_user(self, message_id: int, text: str) -> bool:
+        """Sustituye el texto de un mensaje del usuario (la frase continuó tras una pausa).
+
+        Mantiene una sola caja en pantalla y una sola entrada en el historial.
+        """
+        with self._lock:
+            message = self._find(message_id)
+            if message is None or message.role != "user":
+                return False
+            if self.store is not None and not self.store.replace_last("user", message.text, text):
+                return False  # no es la última frase guardada: se deja como está
+            message.text = text
+            self._bump()
+            return True
+
     def add_note(self, text: str) -> ChatMessage:
         """Una nota de la propia app («conversación compactada»): se ve, pero no se guarda."""
         with self._lock:
@@ -113,10 +128,13 @@ class ChatModel:
                 return
             message.streaming = False
             message.text = message.text.strip()
+            # La hora de una respuesta es la de cuando quedó completa: la misma que se
+            # guarda, para que el historial muestre los tiempos que se vieron en vivo.
+            message.t = time.time()
             if not message.text:  # nada que mostrar: no queda una burbuja vacía
                 self._messages.remove(message)
             elif self.store is not None:
-                self.store.append("assistant", message.text, message.source)  # type: ignore[arg-type]
+                self.store.append("assistant", message.text, message.source, message.t)  # type: ignore[arg-type]
             self._busy = any(m.streaming for m in self._messages)
             self._bump()
 

@@ -3,7 +3,7 @@
 
 Maquinaria Win32 de ventanas con transparencia real por píxel: la clase
 ``LayeredWindow`` (UpdateLayeredWindow + DIB propio) es la base sobre la que se
-dibuja la muesca del notch. También da la geometría del escritorio
+dibuja la esfera y la píldora del HUD. También da la geometría del escritorio
 (``work_area``, ``taskbar_rect``).
 
 Por qué existe este módulo: el código anterior declaraba ``ctypes.WinDLL`` sin
@@ -21,6 +21,7 @@ ciclos.
 Basado en Dicta (MIT).
 """
 
+import collections
 import ctypes
 import os
 import sys
@@ -28,6 +29,8 @@ import threading
 import time
 
 import numpy as np
+
+from .frame_stats import FrameStats
 
 # ------------------------------------------------------------------ geometría
 # Unidades lógicas (se escalan por DPI): 1 u = 1 px a 96 ppp.
@@ -628,6 +631,18 @@ def paint_due(
     return dirty or frame_due(now, last_paint, interval)
 
 
+def wait_delay(visible: bool, last_paint: float, interval: float, now: float) -> float:
+    """Cuánto esperar mensajes antes de la siguiente vuelta del bucle.
+
+    Oculta no pinta y ``last_paint`` no avanza: sin este caso el retardo quedaba
+    negativo y el bucle giraba sin dormir, acaparando el GIL (medido: cuadros de
+    la barra de 2 a 50-90 ms). Mostrarla manda mensajes al hilo, que despierta.
+    """
+    if not visible:
+        return 1.0 / 60.0
+    return min(1.0 / 60.0, last_paint + interval - now)
+
+
 def paint_mark(now: float, last_paint: float, interval: float) -> float:
     """Hora de referencia del fotograma pintado.
 
@@ -695,6 +710,10 @@ class LayeredWindow:
         self._ok = False
         self.max_height = 0  # alto máximo reservado (px físicos)
         self.diag = ""  # motivo real si algo falla
+        self.frame_stats = FrameStats(str(title))  # tiempo de cada cuadro (render + copia)
+        # Llamadas de Win32 pedidas desde otros hilos: las ejecuta el hilo de la ventana.
+        self._owner = 0
+        self._owned_calls: collections.deque = collections.deque()
 
     # ---- API pública
     def start(self):
@@ -729,15 +748,45 @@ class LayeredWindow:
                     pass
         self._visible = False
 
+    def _on_owner(self, call) -> None:
+        """Run a Win32 call on the window's own thread.
+
+        ShowWindow/SetWindowPos/SetWindowLongPtr on a window owned by another
+        thread wait until that thread handles the message. If it is painting
+        (the chat's first frames take ~100 ms) the caller stalls — measured
+        ~200 ms of Tk per chat open — and if it is waiting on a lock the caller
+        holds, both freeze («la app no responde»). From another thread the call
+        is queued and the window thread is woken; the caller never waits.
+        """
+        hwnd = self.hwnd
+        if not hwnd or threading.get_ident() == self._owner:
+            call()
+            return
+        self._owned_calls.append(call)
+        try:
+            _u32.PostMessageW(hwnd, 0, 0, 0)  # WM_NULL: wakes MsgWaitForMultipleObjects
+        except Exception:
+            pass
+
+    def _run_owned_calls(self) -> None:
+        while self._owned_calls:
+            try:
+                self._owned_calls.popleft()()
+            except Exception:
+                pass
+
     def show(self):
         self._visible = True
         self._dirty = True
+        self._on_owner(self._show_native)
+
+    def _show_native(self) -> None:
         with self._lock:
             hwnd = self.hwnd
-        if hwnd:
+        if hwnd and self._visible:
             try:
                 _u32.ShowWindow(hwnd, 4)  # SW_SHOWNOACTIVATE
-                # Sin SWP_NOZORDER: el notch se reafirma por encima de la
+                # Sin SWP_NOZORDER: el HUD se reafirma por encima de la
                 # barra de tareas (también es topmost) al mostrarse.
                 _u32.SetWindowPos(
                     hwnd, _HWND_TOPMOST, self.x, self.y, self.w, self.h, _SWP_NOACTIVATE
@@ -748,9 +797,12 @@ class LayeredWindow:
     def hide(self):
         self._visible = False
         self._dirty = True
+        self._on_owner(self._hide_native)
+
+    def _hide_native(self) -> None:
         with self._lock:
             hwnd = self.hwnd
-        if hwnd:
+        if hwnd and not self._visible:
             try:
                 _u32.ShowWindow(hwnd, 0)  # SW_HIDE
             except Exception:
@@ -762,6 +814,12 @@ class LayeredWindow:
             hwnd = self.hwnd
         if not (self.lazy_drag and hwnd):
             self._dirty = True
+        if hwnd:
+            self._on_owner(self._move_native)
+
+    def _move_native(self) -> None:
+        with self._lock:
+            hwnd = self.hwnd
         if hwnd:
             try:
                 # Sin SWP_NOZORDER: cada movimiento reafirma el topmost para
@@ -847,8 +905,13 @@ class LayeredWindow:
         """Activa el teclado temporalmente retirando WS_EX_NOACTIVATE."""
         was_enabled = self._keyboard
         self._keyboard = bool(enabled)
+        if not int(self.hwnd or 0) or not _IS_WIN:
+            return
+        self._on_owner(lambda: self._keyboard_native(bool(enabled), was_enabled))
+
+    def _keyboard_native(self, enabled: bool, was_enabled: bool) -> None:
         hwnd = int(self.hwnd or 0)
-        if not hwnd or not _IS_WIN:
+        if not hwnd:
             return
         try:
             if enabled and not was_enabled:
@@ -994,6 +1057,7 @@ class LayeredWindow:
 
     # ---- bucle
     def _run(self):
+        self._owner = threading.get_ident()
         try:
             if not _ensure_class():
                 return
@@ -1059,6 +1123,7 @@ class LayeredWindow:
         try:
             while not self._stop.is_set():
                 self._pump()
+                self._run_owned_calls()
                 self._restore_focus_if_due()
                 now = time.monotonic()
                 interval = self._interval
@@ -1067,7 +1132,7 @@ class LayeredWindow:
                     mark = paint_mark(now, self._last_paint, interval)
                     self._paint(now)
                     self._last_paint = mark
-                delay = min(1.0 / 60.0, self._last_paint + interval - time.monotonic())
+                delay = wait_delay(self._visible, self._last_paint, interval, time.monotonic())
                 if dragging:
                     delay = 1.0 / 120.0  # sin pintar: solo espera mensajes del ratón
                 if delay > 0.001:
@@ -1167,6 +1232,11 @@ class LayeredWindow:
             self._dib_release_locked()
 
     def _paint(self, now):
+        started = time.perf_counter()
+        self._paint_frame(now)
+        self.frame_stats.add((time.perf_counter() - started) * 1000.0)
+
+    def _paint_frame(self, now):
         try:
             frame = self.render()
         except Exception as e:
@@ -1188,7 +1258,7 @@ class LayeredWindow:
         with self._lock:
             dib_w, dib_h = self._dib_size
             window_resized = (fw, fh) != (self.w, self.h)
-            # La ventana del notch reserva un único DIB del alto máximo y
+            # La ventana del HUD reserva un único DIB del alto máximo y
             # solo cambia el área visible. Recrearlo en cada fotograma de la
             # animación de altura provocaría reallocaciones y access violations.
             target_h = max(fh, int(getattr(self, "max_height", 0) or 0))

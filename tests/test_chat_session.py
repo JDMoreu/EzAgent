@@ -260,3 +260,41 @@ def test_notes_are_visible_but_never_saved(store: ChatStore) -> None:
     again = ChatModel(ChatStore(store.path))
     assert [m.role for m in again.snapshot()[1]] == ["user"]
     assert not model.busy and model.version == version
+
+
+def test_a_voice_sentence_that_continues_updates_one_box_and_one_history_entry(
+    store: ChatStore, tmp_path: Path
+) -> None:
+    model = ChatModel(store)
+    cut = model.add_user("Dile a la gente de CloudCo que se quedó colgado el pop", "voice")
+    assert model.revise_user(cut.id, "Dile a la gente de CloudCo que se quedó colgado el pop 2.")
+    users = [m for m in model.snapshot()[1] if m.role == "user"]
+    assert [m.text for m in users] == ["Dile a la gente de CloudCo que se quedó colgado el pop 2."]
+    assert [e.text for e in store.entries()] == [users[0].text]
+    # Sobrevive a un reinicio: en el disco también queda una sola.
+    again = ChatStore(store.path)
+    assert [e.text for e in again.entries()] == [users[0].text]
+
+
+def test_revising_only_touches_the_latest_user_message(store: ChatStore) -> None:
+    model = ChatModel(store)
+    old = model.add_user("antes", "voice")
+    model.add_user("ahora", "voice")
+    assert not model.revise_user(old.id, "antes, corregido")  # ya no es la última
+    assert [e.text for e in store.entries()] == ["antes", "ahora"]
+    assert not model.revise_user(9999, "nada")
+
+
+def test_a_partial_answer_saved_after_the_cut_sentence_does_not_block_the_merge(
+    store: ChatStore,
+) -> None:
+    model = ChatModel(store)
+    cut = model.add_user("revisa el pop", "voice")
+    reply = model.begin_assistant("voice")
+    model.append(reply.id, "Voy a revisar")
+    model.cancel(reply.id)  # el turno se cortó: queda la respuesta parcial
+    assert model.revise_user(cut.id, "revisa el pop del HUD")
+    assert [(e.role, e.text) for e in store.entries()] == [
+        ("user", "revisa el pop del HUD"),
+        ("assistant", "Voy a revisar"),
+    ]

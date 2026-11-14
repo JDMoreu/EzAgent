@@ -194,6 +194,21 @@ class TaskRegistry:
                 self._write_locked()
             return removed
 
+    def remove_chain(self, spec: dict[str, Any]) -> bool:
+        """Quita una sola etapa en espera (misma fuente, agente y creación)."""
+        ident = (spec.get("source"), spec.get("agent"), spec.get("created_at"))
+        with self._lock:
+            kept = [
+                item
+                for item in self._chains
+                if (item.get("source"), item.get("agent"), item.get("created_at")) != ident
+            ]
+            if len(kept) == len(self._chains):
+                return False
+            self._chains = kept
+            self._write_locked()
+        return True
+
     def _write_locked(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         data = {

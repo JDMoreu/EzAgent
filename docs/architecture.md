@@ -40,7 +40,7 @@ flowchart TD
 | Voz | `voice/speech_queue.py` + `voice/tts.py` (Kokoro ONNX) | Hilo de respuesta (síntesis) y `ezagent-speech` (reproducción) |
 | Agentes delegados | `voice/herdr.py`, `agent_driver.py`, `agent_session.py` | Hilo de respuesta |
 | Avisos | `voice/watcher.py`, `voice/tasks.py` | Hilo del watcher |
-| Interfaz | `voice/notch/`: barra con Marea (`flow.py`) y ventana de ajustes centrada (`settings_window.py`), Win32 layered | Hilo de la barra |
+| Interfaz | `voice/hud/`: barra con Marea (`flow.py`) y ventana de ajustes centrada (`settings_window.py`), Win32 layered | Hilo de la barra |
 
 ## Un turno, paso a paso
 
@@ -181,7 +181,20 @@ de agentes:
 **Avisos.** `Watcher` consulta `hc ls --json` cada segundo. Cuando un agente
 vigilado termina o se bloquea, la app avisa por voz con la tarea concreta,
 guardada en `tasks.json`. La salida del agente se trata siempre como dato no
-confiable.
+confiable. Toda tarea delegada se vigila por defecto (`notify_on_done=false`
+lo evita). En una cadena, cada cambio de etapa se dice sin reabrir la escucha
+(«Terminó «planificador». Ahora empieza «desarrollador».»), y el final nombra
+todo el flujo y pregunta qué hacer con el resultado.
+
+**Actividad de la barra** (`activity.py`, `hud/marks.py`, `hud/peek.py`). Un
+solo modelo une lo vivo (terminales vigiladas con el último estado del
+vigilante, etapas de cadena en espera y enjambres activos de
+`Supervisor.active_view`) con los desenlaces recientes de `ActivityLog`
+(terminó, te necesita, falló, se perdió). Armar la foto no llama a Herdr. La
+barra la dibuja como una órbita de marcas por estado y, al dejar el puntero
+sobre la forma, como una tarjeta compacta. Hablar o escribir da los desenlaces
+por vistos. Cada ventana layered registra en el log sus tiempos de cuadro cada
+60 s (`hud/frame_stats.py`).
 
 ## Seguridad
 
@@ -257,12 +270,21 @@ flowchart LR
   primer `ezs next`, y `ezs me` las repite. Un pegado largo al arrancar se
   pierde o queda a medias (verificado con OpenCode y Codex).
 - **Cada miembro se abre cuando le toca**, no antes.
+- **Roles libres** (`swarm/protocol.py`): plan, arch, lead, dev, back, front,
+  ux, data, ops, docs, qa, test y sec traen tarea y reglas propias; cualquier
+  otro nombre corto vale con reglas genéricas y la tarea que diga el usuario
+  (`task`). Cada miembro abre una etapa que espera a la anterior, salvo los
+  marcados `parallel` (backend y frontend a la vez).
 - **Mensajes de 280 caracteres**; el detalle va en un archivo (`--ref`). Las
   partes de una tarea cierran en silencio y solo avisa la tarea madre.
 - **Ciclo validar → corregir** con tope de 3 rondas (`ezs fix`).
 - **Salud por reglas** (`swarm/view.py`): agente sin señales, tarea lista que
   nadie toma, pregunta sin respuesta, tarea fallida. El supervisor dice cada
-  aviso una vez y, al terminar, el resumen de cada etapa.
+  aviso una vez.
+- **Avance por voz** (`swarm/progress.py`): «terminó la planificación, ahora
+  empieza el desarrollo» y «devolvieron el desarrollo para corregir». Al
+  terminar, el resumen de cada etapa y la pregunta de qué hacer con el
+  resultado, que reabre la escucha.
 - **Identidad.** Cada miembro tiene un token propio guardado en un archivo de
   asiento; la terminal solo ve su ruta (`EZS_SEAT`). El tablero guarda el
   resumen del token, nunca el token.

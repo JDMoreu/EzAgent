@@ -3,7 +3,7 @@
 La comilla de apertura (“) es lo que ocurre cuando le hablas a EzAgent: tu frase
 entre comillas es el argumento que se entrega a un agente en la terminal
 (``claude "haz esto"``). Sus dos gotas están llenas del mismo fluido vivo que
-anima la barra (``notch/flow.py``), sobre un cuadrado de grafito azulado. La
+anima la barra (``hud/flow.py``), sobre un cuadrado de grafito azulado. La
 silueta es la parte propia de la marca: a 16 px siguen leyéndose dos comas
 curvas, algo que ningún orbe o forma de onda de «asistente de voz» hace.
 
@@ -19,7 +19,7 @@ from functools import lru_cache
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-from .notch.flow import FlowField, colors_for
+from .hud.flow import FlowField, colors_for
 
 INK = (0x07, 0x16, 0x1B)  # grafito azulado, abajo del cuadrado
 INK_TOP = (0x0D, 0x2A, 0x31)  # el mismo, un poco más claro arriba

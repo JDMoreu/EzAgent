@@ -10,9 +10,9 @@ import pytest
 
 from ezagent.voice.chat.session import ChatModel
 from ezagent.voice.chat.store import ChatStore
-from ezagent.voice.notch import chat_ui as cu
-from ezagent.voice.notch import drop as D
-from ezagent.voice.notch.chat_ui import ChatPanel, panel_rect, panel_size, rounded_coverage
+from ezagent.voice.hud import chat_ui as cu
+from ezagent.voice.hud import drop as D
+from ezagent.voice.hud.chat_ui import ChatPanel, panel_rect, panel_size, rounded_coverage
 
 WORK = (0, 0, 1920, 1040)
 FORM = (930.0, 970.0, 988.0, 1028.0)  # esfera de 58 px en la mitad de abajo
@@ -220,7 +220,7 @@ def test_opening_creates_the_window_around_the_panel_and_takes_the_keyboard(pane
 @pytest.mark.parametrize("damping", [22.0, 40.0, 55.0])
 @pytest.mark.parametrize("fps", [30, 60, 144])
 def test_button_motion_keeps_its_trajectory_across_frame_rates(damping: float, fps: int) -> None:
-    from ezagent.voice.notch.bar_motion import Spring
+    from ezagent.voice.hud.bar_motion import Spring
 
     reference = Spring(0.0, 400.0, damping)
     reference.t = 1.0
@@ -234,7 +234,7 @@ def test_button_motion_keeps_its_trajectory_across_frame_rates(damping: float, f
 
 
 def test_button_spring_reverses_without_resetting_position_or_velocity() -> None:
-    from ezagent.voice.notch.bar_motion import Spring
+    from ezagent.voice.hud.bar_motion import Spring
 
     spring = Spring()
     spring.t = 1.0
@@ -479,10 +479,15 @@ def test_clicking_a_control_acts_and_clicking_empty_space_drags_the_window(panel
 def test_header_buttons_reach_the_app(panel, clock) -> None:
     panel.open()
     settle(panel, clock)
+    panel.pointer_down(*spot(panel, "mic"))
+    assert panel.ui.calls[-1] == ("mic", False)  # activa la escucha desde el chat
+    panel.ui._in_call = True
+    panel._update_live(clock[0])
     panel.pointer_down(*spot(panel, "settings"))
     assert panel.ui.calls[-1] == ("menu",)  # ajustes sin cerrar el chat
     panel.pointer_down(*spot(panel, "mic"))
     assert panel.ui.calls[-1] == ("mic", True)  # silencia el mismo micro de la barra
+    panel.pointer_down(*spot(panel, "history"))
     panel.pointer_down(*spot(panel, "new"))
     assert panel.ui.calls[-1] == ("new",)
     panel.pointer_down(*spot(panel, "close"))
@@ -623,7 +628,7 @@ def test_the_bar_exposes_the_chat_api(tmp_path: Path) -> None:
     bar.set_form_hidden(True)
     assert bar._chat_open and bar.model.form_hidden
     assert bar.chat_body_rgb() == tuple(
-        __import__("ezagent.voice.notch.bar_theme", fromlist=["x"]).card_palette(bar._theme_name())[
+        __import__("ezagent.voice.hud.bar_theme", fromlist=["x"]).card_palette(bar._theme_name())[
             "BODY"
         ][:3]
     )

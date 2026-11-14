@@ -6,8 +6,8 @@ import math
 
 import pytest
 
-from ezagent.voice.notch.menu import SLIDER_TRACK_X0, SLIDER_TRACK_X1, Menu
-from ezagent.voice.notch.settings import (
+from ezagent.voice.hud.menu import SLIDER_TRACK_X0, SLIDER_TRACK_X1, Menu
+from ezagent.voice.hud.settings import (
     DEFAULT_VALUES,
     METER_DB_CEIL,
     METER_DB_FLOOR,

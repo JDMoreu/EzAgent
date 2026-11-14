@@ -18,6 +18,7 @@ transformación: solo un fundido.
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass
 from typing import Final
@@ -57,6 +58,7 @@ from .chat_geometry import (
 )
 from .chat_paint import PaintMixin, row_reveal, shape_progress
 from .chat_view import Action, ChatView
+from .tokens import palette_version
 
 CLOSE_SECS: Final[float] = 0.20  # cerrar es más rápido que abrir
 STATUS_TEXT: Final[dict[str, str]] = {
@@ -158,6 +160,7 @@ class ChatPanel(PaintMixin):
         self._finished = False
         self._resize: _Resize | None = None
         self._act = 0.0  # 0 = en reposo, 1 = trabajando: suaviza el orbe y la línea
+        self._pal_seen = palette_version()  # versión de la paleta con que se configuró la vista
         self._last = 0.0
 
     # ------------------------------------------------------------ geometría
@@ -286,16 +289,21 @@ class ChatPanel(PaintMixin):
     def poll(self, now: float) -> None:
         """Lo llama la barra cada fotograma: retira la ventana cuando termina de cerrarse."""
         if self._finished:
-            self._teardown()
+            self._teardown(wait=False)
 
-    def _teardown(self) -> None:
+    def _teardown(self, wait: bool = True) -> None:
         window, self.window = self.window, None
         self.view = None
         self.anim = _Anim()
         self._finished = False
         self._cache = self._base = self._resize = None
         if window is not None:
-            window.stop()
+            if wait:
+                window.stop()
+            else:
+                # Al terminar de cerrarse lo pide el hilo de pintado de la barra, y
+                # stop() espera al hilo de la ventana (~25-40 ms): un tirón por cierre.
+                threading.Thread(target=window.stop, daemon=True, name="ezagent-chat-stop").start()
         self.ui.set_chat_open(False)
         self.ui.set_form_hidden(False)
 
@@ -350,6 +358,7 @@ class ChatPanel(PaintMixin):
         if view is None:
             return
         pose = self._pose()
+        view.in_call = bool(getattr(self.ui, "_in_call", False))
         view.status = STATUS_TEXT.get(pose, "")
         dt = max(0.0, min(0.1, now - self._last))
         self._last = now
@@ -363,6 +372,13 @@ class ChatPanel(PaintMixin):
         window, view = self.window, self.view
         if window is None or view is None:
             return np.zeros((1, 1, 4), np.uint8)
+        version = palette_version()
+        if view.g.theme != self.ui._theme_name() or self._pal_seen != version:
+            # El tema (o la paleta personalizada) cambió con el chat abierto: sin esto,
+            # burbujas y campo de texto quedaban con los colores anteriores.
+            self._pal_seen = version
+            self._configure_view(view.g.width, view.g.height)
+            self._cache = self._base = None
         now = time.monotonic()
         p = self._step(now)
         self._update_live(now)

@@ -294,6 +294,7 @@ class Sidebar:
         top = cap_top(LABEL_CY, FS_MICRO.size)
         draw_text(buf, "Ajustes", FS_MICRO, pal["TEXT_3"], ITEM_X0 + 13.0, top, scale)
         self._draw_brand(buf, scale, pal, buf.shape[0] / scale - MARK_FROM_BOTTOM, with_mark)
+        # Las cinco secciones siempre a la vista: elegir una no esconde las demás.
         for index, (name, title) in enumerate(sections()):
             x0, y0, x1, y1 = item_rect(index)
             cy = (y0 + y1) / 2.0

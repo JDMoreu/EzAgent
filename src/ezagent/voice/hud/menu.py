@@ -1,4 +1,4 @@
-"""Menú desplegable del notch de EzAgent.
+"""Menú desplegable del HUD de EzAgent.
 
 El menú vive en la **misma ventana layered** que la barra y dibuja solo su
 contenido sobre el buffer float32 RGBA premultiplicado que ya trae la silueta.
@@ -142,6 +142,7 @@ from .tokens import (
     Rect,
     W,
     palette,
+    palette_version,
 )
 
 # --------------------------------------------------------------------------
@@ -696,7 +697,7 @@ VoidCallback = Callable[[], None]
 
 
 class Menu:
-    """Contenido interactivo del menú desplegable del notch."""
+    """Contenido interactivo del menú desplegable del HUD."""
 
     def __init__(
         self,
@@ -818,7 +819,7 @@ class Menu:
         self._edit_t0 = 0.0
         self._edit_error: tuple[str, str] | None = None
 
-        # Medidor de entrada. El notch entrega el RMS del micrófono en cada
+        # Medidor de entrada. El HUD entrega el RMS del micrófono en cada
         # fotograma; el menú lo suaviza y pinta el umbral arrastrable.
         self._meter_target = 0.0
         self._meter_level = 0.0
@@ -1046,7 +1047,7 @@ class Menu:
         now = float(now)
         self._advance(now)
         if not self._open:
-            # Ya se está cerrando: repetir close (p. ej. hide_notch después de
+            # Ya se está cerrando: repetir close (p. ej. hide_hud después de
             # on_hide) no debe reiniciar el tween ni alargar A-05.
             return
         self._open = False
@@ -2412,8 +2413,11 @@ class Menu:
         voices = tuple((str(option.value), str(option.label)) for option in self.settings.voices)
         return (
             self._theme,
+            palette_version(),  # el tema personalizado cambia colores sin cambiar el nombre
             round(self._scale, 4),
             self._layer_shape,
+            self._title,  # la sección visible: sin esto, cambiarla no repintaba el contenido
+            self.groups,
             round(self.viewport_height, 3),
             self._selector_key,
             self._selector_closing,

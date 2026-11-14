@@ -11,7 +11,7 @@ from ezagent.voice.chat import markdown as md
 from ezagent.voice.chat import render_rich
 from ezagent.voice.chat.render import render_message
 from ezagent.voice.chat.render_base import Ctx, wrap
-from ezagent.voice.notch.bar_theme import card_palette
+from ezagent.voice.hud.bar_theme import card_palette
 
 WIDTH = 420.0
 
@@ -20,8 +20,8 @@ WIDTH = 420.0
 def test_text_measurement_and_paint_share_masks_across_colors(scale: float, monkeypatch) -> None:
     import numpy as np
 
-    from ezagent.voice.notch import text as typography
-    from ezagent.voice.notch.tokens import FS_BODY
+    from ezagent.voice.hud import text as typography
+    from ezagent.voice.hud.tokens import FS_BODY
 
     typography.clear_cache()
     calls = []
