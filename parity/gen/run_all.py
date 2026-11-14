@@ -34,6 +34,8 @@ def generators() -> list[tuple[str, pathlib.Path]]:
         if spec is None or spec.loader is None:
             continue
         module = importlib.util.module_from_spec(spec)
+        # dataclasses busca el modulo en sys.modules al crearse
+        sys.modules[spec.name] = module
         spec.loader.exec_module(module)
         if hasattr(module, "generate") and hasattr(module, "DOMAIN"):
             found.append((module.DOMAIN, path))
@@ -45,6 +47,7 @@ def run_one(domain: str, path: pathlib.Path) -> list[str]:
 
     spec = importlib.util.spec_from_file_location(f"ezgen_{path.stem}", path)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     with _common.frozen_environment():
         fixtures = _common.FixtureFile(module.DOMAIN)
