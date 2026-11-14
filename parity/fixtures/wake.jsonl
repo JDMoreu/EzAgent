@@ -1,0 +1,264 @@
+{"case": "wake/is_wake_phrase/0001", "fn": "is_wake_phrase", "input": {"text": "EzAgent, esc\u00fachame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0002", "fn": "is_wake_phrase", "input": {"text": "ezagent escuchame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0003", "fn": "is_wake_phrase", "input": {"text": "EZAGENT ESCUCHAME", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0004", "fn": "is_wake_phrase", "input": {"text": "Esc\u00fachame, EzAgent", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0005", "fn": "is_wake_phrase", "input": {"text": "  EzAgent   esc\u00fachame ", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0006", "fn": "is_wake_phrase", "input": {"text": "Oye EzAgent, esc\u00fachame por favor", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0007", "fn": "is_wake_phrase", "input": {"text": "hey ezagent esc\u00fachame por favor", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0008", "fn": "is_wake_phrase", "input": {"text": "Ey, EzAgent, despierta.", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0009", "fn": "is_wake_phrase", "input": {"text": "Hola, EzAgent esc\u00fachame ya", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0010", "fn": "is_wake_phrase", "input": {"text": "hola ez agent vuelve ya", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0011", "fn": "is_wake_phrase", "input": {"text": "EZ AGENT ABRE LA ESCUCHA", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0012", "fn": "is_wake_phrase", "input": {"text": "\u00a1EzAgent, esc\u00fachame!", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0013", "fn": "is_wake_phrase", "input": {"text": "E Z Agent, esc\u00fachame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0014", "fn": "is_wake_phrase", "input": {"text": "easy agents despierta", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0015", "fn": "is_wake_phrase", "input": {"text": "isiagent escuchame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0016", "fn": "is_wake_phrase", "input": {"text": "isi agent vuelve", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0017", "fn": "is_wake_phrase", "input": {"text": "esagent abre la escucha", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0018", "fn": "is_wake_phrase", "input": {"text": "es agent despierta", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0019", "fn": "is_wake_phrase", "input": {"text": "eazy agent escuchame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0020", "fn": "is_wake_phrase", "input": {"text": "easyagent escuchame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0021", "fn": "is_wake_phrase", "input": {"text": "ezagents despierta", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0022", "fn": "is_wake_phrase", "input": {"text": "\u00c9Z \u00c1GENT, ESC\u00daCHAME", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0023", "fn": "is_wake_phrase", "input": {"text": "e-z agent, esc\u00fachame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0024", "fn": "is_wake_phrase", "input": {"text": "\u00a1EZ \u00c1GENT! \u00bfESC\u00daCHAME?", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0025", "fn": "is_wake_phrase", "input": {"text": "Oye oye EzAgent esc\u00fachame por favor", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0026", "fn": "is_wake_phrase", "input": {"text": "hey ey hola ezagent escuchame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0027", "fn": "is_wake_phrase", "input": {"text": "hola ezagent escuchame ya ya", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0028", "fn": "is_wake_phrase", "input": {"text": "ezagent escuchame por favor porfa", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0029", "fn": "is_wake_phrase", "input": {"text": "despierta ezagent", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0030", "fn": "is_wake_phrase", "input": {"text": "vuelve ez agent", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0031", "fn": "is_wake_phrase", "input": {"text": "abre la escucha, easy agent", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0032", "fn": "is_wake_phrase", "input": {"text": "EzAgent", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0033", "fn": "is_wake_phrase", "input": {"text": "ezagent escucha", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0034", "fn": "is_wake_phrase", "input": {"text": "esc\u00fachame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0035", "fn": "is_wake_phrase", "input": {"text": "hola", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0036", "fn": "is_wake_phrase", "input": {"text": "vuelve", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0037", "fn": "is_wake_phrase", "input": {"text": "despierta", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0038", "fn": "is_wake_phrase", "input": {"text": "oye", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0039", "fn": "is_wake_phrase", "input": {"text": "", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0040", "fn": "is_wake_phrase", "input": {"text": "   ", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0041", "fn": "is_wake_phrase", "input": {"text": "\ud83d\ude42", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0042", "fn": "is_wake_phrase", "input": {"text": "hola c\u00f3mo est\u00e1s", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0043", "fn": "is_wake_phrase", "input": {"text": "EzAgent, esc\u00fachame esta canci\u00f3n que me gusta mucho", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0044", "fn": "is_wake_phrase", "input": {"text": "le dije a ezagent esc\u00fachame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0045", "fn": "is_wake_phrase", "input": {"text": "EzAgent no me escuches", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0046", "fn": "is_wake_phrase", "input": {"text": "ezagent escuchame y borra todo", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0047", "fn": "is_wake_phrase", "input": {"text": "voy a hablar con el agente", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0048", "fn": "is_wake_phrase", "input": {"text": "ezagent escuchame por favor", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0049", "fn": "is_wake_phrase", "input": {"text": "hola ezagent escuchame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0050", "fn": "is_wake_phrase", "input": {"text": "oye ezagent", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0051", "fn": "is_wake_phrase", "input": {"text": "ezagent oye", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0052", "fn": "is_wake_phrase", "input": {"text": "ezagent, por favor", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0053", "fn": "is_wake_phrase", "input": {"text": "hola asistente", "phrase": "hola asistente"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0054", "fn": "is_wake_phrase", "input": {"text": "hola asistente", "phrase": "Hola, asistente"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0055", "fn": "is_wake_phrase", "input": {"text": "EzAgent, hola asistente", "phrase": "hola asistente"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0056", "fn": "is_wake_phrase", "input": {"text": "ezagent hola asistente", "phrase": "hola asistente"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0057", "fn": "is_wake_phrase", "input": {"text": "hola asistente ezagent", "phrase": "hola asistente"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0058", "fn": "is_wake_phrase", "input": {"text": "hola", "phrase": "hola"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0059", "fn": "is_wake_phrase", "input": {"text": "ezagent hola", "phrase": "hola"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0060", "fn": "is_wake_phrase", "input": {"text": "ezagent, hola", "phrase": "hola"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0061", "fn": "is_wake_phrase", "input": {"text": "", "phrase": ""}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0062", "fn": "is_wake_phrase", "input": {"text": "EzAgent, esc\u00fachame", "phrase": ""}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0063", "fn": "is_wake_phrase", "input": {"text": "hola", "phrase": ""}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0064", "fn": "is_wake_phrase", "input": {"text": "EzAgent, a trabajar", "phrase": "EzAgent, a trabajar"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0065", "fn": "is_wake_phrase", "input": {"text": "ezagent a trabajar", "phrase": "EzAgent, a trabajar"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0066", "fn": "is_wake_phrase", "input": {"text": "a trabajar ezagent", "phrase": "EzAgent, a trabajar"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0067", "fn": "is_wake_phrase", "input": {"text": "ezagent, esc\u00fachame", "phrase": "EzAgent, a trabajar"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0068", "fn": "is_wake_phrase", "input": {"text": "a trabajar", "phrase": "EzAgent, a trabajar"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0069", "fn": "is_wake_phrase", "input": {"text": "", "phrase": "a trabajar"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0070", "fn": "is_wake_phrase", "input": {"text": "ezagent a trabajar", "phrase": "a trabajar"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0071", "fn": "is_wake_phrase", "input": {"text": "a trabajar ezagent", "phrase": "a trabajar"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0072", "fn": "is_wake_phrase", "input": {"text": "a trabajar", "phrase": "a trabajar"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0073", "fn": "is_wake_phrase", "input": {"text": "ezagent", "phrase": "EzAgent"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0074", "fn": "is_wake_phrase", "input": {"text": "ezagent", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0075", "fn": "is_wake_phrase", "input": {"text": "ezagent escuchame", "phrase": "EzAgent"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0076", "fn": "is_wake_phrase", "input": {"text": "ezagent vuelve", "phrase": "ezagent"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0077", "fn": "is_wake_phrase", "input": {"text": "ezagent despierta", "phrase": "ezagent"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0078", "fn": "is_wake_phrase", "input": {"text": "ezagent abre la escucha", "phrase": "ezagent"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0079", "fn": "is_wake_phrase", "input": {"text": "hola ezagent escuchame", "phrase": "ezagent"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0080", "fn": "is_wake_phrase", "input": {"text": "ezagent hola", "phrase": "ezagent"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0081", "fn": "is_wake_phrase", "input": {"text": "escuchame ezagent", "phrase": "ezagent"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0082", "fn": "is_wake_phrase", "input": {"text": "EzAgent, esc\u00fachame, y nada m\u00e1s", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0083", "fn": "is_wake_phrase", "input": {"text": "hola ezagent escuchame por favor ya", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0084", "fn": "is_wake_phrase", "input": {"text": "por favor ezagent escuchame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0085", "fn": "is_wake_phrase", "input": {"text": "ezagent escuchame porfa", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0086", "fn": "is_wake_phrase", "input": {"text": "ezagent escuchame ya", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0087", "fn": "is_wake_phrase", "input": {"text": "ezagent escuchame ya ya", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0088", "fn": "is_wake_phrase", "input": {"text": "oye oye oye ezagent escuchame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0089", "fn": "is_wake_phrase", "input": {"text": "hola hola ezagent escuchame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0090", "fn": "is_wake_phrase", "input": {"text": "hey ezagent despierta por favor", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0091", "fn": "is_wake_phrase", "input": {"text": "EzAgent esc\u00fachame\t", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0092", "fn": "is_wake_phrase", "input": {"text": "EzAgent esc\u00fachame\n", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0093", "fn": "is_wake_phrase", "input": {"text": "EzAgent\u00a0esc\u00fachame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0094", "fn": "is_wake_phrase", "input": {"text": "EzAgent\u2003esc\u00fachame", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0095", "fn": "is_wake_phrase", "input": {"text": "E.Z. Agent despierta", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0096", "fn": "is_wake_phrase", "input": {"text": "easy agents, despierta", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0097", "fn": "is_wake_phrase", "input": {"text": "easy-agents despierta", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0098", "fn": "is_wake_phrase", "input": {"text": "isi agents despierta", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0099", "fn": "is_wake_phrase", "input": {"text": "e z agents despierta", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": false}, "error": null}
+{"case": "wake/is_wake_phrase/0100", "fn": "is_wake_phrase", "input": {"text": "ezagent abre la escucha por favor", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/is_wake_phrase/0101", "fn": "is_wake_phrase", "input": {"text": "abre la escucha ezagent porfa", "phrase": "EzAgent, esc\u00fachame"}, "output": {"wake": true}, "error": null}
+{"case": "wake/normalize/0001", "fn": "normalize", "input": {"text": ""}, "output": {"text": ""}, "error": null}
+{"case": "wake/normalize/0002", "fn": "normalize", "input": {"text": "   "}, "output": {"text": ""}, "error": null}
+{"case": "wake/normalize/0003", "fn": "normalize", "input": {"text": "\t\n"}, "output": {"text": ""}, "error": null}
+{"case": "wake/normalize/0004", "fn": "normalize", "input": {"text": "EzAgent, esc\u00fachame!!"}, "output": {"text": "ezagent escuchame"}, "error": null}
+{"case": "wake/normalize/0005", "fn": "normalize", "input": {"text": "\u00c9L NI\u00d1O"}, "output": {"text": "el nino"}, "error": null}
+{"case": "wake/normalize/0006", "fn": "normalize", "input": {"text": "\u00c1\u00c9\u00cd\u00d3\u00da\u00dc\u00d1"}, "output": {"text": "aeiouun"}, "error": null}
+{"case": "wake/normalize/0007", "fn": "normalize", "input": {"text": "\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00f1"}, "output": {"text": "aeiouun"}, "error": null}
+{"case": "wake/normalize/0008", "fn": "normalize", "input": {"text": "A,,,b"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0009", "fn": "normalize", "input": {"text": "\u00bfQu\u00e9? \u00a1Ya!"}, "output": {"text": "que ya"}, "error": null}
+{"case": "wake/normalize/0010", "fn": "normalize", "input": {"text": "\ud83d\ude42"}, "output": {"text": ""}, "error": null}
+{"case": "wake/normalize/0011", "fn": "normalize", "input": {"text": "a\ud83d\ude42b"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0012", "fn": "normalize", "input": {"text": "a \ud83d\ude42 b"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0013", "fn": "normalize", "input": {"text": "A\t\nB"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0014", "fn": "normalize", "input": {"text": "  m\u00faltiples   espacios  "}, "output": {"text": "multiples espacios"}, "error": null}
+{"case": "wake/normalize/0015", "fn": "normalize", "input": {"text": "\u0130stanbul"}, "output": {"text": "istanbul"}, "error": null}
+{"case": "wake/normalize/0016", "fn": "normalize", "input": {"text": "Stra\u00dfe"}, "output": {"text": "stra e"}, "error": null}
+{"case": "wake/normalize/0017", "fn": "normalize", "input": {"text": "\ufb01"}, "output": {"text": "fi"}, "error": null}
+{"case": "wake/normalize/0018", "fn": "normalize", "input": {"text": "\u2460"}, "output": {"text": "1"}, "error": null}
+{"case": "wake/normalize/0019", "fn": "normalize", "input": {"text": "\u00bd"}, "output": {"text": "1 2"}, "error": null}
+{"case": "wake/normalize/0020", "fn": "normalize", "input": {"text": "\u2177"}, "output": {"text": "viii"}, "error": null}
+{"case": "wake/normalize/0021", "fn": "normalize", "input": {"text": "a-b_c"}, "output": {"text": "a b c"}, "error": null}
+{"case": "wake/normalize/0022", "fn": "normalize", "input": {"text": "a.b,c;d"}, "output": {"text": "a b c d"}, "error": null}
+{"case": "wake/normalize/0023", "fn": "normalize", "input": {"text": "\u00bf\u00a1!?"}, "output": {"text": ""}, "error": null}
+{"case": "wake/normalize/0024", "fn": "normalize", "input": {"text": "ma\u00f1ana"}, "output": {"text": "manana"}, "error": null}
+{"case": "wake/normalize/0025", "fn": "normalize", "input": {"text": "ping\u00fcino"}, "output": {"text": "pinguino"}, "error": null}
+{"case": "wake/normalize/0026", "fn": "normalize", "input": {"text": "caf\u00e9"}, "output": {"text": "cafe"}, "error": null}
+{"case": "wake/normalize/0027", "fn": "normalize", "input": {"text": "na\u00efve"}, "output": {"text": "naive"}, "error": null}
+{"case": "wake/normalize/0028", "fn": "normalize", "input": {"text": "\u00c5ngstr\u00f6m"}, "output": {"text": "angstrom"}, "error": null}
+{"case": "wake/normalize/0029", "fn": "normalize", "input": {"text": "\u0152uf"}, "output": {"text": "uf"}, "error": null}
+{"case": "wake/normalize/0030", "fn": "normalize", "input": {"text": "\u00c6gir"}, "output": {"text": "gir"}, "error": null}
+{"case": "wake/normalize/0031", "fn": "normalize", "input": {"text": "\u00d8"}, "output": {"text": ""}, "error": null}
+{"case": "wake/normalize/0032", "fn": "normalize", "input": {"text": "\u0141\u00f3d\u017a"}, "output": {"text": "odz"}, "error": null}
+{"case": "wake/normalize/0033", "fn": "normalize", "input": {"text": "\u0417\u0434\u0440\u0430\u0432\u0441\u0442\u0432\u0443\u0439\u0442\u0435"}, "output": {"text": ""}, "error": null}
+{"case": "wake/normalize/0034", "fn": "normalize", "input": {"text": "\u3053\u3093\u306b\u3061\u306f"}, "output": {"text": ""}, "error": null}
+{"case": "wake/normalize/0035", "fn": "normalize", "input": {"text": "\u4e2d\u6587"}, "output": {"text": ""}, "error": null}
+{"case": "wake/normalize/0036", "fn": "normalize", "input": {"text": "a\u00a0b"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0037", "fn": "normalize", "input": {"text": "a\u2003b"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0038", "fn": "normalize", "input": {"text": "a\u200bb"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0039", "fn": "normalize", "input": {"text": "a\u2028b"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0040", "fn": "normalize", "input": {"text": "a\u2029b"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0041", "fn": "normalize", "input": {"text": "a\u001cb"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0042", "fn": "normalize", "input": {"text": "a\u001db"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0043", "fn": "normalize", "input": {"text": "a\u001eb"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0044", "fn": "normalize", "input": {"text": "a\u001fb"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0045", "fn": "normalize", "input": {"text": "a\u0000b"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0046", "fn": "normalize", "input": {"text": "EZAGENT"}, "output": {"text": "ezagent"}, "error": null}
+{"case": "wake/normalize/0047", "fn": "normalize", "input": {"text": "EzAgent"}, "output": {"text": "ezagent"}, "error": null}
+{"case": "wake/normalize/0048", "fn": "normalize", "input": {"text": "ez agent"}, "output": {"text": "ez agent"}, "error": null}
+{"case": "wake/normalize/0049", "fn": "normalize", "input": {"text": "easy agent"}, "output": {"text": "easy agent"}, "error": null}
+{"case": "wake/normalize/0050", "fn": "normalize", "input": {"text": "e z agent"}, "output": {"text": "e z agent"}, "error": null}
+{"case": "wake/normalize/0051", "fn": "normalize", "input": {"text": "isi agent"}, "output": {"text": "isi agent"}, "error": null}
+{"case": "wake/normalize/0052", "fn": "normalize", "input": {"text": "isiagent"}, "output": {"text": "isiagent"}, "error": null}
+{"case": "wake/normalize/0053", "fn": "normalize", "input": {"text": "esagent"}, "output": {"text": "esagent"}, "error": null}
+{"case": "wake/normalize/0054", "fn": "normalize", "input": {"text": "es agent"}, "output": {"text": "es agent"}, "error": null}
+{"case": "wake/normalize/0055", "fn": "normalize", "input": {"text": "eazy agent"}, "output": {"text": "eazy agent"}, "error": null}
+{"case": "wake/normalize/0056", "fn": "normalize", "input": {"text": "easy agents"}, "output": {"text": "easy agents"}, "error": null}
+{"case": "wake/normalize/0057", "fn": "normalize", "input": {"text": "ezagents"}, "output": {"text": "ezagents"}, "error": null}
+{"case": "wake/normalize/0058", "fn": "normalize", "input": {"text": "abc123"}, "output": {"text": "abc123"}, "error": null}
+{"case": "wake/normalize/0059", "fn": "normalize", "input": {"text": "123"}, "output": {"text": "123"}, "error": null}
+{"case": "wake/normalize/0060", "fn": "normalize", "input": {"text": "0"}, "output": {"text": "0"}, "error": null}
+{"case": "wake/normalize/0061", "fn": "normalize", "input": {"text": "a1b2"}, "output": {"text": "a1b2"}, "error": null}
+{"case": "wake/normalize/0062", "fn": "normalize", "input": {"text": "A1 B2"}, "output": {"text": "a1 b2"}, "error": null}
+{"case": "wake/normalize/0063", "fn": "normalize", "input": {"text": "a\u0301"}, "output": {"text": "a"}, "error": null}
+{"case": "wake/normalize/0064", "fn": "normalize", "input": {"text": "e\u0301"}, "output": {"text": "e"}, "error": null}
+{"case": "wake/normalize/0065", "fn": "normalize", "input": {"text": "n\u0303"}, "output": {"text": "n"}, "error": null}
+{"case": "wake/normalize/0066", "fn": "normalize", "input": {"text": "\u00f1"}, "output": {"text": "n"}, "error": null}
+{"case": "wake/normalize/0067", "fn": "normalize", "input": {"text": "\u00df"}, "output": {"text": ""}, "error": null}
+{"case": "wake/normalize/0068", "fn": "normalize", "input": {"text": "\u1e9e"}, "output": {"text": ""}, "error": null}
+{"case": "wake/normalize/0069", "fn": "normalize", "input": {"text": "\ufb01le"}, "output": {"text": "file"}, "error": null}
+{"case": "wake/normalize/0070", "fn": "normalize", "input": {"text": "e\u0301\u0301"}, "output": {"text": "e"}, "error": null}
+{"case": "wake/normalize/0071", "fn": "normalize", "input": {"text": "  a  b  "}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0072", "fn": "normalize", "input": {"text": "a\nb"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0073", "fn": "normalize", "input": {"text": "a\r\nb"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0074", "fn": "normalize", "input": {"text": "a\u000bb"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0075", "fn": "normalize", "input": {"text": "a\fb"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0076", "fn": "normalize", "input": {"text": "ezagent,   esc\u00fachame   por   favor"}, "output": {"text": "ezagent escuchame por favor"}, "error": null}
+{"case": "wake/normalize/0077", "fn": "normalize", "input": {"text": "\u00a1EzAgent! \u00bfEsc\u00fachame?"}, "output": {"text": "ezagent escuchame"}, "error": null}
+{"case": "wake/normalize/0078", "fn": "normalize", "input": {"text": "E-Z-Agent"}, "output": {"text": "e z agent"}, "error": null}
+{"case": "wake/normalize/0079", "fn": "normalize", "input": {"text": "easy-agent"}, "output": {"text": "easy agent"}, "error": null}
+{"case": "wake/normalize/0080", "fn": "normalize", "input": {"text": "a\ud83d\ude42\ud83d\ude43b"}, "output": {"text": "a b"}, "error": null}
+{"case": "wake/normalize/0081", "fn": "normalize", "input": {"text": "\ud83d\ude42\ud83d\ude43"}, "output": {"text": ""}, "error": null}
+{"case": "wake/normalize/0082", "fn": "normalize", "input": {"text": " \u00a0 "}, "output": {"text": ""}, "error": null}
+{"case": "wake/normalize/0083", "fn": "normalize", "input": {"text": "\u00d1AND\u00da"}, "output": {"text": "nandu"}, "error": null}
+{"case": "wake/normalize/0084", "fn": "normalize", "input": {"text": "caf\u00e9\r\nma\u00f1ana"}, "output": {"text": "cafe manana"}, "error": null}
+{"case": "wake/normalize/0085", "fn": "normalize", "input": {"text": "\u0661\u0662\u0663"}, "output": {"text": ""}, "error": null}
+{"case": "wake/normalize/0086", "fn": "normalize", "input": {"text": "\uff21\uff22\uff23"}, "output": {"text": "abc"}, "error": null}
+{"case": "wake/normalize/0087", "fn": "normalize", "input": {"text": "\uff46\uff55\uff4c\uff4c"}, "output": {"text": "full"}, "error": null}
+{"case": "wake/normalize/null", "fn": "normalize", "input": {"text": null}, "output": {"text": ""}, "error": null}
+{"case": "wake/utterance_secs/0001", "fn": "utterance_secs", "input": {"pcm": {"kind": "hex", "hex": ""}, "rate": 16000}, "output": {"secs": 0.0}, "error": null}
+{"case": "wake/utterance_secs/0002", "fn": "utterance_secs", "input": {"pcm": {"kind": "hex", "hex": ""}, "rate": 0}, "output": {"secs": 0.0}, "error": null}
+{"case": "wake/utterance_secs/0003", "fn": "utterance_secs", "input": {"pcm": {"kind": "hex", "hex": "00"}, "rate": 16000}, "output": {"secs": 3.125e-05}, "error": null}
+{"case": "wake/utterance_secs/0004", "fn": "utterance_secs", "input": {"pcm": {"kind": "hex", "hex": "0000"}, "rate": 16000}, "output": {"secs": 6.25e-05}, "error": null}
+{"case": "wake/utterance_secs/0005", "fn": "utterance_secs", "input": {"pcm": {"kind": "pattern", "bytes": 1000, "pattern": "ramp"}, "rate": 16000}, "output": {"secs": 0.03125}, "error": null}
+{"case": "wake/utterance_secs/0006", "fn": "utterance_secs", "input": {"pcm": {"kind": "pattern", "bytes": 32000, "pattern": "ramp"}, "rate": 16000}, "output": {"secs": 1.0}, "error": null}
+{"case": "wake/utterance_secs/0007", "fn": "utterance_secs", "input": {"pcm": {"kind": "pattern", "bytes": 32000, "pattern": "ramp"}, "rate": 8000}, "output": {"secs": 2.0}, "error": null}
+{"case": "wake/utterance_secs/0008", "fn": "utterance_secs", "input": {"pcm": {"kind": "pattern", "bytes": 32000, "pattern": "ramp"}, "rate": 44100}, "output": {"secs": 0.36281179138321995}, "error": null}
+{"case": "wake/utterance_secs/0009", "fn": "utterance_secs", "input": {"pcm": {"kind": "pattern", "bytes": 32001, "pattern": "ramp"}, "rate": 16000}, "output": {"secs": 1.00003125}, "error": null}
+{"case": "wake/utterance_secs/0010", "fn": "utterance_secs", "input": {"pcm": {"kind": "pattern", "bytes": 96000, "pattern": "ramp"}, "rate": 16000}, "output": {"secs": 3.0}, "error": null}
+{"case": "wake/utterance_secs/0011", "fn": "utterance_secs", "input": {"pcm": {"kind": "pattern", "bytes": 960000, "pattern": "ramp"}, "rate": 16000}, "output": {"secs": 30.0}, "error": null}
+{"case": "wake/utterance_secs/0012", "fn": "utterance_secs", "input": {"pcm": {"kind": "pattern", "bytes": 2, "pattern": "ramp"}, "rate": 1}, "output": {"secs": 1.0}, "error": null}
+{"case": "wake/utterance_secs/0013", "fn": "utterance_secs", "input": {"pcm": {"kind": "pattern", "bytes": 2, "pattern": "ramp"}, "rate": 2}, "output": {"secs": 0.5}, "error": null}
+{"case": "wake/utterance_secs/0014", "fn": "utterance_secs", "input": {"pcm": {"kind": "pattern", "bytes": 3, "pattern": "ramp"}, "rate": 3}, "output": {"secs": 0.5}, "error": null}
+{"case": "wake/utterance_secs/0015", "fn": "utterance_secs", "input": {"pcm": {"kind": "pattern", "bytes": 2, "pattern": "ramp"}, "rate": 0}, "output": {"secs": 0.0}, "error": null}
+{"case": "wake/utterance_secs/0016", "fn": "utterance_secs", "input": {"pcm": {"kind": "pattern", "bytes": 2, "pattern": "ramp"}, "rate": -16000}, "output": {"secs": 0.0}, "error": null}
+{"case": "wake/utterance_secs/0017", "fn": "utterance_secs", "input": {"pcm": {"kind": "pattern", "bytes": 32000, "pattern": "ramp"}, "rate": -1}, "output": {"secs": 0.0}, "error": null}
+{"case": "wake/wake_forms/0001", "fn": "wake_forms", "input": {"phrase": "EzAgent, esc\u00fachame"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0002", "fn": "wake_forms", "input": {"phrase": ""}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0003", "fn": "wake_forms", "input": {"phrase": "   "}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0004", "fn": "wake_forms", "input": {"phrase": "hola"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent hola", "ezagent vuelve", "hola ezagent", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0005", "fn": "wake_forms", "input": {"phrase": "a trabajar"}, "output": {"forms": ["a trabajar ezagent", "abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent a trabajar", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0006", "fn": "wake_forms", "input": {"phrase": "EzAgent"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0007", "fn": "wake_forms", "input": {"phrase": "EzAgent, esc\u00fachame"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0008", "fn": "wake_forms", "input": {"phrase": "oye ezagent escuchame"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent oye escuchame", "ezagent vuelve", "oye escuchame ezagent", "oye ezagent escuchame", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0009", "fn": "wake_forms", "input": {"phrase": "  EzAgent,  A TRABAJAR  "}, "output": {"forms": ["a trabajar ezagent", "abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent a trabajar", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0010", "fn": "wake_forms", "input": {"phrase": "easy agent despierta"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0011", "fn": "wake_forms", "input": {"phrase": "EzAgent esc\u00fachame por favor"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "escuchame por favor ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent escuchame por favor", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0012", "fn": "wake_forms", "input": {"phrase": "abre la escucha"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0013", "fn": "wake_forms", "input": {"phrase": "despierta"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0014", "fn": "wake_forms", "input": {"phrase": "vuelve"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0015", "fn": "wake_forms", "input": {"phrase": "esc\u00fachame"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0016", "fn": "wake_forms", "input": {"phrase": "EzAgent, a trabajar ya"}, "output": {"forms": ["a trabajar ya ezagent", "abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent a trabajar ya", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0017", "fn": "wake_forms", "input": {"phrase": "a trabajar ezagent"}, "output": {"forms": ["a trabajar ezagent", "abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent a trabajar", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0018", "fn": "wake_forms", "input": {"phrase": "e z agent, hola asistente"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent hola asistente", "ezagent vuelve", "hola asistente ezagent", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0019", "fn": "wake_forms", "input": {"phrase": "isiagent, abre la escucha"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0020", "fn": "wake_forms", "input": {"phrase": "\u00a1EzAgent, esc\u00fachame!"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0021", "fn": "wake_forms", "input": {"phrase": "EzAgent, esc\u00fachame; y luego trabaja"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "escuchame y luego trabaja ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent escuchame y luego trabaja", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0022", "fn": "wake_forms", "input": {"phrase": "EzAgent\n esc\u00fachame"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0023", "fn": "wake_forms", "input": {"phrase": "\u00e1\u00e9\u00ed"}, "output": {"forms": ["abre la escucha ezagent", "aei ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent aei", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0024", "fn": "wake_forms", "input": {"phrase": "\ud83d\ude42"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0025", "fn": "wake_forms", "input": {"phrase": "hola asistente"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent hola asistente", "ezagent vuelve", "hola asistente ezagent", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0026", "fn": "wake_forms", "input": {"phrase": "hola asistente por favor"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent hola asistente por favor", "ezagent vuelve", "hola asistente por favor ezagent", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0027", "fn": "wake_forms", "input": {"phrase": "EZAGENT ESCUCHAME"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0028", "fn": "wake_forms", "input": {"phrase": "ezagents"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0029", "fn": "wake_forms", "input": {"phrase": "easy agents"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0030", "fn": "wake_forms", "input": {"phrase": "hola"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent hola", "ezagent vuelve", "hola ezagent", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0031", "fn": "wake_forms", "input": {"phrase": "ezagent ezagent"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent ezagent", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0032", "fn": "wake_forms", "input": {"phrase": "ezagent oye"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent oye", "ezagent vuelve", "oye ezagent", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0033", "fn": "wake_forms", "input": {"phrase": "oye ezagent"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent oye", "ezagent vuelve", "oye ezagent", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0034", "fn": "wake_forms", "input": {"phrase": "hola ezagent escuchame ya"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent hola escuchame ya", "ezagent vuelve", "hola escuchame ya ezagent", "hola ezagent escuchame ya", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/0035", "fn": "wake_forms", "input": {"phrase": "por favor ezagent escuchame"}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent por favor escuchame", "ezagent vuelve", "por favor escuchame ezagent", "por favor ezagent escuchame", "vuelve ezagent"]}, "error": null}
+{"case": "wake/wake_forms/null", "fn": "wake_forms", "input": {"phrase": null}, "output": {"forms": ["abre la escucha ezagent", "despierta ezagent", "escuchame ezagent", "ezagent abre la escucha", "ezagent despierta", "ezagent escuchame", "ezagent vuelve", "vuelve ezagent"]}, "error": null}
+{"case": "wake/worth_transcribing/0001", "fn": "worth_transcribing", "input": {"pcm": {"kind": "hex", "hex": ""}, "rate": 16000}, "output": {"worth": false}, "error": null}
+{"case": "wake/worth_transcribing/0002", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 11199, "pattern": "ramp"}, "rate": 16000}, "output": {"worth": false}, "error": null}
+{"case": "wake/worth_transcribing/0003", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 11200, "pattern": "ramp"}, "rate": 16000}, "output": {"worth": true}, "error": null}
+{"case": "wake/worth_transcribing/0004", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 11201, "pattern": "ramp"}, "rate": 16000}, "output": {"worth": true}, "error": null}
+{"case": "wake/worth_transcribing/0005", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 95999, "pattern": "ramp"}, "rate": 16000}, "output": {"worth": true}, "error": null}
+{"case": "wake/worth_transcribing/0006", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 96000, "pattern": "ramp"}, "rate": 16000}, "output": {"worth": true}, "error": null}
+{"case": "wake/worth_transcribing/0007", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 96001, "pattern": "ramp"}, "rate": 16000}, "output": {"worth": false}, "error": null}
+{"case": "wake/worth_transcribing/0008", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 96002, "pattern": "ramp"}, "rate": 16000}, "output": {"worth": false}, "error": null}
+{"case": "wake/worth_transcribing/0009", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 5600, "pattern": "ramp"}, "rate": 8000}, "output": {"worth": true}, "error": null}
+{"case": "wake/worth_transcribing/0010", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 5599, "pattern": "ramp"}, "rate": 8000}, "output": {"worth": false}, "error": null}
+{"case": "wake/worth_transcribing/0011", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 48000, "pattern": "ramp"}, "rate": 48000}, "output": {"worth": true}, "error": null}
+{"case": "wake/worth_transcribing/0012", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 48001, "pattern": "ramp"}, "rate": 48000}, "output": {"worth": true}, "error": null}
+{"case": "wake/worth_transcribing/0013", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 30870, "pattern": "ramp"}, "rate": 44100}, "output": {"worth": true}, "error": null}
+{"case": "wake/worth_transcribing/0014", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 30869, "pattern": "ramp"}, "rate": 44100}, "output": {"worth": false}, "error": null}
+{"case": "wake/worth_transcribing/0015", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 264600, "pattern": "ramp"}, "rate": 44100}, "output": {"worth": true}, "error": null}
+{"case": "wake/worth_transcribing/0016", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 264601, "pattern": "ramp"}, "rate": 44100}, "output": {"worth": false}, "error": null}
+{"case": "wake/worth_transcribing/0017", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 2085, "pattern": "ramp"}, "rate": 3000}, "output": {"worth": false}, "error": null}
+{"case": "wake/worth_transcribing/0018", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 2084, "pattern": "ramp"}, "rate": 3000}, "output": {"worth": false}, "error": null}
+{"case": "wake/worth_transcribing/0019", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 2, "pattern": "ramp"}, "rate": 0}, "output": {"worth": false}, "error": null}
+{"case": "wake/worth_transcribing/0020", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 2, "pattern": "ramp"}, "rate": -16000}, "output": {"worth": false}, "error": null}
+{"case": "wake/worth_transcribing/0021", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 32000, "pattern": "ramp"}, "rate": 1}, "output": {"worth": false}, "error": null}
+{"case": "wake/worth_transcribing/0022", "fn": "worth_transcribing", "input": {"pcm": {"kind": "pattern", "bytes": 32000, "pattern": "ramp"}, "rate": 1000000}, "output": {"worth": false}, "error": null}
