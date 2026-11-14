@@ -390,7 +390,7 @@ tasks:
   depends_on:
   - F2-01
   - F1-02
-  status: in_progress
+  status: done
   round: 0
   worker: null
   worktree: null

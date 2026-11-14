@@ -657,6 +657,8 @@ dependencies = [
 name = "ez-stt"
 version = "0.1.0"
 dependencies = [
+ "ez-parity",
+ "fancy-regex",
  "reqwest",
  "serde",
  "serde_json",

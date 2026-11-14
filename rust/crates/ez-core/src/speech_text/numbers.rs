@@ -1,5 +1,22 @@
 //! Port of `num2words(value, lang="es")` used by `speech_text.rs` (F2-06).
 
+use super::{group, Caps};
+
+const MONTHS: [&str; 12] = [
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+];
+
 const DIGITS: [&str; 10] = [
     "cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve",
 ];
@@ -164,7 +181,7 @@ pub(crate) fn ordinal_words(value: i64) -> String {
     if value <= 12 {
         return format!("décimo{}", ordinal_words(value - 10));
     }
-    if value <= 1_000 {
+    if value < 1_000 {
         let step = if value <= 100 {
             value / 10 * 10
         } else {
@@ -192,7 +209,7 @@ pub(crate) fn ordinal_words(value: i64) -> String {
         int_words(high)
     };
     format!(
-        "{prefix}{} {}",
+        "{prefix}{}o {}",
         ORDINAL_SCALES[index],
         ordinal_words(value - scale * high)
     )
@@ -243,6 +260,87 @@ pub(crate) fn cardinal(raw: &str) -> String {
     }
 }
 
+pub(crate) fn integer_part(text: &str) -> i64 {
+    text.replace(['.', ','], "").parse::<i64>().unwrap_or(0)
+}
+
+pub(crate) fn decimal_words(raw: &str, separator: char) -> String {
+    let negative = raw.starts_with('-');
+    let body = raw.trim_start_matches('-');
+    let (whole, fraction) = body.split_once(separator).unwrap_or((body, ""));
+    let words = format!(
+        "{} coma {}",
+        int_words(integer_part(whole)),
+        fraction_words(fraction)
+    );
+    if negative {
+        format!("menos {words}")
+    } else {
+        words
+    }
+}
+
+pub(crate) fn time_words(caps: &Caps<'_>) -> String {
+    let hour = group(caps, 1).parse::<i64>().unwrap_or(0);
+    let minute = group(caps, 2).parse::<i64>().unwrap_or(0);
+    match minute {
+        0 => format!("{} en punto", int_words(hour)),
+        15 => format!("{} y cuarto", int_words(hour)),
+        30 => format!("{} y media", int_words(hour)),
+        _ => format!("{} {}", int_words(hour), int_words(minute)),
+    }
+}
+
+pub(crate) fn date_words(caps: &Caps<'_>) -> String {
+    let day = group(caps, 1).parse::<i64>().unwrap_or(0);
+    let month = group(caps, 2).parse::<i64>().unwrap_or(0);
+    let mut year = group(caps, 3).parse::<i64>().unwrap_or(0);
+    if !(1..=12).contains(&month) {
+        return group(caps, 0).to_string();
+    }
+    if year < 100 {
+        year += 2000;
+    }
+    format!(
+        "{} de {} de {}",
+        int_words(day),
+        MONTHS[(month - 1) as usize],
+        int_words(year)
+    )
+}
+
+pub(crate) fn ordinal_suffix(caps: &Caps<'_>) -> String {
+    let number = group(caps, 1).parse::<i64>().unwrap_or(0);
+    let word = ordinal_words(number);
+    if group(caps, 2) == "ª" && word.ends_with('o') {
+        return format!("{}a", &word[..word.len() - 1]);
+    }
+    word
+}
+
+pub(crate) fn ordinal_er_spoken(caps: &Caps<'_>) -> String {
+    let number = group(caps, 1).parse::<i64>().unwrap_or(0);
+    if number == 1 {
+        return "primer".to_string();
+    }
+    ordinal_words(number)
+}
+
+pub(crate) fn iso_date_spoken(caps: &Caps<'_>) -> String {
+    let year = group(caps, 1).parse::<i64>().unwrap_or(0);
+    let month = group(caps, 2).parse::<i64>().unwrap_or(0);
+    let day = group(caps, 3).parse::<i64>().unwrap_or(0);
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return group(caps, 0).to_string();
+    }
+    format!(
+        "{} de {} de {}",
+        int_words(day),
+        MONTHS[(month - 1) as usize],
+        int_words(year)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,7 +354,10 @@ mod tests {
         assert_eq!(int_words(1_000), "mil");
         assert_eq!(int_words(2_026), "dos mil veintiséis");
         assert_eq!(int_words(21_000), "veintiuno mil");
-        assert_eq!(int_words(1_234_567), "un millón doscientos treinta y cuatro mil quinientos sesenta y siete");
+        assert_eq!(
+            int_words(1_234_567),
+            "un millón doscientos treinta y cuatro mil quinientos sesenta y siete"
+        );
         assert_eq!(int_words(1_000_000_000), "mil millones");
     }
 
