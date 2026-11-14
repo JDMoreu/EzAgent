@@ -17,7 +17,9 @@ módulo se verifica solo con `cargo test -p <crate>` (pruebas unitarias propias)
 | F3-03 registry | código | `registry/schema.rs` y `registry/tests.rs` |
 | F3-04 confirm, audit, journal | código | |
 | F3-05 system_prompt (+ `AgentConfig` en ez-core) | código | `agent_config.rs` es nuevo |
-| F3-06 skills | código | falta `tools_skills` (depende de `tools_d`) |
+| F3-06 skills, tools_skills | código | `python_interpreter()` busca Python en el PATH |
+| F3-07 tools_core, tools_fs | código | `tools_fs/{util,handlers,describe}.rs`; `ToolInfo.bulk_forced` reemplaza a `_FolderBulk` |
+| F3-08 tools_d | código | incluye `run_captured` (subproceso con timeout, sin shell) |
 
 ## Desviaciones del contrato (a revisar en la auditoría)
 
@@ -33,8 +35,24 @@ módulo se verifica solo con `cargo test -p <crate>` (pruebas unitarias propias)
 
 ## Cómo seguir
 
-Orden de dependencias pendiente: `tools_d` → `tools_skills` → `tools_core`/`tools_fs`
-→ `memory` + `tools_memory` → `search`/`tools_web` → `ez-swarm` → `ez-chat` →
+Orden de dependencias pendiente: `memory` + `tools_memory` (F3-09a/b) → `search`/`tools_web` → `ez-swarm` → `ez-chat` →
 `ez-herdr` → `ez-audio`/`ez-stt`/`ez-tts` → `ez-llm` messenger → `runtime` →
 HUD (`ez-gfx`, `ez-hud`) → `ez-app`. Después: tests de paridad por dominio y
 `gate.ps1 -Task <ID>`.
+
+## Verificación de este tramo
+
+- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+  y `cargo test --workspace`: limpios y en verde (incluida la paridad de F2-03).
+- Pruebas unitarias propias por módulo; **sin** pruebas de paridad contra los
+  fixtures de F3-01…F3-08 (se escriben en la etapa de pruebas).
+
+## Notas para la etapa de pruebas
+
+- `ToolResult::err` (outcome `completed`) y `ToolResult::failed` (outcome `failed`)
+  distinguen `ToolResult(ok=False, ...)` del Python de los fallos del registro.
+- `SkillLibrary` lee YAML con `serde_yaml` (YAML 1.2): puede discrepar de PyYAML en
+  escalares ambiguos (`yes`, `no`, fechas) dentro del frontmatter.
+- `get_datetime` sin zona usa `UTC±hh:mm` como etiqueta (Python da el nombre
+  localizado de Windows).
+- `open_path` abre con `explorer.exe` (Python usa `os.startfile`).
