@@ -8,7 +8,8 @@ use serde_json::json;
 
 use super::support::Fixture;
 use super::{in_call, turn_gen};
-use crate::app::core::{AppEvent, MenuEvent, VoiceApp, IDLE, LISTENING, SPEAKING};
+use crate::app::core::{AppEvent, MenuEvent, VoiceApp, LISTENING, SPEAKING, THINKING};
+use crate::app::states::tests::support::{install_client, ScriptedClient};
 
 fn set_state(app: &VoiceApp, state: &str) {
     *app.inner.session.state.write() = state.to_string();
@@ -128,8 +129,13 @@ fn transcribed_empty_only_returns_to_listening() {
 fn transcribed_starts_the_answer_worker_for_the_current_turn() {
     let fixture = Fixture::new();
     let app = &fixture.app;
+    // «hola» lo atiende el atajo local de F6-06a; aquí se pide una frase normal.
+    install_client(app, ScriptedClient::new(Vec::new()));
     app.start_call();
-    app.handle_event(AppEvent::Transcribed("  hola  ".to_string(), 1));
+    app.handle_event(AppEvent::Transcribed(
+        "  revisa el informe  ".to_string(),
+        1,
+    ));
     assert_eq!(turn_gen(app), 1);
     assert_eq!(app.inner.runtime.workers.lock().len(), 1);
 }
@@ -208,6 +214,8 @@ fn busy_done_follows_the_barge_in_flag() {
     let fixture = Fixture::new();
     let app = &fixture.app;
     app.start_call();
+    // Fuera de LISTENING es cuando el aviso terminado reinicia la captura.
+    set_state(app, THINKING);
     let generation = turn_gen(app);
     app.inner.speech.busy_speaking.set();
     app.inner.audio.reset_capture.clear();
@@ -339,7 +347,8 @@ fn chat_send_and_other_seams_are_safe() {
     app.handle_event(AppEvent::Hide);
     app.handle_event(AppEvent::Raw(vec![json!("hud_error"), json!("roto")]));
     app.handle_event(AppEvent::Raw(vec![json!("desconocido")]));
-    assert_eq!(app.state(), IDLE);
+    // «say» y «agent_warn» hablan de verdad (antes eran costuras vacías).
+    assert_eq!(app.state(), SPEAKING);
 }
 
 #[test]
