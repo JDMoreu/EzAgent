@@ -10,6 +10,7 @@ name = "ez_tts"
 path = "src/lib.rs"
 
 [dependencies]
+windows = { workspace = true }
 ez-core = { path = "../ez-core" }
 ort = { workspace = true }
 cpal = { workspace = true }
