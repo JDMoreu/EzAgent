@@ -1,3 +1,511 @@
 //! Port of `src/ezagent/agent/paths.py` (F2-04).
 //!
-//! Empty on purpose: the task that owns it writes the port.
+//! Toda herramienta resuelve, valida y opera sobre la ruta devuelta por
+//! [`resolve_safe`] (nunca sobre la cadena original).
+
+use std::fmt;
+use std::path::{Component, Path, PathBuf};
+use std::sync::OnceLock;
+
+use regex::{Captures, Regex};
+
+/// Barra invertida, para evitar escapes en el código (`paths.BS`).
+pub const BS: char = '\\';
+
+/// Nombres de dispositivo reservados de Windows (`paths.RESERVED`).
+pub const RESERVED: [&str; 22] = [
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+/// La ruta no cumple la política de acceso (`paths.PathDenied`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathDenied {
+    message: String,
+}
+
+impl PathDenied {
+    fn new(message: &str) -> Self {
+        Self {
+            message: message.to_string(),
+        }
+    }
+
+    /// Texto que ve el usuario y que compara la paridad.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl fmt::Display for PathDenied {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for PathDenied {}
+
+/// Variables de entorno de `expandvars`/`expanduser` (en Python, `os.environ`).
+#[derive(Debug, Clone, Default)]
+pub struct Env {
+    vars: Vec<(String, String)>,
+}
+
+impl Env {
+    /// Las del proceso actual.
+    pub fn process() -> Self {
+        Self {
+            vars: std::env::vars_os()
+                .map(|(key, value)| {
+                    (
+                        key.to_string_lossy().into_owned(),
+                        value.to_string_lossy().into_owned(),
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    pub fn new(pairs: &[(&str, &str)]) -> Self {
+        Self {
+            vars: pairs
+                .iter()
+                .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+                .collect(),
+        }
+    }
+
+    /// `os.environ[name]`: en Windows la comparación ignora mayúsculas.
+    fn var(&self, name: &str) -> Option<&str> {
+        self.vars
+            .iter()
+            .find(|(key, _)| same_env_name(key, name))
+            .map(|(_, value)| value.as_str())
+    }
+}
+
+fn same_env_name(key: &str, name: &str) -> bool {
+    if cfg!(windows) {
+        key.to_uppercase() == name.to_uppercase()
+    } else {
+        key == name
+    }
+}
+
+/// `Path(os.path.expandvars(os.path.expanduser(value)))`.
+pub fn expand(value: &str) -> PathBuf {
+    PathBuf::from(expand_with(&Env::process(), value))
+}
+
+/// Igual que [`expand`], con un entorno dado.
+pub fn expand_with(env: &Env, value: &str) -> String {
+    expand_vars(env, &expand_user(env, value))
+}
+
+fn expand_user(env: &Env, value: &str) -> String {
+    let Some(rest) = value.strip_prefix('~') else {
+        return value.to_string();
+    };
+    if !(rest.is_empty() || rest.starts_with('/') || rest.starts_with(BS)) {
+        // shortcut: `~usuario` y `~+` quedan sin expandir; ampliar si un perfil los usa.
+        return value.to_string();
+    }
+    let Some(home) = user_home(env) else {
+        return value.to_string();
+    };
+    format!("{home}{rest}")
+}
+
+#[cfg(windows)]
+fn user_home(env: &Env) -> Option<String> {
+    if let Some(home) = env.var("USERPROFILE").filter(|text| !text.is_empty()) {
+        return Some(home.to_string());
+    }
+    match (env.var("HOMEDRIVE"), env.var("HOMEPATH")) {
+        (Some(drive), Some(path)) => Some(format!("{drive}{path}")),
+        _ => None,
+    }
+}
+
+#[cfg(not(windows))]
+fn user_home(env: &Env) -> Option<String> {
+    env.var("HOME")
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
+}
+
+fn var_pattern() -> &'static Regex {
+    static SLOT: OnceLock<Regex> = OnceLock::new();
+    SLOT.get_or_init(|| {
+        Regex::new(r"\$(\w+)|\$\{([^}]*)\}|%([^%]*)%").expect("patrón interno válido")
+    })
+}
+
+fn expand_vars(env: &Env, value: &str) -> String {
+    if !value.contains('$') && !value.contains('%') {
+        return value.to_string();
+    }
+    var_pattern()
+        .replace_all(value, |captures: &Captures| {
+            let name = captures
+                .get(1)
+                .or_else(|| captures.get(2))
+                .or_else(|| captures.get(3))
+                .map(|item| item.as_str())
+                .unwrap_or_default();
+            match env.var(name) {
+                Some(replacement) => replacement.to_string(),
+                None => captures
+                    .get(0)
+                    .map(|item| item.as_str().to_string())
+                    .unwrap_or_default(),
+            }
+        })
+        .into_owned()
+}
+
+/// `resolve_safe` con el entorno del proceso.
+pub fn resolve_safe(
+    raw: &str,
+    base: &Path,
+    roots: &[impl AsRef<str>],
+    deny: &[impl AsRef<str>],
+    deny_globs: &[impl AsRef<str>],
+) -> Result<PathBuf, PathDenied> {
+    resolve_safe_with(&Env::process(), raw, base, roots, deny, deny_globs)
+}
+
+/// `resolve_safe` con un entorno inyectable: las pruebas de paridad lo fijan.
+pub fn resolve_safe_with(
+    env: &Env,
+    raw: &str,
+    base: &Path,
+    roots: &[impl AsRef<str>],
+    deny: &[impl AsRef<str>],
+    deny_globs: &[impl AsRef<str>],
+) -> Result<PathBuf, PathDenied> {
+    let trimmed = check_raw(raw)?;
+    let expanded = expand_with(env, trimmed);
+    let mut path = PathBuf::from(&expanded);
+    if expanded.is_empty() {
+        path = base.to_path_buf();
+    } else if !path.is_absolute() {
+        // DECISION: las rutas relativas se resuelven contra el workspace.
+        path = base.join(&path);
+    }
+    let resolved = resolve(&path);
+    check_reserved(&resolved)?;
+    check_allowed(env, &resolved, roots)?;
+    check_denied_folders(env, &resolved, deny)?;
+    check_denied_globs(&resolved, deny_globs)?;
+    if is_anchor(&resolved) {
+        return Err(PathDenied::new("raíz de unidad no permitida"));
+    }
+    Ok(resolved)
+}
+
+fn check_raw(raw: &str) -> Result<&str, PathDenied> {
+    if raw.is_empty() || raw.contains('\0') {
+        return Err(PathDenied::new("ruta vacía o inválida"));
+    }
+    let trimmed = raw.trim_matches(is_python_space);
+    if trimmed.starts_with(&format!("{BS}{BS}")) || trimmed.starts_with("//") {
+        return Err(PathDenied::new("rutas UNC o de dispositivo no permitidas"));
+    }
+    if trimmed.chars().skip(2).any(|character| character == ':') {
+        return Err(PathDenied::new(
+            "flujos de datos alternativos no permitidos",
+        ));
+    }
+    Ok(trimmed)
+}
+
+/// `str.strip()` de Python: también cuenta `\x1c`..`\x1f`, que Rust no.
+fn is_python_space(character: char) -> bool {
+    character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character)
+}
+
+fn check_reserved(path: &Path) -> Result<(), PathDenied> {
+    for part in path.components() {
+        let Component::Normal(name) = part else {
+            continue;
+        };
+        if is_reserved(&name.to_string_lossy()) {
+            return Err(PathDenied::new("nombre reservado de Windows"));
+        }
+    }
+    Ok(())
+}
+
+fn is_reserved(part: &str) -> bool {
+    let stem = part.split('.').next().unwrap_or(part).to_uppercase();
+    RESERVED.contains(&stem.as_str())
+}
+
+fn check_allowed(env: &Env, path: &Path, roots: &[impl AsRef<str>]) -> Result<(), PathDenied> {
+    let allowed = roots
+        .iter()
+        .any(|root| is_within(path, &expanded_path(env, root.as_ref())));
+    if allowed {
+        Ok(())
+    } else {
+        Err(PathDenied::new("fuera de las carpetas permitidas"))
+    }
+}
+
+fn check_denied_folders(
+    env: &Env,
+    path: &Path,
+    deny: &[impl AsRef<str>],
+) -> Result<(), PathDenied> {
+    for entry in deny {
+        if is_within(path, &expanded_path(env, entry.as_ref())) {
+            return Err(PathDenied::new("carpeta protegida"));
+        }
+    }
+    Ok(())
+}
+
+fn check_denied_globs(path: &Path, patterns: &[impl AsRef<str>]) -> Result<(), PathDenied> {
+    let posix = path.to_string_lossy().replace(BS, "/");
+    let name = path
+        .file_name()
+        .map(|part| part.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    for pattern in patterns {
+        let pattern = pattern.as_ref();
+        let last = pattern.rsplit('/').next().unwrap_or(pattern);
+        if fnmatch(&posix, pattern) || fnmatch(&name, last) {
+            // DECISION: fnmatch simple, como Python.
+            return Err(PathDenied::new("archivo protegido"));
+        }
+    }
+    Ok(())
+}
+
+fn expanded_path(env: &Env, value: &str) -> PathBuf {
+    resolve(Path::new(&expand_with(env, value)))
+}
+
+/// Normaliza la ruta sin tocar el disco, como `Path.resolve(strict=False)`.
+fn resolve(path: &Path) -> PathBuf {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    };
+    let mut prefix = String::new();
+    let mut rooted = false;
+    let mut segments: Vec<String> = Vec::new();
+    for part in absolute.components() {
+        match part {
+            Component::Prefix(value) => prefix = value.as_os_str().to_string_lossy().into_owned(),
+            Component::RootDir => rooted = true,
+            Component::CurDir => {}
+            // shortcut: no resuelve enlaces ni junctions; ampliar si un caso depende de realpath.
+            Component::ParentDir => {
+                segments.pop();
+            }
+            Component::Normal(name) => segments.push(name.to_string_lossy().into_owned()),
+        }
+    }
+    let mut text = prefix;
+    if rooted {
+        text.push(BS);
+    }
+    text.push_str(&segments.join(&BS.to_string()));
+    PathBuf::from(text)
+}
+
+/// `rp == base or rp.is_relative_to(base)`; en Windows sin distinguir mayúsculas.
+fn is_within(candidate: &Path, base: &Path) -> bool {
+    let mut rest = candidate.components();
+    for part in base.components() {
+        match rest.next() {
+            Some(other) if same_part(&other, &part) => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
+fn same_part(left: &Component<'_>, right: &Component<'_>) -> bool {
+    normcase(&left.as_os_str().to_string_lossy()) == normcase(&right.as_os_str().to_string_lossy())
+}
+
+/// `os.path.normcase`: minúsculas y `/` a `\` en Windows.
+fn normcase(text: &str) -> String {
+    if cfg!(windows) {
+        text.replace('/', &BS.to_string()).to_lowercase()
+    } else {
+        text.to_string()
+    }
+}
+
+fn is_anchor(path: &Path) -> bool {
+    let mut parts = path.components();
+    match parts.next() {
+        Some(Component::Prefix(_)) | Some(Component::RootDir) => {
+            !parts.any(|part| matches!(part, Component::Normal(_)))
+        }
+        _ => false,
+    }
+}
+
+fn fnmatch(name: &str, pattern: &str) -> bool {
+    let name = normcase(name);
+    let pattern = normcase(pattern);
+    if !pattern
+        .chars()
+        .any(|character| matches!(character, '*' | '?' | '['))
+    {
+        return name == pattern;
+    }
+    let Some(compiled) = compile_glob(&translate(&pattern)) else {
+        return false;
+    };
+    compiled.is_match(&name)
+}
+
+fn compile_glob(source: &str) -> Option<Regex> {
+    Regex::new(&format!("(?s){source}\\z")).ok()
+}
+
+fn translate(pattern: &str) -> String {
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut out = String::new();
+    let mut index = 0;
+    while let Some(&character) = chars.get(index) {
+        index += 1;
+        match character {
+            '*' => out.push_str(".*"),
+            '?' => out.push('.'),
+            '[' => match char_class(&chars, index) {
+                Some((class, end)) => {
+                    out.push_str(&class);
+                    index = end;
+                }
+                None => out.push_str("\\["),
+            },
+            _ => out.push_str(&regex::escape(&character.to_string())),
+        }
+    }
+    out
+}
+
+fn char_class(chars: &[char], index: usize) -> Option<(String, usize)> {
+    let mut end = index;
+    if chars.get(end) == Some(&'!') {
+        end += 1;
+    }
+    if chars.get(end) == Some(&']') {
+        end += 1;
+    }
+    while end < chars.len() && chars[end] != ']' {
+        end += 1;
+    }
+    if end >= chars.len() {
+        return None;
+    }
+    let mut class: String = chars[index..end].iter().collect();
+    // shortcut: sin el recorte de rangos invertidos de fnmatch.translate; basta para `**/*.ext`.
+    for character in ['\\', '&', '~', '|'] {
+        class = class.replace(character, &format!("\\{character}"));
+    }
+    let rendered = if class.is_empty() {
+        "(?!)".to_string()
+    } else if class == "!" {
+        ".".to_string()
+    } else if let Some(rest) = class.strip_prefix('!') {
+        format!("^[{rest}]")
+    } else if class.starts_with('^') || class.starts_with('[') {
+        format!("[\\{class}]")
+    } else {
+        format!("[{class}]")
+    };
+    Some((rendered, end + 1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn root() -> PathBuf {
+        std::env::temp_dir().join("ezagent-paths-unit")
+    }
+
+    fn env() -> Env {
+        let home = root().display().to_string();
+        Env::new(&[("HOME", &home), ("USERPROFILE", &home), ("APPDATA", &home)])
+    }
+
+    fn resolve(raw: &str) -> Result<PathBuf, PathDenied> {
+        let workspace = root().join("ws");
+        resolve_safe_with(
+            &env(),
+            raw,
+            &workspace,
+            &[workspace.display().to_string()],
+            &[workspace.join("secret").display().to_string()],
+            &["**/.env", "**/*.pem"],
+        )
+    }
+
+    #[test]
+    fn relative_paths_land_in_the_workspace() {
+        let path = resolve("sub/../a.txt").expect("ruta válida");
+        assert_eq!(path, root().join("ws").join("a.txt"));
+    }
+
+    #[test]
+    fn reserved_names_are_denied() {
+        assert_eq!(
+            resolve("sub/com1.log").map_err(|error| error.message().to_string()),
+            Err("nombre reservado de Windows".to_string())
+        );
+        assert!(resolve("sub/COM0.txt").is_ok());
+    }
+
+    #[test]
+    fn deny_globs_protect_secrets() {
+        assert_eq!(
+            resolve(".env").map_err(|error| error.message().to_string()),
+            Err("archivo protegido".to_string())
+        );
+        assert!(resolve("notes.txt").is_ok());
+    }
+
+    #[test]
+    fn every_denied_message_matches_python() {
+        let text = |raw: &str| {
+            resolve(raw)
+                .map(|path| path.display().to_string())
+                .map_err(|error| error.message().to_string())
+        };
+        let outside = root().join("fuera.txt").display().to_string();
+        assert_eq!(text("").unwrap_err(), "ruta vacía o inválida");
+        assert_eq!(
+            text("//server/share/x").unwrap_err(),
+            "rutas UNC o de dispositivo no permitidas"
+        );
+        assert_eq!(
+            text("notas.txt:oculto").unwrap_err(),
+            "flujos de datos alternativos no permitidos"
+        );
+        assert_eq!(
+            text(&outside).unwrap_err(),
+            "fuera de las carpetas permitidas"
+        );
+        assert_eq!(text("secret/x.txt").unwrap_err(), "carpeta protegida");
+        let anchor = resolve_safe_with(
+            &env(),
+            "/",
+            &root().join("ws"),
+            &["/"],
+            &[] as &[&str],
+            &[] as &[&str],
+        )
+        .map_err(|error| error.message().to_string());
+        assert_eq!(anchor, Err("raíz de unidad no permitida".to_string()));
+    }
+}
