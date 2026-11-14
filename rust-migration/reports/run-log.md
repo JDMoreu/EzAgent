@@ -40,13 +40,14 @@
 | F1-02 | completo | 1 932 casos de texto (`speech_text` 452, `redact` 53, `stt_dictionary` 102, `tool_json` 169, `tool_markup` 111, `condenser` 41, `chat_markdown` 185, `chat_text_input` 299, `chat_trace` 54, `chat_speech` 45, `handoff` 123, `handoff_packet` 129, `app_text` 169) |
 | F1-03 | completo | 561 casos (`config` 63, `llm_providers` 228, `agent_paths` 44, `policy` 144, `tools_d` 82) |
 | F1-04 | completo | 243 casos (`system_prompt` 31, `registry` 68, `confirm` 37, `audit` 20, `orchestration` 46, `skills` 41) |
-| F1-06 | en curso al cerrar esta corrida | `parity/gen/swarm*.py` y ~489 casos; el trabajador seguía añadiendo dominios |
+| F1-06 | completo | 644 casos en `parity/gen/swarm*.py`: `protocol`, `ezs`, tablero y volcado SQLite, salud, avisos, incidentes, recuperación y `models`/`store`/`mail` |
 | F1-10a | completo | 298 PNG dorados (barra 146, botones 50, órbita 50, Marea 40, texto 12) + 361 casos con las curvas de animación |
 | F1-13 | completo | `parity/test-map.csv` con las 1 882 pruebas de pytest en estado `pendiente` |
 | F1-05, F1-07, F1-08, F1-09, F1-10b, F1-10c, F1-11, F1-12 | pendientes | ver §5 |
 
-**Determinismo verificado**: cada dominio se regeneró y comparó por sha256
-(estable en todos). Los 298 PNG también son estables entre corridas.
+**Determinismo verificado**: los 27 dominios (3 780 casos) se regeneraron y
+compararon por sha256, y `run_all.py --check` queda estable. Los 298 PNG
+también son estables entre corridas.
 
 ### F2 — Base compartida
 
