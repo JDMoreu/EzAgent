@@ -54,8 +54,10 @@ también son estables entre corridas.
 | Tarea | Estado | Detalle |
 |---|---|---|
 | F2-01 | completo | `pyjson` (36 casos `dumps` + 3 round-trip byte a byte), `pytime` (isoformat UTC/local), `dirs`, `logging`; 11 pruebas |
+| F2-02 | completo | `VoiceConfig` (88 campos, `load`/`save`/`save_key`/perfiles) en `config.rs` + `config/{defaults,llm_env}.rs`; 63 casos, `voice.json` byte a byte |
+| F2-04 | completo | `policy::decide` (144 casos), `paths::resolve_safe` (44) y `permissions` (plantilla y tipos); 20 pruebas |
 | F2-06 | completo | `speech_text` (452), `redact` (53), `stt_dictionary` (102): 607 casos en verde, 18 pruebas |
-| F2-02…F2-05, F2-07…F2-12 | pendientes | hay fixtures listos para F2-02/03/04; F2-07+ esperan `ez-gfx` |
+| F2-03, F2-05, F2-07…F2-12 | pendientes | F2-03 tiene fixtures listos; F2-07+ esperan `ez-gfx` |
 
 ### F3–F9
 
@@ -66,12 +68,14 @@ fixtures asignados, listas para que el bucle las tome.
 
 ```
 uv run pytest -q                    1881 passed, 1 skipped
-cargo test --workspace              27 pruebas, 0 fallos
+cargo test --workspace              40 pruebas, 0 fallos
 cargo clippy --workspace --all-targets -- -D warnings     limpio
 cargo fmt --all --check              limpio
 powershell -File rust/gate.ps1 -SelfTest                  GATE OK
-powershell -File rust/gate.ps1 -Task F2-06                GATE OK
 powershell -File rust/gate.ps1 -Task F2-01                GATE OK
+powershell -File rust/gate.ps1 -Task F2-02                GATE OK
+powershell -File rust/gate.ps1 -Task F2-04                GATE OK
+powershell -File rust/gate.ps1 -Task F2-06                GATE OK
 uv run python parity/gen/run_all.py --check               estable
 ```
 
@@ -106,7 +110,7 @@ uv run python parity/gen/run_all.py --check               estable
    F1-09 (fonemas y PCM de Kokoro), F1-10b/c (menú, ajustes, chat, vista
    rápida), F1-11 (`ez-fakes`), F1-12 (arnés de reproducción y 25 escenarios).
    Sin F1-11/F1-12 no hay F7.
-2. **F2-02/03/04** ya tienen fixtures: son los tres siguientes ports naturales.
+2. **F2-03** ya tiene fixtures (228 casos) y es el siguiente port natural.
 3. **F2-07…F2-11 (`ez-gfx`)** es el camino crítico del HUD: empieza por el
    raster y la composición, sigue con porta de `Resample.c`/`BoxBlur.c` y
    termina en FreeType.
