@@ -17,5 +17,6 @@ pub mod permissions;
 pub mod pyjson;
 pub mod pyloads;
 pub mod pytime;
+pub mod pyvalue;
 pub mod redact;
 pub mod speech_text;

@@ -632,6 +632,7 @@ dependencies = [
 name = "ez-llm"
 version = "0.1.0"
 dependencies = [
+ "ez-core",
  "fancy-regex",
  "indexmap",
  "regex",

@@ -202,10 +202,7 @@ pub const MODEL_CATALOG: [(&str, &[(&str, &str)]); 8] = [
     ),
 ];
 
-/// `str.strip()` de Python (incluye los separadores `\x1c`-`\x1f`).
-pub(crate) fn py_strip(value: &str) -> &str {
-    value.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
-}
+pub(crate) use crate::pyvalue::py_strip;
 
 /// `normalize_api_style`.
 pub fn normalize_api_style(value: Option<&str>) -> &'static str {

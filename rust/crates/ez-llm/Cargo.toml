@@ -17,3 +17,4 @@ regex = { workspace = true }
 fancy-regex = { workspace = true }
 tracing = { workspace = true }
 indexmap = { workspace = true }
+ez-core = { path = "../ez-core" }

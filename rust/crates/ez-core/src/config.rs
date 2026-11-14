@@ -378,7 +378,7 @@ pub fn int_value(value: &Value, default: i64) -> i64 {
 
 /// `int(texto)` de Python: signo ASCII, dígitos decimales (`Nd`) y guiones bajos
 /// simples entre dígito y dígito.
-fn python_int(text: &str) -> Option<i64> {
+pub fn python_int(text: &str) -> Option<i64> {
     // `int()` recorta el espacio Unicode (`White_Space`), no `\x1c`-`\x1f`:
     // el mismo conjunto que `char::is_whitespace`.
     let trimmed = text.trim_matches(char::is_whitespace);
@@ -421,7 +421,7 @@ fn decimal_digit(character: char) -> Option<u32> {
 }
 
 /// `bool(value)` de Python.
-pub(crate) fn truthy(value: &Value) -> bool {
+pub fn truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(flag) => *flag,
@@ -433,7 +433,7 @@ pub(crate) fn truthy(value: &Value) -> bool {
 }
 
 /// `str(value)` de Python para los tipos que llegan del JSON.
-pub(crate) fn python_str(value: &Value) -> String {
+pub fn python_str(value: &Value) -> String {
     match value {
         Value::Null => "None".to_string(),
         Value::Bool(true) => "True".to_string(),
