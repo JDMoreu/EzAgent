@@ -287,34 +287,51 @@ fn expanded_path(env: &Env, value: &str) -> PathBuf {
     resolve(Path::new(&expand_with(env, value)))
 }
 
-/// Normaliza la ruta sin tocar el disco, como `Path.resolve(strict=False)`.
+/// `Path.resolve(strict=False)`: resuelve contra el disco la parte que existe
+/// (enlaces y junctions incluidos) y conserva tal cual la que no existe. Es lo
+/// que impide que `C:\Users\All Users` pase por `C:\Users` camino de `C:\ProgramData`.
 fn resolve(path: &Path) -> PathBuf {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
     } else {
         std::env::current_dir().unwrap_or_default().join(path)
     };
-    let mut prefix = String::new();
-    let mut rooted = false;
-    let mut segments: Vec<String> = Vec::new();
+    let mut resolved = PathBuf::new();
     for part in absolute.components() {
         match part {
-            Component::Prefix(value) => prefix = value.as_os_str().to_string_lossy().into_owned(),
-            Component::RootDir => rooted = true,
+            Component::Prefix(_) | Component::RootDir => resolved.push(part.as_os_str()),
             Component::CurDir => {}
-            // shortcut: no resuelve enlaces ni junctions; ampliar si un caso depende de realpath.
             Component::ParentDir => {
-                segments.pop();
+                resolved.pop();
+                canonicalize_current(&mut resolved);
             }
-            Component::Normal(name) => segments.push(name.to_string_lossy().into_owned()),
+            Component::Normal(name) => {
+                resolved.push(name);
+                canonicalize_current(&mut resolved);
+            }
         }
     }
-    let mut text = prefix;
-    if rooted {
-        text.push(BS);
+    resolved
+}
+
+/// Sustituye la ruta por su destino real cuando el componente ya existe.
+fn canonicalize_current(path: &mut PathBuf) {
+    if let Ok(real) = std::fs::canonicalize(&*path) {
+        *path = without_verbatim_prefix(&real);
     }
-    text.push_str(&segments.join(&BS.to_string()));
-    PathBuf::from(text)
+}
+
+/// `\\?\C:\x` → `C:\x`; `\\?\UNC\server\share` → `\\server\share`. Los
+/// fixtures comparan contra la forma normal, no contra la verbatim de Windows.
+fn without_verbatim_prefix(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) => PathBuf::from(rest),
+        None => path.to_path_buf(),
+    }
 }
 
 /// `rp == base or rp.is_relative_to(base)`; en Windows sin distinguir mayúsculas.
@@ -352,7 +369,8 @@ fn is_anchor(path: &Path) -> bool {
     }
 }
 
-fn fnmatch(name: &str, pattern: &str) -> bool {
+/// `fnmatch.fnmatch`: normaliza mayúsculas y compara (`fnmatchcase`).
+pub fn fnmatch(name: &str, pattern: &str) -> bool {
     let name = normcase(name);
     let pattern = normcase(pattern);
     if !pattern
@@ -361,69 +379,139 @@ fn fnmatch(name: &str, pattern: &str) -> bool {
     {
         return name == pattern;
     }
-    let Some(compiled) = compile_glob(&translate(&pattern)) else {
-        return false;
-    };
-    compiled.is_match(&name)
+    // shortcut: un patrón que el motor no acepte no coincide; `re.error` de
+    // Python no tiene caso en los fixtures.
+    Regex::new(&format!(r"\A{}", translate(&pattern)))
+        .is_ok_and(|compiled| compiled.is_match(&name))
 }
 
-fn compile_glob(source: &str) -> Option<Regex> {
-    Regex::new(&format!("(?s){source}\\z")).ok()
-}
-
+/// `fnmatch.translate` de CPython 3.12 línea por línea: `(?s:…)`, `[!…]`, `]`
+/// como primer carácter, escapes dentro de la clase y rangos invertidos.
+///
+/// El `\A` (el `match` de Python) lo pone [`fnmatch`].
 fn translate(pattern: &str) -> String {
     let chars: Vec<char> = pattern.chars().collect();
     let mut out = String::new();
     let mut index = 0;
+    let mut previous_star = false;
     while let Some(&character) = chars.get(index) {
         index += 1;
-        match character {
-            '*' => out.push_str(".*"),
-            '?' => out.push('.'),
-            '[' => match char_class(&chars, index) {
-                Some((class, end)) => {
-                    out.push_str(&class);
-                    index = end;
-                }
-                None => out.push_str("\\["),
-            },
-            _ => out.push_str(&regex::escape(&character.to_string())),
+        if character == '*' {
+            // Los `*` consecutivos se comprimen en uno; Python los une con
+            // `.*?`, que solo cambia el trabajo del motor, no si encaja.
+            if !previous_star {
+                out.push_str(".*");
+            }
+        } else if character == '?' {
+            out.push('.');
+        } else if character == '[' {
+            if let Some(close) = class_close(&chars, index) {
+                out.push_str(&class_regex(&chars, index, close));
+                index = close + 1;
+            } else {
+                out.push_str(r"\[");
+            }
+        } else {
+            out.push_str(&regex::escape(&character.to_string()));
         }
+        previous_star = character == '*';
     }
-    out
+    format!(r"(?s:{out})\z")
 }
 
-fn char_class(chars: &[char], index: usize) -> Option<(String, usize)> {
-    let mut end = index;
-    if chars.get(end) == Some(&'!') {
-        end += 1;
+/// Índice del `]` que cierra la clase; `None` si el patrón la deja abierta.
+fn class_close(chars: &[char], start: usize) -> Option<usize> {
+    let mut index = start;
+    if chars.get(index) == Some(&'!') {
+        index += 1;
     }
-    if chars.get(end) == Some(&']') {
-        end += 1;
+    if chars.get(index) == Some(&']') {
+        index += 1;
     }
-    while end < chars.len() && chars[end] != ']' {
-        end += 1;
+    while index < chars.len() && chars[index] != ']' {
+        index += 1;
     }
-    if end >= chars.len() {
-        return None;
+    (index < chars.len()).then_some(index)
+}
+
+/// Cuerpo de la clase (`[!a-c]` → `!a-c`) con los rangos invertidos recortados.
+fn class_body(chars: &[char], start: usize, close: usize) -> String {
+    let raw: String = chars[start..close].iter().collect();
+    if !raw.contains('-') {
+        return raw.replace('\\', r"\\");
     }
-    let mut class: String = chars[index..end].iter().collect();
-    // shortcut: sin el recorte de rangos invertidos de fnmatch.translate; basta para `**/*.ext`.
-    for character in ['\\', '&', '~', '|'] {
-        class = class.replace(character, &format!("\\{character}"));
+    let mut chunks: Vec<Vec<char>> = Vec::new();
+    // Python busca `-` a partir del segundo carácter si la clase niega.
+    let (mut from, mut search) = (start, start + 1 + usize::from(chars[start] == '!'));
+    while search < close {
+        if chars[search] != '-' {
+            search += 1;
+            continue;
+        }
+        chunks.push(chars[from..search].to_vec());
+        from = search + 1;
+        search += 3;
     }
-    let rendered = if class.is_empty() {
-        "(?!)".to_string()
-    } else if class == "!" {
-        ".".to_string()
-    } else if let Some(rest) = class.strip_prefix('!') {
-        format!("^[{rest}]")
-    } else if class.starts_with('^') || class.starts_with('[') {
-        format!("[\\{class}]")
-    } else {
-        format!("[{class}]")
+    let tail: String = chars[from..close].iter().collect();
+    match (tail.is_empty(), chunks.last_mut()) {
+        (true, Some(last)) => last.push('-'),
+        _ => chunks.push(tail.chars().collect()),
+    }
+    // Un rango invertido (`[z-a]`) no es válido en una expresión regular.
+    let mut index = chunks.len();
+    while index > 1 {
+        index -= 1;
+        if chunks[index - 1].last() > chunks[index].first() {
+            let mut merged = std::mem::take(&mut chunks[index - 1]);
+            merged.pop();
+            merged.extend(chunks[index].iter().skip(1));
+            chunks[index - 1] = merged;
+            chunks.remove(index);
+        }
+    }
+    chunks
+        .iter()
+        .map(|chunk| {
+            chunk
+                .iter()
+                .collect::<String>()
+                .replace('\\', r"\\")
+                .replace('-', r"\-")
+        })
+        .collect::<Vec<String>>()
+        .join("-")
+}
+
+/// Clase `[...]` lista para el motor: negación, `]` inicial y escapes.
+fn class_regex(chars: &[char], start: usize, close: usize) -> String {
+    let mut stuff = class_body(chars, start, close);
+    for character in ['&', '~', '|'] {
+        stuff = stuff.replace(character, &format!("\\{character}"));
+    }
+    if stuff.is_empty() {
+        // Python emite `(?!)`, un lookahead; `\b\B` tampoco coincide nunca.
+        return r"\b\B".to_string();
+    }
+    if stuff == "!" {
+        // Rango negado vacío: cualquier carácter.
+        return ".".to_string();
+    }
+    let (negated, body) = match stuff.strip_prefix('!') {
+        Some(rest) => (true, rest.to_string()),
+        None if stuff.starts_with('^') || stuff.starts_with('[') => (false, format!("\\{stuff}")),
+        None => (false, stuff),
     };
-    Some((rendered, end + 1))
+    // Rust no acepta `]` como primer carácter de la clase; Python sí (`[]a]`).
+    let body = if body.starts_with(']') {
+        format!("\\{body}")
+    } else {
+        body
+    };
+    if negated {
+        format!("[^{body}]")
+    } else {
+        format!("[{body}]")
+    }
 }
 
 #[cfg(test)]
