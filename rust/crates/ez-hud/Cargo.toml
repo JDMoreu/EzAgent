@@ -10,6 +10,7 @@ name = "ez_hud"
 path = "src/lib.rs"
 
 [dependencies]
+ez-core = { path = "../ez-core" }
 image = { workspace = true }
 png = { workspace = true }
 ndarray = { workspace = true }
