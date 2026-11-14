@@ -1,0 +1,49 @@
+{
+  "model": "fake-model",
+  "chunk_chars": 12,
+  "turns": [
+    {
+      "content": "Voy a buscar en la web.",
+      "tool_calls": [
+        {
+          "id": "call_buscar",
+          "name": "web_search",
+          "arguments": "{\"query\":\"clima en Lima\"}"
+        }
+      ]
+    },
+    {
+      "content": "El océano Pacífico es el más grande del mundo.",
+      "finish_reason": "stop"
+    },
+    {
+      "status": 429,
+      "retry_after": 2,
+      "error": "Rate limit reached. Espera y reintenta.",
+      "error_type": "rate_limit_error"
+    },
+    {
+      "content": "Esta respuesta se corta a mitad de frase.",
+      "max_chunks": 4
+    },
+    {
+      "status": 500,
+      "error": "El proveedor falló a mitad del turno.",
+      "error_type": "api_error"
+    },
+    {
+      "content": "Herramienta rota a propósito.",
+      "tool_calls": [
+        {
+          "id": "call_rota",
+          "name": "delegate_to_agent",
+          "arguments": "{\"action\":\"run\",\"agent\":\"opencode\""
+        }
+      ]
+    }
+  ],
+  "fallback": {
+    "content": "Fin del guion.",
+    "finish_reason": "stop"
+  }
+}

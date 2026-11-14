@@ -1,0 +1,38 @@
+{
+  "next": 2,
+  "spaces": ["EzAgent"],
+  "terminals": [
+    {
+      "address": "t1",
+      "tab": "tab1",
+      "space": "EzAgent",
+      "name": "OpenCode",
+      "title": "OpenCode",
+      "agent": "opencode",
+      "state": "working",
+      "cwd": "C:\\Users\\demo\\EzAgent",
+      "where": "EzAgent / OpenCode",
+      "screen": "• Sesión de OpenCode\nCrea notas.txt con tres líneas y verifica su contenido.\n+ Thought · 0.8s\nTrabajando…\nBuild · DeepSeek V4.1 Flash · 2.4s · 4.8 tok/s\nBuild · DeepSeek V4.1 Flash OpenCode Go · low",
+      "sent": [],
+      "keys": [],
+      "done_after_ms": 2500,
+      "reads": 0,
+      "conclusion": "Creé notas.txt con tres líneas y verifiqué su contenido con cat."
+    },
+    {
+      "address": "t2",
+      "tab": "tab2",
+      "space": "EzAgent",
+      "name": "Claude Code",
+      "title": "Claude Code",
+      "agent": "claude",
+      "state": "blocked",
+      "cwd": "C:\\Users\\demo\\EzAgent",
+      "where": "EzAgent / Claude Code",
+      "screen": "▐▛███▛█ Claude Code v2.1.319\n▝▜██████▀ Sonnet 5.5 with low effort · Claude Pro\n❯ Revisa el repo\nDo you trust the files in this folder?\n❯ 1. Yes, I trust\n  2. No, exit",
+      "sent": [],
+      "keys": [],
+      "conclusion": ""
+    }
+  ]
+}

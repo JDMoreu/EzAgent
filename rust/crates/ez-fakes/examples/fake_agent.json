@@ -1,0 +1,7 @@
+{
+  "agent": "opencode",
+  "task": "Crea notas.txt con tres líneas y verifica su contenido.",
+  "conclusion": "Creé notas.txt con tres líneas y verifiqué su contenido con cat.",
+  "script": ["working", "done"],
+  "delay_ms": 400
+}
