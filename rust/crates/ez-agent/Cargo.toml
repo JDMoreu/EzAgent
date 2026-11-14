@@ -27,6 +27,8 @@ uuid = { workspace = true }
 serde_yaml = { workspace = true }
 ez-core = { path = "../ez-core" }
 ez-llm = { path = "../ez-llm" }
+ez-swarm = { path = "../ez-swarm" }
+ez-herdr = { path = "../ez-herdr" }
 
 [dev-dependencies]
 ez-parity = { path = "../ez-parity" }
