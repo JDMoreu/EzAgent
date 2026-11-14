@@ -686,6 +686,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "ez-core",
+ "ez-herdr",
  "rusqlite",
  "serde",
  "serde_json",
