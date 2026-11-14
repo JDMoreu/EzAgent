@@ -421,7 +421,7 @@ fn decimal_digit(character: char) -> Option<u32> {
 }
 
 /// `bool(value)` de Python.
-fn truthy(value: &Value) -> bool {
+pub(crate) fn truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(flag) => *flag,
@@ -433,7 +433,7 @@ fn truthy(value: &Value) -> bool {
 }
 
 /// `str(value)` de Python para los tipos que llegan del JSON.
-fn python_str(value: &Value) -> String {
+pub(crate) fn python_str(value: &Value) -> String {
     match value {
         Value::Null => "None".to_string(),
         Value::Bool(true) => "True".to_string(),

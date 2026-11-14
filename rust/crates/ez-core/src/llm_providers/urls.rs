@@ -1,0 +1,103 @@
+//! `is_local_endpoint`: `urlsplit(...).hostname` de Python 3.12, lo justo.
+
+use std::net::Ipv6Addr;
+
+const LOCAL_HOSTS: [&str; 4] = ["127.0.0.1", "localhost", "::1", "0.0.0.0"];
+
+/// True si la URL apunta a esta máquina (Ollama, LM Studio, vLLM…).
+///
+/// DECISION: no se porta `_checknetloc` (normalización NFKC de hosts no ASCII):
+/// ningún host local lo necesita y un host así no estaría en `LOCAL_HOSTS`.
+pub fn is_local_endpoint(base_url: &str) -> bool {
+    match hostname(base_url) {
+        Ok(Some(host)) => LOCAL_HOSTS.contains(&host.to_lowercase().as_str()),
+        Ok(None) | Err(()) => false,
+    }
+}
+
+/// `urlsplit(url).hostname`; `Err` donde Python lanza `ValueError`.
+fn hostname(url: &str) -> Result<Option<String>, ()> {
+    let url = url.trim_start_matches(|c: char| c <= ' ');
+    let url: String = url
+        .chars()
+        .filter(|c| !matches!(c, '\t' | '\r' | '\n'))
+        .collect();
+    let rest = strip_scheme(&url);
+    let Some(after) = rest.strip_prefix("//") else {
+        return Ok(None);
+    };
+    let end = after.find(['/', '?', '#']).unwrap_or(after.len());
+    let netloc = &after[..end];
+    let has_open = netloc.contains('[');
+    let has_close = netloc.contains(']');
+    if has_open != has_close {
+        return Err(());
+    }
+    if has_open {
+        let bracketed = netloc.split_once('[').map_or("", |(_, tail)| tail);
+        let bracketed = bracketed
+            .split_once(']')
+            .map_or(bracketed, |(head, _)| head);
+        check_bracketed_host(bracketed)?;
+    }
+    let hostinfo = netloc.rsplit_once('@').map_or(netloc, |(_, tail)| tail);
+    let host = match hostinfo.split_once('[') {
+        Some((_, bracketed)) => bracketed
+            .split_once(']')
+            .map_or(bracketed, |(head, _)| head),
+        None => hostinfo.split_once(':').map_or(hostinfo, |(head, _)| head),
+    };
+    Ok((!host.is_empty()).then(|| host.to_string()))
+}
+
+fn strip_scheme(url: &str) -> &str {
+    let Some(colon) = url.find(':') else {
+        return url;
+    };
+    let head = &url[..colon];
+    let starts_alpha = head.chars().next().is_some_and(|c| c.is_ascii_alphabetic());
+    let valid = head
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+    if colon > 0 && starts_alpha && valid {
+        &url[colon + 1..]
+    } else {
+        url
+    }
+}
+
+/// `_check_bracketed_host`: IPv6 (con zona opcional) o IPvFuture.
+fn check_bracketed_host(host: &str) -> Result<(), ()> {
+    if let Some(rest) = host.strip_prefix('v') {
+        let (hex, tail) = rest.split_once('.').ok_or(())?;
+        let hex_ok = !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit());
+        return if hex_ok && !tail.is_empty() {
+            Ok(())
+        } else {
+            Err(())
+        };
+    }
+    let (address, zone) = match host.split_once('%') {
+        Some((address, zone)) => (address, Some(zone)),
+        None => (host, None),
+    };
+    if zone.is_some_and(|zone| zone.is_empty() || zone.contains('%')) {
+        return Err(());
+    }
+    address.parse::<Ipv6Addr>().map(|_| ()).map_err(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hosts() {
+        assert!(is_local_endpoint("http://[::1]:8080/v1"));
+        assert!(is_local_endpoint("http://LOCALHOST:11434/v1"));
+        assert!(!is_local_endpoint("http://[oops"));
+        assert!(!is_local_endpoint("file:///tmp/x"));
+        assert!(!is_local_endpoint("no es una url"));
+        assert!(!is_local_endpoint("localhost:11434"));
+    }
+}
