@@ -16,7 +16,7 @@ pub use profiles::{
     config_path, load_provider_catalog, resolve_llm, save_provider_profile, CatalogEntry,
     LlmConfig, ResolveArgs, SaveArgs,
 };
-pub use urls::{is_local_endpoint, urlsplit, UrlParts};
+pub use urls::{is_local_endpoint, urlsplit, InvalidUrl, UrlParts};
 
 pub const API_STYLES: [&str; 2] = ["openai", "anthropic"];
 pub const CUSTOM_PROVIDER: &str = "custom";

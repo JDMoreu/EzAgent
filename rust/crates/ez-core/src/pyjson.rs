@@ -29,6 +29,24 @@ impl Default for DumpOptions {
 }
 
 impl DumpOptions {
+    /// `json.dumps(..., ensure_ascii=False)`.
+    pub fn utf8() -> Self {
+        Self {
+            ensure_ascii: false,
+            ..Self::default()
+        }
+    }
+
+    /// `json.dumps(..., ensure_ascii=False, separators=(",", ":"))`.
+    pub fn compact_utf8() -> Self {
+        Self {
+            ensure_ascii: false,
+            item_separator: ",".to_string(),
+            key_separator: ":".to_string(),
+            ..Self::default()
+        }
+    }
+
     /// `indent` cambia los separadores como en Python: `","` y `": "`.
     pub fn with_indent(mut self, indent: usize) -> Self {
         self.indent = Some(indent);

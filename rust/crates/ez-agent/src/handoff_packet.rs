@@ -58,6 +58,11 @@ fn heading() -> &'static Regex {
     })
 }
 
+/// Elige la línea de inicio de la conclusión (devuelve un número de línea, base 1).
+pub type SelectFn<'a> = &'a dyn Fn(&[String]) -> Option<i64>;
+/// Guarda el registro completo y devuelve su ruta.
+pub type SaveFn<'a> = &'a dyn Fn(&str) -> Option<String>;
+
 /// Lo que se pasa al siguiente agente.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Packet {
@@ -149,8 +154,8 @@ fn first_chars(text: &str, limit: usize) -> String {
 /// Decide qué parte de la salida de un agente pasa al siguiente.
 pub fn build_packet(
     answer: &str,
-    select: Option<&dyn Fn(&[String]) -> Option<i64>>,
-    save: Option<&dyn Fn(&str) -> Option<String>>,
+    select: Option<SelectFn<'_>>,
+    save: Option<SaveFn<'_>>,
 ) -> Packet {
     let answer = py_strip(answer);
     if answer.is_empty() {
@@ -192,8 +197,8 @@ pub fn build_packet(
 fn report_packet(
     answer: &str,
     lines: &[&str],
-    select: Option<&dyn Fn(&[String]) -> Option<i64>>,
-    save: Option<&dyn Fn(&str) -> Option<String>>,
+    select: Option<SelectFn<'_>>,
+    save: Option<SaveFn<'_>>,
 ) -> Packet {
     let mut start: Option<i64> = None;
     if let Some(select) = select.filter(|_| lines.len() > 12) {

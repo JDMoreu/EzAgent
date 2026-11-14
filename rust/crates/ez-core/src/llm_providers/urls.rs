@@ -11,9 +11,13 @@ const LOCAL_HOSTS: [&str; 4] = ["127.0.0.1", "localhost", "::1", "0.0.0.0"];
 pub fn is_local_endpoint(base_url: &str) -> bool {
     match hostname(base_url) {
         Ok(Some(host)) => LOCAL_HOSTS.contains(&host.to_lowercase().as_str()),
-        Ok(None) | Err(()) => false,
+        Ok(None) | Err(InvalidUrl) => false,
     }
 }
+
+/// `ValueError` de `urlsplit` (por ejemplo, un IPv6 entre corchetes inválido).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidUrl;
 
 /// Lo que el resto del código necesita de `urlsplit(url)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,7 +32,7 @@ pub struct UrlParts {
 }
 
 /// `urlsplit(url)`; `Err` donde Python lanza `ValueError`.
-pub fn urlsplit(url: &str) -> Result<UrlParts, ()> {
+pub fn urlsplit(url: &str) -> Result<UrlParts, InvalidUrl> {
     let url = url.trim_start_matches(|c: char| c <= ' ');
     let url: String = url
         .chars()
@@ -49,7 +53,7 @@ pub fn urlsplit(url: &str) -> Result<UrlParts, ()> {
     let has_open = netloc.contains('[');
     let has_close = netloc.contains(']');
     if has_open != has_close {
-        return Err(());
+        return Err(InvalidUrl);
     }
     if has_open {
         let bracketed = netloc.split_once('[').map_or("", |(_, tail)| tail);
@@ -74,7 +78,7 @@ pub fn urlsplit(url: &str) -> Result<UrlParts, ()> {
 }
 
 /// `urlsplit(url).hostname`; `Err` donde Python lanza `ValueError`.
-fn hostname(url: &str) -> Result<Option<String>, ()> {
+fn hostname(url: &str) -> Result<Option<String>, InvalidUrl> {
     Ok(urlsplit(url)?.hostname)
 }
 
@@ -96,14 +100,14 @@ fn split_scheme(url: &str) -> (&str, &str) {
 }
 
 /// `_check_bracketed_host`: IPv6 (con zona opcional) o IPvFuture.
-fn check_bracketed_host(host: &str) -> Result<(), ()> {
+fn check_bracketed_host(host: &str) -> Result<(), InvalidUrl> {
     if let Some(rest) = host.strip_prefix('v') {
-        let (hex, tail) = rest.split_once('.').ok_or(())?;
+        let (hex, tail) = rest.split_once('.').ok_or(InvalidUrl)?;
         let hex_ok = !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit());
         return if hex_ok && !tail.is_empty() {
             Ok(())
         } else {
-            Err(())
+            Err(InvalidUrl)
         };
     }
     let (address, zone) = match host.split_once('%') {
@@ -111,9 +115,12 @@ fn check_bracketed_host(host: &str) -> Result<(), ()> {
         None => (host, None),
     };
     if zone.is_some_and(|zone| zone.is_empty() || zone.contains('%')) {
-        return Err(());
+        return Err(InvalidUrl);
     }
-    address.parse::<Ipv6Addr>().map(|_| ()).map_err(|_| ())
+    address
+        .parse::<Ipv6Addr>()
+        .map(|_| ())
+        .map_err(|_| InvalidUrl)
 }
 
 #[cfg(test)]

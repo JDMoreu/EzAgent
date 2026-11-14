@@ -23,6 +23,10 @@ pub struct ToolInfo {
     pub bulk: i64,
     pub always_confirm: bool,
     pub summary: String,
+    /// `_FolderBulk` del Python: `bulk` cuenta como «masivo» para cualquier
+    /// umbral distinto de cero (la carpeta siempre exige confirmación fuerte
+    /// con su cantidad real). El umbral 0 compara el número tal cual.
+    pub bulk_forced: bool,
 }
 
 impl ToolInfo {
@@ -56,6 +60,18 @@ impl ToolResult {
         }
     }
 
+    /// `ToolResult(ok=False, error=...)`: el manejador terminó (`completed`) con un error.
+    pub fn err(error: impl Into<String>) -> Self {
+        Self {
+            ok: false,
+            data: Value::Null,
+            error: Some(error.into()),
+            outcome: "completed".into(),
+            error_kind: None,
+        }
+    }
+
+    /// Fallo del propio registro (herramienta desconocida, argumentos inválidos).
     pub fn failed(error: impl Into<String>) -> Self {
         Self {
             ok: false,
@@ -404,8 +420,7 @@ impl ToolRegistry {
 }
 
 fn dumps(payload: &Value) -> String {
-    let mut options = DumpOptions::default();
-    options.ensure_ascii = false;
+    let options = DumpOptions::utf8();
     dumps_with(payload, &options)
 }
 

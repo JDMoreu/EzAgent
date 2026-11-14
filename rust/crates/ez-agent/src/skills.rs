@@ -335,7 +335,7 @@ impl SkillLibrary {
         let (text, truncated) = truncate(&text);
         let shown = resolved
             .strip_prefix(&skill_root)
-            .map_or_else(|_| relative.clone(), |rest| posix(rest));
+            .map_or_else(|_| relative.clone(), posix);
         Ok(SkillContent {
             name: skill.name.clone(),
             text,

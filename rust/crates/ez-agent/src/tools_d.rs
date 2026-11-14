@@ -564,16 +564,14 @@ fn run_declarative_tool(ctx: &RunContext, args: &Map<String, Value>) -> ToolResu
     extra.sort();
     if !extra.is_empty() {
         let names: Vec<&str> = extra.iter().map(|name| name.as_str()).collect();
-        return ToolResult::failed(format!("Parámetros no admitidos: {}", names.join(", ")));
+        return ToolResult::err(format!("Parámetros no admitidos: {}", names.join(", ")));
     }
     let mut values: IndexMap<String, String> = IndexMap::new();
     for (param_name, spec) in &ctx.params {
         let value = args.get(param_name).filter(|value| !value.is_null());
         let Some(value) = value else {
             if spec.required {
-                return ToolResult::failed(format!(
-                    "Falta el parámetro obligatorio «{param_name}»."
-                ));
+                return ToolResult::err(format!("Falta el parámetro obligatorio «{param_name}»."));
             }
             continue;
         };
@@ -581,7 +579,7 @@ fn run_declarative_tool(ctx: &RunContext, args: &Map<String, Value>) -> ToolResu
             Ok(text) => {
                 values.insert(param_name.clone(), text);
             }
-            Err(message) => return ToolResult::failed(format!("{}: {message}", ctx.tool_name)),
+            Err(message) => return ToolResult::err(format!("{}: {message}", ctx.tool_name)),
         }
     }
     let mut argv: Vec<String> = Vec::new();
@@ -595,7 +593,7 @@ fn run_declarative_tool(ctx: &RunContext, args: &Map<String, Value>) -> ToolResu
             })
             .into_owned();
         if let Some(unresolved) = param_re().captures(&replaced) {
-            return ToolResult::failed(format!(
+            return ToolResult::err(format!(
                 "Falta el valor del parámetro «{}» para ejecutar la herramienta.",
                 &unresolved[1]
             ));
@@ -603,12 +601,12 @@ fn run_declarative_tool(ctx: &RunContext, args: &Map<String, Value>) -> ToolResu
         argv.push(replaced);
     }
     match run_captured(&argv, &ctx.workspace, &clean_environment(), ctx.timeout_s) {
-        Err(RunError::Timeout { .. }) => ToolResult::failed(format!(
+        Err(RunError::Timeout { .. }) => ToolResult::err(format!(
             "La herramienta superó el tiempo máximo ({} s).",
             format_g(ctx.timeout_s)
         )),
         Err(RunError::Os(error)) => {
-            ToolResult::failed(format!("No se pudo ejecutar «{}»: {error}", ctx.command[0]))
+            ToolResult::err(format!("No se pudo ejecutar «{}»: {error}", ctx.command[0]))
         }
         Ok(done) => {
             let (stdout, stderr) = (clip(&done.stdout), clip(&done.stderr));
@@ -718,7 +716,7 @@ fn validate_value(
         }
         Some("url_http") => {
             let parts = urlsplit(&text)
-                .map_err(|()| format!("«{name}» debe ser una URL http o https válida."))?;
+                .map_err(|_| format!("«{name}» debe ser una URL http o https válida."))?;
             if !matches!(parts.scheme.as_str(), "http" | "https") || parts.hostname.is_none() {
                 return Err(format!("«{name}» debe ser una URL http o https válida."));
             }
@@ -786,7 +784,7 @@ mod tests {
         );
         let _ = std::fs::write(
             tools.join("c.toml"),
-            format!("name='libre'\ndescription='x'\ncommand=['powershell', 'x']\n"),
+            "name='libre'\ndescription='x'\ncommand=['powershell', 'x']\n",
         );
         let config = config(&dir, echo);
         let loaded = load_tools_d(&config);

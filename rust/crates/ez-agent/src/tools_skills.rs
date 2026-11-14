@@ -156,17 +156,17 @@ fn load_handler(library: &SkillLibrary, args: &Map<String, Value>) -> ToolResult
         .and_then(Value::as_str)
         .filter(|n| !py_strip(n).is_empty());
     let Some(name) = name else {
-        return ToolResult::failed("Falta el nombre de la skill.");
+        return ToolResult::err("Falta el nombre de la skill.");
     };
     let file = match args.get("file") {
         None | Some(Value::Null) => None,
         Some(Value::String(text)) => Some(text.as_str()),
         Some(_) => {
-            return ToolResult::failed("«file» debe ser una ruta de texto dentro de la skill.");
+            return ToolResult::err("«file» debe ser una ruta de texto dentro de la skill.");
         }
     };
     match library.load_skill(py_strip(name), file) {
-        Err(error) => ToolResult::failed(error.message),
+        Err(error) => ToolResult::err(error.message),
         Ok(content) => ToolResult::ok(json!({
             "name": content.name,
             "text": content.text,
@@ -305,7 +305,7 @@ fn script_args(args: &Map<String, Value>) -> Result<Vec<String>, String> {
 
 fn run_handler(ctx: &RunContext, args: &Map<String, Value>) -> ToolResult {
     if !ctx.allow_scripts {
-        return ToolResult::failed(
+        return ToolResult::err(
             "La ejecución de scripts de skills está deshabilitada (allow_scripts = false).",
         );
     }
@@ -315,25 +315,25 @@ fn run_handler(ctx: &RunContext, args: &Map<String, Value>) -> ToolResult {
             .filter(|value| !py_strip(value).is_empty())
     };
     let Some(skill_name) = text("skill") else {
-        return ToolResult::failed("Falta el nombre de la skill.");
+        return ToolResult::err("Falta el nombre de la skill.");
     };
     let Some(script_value) = text("script") else {
-        return ToolResult::failed("Falta la ruta del script.");
+        return ToolResult::err("Falta la ruta del script.");
     };
     let raw_args = match script_args(args) {
         Ok(items) => items,
-        Err(message) => return ToolResult::failed(message),
+        Err(message) => return ToolResult::err(message),
     };
     let Some(skill) = ctx.library.get(py_strip(skill_name)) else {
-        return ToolResult::failed(format!("No existe la skill «{}».", py_strip(skill_name)));
+        return ToolResult::err(format!("No existe la skill «{}».", py_strip(skill_name)));
     };
     let relative = match script_relative(script_value) {
         Ok(relative) => relative,
-        Err(error) => return ToolResult::failed(error.message),
+        Err(error) => return ToolResult::err(error.message),
     };
     let scripts_dir = resolve(&skill.path.join("scripts"));
     if !scripts_dir.is_dir() {
-        return ToolResult::failed(format!(
+        return ToolResult::err(format!(
             "La skill «{}» no tiene carpeta scripts/.",
             skill.name
         ));
@@ -349,10 +349,10 @@ fn run_handler(ctx: &RunContext, args: &Map<String, Value>) -> ToolResult {
         &empty,
     ) {
         Ok(target) => target,
-        Err(error) => return ToolResult::failed(format!("Script no permitido: {error}")),
+        Err(error) => return ToolResult::err(format!("Script no permitido: {error}")),
     };
     if !target.is_file() {
-        return ToolResult::failed(format!(
+        return ToolResult::err(format!(
             "No existe el script «{relative}» en la skill «{}».",
             skill.name
         ));
@@ -363,11 +363,11 @@ fn run_handler(ctx: &RunContext, args: &Map<String, Value>) -> ToolResult {
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("py"))
     {
-        return ToolResult::failed("Solo se pueden ejecutar scripts .py de la skill.");
+        return ToolResult::err("Solo se pueden ejecutar scripts .py de la skill.");
     }
     let folder_hash = match ctx.library.folder_hash(&skill.name) {
         Ok(hash) => hash,
-        Err(error) => return ToolResult::failed(error.message),
+        Err(error) => return ToolResult::err(error.message),
     };
     let approvals_path = ctx.app_dir.join(APPROVALS_FILENAME);
     let mut approvals = read_approvals(&approvals_path);
@@ -376,13 +376,13 @@ fn run_handler(ctx: &RunContext, args: &Map<String, Value>) -> ToolResult {
         // ejecución; ese consentimiento aprueba el hash actual.
         approvals.insert(skill.name.clone(), json!(folder_hash));
         if let Err(error) = write_approvals(&approvals_path, &approvals) {
-            return ToolResult::failed(format!(
+            return ToolResult::err(format!(
                 "No se pudo guardar la aprobación del script; no se ejecuta: {error}"
             ));
         }
     }
     let Some(interpreter) = python_interpreter() else {
-        return ToolResult::failed(
+        return ToolResult::err(
             "No encuentro un intérprete de Python para ejecutar el script. Instala Python o usa la versión de código fuente de EzAgent.",
         );
     };
@@ -413,7 +413,7 @@ fn run_handler(ctx: &RunContext, args: &Map<String, Value>) -> ToolResult {
             error_kind: None,
         },
         Err(RunError::Os(error)) => {
-            ToolResult::failed(format!("No se pudo ejecutar el script: {error}"))
+            ToolResult::err(format!("No se pudo ejecutar el script: {error}"))
         }
         Ok(done) => {
             let stdout = head_chars(&done.stdout, MAX_SCRIPT_OUTPUT_CHARS).to_string();

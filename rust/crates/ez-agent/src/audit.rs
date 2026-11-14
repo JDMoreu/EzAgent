@@ -28,8 +28,7 @@ fn content_size(value: &Value) -> usize {
         Value::Null => 0,
         Value::String(text) => char_len(text),
         Value::Array(_) | Value::Object(_) => {
-            let mut options = DumpOptions::default();
-            options.ensure_ascii = false;
+            let options = DumpOptions::utf8();
             char_len(&dumps_with(value, &options))
         }
         other => char_len(&python_str(other)),
@@ -92,8 +91,7 @@ impl AuditLog {
         if let Some(kind) = entry.error_kind {
             record.insert("error_kind".into(), json!(redact(kind)));
         }
-        let mut options = DumpOptions::default();
-        options.ensure_ascii = false;
+        let options = DumpOptions::utf8();
         let line = format!("{}\n", dumps_with(&Value::Object(record), &options));
         let _guard = self
             .lock

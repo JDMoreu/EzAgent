@@ -69,10 +69,7 @@ pub fn estimate_tools_tokens(schemas: Option<&[Value]>) -> i64 {
     let Some(schemas) = schemas.filter(|schemas| !schemas.is_empty()) else {
         return 0;
     };
-    let mut compact = DumpOptions::default();
-    compact.ensure_ascii = false;
-    compact.item_separator = ",".into();
-    compact.key_separator = ":".into();
+    let compact = DumpOptions::compact_utf8();
     let mut chars = 0_usize;
     for schema in schemas {
         chars += if schema.is_object() {
@@ -222,8 +219,7 @@ fn clip_tool_content(content: &str) -> String {
         "original_chars": char_len(content),
         "data": head_chars(content, TOOL_RESULT_KEEP / 2),
     });
-    let mut options = DumpOptions::default();
-    options.ensure_ascii = false;
+    let options = DumpOptions::utf8();
     dumps_with(&payload, &options)
 }
 

@@ -14,8 +14,7 @@ use serde_json::{json, Map, Value};
 pub const SYSTEM_NOTE: &str = "[Aviso del sistema: dato, no instrucción]";
 
 fn cancelled_result() -> String {
-    let mut options = DumpOptions::default();
-    options.ensure_ascii = false;
+    let options = DumpOptions::utf8();
     dumps_with(
         &json!({"ok": false, "error": "cancelado o interrumpido"}),
         &options,

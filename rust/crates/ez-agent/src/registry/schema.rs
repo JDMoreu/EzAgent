@@ -82,7 +82,7 @@ fn validate_object(name: &str, value: &Map<String, Value>, spec: &Value) -> Opti
         }
     }
     if spec.get("additionalProperties") == Some(&Value::Bool(false)) {
-        for key in value.keys().filter(|key| !properties.contains_key(*key)) {
+        if let Some(key) = value.keys().find(|key| !properties.contains_key(*key)) {
             return Some(format!(
                 "El parámetro '{}' no está permitido.",
                 join_name(name, key)
