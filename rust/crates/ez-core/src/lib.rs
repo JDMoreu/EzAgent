@@ -3,6 +3,7 @@
 // DECISION: `casefold` vive en `ez-stt` (F2-06) y `ez-core` no puede depender de
 // él sin tocar `Cargo.toml`; se compila el mismo archivo aquí para no duplicar
 // la tabla. Si el orquestador lo mueve a `ez-core`, basta con borrar este `path`.
+pub mod agent_config;
 #[path = "../../ez-stt/src/casefold.rs"]
 pub(crate) mod casefold;
 pub mod config;

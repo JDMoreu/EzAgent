@@ -1,0 +1,1 @@
+Si una tarea coincide con una skill, llama primero a `load_skill` y sigue sus pasos. No inventes skills ni las crees por tu cuenta.

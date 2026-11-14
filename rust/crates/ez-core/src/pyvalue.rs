@@ -187,6 +187,15 @@ pub fn fold_accents(text: &str) -> String {
         .collect()
 }
 
+/// `NFKD(text)` sin marcas combinantes (sin plegar mayúsculas).
+pub fn strip_accents(text: &str) -> String {
+    use unicode_normalization::char::canonical_combining_class;
+    use unicode_normalization::UnicodeNormalization;
+    text.nfkd()
+        .filter(|character| canonical_combining_class(*character) == 0)
+        .collect()
+}
+
 /// `str(value or "")` para un valor opcional del JSON.
 pub fn text_or_empty(value: Option<&serde_json::Value>) -> String {
     match value {
