@@ -130,7 +130,7 @@ impl VoiceApp {
             .save(Some(&self.inner.config.config_file))?;
         self.finish_hotkeys(&prepared);
         *self.inner.config.saved_llm.lock() = prepared.llm.saved();
-        self.finish_stt();
+        self.finish_stt_settings();
         let restarted = self.finish_call(&prepared, device_changed, effects);
         log("Ajustes guardados.");
         Ok(restarted)
@@ -360,7 +360,7 @@ impl VoiceApp {
         }
     }
 
-    fn finish_stt(&self) {
+    fn finish_stt_settings(&self) {
         let cfg = self.config();
         let model = cfg_text(&cfg, "stt_model", "");
         let engine = cfg_text(&cfg, "stt_engine", "");
