@@ -15,16 +15,34 @@ pub fn is_local_endpoint(base_url: &str) -> bool {
     }
 }
 
-/// `urlsplit(url).hostname`; `Err` donde Python lanza `ValueError`.
-fn hostname(url: &str) -> Result<Option<String>, ()> {
+/// Lo que el resto del código necesita de `urlsplit(url)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UrlParts {
+    /// En minúsculas (`""` si no hay).
+    pub scheme: String,
+    pub netloc: String,
+    /// `hostname` de Python (sin minúsculas; `None` si está vacío).
+    pub hostname: Option<String>,
+    /// `username is not None`: hay un `@` en el netloc.
+    pub has_userinfo: bool,
+}
+
+/// `urlsplit(url)`; `Err` donde Python lanza `ValueError`.
+pub fn urlsplit(url: &str) -> Result<UrlParts, ()> {
     let url = url.trim_start_matches(|c: char| c <= ' ');
     let url: String = url
         .chars()
         .filter(|c| !matches!(c, '\t' | '\r' | '\n'))
         .collect();
-    let rest = strip_scheme(&url);
+    let (scheme, rest) = split_scheme(&url);
+    let empty = UrlParts {
+        scheme: scheme.to_lowercase(),
+        netloc: String::new(),
+        hostname: None,
+        has_userinfo: false,
+    };
     let Some(after) = rest.strip_prefix("//") else {
-        return Ok(None);
+        return Ok(empty);
     };
     let end = after.find(['/', '?', '#']).unwrap_or(after.len());
     let netloc = &after[..end];
@@ -47,12 +65,23 @@ fn hostname(url: &str) -> Result<Option<String>, ()> {
             .map_or(bracketed, |(head, _)| head),
         None => hostinfo.split_once(':').map_or(hostinfo, |(head, _)| head),
     };
-    Ok((!host.is_empty()).then(|| host.to_string()))
+    Ok(UrlParts {
+        netloc: netloc.to_string(),
+        hostname: (!host.is_empty()).then(|| host.to_string()),
+        has_userinfo: netloc.contains('@'),
+        ..empty
+    })
 }
 
-fn strip_scheme(url: &str) -> &str {
+/// `urlsplit(url).hostname`; `Err` donde Python lanza `ValueError`.
+fn hostname(url: &str) -> Result<Option<String>, ()> {
+    Ok(urlsplit(url)?.hostname)
+}
+
+/// `(scheme, resto)`: el esquema solo cuenta si es ASCII válido antes de `:`.
+fn split_scheme(url: &str) -> (&str, &str) {
     let Some(colon) = url.find(':') else {
-        return url;
+        return ("", url);
     };
     let head = &url[..colon];
     let starts_alpha = head.chars().next().is_some_and(|c| c.is_ascii_alphabetic());
@@ -60,9 +89,9 @@ fn strip_scheme(url: &str) -> &str {
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
     if colon > 0 && starts_alpha && valid {
-        &url[colon + 1..]
+        (head, &url[colon + 1..])
     } else {
-        url
+        ("", url)
     }
 }
 
