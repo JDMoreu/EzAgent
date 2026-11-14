@@ -439,7 +439,7 @@ pub fn python_str(value: &Value) -> String {
         Value::Bool(true) => "True".to_string(),
         Value::Bool(false) => "False".to_string(),
         Value::String(text) => text.clone(),
-        other => other.to_string(),
+        other => crate::pyvalue::python_repr(other),
     }
 }
 

@@ -60,6 +60,118 @@ pub fn char_len(value: &str) -> usize {
     value.chars().count()
 }
 
+/// `repr(str)`: comillas simples salvo que el texto lleve `'` y no `"`.
+pub fn repr_str(text: &str) -> String {
+    let quote = if text.contains('\'') && !text.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
+    let mut out = String::from(quote);
+    for character in text.chars() {
+        match character {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c == quote => {
+                out.push('\\');
+                out.push(c);
+            }
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                out.push_str(&format!("\\x{:02x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push(quote);
+    out
+}
+
+/// `repr(value)` para los tipos que llegan del JSON.
+pub fn python_repr(value: &serde_json::Value) -> String {
+    use serde_json::Value;
+    match value {
+        Value::Null => "None".to_string(),
+        Value::Bool(true) => "True".to_string(),
+        Value::Bool(false) => "False".to_string(),
+        Value::Number(number) => match (number.as_i64(), number.as_u64(), number.as_f64()) {
+            (Some(integer), _, _) => integer.to_string(),
+            (_, Some(integer), _) => integer.to_string(),
+            (_, _, Some(float)) => crate::pyjson::float_repr(float),
+            _ => number.to_string(),
+        },
+        Value::String(text) => repr_str(text),
+        Value::Array(items) => {
+            let parts: Vec<String> = items.iter().map(python_repr).collect();
+            format!("[{}]", parts.join(", "))
+        }
+        Value::Object(map) => {
+            let parts: Vec<String> = map
+                .iter()
+                .map(|(key, item)| format!("{}: {}", repr_str(key), python_repr(item)))
+                .collect();
+            format!("{{{}}}", parts.join(", "))
+        }
+    }
+}
+
+/// `a == b` de Python entre valores JSON: `1 == 1.0 == True`.
+pub fn py_eq(left: &serde_json::Value, right: &serde_json::Value) -> bool {
+    use serde_json::Value;
+    let numeric = |value: &Value| match value {
+        Value::Number(number) => number.as_f64(),
+        Value::Bool(flag) => Some(f64::from(u8::from(*flag))),
+        _ => None,
+    };
+    if let (Some(a), Some(b)) = (numeric(left), numeric(right)) {
+        return a == b;
+    }
+    match (left, right) {
+        (Value::Array(a), Value::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(x, y)| py_eq(x, y))
+        }
+        (Value::Object(a), Value::Object(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .all(|(key, x)| b.get(key).is_some_and(|y| py_eq(x, y)))
+        }
+        _ => left == right,
+    }
+}
+
+/// `format(value, "g")`: seis cifras significativas, sin ceros de relleno.
+pub fn format_g(value: f64) -> String {
+    if value == 0.0 {
+        return "0".into();
+    }
+    if !value.is_finite() {
+        return if value.is_nan() {
+            "nan".into()
+        } else if value > 0.0 {
+            "inf".into()
+        } else {
+            "-inf".into()
+        };
+    }
+    let scientific = format!("{:.5e}", value);
+    let (mantissa, exponent) = scientific.split_once('e').unwrap_or((&scientific, "0"));
+    let exponent: i32 = exponent.parse().unwrap_or(0);
+    let trim = |text: &str| -> String {
+        if text.contains('.') {
+            text.trim_end_matches('0').trim_end_matches('.').to_string()
+        } else {
+            text.to_string()
+        }
+    };
+    if !(-4..6).contains(&exponent) {
+        let sign = if exponent < 0 { '-' } else { '+' };
+        return format!("{}e{sign}{:02}", trim(mantissa), exponent.abs());
+    }
+    let decimals = (5 - exponent).max(0) as usize;
+    trim(&format!("{value:.decimals$}"))
+}
+
 /// `str(value or "")` para un valor opcional del JSON.
 pub fn text_or_empty(value: Option<&serde_json::Value>) -> String {
     match value {
