@@ -1,5 +1,5 @@
-//! Binary `ezs` (skeleton, F0-04).
+//! Binary `ezs` (F3-13): the command an agent uses to talk to its swarm.
 
 fn main() {
-    eprintln!("ezs: sin implementar (F0-04)");
+    std::process::exit(ez_swarm::cli::main(None));
 }
