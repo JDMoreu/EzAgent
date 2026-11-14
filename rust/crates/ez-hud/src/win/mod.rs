@@ -9,6 +9,7 @@
 //! El código nativo solo aparece en este grupo de módulos (AGENTS.rust.md §5),
 //! y cada bloque lleva su comentario `// SAFETY:`.
 
+pub mod chat;
 pub mod dpi;
 pub mod drag;
 pub mod frame_stats;
