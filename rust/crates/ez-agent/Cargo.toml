@@ -22,6 +22,8 @@ indexmap = { workspace = true }
 chrono = { workspace = true }
 tracing = { workspace = true }
 reqwest = { workspace = true }
+ez-core = { path = "../ez-core" }
+ez-llm = { path = "../ez-llm" }
 
 [dev-dependencies]
 ez-parity = { path = "../ez-parity" }

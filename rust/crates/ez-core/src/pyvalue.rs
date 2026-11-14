@@ -60,6 +60,43 @@ pub fn char_len(value: &str) -> usize {
     value.chars().count()
 }
 
+/// `str(value or "")` para un valor opcional del JSON.
+pub fn text_or_empty(value: Option<&serde_json::Value>) -> String {
+    match value {
+        Some(value) if truthy(value) => python_str(value),
+        _ => String::new(),
+    }
+}
+
+/// `str.splitlines()`: separa en `\n`, `\r`, `\r\n`, `\v`, `\f`, `\x1c`-`\x1e`,
+/// `\x85`, ` ` y ` `, sin conservar los separadores.
+pub fn py_splitlines(value: &str) -> Vec<&str> {
+    let mut lines = Vec::new();
+    let mut start = 0;
+    let mut chars = value.char_indices().peekable();
+    while let Some((index, character)) = chars.next() {
+        let breaks = matches!(
+            character,
+            '\n' | '\r' | '\u{b}' | '\u{c}' | '\u{1c}'
+                ..='\u{1e}' | '\u{85}' | '\u{2028}' | '\u{2029}'
+        );
+        if !breaks {
+            continue;
+        }
+        lines.push(&value[start..index]);
+        let mut end = index + character.len_utf8();
+        if character == '\r' && chars.peek().is_some_and(|(_, next)| *next == '\n') {
+            chars.next();
+            end += 1;
+        }
+        start = end;
+    }
+    if start < value.len() {
+        lines.push(&value[start..]);
+    }
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

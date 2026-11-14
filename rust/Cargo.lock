@@ -497,6 +497,8 @@ name = "ez-agent"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "ez-core",
+ "ez-llm",
  "ez-parity",
  "indexmap",
  "regex",
