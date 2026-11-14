@@ -13,30 +13,22 @@
 //! 6. Un archivo inválido se ignora y se registra, sin tumbar el arranque.
 
 use std::collections::HashSet;
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::{Arc, OnceLock};
-use std::time::{Duration, Instant};
 
 use ez_core::agent_config::AgentConfig;
-use ez_core::llm_providers::urlsplit;
-use ez_core::paths::resolve_safe;
-use ez_core::pyvalue::{
-    casefold, char_len, format_g, head_chars, py_strip, python_int, python_repr, python_str,
-};
+use ez_core::pyvalue::{casefold, format_g, head_chars, py_strip, python_repr};
 use indexmap::IndexMap;
 use regex::{Captures, Regex};
 use serde_json::{json, Map, Value};
 
-use crate::registry::{ToolInfo, ToolResult, ToolReturn, ToolSpec};
+use crate::registry::{ToolInfo, ToolResult, ToolSpec};
 
 pub const DEFAULT_LEVEL: i64 = 2;
 pub const DEFAULT_TIMEOUT_S: f64 = 10.0;
 pub const MAX_OUTPUT_CHARS: usize = 8000;
 
 const ALLOWED_TYPES: [&str; 4] = ["string", "integer", "number", "boolean"];
-const ENV_NAMES: [&str; 3] = ["PATH", "SYSTEMROOT", "TEMP"];
 
 fn param_re() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
@@ -58,105 +50,8 @@ fn int_text_re() -> &'static Regex {
     PATTERN.get_or_init(|| Regex::new(r"^[+-]?\d+$").expect("patrón válido"))
 }
 
-/// Entorno mínimo para subprocess: solo `PATH`, `SYSTEMROOT` y `TEMP`.
-/// Nunca se heredan claves de API, tokens ni variables del proyecto.
-pub fn clean_environment() -> Vec<(String, String)> {
-    ENV_NAMES
-        .iter()
-        .filter_map(|name| {
-            std::env::var(name)
-                .ok()
-                .map(|value| ((*name).to_string(), value))
-        })
-        .collect()
-}
-
-/// Resultado de un subproceso terminado.
-#[derive(Debug, Clone)]
-pub struct Completed {
-    pub stdout: String,
-    pub stderr: String,
-    pub returncode: i64,
-}
-
-/// Por qué no se obtuvo un `Completed`.
-#[derive(Debug, Clone)]
-pub enum RunError {
-    /// `subprocess.TimeoutExpired`, con la salida que alcanzó a escribir.
-    Timeout { stdout: String },
-    /// `OSError` al lanzar el proceso.
-    Os(String),
-}
-
-fn drain<R: Read + Send + 'static>(mut reader: R) -> std::thread::JoinHandle<Vec<u8>> {
-    std::thread::spawn(move || {
-        let mut buffer = Vec::new();
-        let _ = reader.read_to_end(&mut buffer);
-        buffer
-    })
-}
-
-/// Decodifica como `text=True, encoding="utf-8", errors="replace"` (finales de línea universales).
-fn decode(bytes: &[u8]) -> String {
-    String::from_utf8_lossy(bytes)
-        .replace("\r\n", "\n")
-        .replace('\r', "\n")
-}
-
-/// `subprocess.run(argv, shell=False, cwd, env, timeout, capture_output=True)`.
-///
-/// `argv` nunca pasa por un shell; el entorno se reemplaza por completo.
-pub fn run_captured(
-    argv: &[String],
-    cwd: &Path,
-    env: &[(String, String)],
-    timeout_s: f64,
-) -> Result<Completed, RunError> {
-    let Some((program, rest)) = argv.split_first() else {
-        return Err(RunError::Os("comando vacío".into()));
-    };
-    let mut child = Command::new(program)
-        .args(rest)
-        .current_dir(cwd)
-        .env_clear()
-        .envs(
-            env.iter()
-                .map(|(key, value)| (key.as_str(), value.as_str())),
-        )
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| RunError::Os(error.to_string()))?;
-    let stdout = child.stdout.take().map(drain);
-    let stderr = child.stderr.take().map(drain);
-    let deadline = Instant::now() + Duration::from_secs_f64(timeout_s.max(0.0));
-    let join = |handle: Option<std::thread::JoinHandle<Vec<u8>>>| {
-        handle
-            .and_then(|handle| handle.join().ok())
-            .unwrap_or_default()
-    };
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                return Ok(Completed {
-                    stdout: decode(&join(stdout)),
-                    stderr: decode(&join(stderr)),
-                    returncode: i64::from(status.code().unwrap_or(-1)),
-                });
-            }
-            Ok(None) if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(RunError::Timeout {
-                    stdout: decode(&join(stdout)),
-                });
-            }
-            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
-            Err(error) => return Err(RunError::Os(error.to_string())),
-        }
-    }
-}
+mod process;
+pub use process::{clean_environment, run_captured, Completed, RunError};
 
 /// `tomllib` → JSON: las fechas quedan como texto.
 fn toml_to_json(value: &toml::Value) -> Value {
@@ -634,264 +529,8 @@ fn clip(text: &str) -> String {
     head_chars(text, MAX_OUTPUT_CHARS).to_string()
 }
 
-fn check_bounds(name: &str, number: f64, spec: &ParamSpec) -> Result<(), String> {
-    if let Some(minimum) = &spec.minimum {
-        if minimum.as_f64().is_some_and(|min| number < min) {
-            return Err(format!(
-                "«{name}» debe ser mayor o igual que {}.",
-                python_str(minimum)
-            ));
-        }
-    }
-    if let Some(maximum) = &spec.maximum {
-        if maximum.as_f64().is_some_and(|max| number > max) {
-            return Err(format!(
-                "«{name}» debe ser menor o igual que {}.",
-                python_str(maximum)
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn integer_of(name: &str, value: &Value) -> Result<i64, String> {
-    let bad = || format!("«{name}» debe ser un entero.");
-    match value {
-        Value::Number(number) if number.is_i64() => number.as_i64().ok_or_else(bad),
-        Value::String(text) if int_text_re().is_match(py_strip(text)) => {
-            python_int(py_strip(text)).ok_or_else(bad)
-        }
-        _ => Err(bad()),
-    }
-}
-
-fn validate_value(
-    name: &str,
-    value: &Value,
-    spec: &ParamSpec,
-    ctx: &RunContext,
-) -> Result<String, String> {
-    let mut value = value.clone();
-    match spec.kind.as_str() {
-        "integer" => {
-            let number = integer_of(name, &value)?;
-            check_bounds(name, number as f64, spec)?;
-            value = json!(number);
-        }
-        "number" => {
-            let Some(number) = value.as_f64().filter(|_| value.is_number()) else {
-                return Err(format!("«{name}» debe ser un número."));
-            };
-            check_bounds(name, number, spec)?;
-        }
-        "boolean" => {
-            if !value.is_boolean() {
-                return Err(format!("«{name}» debe ser true o false."));
-            }
-        }
-        _ => {
-            if !value.is_string() {
-                return Err(format!("«{name}» debe ser texto."));
-            }
-        }
-    }
-    let validator = spec.validate.as_deref();
-    if validator == Some("integer") {
-        return Ok(integer_of(name, &value)?.to_string());
-    }
-    let text = match &value {
-        Value::Bool(flag) => if *flag { "true" } else { "false" }.to_string(),
-        other => python_str(other),
-    };
-    match validator {
-        Some(kind @ ("path_in_read_roots" | "path_in_write_roots")) => {
-            let roots = if kind == "path_in_read_roots" {
-                &ctx.read_roots
-            } else {
-                &ctx.write_roots
-            };
-            resolve_safe(&text, &ctx.workspace, roots, &ctx.deny, &ctx.deny_globs)
-                .map(|path| path.display().to_string())
-                .map_err(|error| format!("ruta no permitida: {error}"))
-        }
-        Some("url_http") => {
-            let parts = urlsplit(&text)
-                .map_err(|_| format!("«{name}» debe ser una URL http o https válida."))?;
-            if !matches!(parts.scheme.as_str(), "http" | "https") || parts.hostname.is_none() {
-                return Err(format!("«{name}» debe ser una URL http o https válida."));
-            }
-            if parts.has_userinfo {
-                return Err(format!("«{name}» no puede incluir credenciales en la URL."));
-            }
-            Ok(text)
-        }
-        Some("enum") => {
-            let choices = spec.choices.clone().unwrap_or_default();
-            if choices.contains(&text) {
-                Ok(text)
-            } else {
-                Err(format!("«{name}» debe ser uno de: {}", choices.join(", ")))
-            }
-        }
-        _ => Ok(text),
-    }
-}
-
-/// Lo que devuelve un manejador de `tools.d` (para pruebas y otros módulos).
-pub fn into_return(result: ToolResult) -> ToolReturn {
-    ToolReturn::Result(result)
-}
-
-/// Longitud en caracteres, para las pruebas de recorte.
-pub fn output_len(text: &str) -> usize {
-    char_len(text)
-}
+mod validate;
+use validate::validate_value;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn config(dir: &Path, exe: &str) -> AgentConfig {
-        let file = dir.join("permissions.toml");
-        let _ = std::fs::write(
-            &file,
-            format!(
-                "[tools_d]\nallowed_executables = ['{exe}']\n[paths]\nread_roots = ['{}']\n",
-                dir.display().to_string().replace('\\', "/")
-            ),
-        );
-        let (mut config, _) = AgentConfig::load(Some(&file));
-        config.workspace = dir.to_path_buf();
-        config
-    }
-
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("ez-toolsd-{}-{name}", std::process::id()));
-        let _ = std::fs::create_dir_all(dir.join("tools.d"));
-        dir
-    }
-
-    #[test]
-    fn loads_valid_tools_and_rejects_bad_ones() {
-        let dir = scratch("load");
-        let tools = dir.join("tools.d");
-        let echo = if cfg!(windows) { "ping" } else { "echo" };
-        let _ = std::fs::write(tools.join("a.toml"), format!(
-            "name='saludar'\ndescription='Saluda'\ncommand=['{echo}', '{{texto}}']\nlevel=0\n[params.texto]\ntype='string'\nvalidate='enum:hola,adios'\n[params.n]\ntype='integer'\nrequired=false\nminimum=1\n"));
-        let _ = std::fs::write(
-            tools.join("b.toml"),
-            "name='malo'\ndescription='x'\ncommand='echo hola'\n",
-        );
-        let _ = std::fs::write(
-            tools.join("c.toml"),
-            "name='libre'\ndescription='x'\ncommand=['powershell', 'x']\n",
-        );
-        let config = config(&dir, echo);
-        let loaded = load_tools_d(&config);
-        assert_eq!(loaded.len(), 1);
-        let tool = &loaded[0];
-        assert_eq!(tool.level, 1, "el nivel mínimo es 1");
-        assert_eq!(tool.timeout_s, 11.0);
-        assert_eq!(tool.parameters["required"], json!(["texto"]));
-        assert_eq!(
-            tool.parameters["properties"]["texto"]["enum"],
-            json!(["hola", "adios"])
-        );
-        assert_eq!(tool.parameters["properties"]["n"]["minimum"], 1);
-        assert_eq!(output_len("añ"), 2);
-    }
-
-    #[test]
-    fn validates_arguments_before_running() {
-        let dir = scratch("validate");
-        let config = config(&dir, "ping");
-        let ctx = RunContext {
-            tool_name: "t".into(),
-            command: vec!["ping".into(), "{u}".into()],
-            params: IndexMap::from([
-                (
-                    "u".to_string(),
-                    ParamSpec {
-                        kind: "string".into(),
-                        required: true,
-                        validate: Some("url_http".into()),
-                        choices: None,
-                        minimum: None,
-                        maximum: None,
-                    },
-                ),
-                (
-                    "n".to_string(),
-                    ParamSpec {
-                        kind: "integer".into(),
-                        required: false,
-                        validate: None,
-                        choices: None,
-                        minimum: Some(json!(1)),
-                        maximum: Some(json!(5)),
-                    },
-                ),
-            ]),
-            workspace: config.workspace.clone(),
-            read_roots: vec![],
-            write_roots: vec![],
-            deny: vec![],
-            deny_globs: vec![],
-            timeout_s: 2.0,
-        };
-        let run = |args: Value| run_declarative_tool(&ctx, args.as_object().expect("objeto"));
-        assert_eq!(
-            run(json!({})).error.as_deref(),
-            Some("Falta el parámetro obligatorio «u».")
-        );
-        assert_eq!(
-            run(json!({"u": "x", "z": 1})).error.as_deref(),
-            Some("Parámetros no admitidos: z")
-        );
-        assert_eq!(
-            run(json!({"u": "ftp://a"})).error.as_deref(),
-            Some("t: «u» debe ser una URL http o https válida.")
-        );
-        assert_eq!(
-            run(json!({"u": "http://a:b@c/"})).error.as_deref(),
-            Some("t: «u» no puede incluir credenciales en la URL.")
-        );
-        assert_eq!(
-            run(json!({"u": "http://a/", "n": "9"})).error.as_deref(),
-            Some("t: «n» debe ser menor o igual que 5.")
-        );
-        assert_eq!(
-            run(json!({"u": "http://a/", "n": true})).error.as_deref(),
-            Some("t: «n» debe ser un entero.")
-        );
-    }
-
-    #[test]
-    fn captures_output_and_times_out() {
-        let dir = std::env::temp_dir();
-        let env = clean_environment();
-        let (quick, slow): (Vec<String>, Vec<String>) = if cfg!(windows) {
-            (
-                ["ping", "-n", "1", "127.0.0.1"].map(String::from).to_vec(),
-                ["ping", "-n", "8", "127.0.0.1"].map(String::from).to_vec(),
-            )
-        } else {
-            (
-                ["echo", "127.0.0.1"].map(String::from).to_vec(),
-                ["sleep", "3"].map(String::from).to_vec(),
-            )
-        };
-        let out = run_captured(&quick, &dir, &env, 10.0).expect("termina");
-        assert_eq!(out.returncode, 0);
-        assert!(out.stdout.contains("127.0.0.1"));
-        assert!(matches!(
-            run_captured(&slow, &dir, &env, 0.3),
-            Err(RunError::Timeout { .. })
-        ));
-        let missing = ["no-existe-ez".to_string()];
-        assert!(matches!(
-            run_captured(&missing, &dir, &env, 1.0),
-            Err(RunError::Os(_))
-        ));
-    }
-}
+mod tests;
