@@ -47,11 +47,21 @@ pub(super) fn model_message(value: &Value) -> Option<ModelMessage> {
 }
 
 /// `Herdr` visto por el núcleo agéntico (`ez-herdr` no depende de `ez-agent`).
-// DECISION: `ez-herdr` aún no expone `catalog_text`/`context_text`; el catálogo
-// y la foto de contexto salen vacíos y solo `list_agents` consulta de verdad.
+///
+/// `Herdr` hereda de `AgentDriver` en Python; aquí el catálogo se construye
+/// sobre la copia de configuración que `Herdr` ya guarda y la sesión usa el
+/// mismo `Herdr` como `SessionHost`.
 pub(super) struct AgentHerdr(pub(super) Arc<Herdr>);
 
 impl ez_agent::runtime::HerdrApi for AgentHerdr {
+    fn catalog_text(&self) -> String {
+        ez_herdr::driver::AgentDriver::new(Arc::clone(&self.0), self.0.config()).catalog_text()
+    }
+
+    fn context_text(&self) -> String {
+        self.0.context_text()
+    }
+
     fn list_agents(&self) -> Vec<Value> {
         self.0
             .list_agents(10.0)
@@ -226,4 +236,31 @@ where
 {
     let weak = weak.clone();
     Arc::new(move || upgrade_value(&weak, &action))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ez_agent::runtime::HerdrApi;
+    use ez_core::config::VoiceConfig;
+    use ez_herdr::herdr::Herdr;
+    use serde_json::json;
+
+    #[test]
+    fn agent_herdr_ports_the_catalog_and_context_texts() {
+        let mut cfg = VoiceConfig::new();
+        // Ruta absoluta inexistente: ninguna prueba lanza `hc` de verdad.
+        cfg.set("hc_path", json!(r"C:\no-existe\hc.exe"));
+        cfg.set("agents", json!({"claude": ["claude"]}));
+        cfg.set(
+            "agent_profiles",
+            json!({"claude": {"label": "Claude Code", "model_args": ["--model"]}}),
+        );
+        let api = AgentHerdr(Arc::new(Herdr::new(cfg)));
+        let catalog = api.catalog_text();
+        assert!(catalog.starts_with("# Agentes disponibles (datos del catálogo)"));
+        assert!(catalog.contains("- claude (Claude Code)"));
+        assert!(catalog.contains("se puede fijar: modelo"));
+        assert_eq!(api.context_text(), "");
+    }
 }
