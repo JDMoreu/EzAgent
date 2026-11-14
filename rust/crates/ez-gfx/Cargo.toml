@@ -10,6 +10,7 @@ name = "ez_gfx"
 path = "src/lib.rs"
 
 [dependencies]
+freetype-rs = { workspace = true, features = ["bundled"] }
 image = { workspace = true }
 png = { workspace = true }
 bytemuck = { workspace = true }
