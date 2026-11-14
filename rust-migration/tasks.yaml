@@ -217,7 +217,7 @@ tasks:
   phase: F1
   depends_on:
   - F1-01
-  status: in_progress
+  status: done
   round: 0
   worker: null
   worktree: null

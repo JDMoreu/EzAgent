@@ -1,0 +1,1 @@
+{"view": "orbit", "state": "orbit-waiting-dark-100-circle-bottom-idle-m0-o0", "input": {"theme": "dark", "base": "dark", "preset": null, "dpi": 1.0, "layout": "circle", "states": ["waiting"], "pulse": 1.0, "form_px": [58, 58]}, "frames": [{"t_ms": 0, "png": "hud/orbit/orbit-waiting-dark-100-circle-bottom-idle-m0-o0@0.png"}]}
