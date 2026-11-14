@@ -23,6 +23,7 @@ chrono = { workspace = true }
 tracing = { workspace = true }
 reqwest = { workspace = true }
 uuid = { workspace = true }
+serde_yaml = { workspace = true }
 ez-core = { path = "../ez-core" }
 ez-llm = { path = "../ez-llm" }
 

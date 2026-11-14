@@ -290,7 +290,7 @@ fn expanded_path(env: &Env, value: &str) -> PathBuf {
 /// `Path.resolve(strict=False)`: resuelve contra el disco la parte que existe
 /// (enlaces y junctions incluidos) y conserva tal cual la que no existe. Es lo
 /// que impide que `C:\Users\All Users` pase por `C:\Users` camino de `C:\ProgramData`.
-fn resolve(path: &Path) -> PathBuf {
+pub fn resolve(path: &Path) -> PathBuf {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
     } else {
