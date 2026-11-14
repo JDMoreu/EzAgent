@@ -30,6 +30,23 @@ pub fn isoformat_local(secs: f64) -> Result<String, String> {
     Ok(format_micros(&local, false))
 }
 
+/// `datetime.now().astimezone().isoformat(timespec="seconds")`: hora local con
+/// su desfase (`2026-11-14T01:07:23-05:00`).
+pub fn now_local_iso_seconds() -> String {
+    let now = Local::now();
+    format!("{}{}", now.format("%Y-%m-%dT%H:%M:%S"), now.format("%:z"))
+}
+
+/// `datetime.fromtimestamp(secs).astimezone().isoformat(timespec="seconds")`.
+pub fn local_iso_seconds(secs: f64) -> Result<String, String> {
+    let local = local_datetime(secs)?;
+    Ok(format!(
+        "{}{}",
+        local.format("%Y-%m-%dT%H:%M:%S"),
+        local.format("%:z")
+    ))
+}
+
 /// `datetime.fromtimestamp(secs, timezone.utc).isoformat()`: `+00:00` siempre.
 pub fn isoformat_utc(secs: f64) -> Result<String, String> {
     let utc = utc_datetime(secs)?;

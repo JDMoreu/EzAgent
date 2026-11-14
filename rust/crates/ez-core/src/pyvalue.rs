@@ -172,6 +172,21 @@ pub fn format_g(value: f64) -> String {
     trim(&format!("{value:.decimals$}"))
 }
 
+/// `str.casefold()`.
+pub fn casefold(text: &str) -> String {
+    crate::casefold::casefold(text)
+}
+
+/// Minúsculas plegadas y sin tildes: `NFKD(casefold(text))` sin marcas combinantes.
+pub fn fold_accents(text: &str) -> String {
+    use unicode_normalization::char::canonical_combining_class;
+    use unicode_normalization::UnicodeNormalization;
+    crate::casefold::casefold(text)
+        .nfkd()
+        .filter(|character| canonical_combining_class(*character) == 0)
+        .collect()
+}
+
 /// `str(value or "")` para un valor opcional del JSON.
 pub fn text_or_empty(value: Option<&serde_json::Value>) -> String {
     match value {
