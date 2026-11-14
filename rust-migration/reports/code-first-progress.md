@@ -56,3 +56,4 @@ HUD (`ez-gfx`, `ez-hud`) → `ez-app`. Después: tests de paridad por dominio y
 - `get_datetime` sin zona usa `UTC±hh:mm` como etiqueta (Python da el nombre
   localizado de Windows).
 - `open_path` abre con `explorer.exe` (Python usa `os.startfile`).
+- F5-10b: `Menu::draw` debe usar `draw_with` (las filas avanzadas quedan en blanco si no); tenerlo en cuenta en F6-06b (menu_wiring).
