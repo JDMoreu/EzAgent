@@ -1,54 +1,54 @@
-{"case": "chat_trace/stamp/001", "fn": "stamp", "input": {"t": 1768478400.0}, "output": {"stamp": "15 ene 2026 \u00b7 12:00:00"}, "error": null}
-{"case": "chat_trace/stamp/002", "fn": "stamp", "input": {"t": 1771156800.0}, "output": {"stamp": "15 feb 2026 \u00b7 12:00:00"}, "error": null}
-{"case": "chat_trace/stamp/003", "fn": "stamp", "input": {"t": 1773576000.0}, "output": {"stamp": "15 mar 2026 \u00b7 12:00:00"}, "error": null}
-{"case": "chat_trace/stamp/004", "fn": "stamp", "input": {"t": 1776254400.0}, "output": {"stamp": "15 abr 2026 \u00b7 12:00:00"}, "error": null}
-{"case": "chat_trace/stamp/005", "fn": "stamp", "input": {"t": 1778846400.0}, "output": {"stamp": "15 may 2026 \u00b7 12:00:00"}, "error": null}
-{"case": "chat_trace/stamp/006", "fn": "stamp", "input": {"t": 1781524800.0}, "output": {"stamp": "15 jun 2026 \u00b7 12:00:00"}, "error": null}
-{"case": "chat_trace/stamp/007", "fn": "stamp", "input": {"t": 1784116800.0}, "output": {"stamp": "15 jul 2026 \u00b7 12:00:00"}, "error": null}
-{"case": "chat_trace/stamp/008", "fn": "stamp", "input": {"t": 1786795200.0}, "output": {"stamp": "15 ago 2026 \u00b7 12:00:00"}, "error": null}
-{"case": "chat_trace/stamp/009", "fn": "stamp", "input": {"t": 1789473600.0}, "output": {"stamp": "15 sep 2026 \u00b7 12:00:00"}, "error": null}
-{"case": "chat_trace/stamp/010", "fn": "stamp", "input": {"t": 1792065600.0}, "output": {"stamp": "15 oct 2026 \u00b7 12:00:00"}, "error": null}
-{"case": "chat_trace/stamp/011", "fn": "stamp", "input": {"t": 1794588372.0}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:12"}, "error": null}
-{"case": "chat_trace/stamp/012", "fn": "stamp", "input": {"t": 1798761599.0}, "output": {"stamp": "31 dic 2026 \u00b7 23:59:59"}, "error": null}
-{"case": "chat_trace/stamp/013", "fn": "stamp", "input": {"t": 1793869507.0}, "output": {"stamp": "5 nov 2026 \u00b7 09:05:07"}, "error": null}
-{"case": "chat_trace/stamp/014", "fn": "stamp", "input": {"t": 1793491200.0}, "output": {"stamp": "1 nov 2026 \u00b7 00:00:00"}, "error": null}
-{"case": "chat_trace/stamp/015", "fn": "stamp", "input": {"t": 1796079600.0}, "output": {"stamp": "30 nov 2026 \u00b7 23:00:00"}, "error": null}
-{"case": "chat_trace/stamp/016", "fn": "stamp", "input": {"t": 1709208000.0}, "output": {"stamp": "29 feb 2024 \u00b7 12:00:00"}, "error": null}
-{"case": "chat_trace/stamp/017", "fn": "stamp", "input": {"t": 946684799.0}, "output": {"stamp": "31 dic 1999 \u00b7 23:59:59"}, "error": null}
-{"case": "chat_trace/stamp/018", "fn": "stamp", "input": {"t": 43200.0}, "output": {"stamp": "1 ene 1970 \u00b7 12:00:00"}, "error": null}
-{"case": "chat_trace/stamp/019", "fn": "stamp", "input": {"t": 2147483647.0}, "output": {"stamp": "19 ene 2038 \u00b7 03:14:07"}, "error": null}
-{"case": "chat_trace/stamp/01frac05", "fn": "stamp", "input": {"t": 1794588372.5}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:12"}, "error": null}
-{"case": "chat_trace/stamp/01frac99", "fn": "stamp", "input": {"t": 1794588372.99}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:12"}, "error": null}
-{"case": "chat_trace/stamp/020", "fn": "stamp", "input": {"t": 4086829800.0}, "output": {"stamp": "4 jul 2099 \u00b7 06:30:00"}, "error": null}
-{"case": "chat_trace/stamp/021", "fn": "stamp", "input": {"t": 946684800.0}, "output": {"stamp": "1 ene 2000 \u00b7 00:00:00"}, "error": null}
-{"case": "chat_trace/stamp/022", "fn": "stamp", "input": {"t": 1794614399.0}, "output": {"stamp": "13 nov 2026 \u00b7 23:59:59"}, "error": null}
-{"case": "chat_trace/stamp/023", "fn": "stamp", "input": {"t": 1794571200.0}, "output": {"stamp": "13 nov 2026 \u00b7 12:00:00"}, "error": null}
-{"case": "chat_trace/stamp/02frac05", "fn": "stamp", "input": {"t": 1767225600.5}, "output": {"stamp": "1 ene 2026 \u00b7 00:00:00"}, "error": null}
-{"case": "chat_trace/stamp/02frac99", "fn": "stamp", "input": {"t": 1767225600.99}, "output": {"stamp": "1 ene 2026 \u00b7 00:00:00"}, "error": null}
+{"case": "chat_trace/stamp/001", "fn": "stamp", "input": {"t": 1768496400.0}, "output": {"stamp": "15 ene 2026 \u00b7 12:00:00"}, "error": null}
+{"case": "chat_trace/stamp/002", "fn": "stamp", "input": {"t": 1771174800.0}, "output": {"stamp": "15 feb 2026 \u00b7 12:00:00"}, "error": null}
+{"case": "chat_trace/stamp/003", "fn": "stamp", "input": {"t": 1773594000.0}, "output": {"stamp": "15 mar 2026 \u00b7 12:00:00"}, "error": null}
+{"case": "chat_trace/stamp/004", "fn": "stamp", "input": {"t": 1776272400.0}, "output": {"stamp": "15 abr 2026 \u00b7 12:00:00"}, "error": null}
+{"case": "chat_trace/stamp/005", "fn": "stamp", "input": {"t": 1778864400.0}, "output": {"stamp": "15 may 2026 \u00b7 12:00:00"}, "error": null}
+{"case": "chat_trace/stamp/006", "fn": "stamp", "input": {"t": 1781542800.0}, "output": {"stamp": "15 jun 2026 \u00b7 12:00:00"}, "error": null}
+{"case": "chat_trace/stamp/007", "fn": "stamp", "input": {"t": 1784134800.0}, "output": {"stamp": "15 jul 2026 \u00b7 12:00:00"}, "error": null}
+{"case": "chat_trace/stamp/008", "fn": "stamp", "input": {"t": 1786813200.0}, "output": {"stamp": "15 ago 2026 \u00b7 12:00:00"}, "error": null}
+{"case": "chat_trace/stamp/009", "fn": "stamp", "input": {"t": 1789491600.0}, "output": {"stamp": "15 sep 2026 \u00b7 12:00:00"}, "error": null}
+{"case": "chat_trace/stamp/010", "fn": "stamp", "input": {"t": 1792083600.0}, "output": {"stamp": "15 oct 2026 \u00b7 12:00:00"}, "error": null}
+{"case": "chat_trace/stamp/011", "fn": "stamp", "input": {"t": 1794606372.0}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:12"}, "error": null}
+{"case": "chat_trace/stamp/012", "fn": "stamp", "input": {"t": 1798779599.0}, "output": {"stamp": "31 dic 2026 \u00b7 23:59:59"}, "error": null}
+{"case": "chat_trace/stamp/013", "fn": "stamp", "input": {"t": 1793887507.0}, "output": {"stamp": "5 nov 2026 \u00b7 09:05:07"}, "error": null}
+{"case": "chat_trace/stamp/014", "fn": "stamp", "input": {"t": 1793509200.0}, "output": {"stamp": "1 nov 2026 \u00b7 00:00:00"}, "error": null}
+{"case": "chat_trace/stamp/015", "fn": "stamp", "input": {"t": 1796097600.0}, "output": {"stamp": "30 nov 2026 \u00b7 23:00:00"}, "error": null}
+{"case": "chat_trace/stamp/016", "fn": "stamp", "input": {"t": 1709226000.0}, "output": {"stamp": "29 feb 2024 \u00b7 12:00:00"}, "error": null}
+{"case": "chat_trace/stamp/017", "fn": "stamp", "input": {"t": 946702799.0}, "output": {"stamp": "31 dic 1999 \u00b7 23:59:59"}, "error": null}
+{"case": "chat_trace/stamp/018", "fn": "stamp", "input": {"t": 61200.0}, "output": {"stamp": "1 ene 1970 \u00b7 12:00:00"}, "error": null}
+{"case": "chat_trace/stamp/019", "fn": "stamp", "input": {"t": 2147501647.0}, "output": {"stamp": "19 ene 2038 \u00b7 03:14:07"}, "error": null}
+{"case": "chat_trace/stamp/01frac05", "fn": "stamp", "input": {"t": 1794606372.5}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:12"}, "error": null}
+{"case": "chat_trace/stamp/01frac99", "fn": "stamp", "input": {"t": 1794606372.99}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:12"}, "error": null}
+{"case": "chat_trace/stamp/020", "fn": "stamp", "input": {"t": 4086847800.0}, "output": {"stamp": "4 jul 2099 \u00b7 06:30:00"}, "error": null}
+{"case": "chat_trace/stamp/021", "fn": "stamp", "input": {"t": 946702800.0}, "output": {"stamp": "1 ene 2000 \u00b7 00:00:00"}, "error": null}
+{"case": "chat_trace/stamp/022", "fn": "stamp", "input": {"t": 1794632399.0}, "output": {"stamp": "13 nov 2026 \u00b7 23:59:59"}, "error": null}
+{"case": "chat_trace/stamp/023", "fn": "stamp", "input": {"t": 1794589200.0}, "output": {"stamp": "13 nov 2026 \u00b7 12:00:00"}, "error": null}
+{"case": "chat_trace/stamp/02frac05", "fn": "stamp", "input": {"t": 1767243600.5}, "output": {"stamp": "1 ene 2026 \u00b7 00:00:00"}, "error": null}
+{"case": "chat_trace/stamp/02frac99", "fn": "stamp", "input": {"t": 1767243600.99}, "output": {"stamp": "1 ene 2026 \u00b7 00:00:00"}, "error": null}
 {"case": "chat_trace/stamp/error02", "fn": "stamp", "input": {"t": "2026-11-13T16:46:12"}, "output": null, "error": "'str' object cannot be interpreted as an integer"}
-{"case": "chat_trace/stamp/int01", "fn": "stamp", "input": {"t": 1794588372}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:12"}, "error": null}
-{"case": "chat_trace/stamp/int02", "fn": "stamp", "input": {"t": 946684799}, "output": {"stamp": "31 dic 1999 \u00b7 23:59:59"}, "error": null}
-{"case": "chat_trace/stamp_for/001", "fn": "stamp_for", "input": {"role": "user", "streaming": false, "t": 1794588377.0}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:17"}, "error": null}
-{"case": "chat_trace/stamp_for/002", "fn": "stamp_for", "input": {"role": "assistant", "streaming": false, "t": 1794588377.0}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:17"}, "error": null}
-{"case": "chat_trace/stamp_for/003", "fn": "stamp_for", "input": {"role": "assistant", "streaming": true, "t": 1794588377.0}, "output": {"stamp": ""}, "error": null}
-{"case": "chat_trace/stamp_for/004", "fn": "stamp_for", "input": {"role": "user", "streaming": true, "t": 1794588377.0}, "output": {"stamp": ""}, "error": null}
-{"case": "chat_trace/stamp_for/005", "fn": "stamp_for", "input": {"role": "system", "streaming": false, "t": 1794588377.0}, "output": {"stamp": ""}, "error": null}
-{"case": "chat_trace/stamp_for/006", "fn": "stamp_for", "input": {"role": "tool", "streaming": false, "t": 1794588377.0}, "output": {"stamp": ""}, "error": null}
-{"case": "chat_trace/stamp_for/007", "fn": "stamp_for", "input": {"role": "", "streaming": false, "t": 1794588377.0}, "output": {"stamp": ""}, "error": null}
-{"case": "chat_trace/stamp_for/008", "fn": "stamp_for", "input": {"role": "developer", "streaming": false, "t": 1794588377.0}, "output": {"stamp": ""}, "error": null}
-{"case": "chat_trace/stamp_for/009", "fn": "stamp_for", "input": {"role": "usuario", "streaming": false, "t": 1794588377.0}, "output": {"stamp": ""}, "error": null}
-{"case": "chat_trace/stamp_for/010", "fn": "stamp_for", "input": {"role": "USER", "streaming": false, "t": 1794588377.0}, "output": {"stamp": ""}, "error": null}
-{"case": "chat_trace/stamp_for/011", "fn": "stamp_for", "input": {"role": "user", "streaming": false, "t": 1767225600.0}, "output": {"stamp": "1 ene 2026 \u00b7 00:00:00"}, "error": null}
-{"case": "chat_trace/stamp_for/012", "fn": "stamp_for", "input": {"role": "user", "streaming": false, "t": 1798761599.0}, "output": {"stamp": "31 dic 2026 \u00b7 23:59:59"}, "error": null}
-{"case": "chat_trace/stamp_for/013", "fn": "stamp_for", "input": {"role": "assistant", "streaming": false, "t": 1709208000.0}, "output": {"stamp": "29 feb 2024 \u00b7 12:00:00"}, "error": null}
-{"case": "chat_trace/stamp_for/014", "fn": "stamp_for", "input": {"role": "assistant", "streaming": false, "t": 1793869507.0}, "output": {"stamp": "5 nov 2026 \u00b7 09:05:07"}, "error": null}
-{"case": "chat_trace/stamp_for/015", "fn": "stamp_for", "input": {"role": "user", "streaming": 0, "t": 1794588377.0}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:17"}, "error": null}
-{"case": "chat_trace/stamp_for/016", "fn": "stamp_for", "input": {"role": "user", "streaming": 1, "t": 1794588377.0}, "output": {"stamp": ""}, "error": null}
-{"case": "chat_trace/stamp_for/017", "fn": "stamp_for", "input": {"role": "user", "streaming": null, "t": 1794588377.0}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:17"}, "error": null}
-{"case": "chat_trace/stamp_for/018", "fn": "stamp_for", "input": {"role": "user", "t": 1794588377.0}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:17"}, "error": null}
-{"case": "chat_trace/stamp_for/019", "fn": "stamp_for", "input": {"role": "assistant", "t": 1794588377.0}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:17"}, "error": null}
-{"case": "chat_trace/stamp_for/020", "fn": "stamp_for", "input": {"role": "user", "streaming": false, "t": 43200.0}, "output": {"stamp": "1 ene 1970 \u00b7 12:00:00"}, "error": null}
-{"case": "chat_trace/stamp_for/021", "fn": "stamp_for", "input": {"role": "assistant", "streaming": false, "t": 2147483647.0}, "output": {"stamp": "19 ene 2038 \u00b7 03:14:07"}, "error": null}
+{"case": "chat_trace/stamp/int01", "fn": "stamp", "input": {"t": 1794606372}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:12"}, "error": null}
+{"case": "chat_trace/stamp/int02", "fn": "stamp", "input": {"t": 946702799}, "output": {"stamp": "31 dic 1999 \u00b7 23:59:59"}, "error": null}
+{"case": "chat_trace/stamp_for/001", "fn": "stamp_for", "input": {"role": "user", "streaming": false, "t": 1794606377.0}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:17"}, "error": null}
+{"case": "chat_trace/stamp_for/002", "fn": "stamp_for", "input": {"role": "assistant", "streaming": false, "t": 1794606377.0}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:17"}, "error": null}
+{"case": "chat_trace/stamp_for/003", "fn": "stamp_for", "input": {"role": "assistant", "streaming": true, "t": 1794606377.0}, "output": {"stamp": ""}, "error": null}
+{"case": "chat_trace/stamp_for/004", "fn": "stamp_for", "input": {"role": "user", "streaming": true, "t": 1794606377.0}, "output": {"stamp": ""}, "error": null}
+{"case": "chat_trace/stamp_for/005", "fn": "stamp_for", "input": {"role": "system", "streaming": false, "t": 1794606377.0}, "output": {"stamp": ""}, "error": null}
+{"case": "chat_trace/stamp_for/006", "fn": "stamp_for", "input": {"role": "tool", "streaming": false, "t": 1794606377.0}, "output": {"stamp": ""}, "error": null}
+{"case": "chat_trace/stamp_for/007", "fn": "stamp_for", "input": {"role": "", "streaming": false, "t": 1794606377.0}, "output": {"stamp": ""}, "error": null}
+{"case": "chat_trace/stamp_for/008", "fn": "stamp_for", "input": {"role": "developer", "streaming": false, "t": 1794606377.0}, "output": {"stamp": ""}, "error": null}
+{"case": "chat_trace/stamp_for/009", "fn": "stamp_for", "input": {"role": "usuario", "streaming": false, "t": 1794606377.0}, "output": {"stamp": ""}, "error": null}
+{"case": "chat_trace/stamp_for/010", "fn": "stamp_for", "input": {"role": "USER", "streaming": false, "t": 1794606377.0}, "output": {"stamp": ""}, "error": null}
+{"case": "chat_trace/stamp_for/011", "fn": "stamp_for", "input": {"role": "user", "streaming": false, "t": 1767243600.0}, "output": {"stamp": "1 ene 2026 \u00b7 00:00:00"}, "error": null}
+{"case": "chat_trace/stamp_for/012", "fn": "stamp_for", "input": {"role": "user", "streaming": false, "t": 1798779599.0}, "output": {"stamp": "31 dic 2026 \u00b7 23:59:59"}, "error": null}
+{"case": "chat_trace/stamp_for/013", "fn": "stamp_for", "input": {"role": "assistant", "streaming": false, "t": 1709226000.0}, "output": {"stamp": "29 feb 2024 \u00b7 12:00:00"}, "error": null}
+{"case": "chat_trace/stamp_for/014", "fn": "stamp_for", "input": {"role": "assistant", "streaming": false, "t": 1793887507.0}, "output": {"stamp": "5 nov 2026 \u00b7 09:05:07"}, "error": null}
+{"case": "chat_trace/stamp_for/015", "fn": "stamp_for", "input": {"role": "user", "streaming": 0, "t": 1794606377.0}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:17"}, "error": null}
+{"case": "chat_trace/stamp_for/016", "fn": "stamp_for", "input": {"role": "user", "streaming": 1, "t": 1794606377.0}, "output": {"stamp": ""}, "error": null}
+{"case": "chat_trace/stamp_for/017", "fn": "stamp_for", "input": {"role": "user", "streaming": null, "t": 1794606377.0}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:17"}, "error": null}
+{"case": "chat_trace/stamp_for/018", "fn": "stamp_for", "input": {"role": "user", "t": 1794606377.0}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:17"}, "error": null}
+{"case": "chat_trace/stamp_for/019", "fn": "stamp_for", "input": {"role": "assistant", "t": 1794606377.0}, "output": {"stamp": "13 nov 2026 \u00b7 16:46:17"}, "error": null}
+{"case": "chat_trace/stamp_for/020", "fn": "stamp_for", "input": {"role": "user", "streaming": false, "t": 61200.0}, "output": {"stamp": "1 ene 1970 \u00b7 12:00:00"}, "error": null}
+{"case": "chat_trace/stamp_for/021", "fn": "stamp_for", "input": {"role": "assistant", "streaming": false, "t": 2147501647.0}, "output": {"stamp": "19 ene 2038 \u00b7 03:14:07"}, "error": null}
 {"case": "chat_trace/stamp_for/error01", "fn": "stamp_for", "input": {"role": "user", "streaming": false}, "output": null, "error": "'types.SimpleNamespace' object has no attribute 't'"}
 {"case": "chat_trace/stamp_for/error02", "fn": "stamp_for", "input": {"role": "user", "t": null, "streaming": false}, "output": null, "error": "float() argument must be a string or a real number, not 'NoneType'"}
 {"case": "chat_trace/stamp_for/error03", "fn": "stamp_for", "input": {"role": "user", "t": "x", "streaming": false}, "output": null, "error": "could not convert string to float: 'x'"}
