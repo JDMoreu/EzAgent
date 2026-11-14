@@ -177,12 +177,14 @@ def empty_diff_problem(changed: list[str], base: str) -> str | None:
     )
 
 
-def git_diff(base: str) -> str:
-    return git("diff", f"{base}...HEAD", "--", "rust/", "parity/").stdout
+def git_diff(base: str, commit: str | None = None) -> str:
+    span = f"{commit}^..{commit}" if commit else f"{base}...HEAD"
+    return git("diff", span, "--", "rust/", "parity/").stdout
 
 
-def git_changed(base: str) -> list[str]:
-    return [line.strip() for line in git("diff", "--name-only", f"{base}...HEAD", "--", "rust/", "parity/").stdout.splitlines() if line.strip()]
+def git_changed(base: str, commit: str | None = None) -> list[str]:
+    span = f"{commit}^..{commit}" if commit else f"{base}...HEAD"
+    return [line.strip() for line in git("diff", "--name-only", span, "--", "rust/", "parity/").stdout.splitlines() if line.strip()]
 
 
 def selftest() -> int:
@@ -246,6 +248,11 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--task")
     parser.add_argument("--base", default=None)
+    parser.add_argument(
+        "--commit",
+        default=None,
+        help="audita un commit concreto (diff <commit>^..<commit>) en vez de base...HEAD",
+    )
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args(argv[1:])
 
@@ -263,13 +270,26 @@ def main(argv: list[str]) -> int:
         print(f"tarea desconocida: {args.task}")
         return 2
 
-    base = check_base(args.base or default_base())
-    changed = git_changed(base)
-    empty = empty_diff_problem(changed, base)
+    if args.commit:
+        if git("rev-parse", "--verify", "--quiet", f"{args.commit}^").returncode != 0:
+            raise SystemExit(f"commit inexistente o sin padre: {args.commit!r}")
+        base = f"{args.commit}^"
+        changed = git_changed(base, args.commit)
+        diff = git_diff(base, args.commit)
+        label = args.commit
+    else:
+        base = check_base(args.base or default_base())
+        changed = git_changed(base)
+        empty = empty_diff_problem(changed, base)
+        if empty:
+            print(f"FALLO {empty}")
+            return 1
+        diff = git_diff(base)
+        label = base
+    empty = empty_diff_problem(changed, label)
     if empty:
         print(f"FALLO {empty}")
         return 1
-    diff = git_diff(base)
     problems = (
         check_scope(changed, task)
         + check_forbidden(diff)
@@ -280,7 +300,7 @@ def main(argv: list[str]) -> int:
     if problems:
         print("\n".join(f"FALLO {p}" for p in problems))
         return 1
-    print(f"reglas de codigo de {args.task}: ok ({len(changed)} archivos contra {base})")
+    print(f"reglas de codigo de {args.task}: ok ({len(changed)} archivos contra {label})")
     return 0
 
 

@@ -5,6 +5,7 @@ param(
     [string]$Task,
     [switch]$SelfTest,
     [string]$Base = "",
+    [string]$Commit = "",
     [switch]$SkipPytest
 )
 
@@ -36,7 +37,9 @@ if (-not $info) { Fail "tarea desconocida: $Task" }
 
 Step "1. alcance del diff" {
     # Sin -Base la regla usa el commit anterior de la tarea (nunca un diff vacio).
-    if ($Base) {
+    if ($Commit) {
+        uv run python "rust-migration/tools/scan_diff.py" --task $Task --commit $Commit
+    } elseif ($Base) {
         uv run python "rust-migration/tools/scan_diff.py" --task $Task --base $Base
     } else {
         uv run python "rust-migration/tools/scan_diff.py" --task $Task
