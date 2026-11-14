@@ -20,6 +20,7 @@ pub mod monitor;
 pub mod peek;
 pub mod pointer;
 pub mod settings_window;
+pub mod ui_loop;
 pub mod wheel;
 pub mod wndproc;
 
@@ -27,6 +28,7 @@ pub use frame_stats::{FrameStats, BUDGET_MS, REPORT_SECS};
 pub use layered::{LayeredWindow, RgbaFrame, WindowEvent, WindowHooks, WindowOptions, FPS_ACTIVE};
 pub use monitor::{clamp_pos, monitor_rect, taskbar_rect, work_area, Rect};
 pub use pointer::HitRegion;
+pub use ui_loop::{TimerId, UiLoop};
 
 use std::sync::LazyLock;
 use std::time::Instant;
