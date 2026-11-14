@@ -1,0 +1,452 @@
+{"case": "speech_text/normalize_for_kokoro/0001", "fn": "normalize_for_kokoro", "input": {"text": ""}, "output": {"text": ""}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0002", "fn": "normalize_for_kokoro", "input": {"text": "   "}, "output": {"text": ""}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0003", "fn": "normalize_for_kokoro", "input": {"text": "\n\t "}, "output": {"text": ""}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0004", "fn": "normalize_for_kokoro", "input": {"text": "Hola mundo"}, "output": {"text": "Hola mundo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0005", "fn": "normalize_for_kokoro", "input": {"text": "Texto con  dos  espacios"}, "output": {"text": "Texto con dos espacios"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0006", "fn": "normalize_for_kokoro", "input": {"text": "  espacios  alrededor  "}, "output": {"text": "espacios alrededor"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0007", "fn": "normalize_for_kokoro", "input": {"text": "Hola\n\n\nmundo"}, "output": {"text": "Hola mundo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0008", "fn": "normalize_for_kokoro", "input": {"text": "a  ,  b"}, "output": {"text": "a, b"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0009", "fn": "normalize_for_kokoro", "input": {"text": "punto  .  final  ."}, "output": {"text": "punto. final."}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0010", "fn": "normalize_for_kokoro", "input": {"text": "Listo."}, "output": {"text": "Listo."}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0011", "fn": "normalize_for_kokoro", "input": {"text": "Tenemos 3 tazas y 42 platos"}, "output": {"text": "Tenemos tres tazas y cuarenta y dos platos"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0012", "fn": "normalize_for_kokoro", "input": {"text": "0"}, "output": {"text": "cero"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0013", "fn": "normalize_for_kokoro", "input": {"text": "-7"}, "output": {"text": "menos siete"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0014", "fn": "normalize_for_kokoro", "input": {"text": "7"}, "output": {"text": "siete"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0015", "fn": "normalize_for_kokoro", "input": {"text": "21"}, "output": {"text": "veintiuno"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0016", "fn": "normalize_for_kokoro", "input": {"text": "31"}, "output": {"text": "treinta y uno"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0017", "fn": "normalize_for_kokoro", "input": {"text": "100"}, "output": {"text": "cien"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0018", "fn": "normalize_for_kokoro", "input": {"text": "101"}, "output": {"text": "ciento uno"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0019", "fn": "normalize_for_kokoro", "input": {"text": "1000"}, "output": {"text": "mil"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0020", "fn": "normalize_for_kokoro", "input": {"text": "1999"}, "output": {"text": "mil novecientos noventa y nueve"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0021", "fn": "normalize_for_kokoro", "input": {"text": "2000"}, "output": {"text": "dos mil"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0022", "fn": "normalize_for_kokoro", "input": {"text": "2026"}, "output": {"text": "dos mil veintis\u00e9is"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0023", "fn": "normalize_for_kokoro", "input": {"text": "1000000"}, "output": {"text": "uno cero cero cero cero cero cero"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0024", "fn": "normalize_for_kokoro", "input": {"text": "1000000000"}, "output": {"text": "uno cero cero cero cero cero cero cero cero cero"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0025", "fn": "normalize_for_kokoro", "input": {"text": "1234567890"}, "output": {"text": "uno dos tres cuatro cinco seis siete ocho nueve cero"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0026", "fn": "normalize_for_kokoro", "input": {"text": "123456789"}, "output": {"text": "uno dos tres cuatro cinco seis siete ocho nueve"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0027", "fn": "normalize_for_kokoro", "input": {"text": "-1234567890"}, "output": {"text": "menos uno dos tres cuatro cinco seis siete ocho nueve cero"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0028", "fn": "normalize_for_kokoro", "input": {"text": "12.345.678"}, "output": {"text": "uno dos tres cuatro cinco seis siete ocho"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0029", "fn": "normalize_for_kokoro", "input": {"text": "1.234"}, "output": {"text": "mil doscientos treinta y cuatro"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0030", "fn": "normalize_for_kokoro", "input": {"text": "3.141"}, "output": {"text": "tres mil ciento cuarenta y uno"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0031", "fn": "normalize_for_kokoro", "input": {"text": "3.14159"}, "output": {"text": "tres.14159"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0032", "fn": "normalize_for_kokoro", "input": {"text": "3,14159"}, "output": {"text": "tres coma catorce mil ciento cincuenta y nueve"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0033", "fn": "normalize_for_kokoro", "input": {"text": "0,5"}, "output": {"text": "cero coma cinco"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0034", "fn": "normalize_for_kokoro", "input": {"text": "-0,25"}, "output": {"text": "menos cero coma veinticinco"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0035", "fn": "normalize_for_kokoro", "input": {"text": "12,50"}, "output": {"text": "doce coma cincuenta"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0036", "fn": "normalize_for_kokoro", "input": {"text": "1.234,56"}, "output": {"text": "mil doscientos treinta y cuatro coma cincuenta y seis"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0037", "fn": "normalize_for_kokoro", "input": {"text": "-1.234,56"}, "output": {"text": "menos mil doscientos treinta y cuatro coma cincuenta y seis"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0038", "fn": "normalize_for_kokoro", "input": {"text": "1,234.56"}, "output": {"text": "uno coma doscientos treinta y cuatro.56"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0039", "fn": "normalize_for_kokoro", "input": {"text": "2,5"}, "output": {"text": "dos coma cinco"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0040", "fn": "normalize_for_kokoro", "input": {"text": "2.5"}, "output": {"text": "dos coma cinco"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0041", "fn": "normalize_for_kokoro", "input": {"text": "10."}, "output": {"text": "diez."}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0042", "fn": "normalize_for_kokoro", "input": {"text": "1..2"}, "output": {"text": "uno..2"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0043", "fn": "normalize_for_kokoro", "input": {"text": "1e5"}, "output": {"text": "1e5"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0044", "fn": "normalize_for_kokoro", "input": {"text": "0,0001"}, "output": {"text": "cero coma cero cero cero uno"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0045", "fn": "normalize_for_kokoro", "input": {"text": "999999999999"}, "output": {"text": "nueve nueve nueve nueve nueve nueve nueve nueve nueve nueve nueve nueve"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0046", "fn": "normalize_for_kokoro", "input": {"text": "El total fue 1.250 unidades y 3,75 de media"}, "output": {"text": "El total fue mil doscientos cincuenta unidades y tres coma setenta y cinco de media"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0047", "fn": "normalize_for_kokoro", "input": {"text": "$20"}, "output": {"text": "veinte d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0048", "fn": "normalize_for_kokoro", "input": {"text": "20 $"}, "output": {"text": "veinte d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0049", "fn": "normalize_for_kokoro", "input": {"text": "$0"}, "output": {"text": "cero d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0050", "fn": "normalize_for_kokoro", "input": {"text": "$1"}, "output": {"text": "un d\u00f3lar"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0051", "fn": "normalize_for_kokoro", "input": {"text": "$21"}, "output": {"text": "veinti\u00fan d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0052", "fn": "normalize_for_kokoro", "input": {"text": "$31"}, "output": {"text": "treinta y un d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0053", "fn": "normalize_for_kokoro", "input": {"text": "$1000000"}, "output": {"text": "un mill\u00f3n d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0054", "fn": "normalize_for_kokoro", "input": {"text": "$20/mes"}, "output": {"text": "veinte d\u00f3lares al mes"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0055", "fn": "normalize_for_kokoro", "input": {"text": "\u20ac15"}, "output": {"text": "quince euros"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0056", "fn": "normalize_for_kokoro", "input": {"text": "15 \u20ac"}, "output": {"text": "quince euros"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0057", "fn": "normalize_for_kokoro", "input": {"text": "15,50 \u20ac"}, "output": {"text": "quince euros con cincuenta"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0058", "fn": "normalize_for_kokoro", "input": {"text": "\u20ac0,01"}, "output": {"text": "cero euros con uno"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0059", "fn": "normalize_for_kokoro", "input": {"text": "\u20ac1.234.567,89"}, "output": {"text": "un mill\u00f3n doscientos treinta y cuatro mil quinientos sesenta y siete euros con ochenta y nueve"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0060", "fn": "normalize_for_kokoro", "input": {"text": "US$ 1.000"}, "output": {"text": "mil d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0061", "fn": "normalize_for_kokoro", "input": {"text": "2.5M USD"}, "output": {"text": "dos coma cinco millones de d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0062", "fn": "normalize_for_kokoro", "input": {"text": "$1k"}, "output": {"text": "mil d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0063", "fn": "normalize_for_kokoro", "input": {"text": "$2,5k"}, "output": {"text": "dos coma cinco mil d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0064", "fn": "normalize_for_kokoro", "input": {"text": "\u20ac3.5M"}, "output": {"text": "tres coma cinco millones de euros"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0065", "fn": "normalize_for_kokoro", "input": {"text": "\u00a330"}, "output": {"text": "treinta libras"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0066", "fn": "normalize_for_kokoro", "input": {"text": "1200 MXN"}, "output": {"text": "mil doscientos pesos mexicanos"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0067", "fn": "normalize_for_kokoro", "input": {"text": "35 COP"}, "output": {"text": "treinta y cinco pesos colombianos"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0068", "fn": "normalize_for_kokoro", "input": {"text": "500 ARS"}, "output": {"text": "quinientos pesos argentinos"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0069", "fn": "normalize_for_kokoro", "input": {"text": "3 CLP"}, "output": {"text": "tres pesos chilenos"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0070", "fn": "normalize_for_kokoro", "input": {"text": "10 PEN"}, "output": {"text": "diez soles"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0071", "fn": "normalize_for_kokoro", "input": {"text": "7 BRL"}, "output": {"text": "siete reales"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0072", "fn": "normalize_for_kokoro", "input": {"text": "1 mill\u00f3n de euros"}, "output": {"text": "uno mill\u00f3n de euros"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0073", "fn": "normalize_for_kokoro", "input": {"text": "un mill\u00f3n de d\u00f3lares"}, "output": {"text": "un mill\u00f3n de d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0074", "fn": "normalize_for_kokoro", "input": {"text": "Cuesta 25 USD/a\u00f1o"}, "output": {"text": "Cuesta veinticinco d\u00f3lares al a\u00f1o"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0075", "fn": "normalize_for_kokoro", "input": {"text": "Sale a 25 \u20ac/hora"}, "output": {"text": "Sale a veinticinco euros por hora"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0076", "fn": "normalize_for_kokoro", "input": {"text": "Paga 20 $ por usuario"}, "output": {"text": "Paga veinte d\u00f3lares por usuario"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0077", "fn": "normalize_for_kokoro", "input": {"text": "Son 19,99 \u20ac m\u00e1s IVA"}, "output": {"text": "Son diecinueve euros con noventa y nueve m\u00e1s IVA"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0078", "fn": "normalize_for_kokoro", "input": {"text": "9:00"}, "output": {"text": "nueve en punto"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0079", "fn": "normalize_for_kokoro", "input": {"text": "15:30"}, "output": {"text": "quince y media"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0080", "fn": "normalize_for_kokoro", "input": {"text": "23:15"}, "output": {"text": "veintitr\u00e9s y cuarto"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0081", "fn": "normalize_for_kokoro", "input": {"text": "0:05"}, "output": {"text": "cero cinco"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0082", "fn": "normalize_for_kokoro", "input": {"text": "12:45"}, "output": {"text": "doce cuarenta y cinco"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0083", "fn": "normalize_for_kokoro", "input": {"text": "a las 7:30 de la ma\u00f1ana"}, "output": {"text": "a las siete y media de la ma\u00f1ana"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0084", "fn": "normalize_for_kokoro", "input": {"text": "18:00 h"}, "output": {"text": "dieciocho en punto h"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0085", "fn": "normalize_for_kokoro", "input": {"text": "1/1/2026"}, "output": {"text": "uno de enero de dos mil veintis\u00e9is"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0086", "fn": "normalize_for_kokoro", "input": {"text": "31/12/1999"}, "output": {"text": "treinta y uno de diciembre de mil novecientos noventa y nueve"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0087", "fn": "normalize_for_kokoro", "input": {"text": "5/6/07"}, "output": {"text": "cinco de junio de dos mil siete"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0088", "fn": "normalize_for_kokoro", "input": {"text": "2026-11-13"}, "output": {"text": "trece de noviembre de dos mil veintis\u00e9is"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0089", "fn": "normalize_for_kokoro", "input": {"text": "13-11-2026"}, "output": {"text": "uno tres, uno uno, dos cero dos seis"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0090", "fn": "normalize_for_kokoro", "input": {"text": "32/13/2026"}, "output": {"text": "treinta y dos/trece/dos mil veintis\u00e9is"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0091", "fn": "normalize_for_kokoro", "input": {"text": "2026-13-01"}, "output": {"text": "dos cero dos seis, uno tres, cero uno"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0092", "fn": "normalize_for_kokoro", "input": {"text": "Reuni\u00f3n el 3/4/2026 a las 9:15"}, "output": {"text": "Reuni\u00f3n el tres de abril de dos mil veintis\u00e9is a las nueve y cuarto"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0093", "fn": "normalize_for_kokoro", "input": {"text": "1\u00ba"}, "output": {"text": "primero"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0094", "fn": "normalize_for_kokoro", "input": {"text": "2\u00aa"}, "output": {"text": "segunda"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0095", "fn": "normalize_for_kokoro", "input": {"text": "3er"}, "output": {"text": "tercero"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0096", "fn": "normalize_for_kokoro", "input": {"text": "10\u00ba"}, "output": {"text": "d\u00e9cimo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0097", "fn": "normalize_for_kokoro", "input": {"text": "21er"}, "output": {"text": "vig\u00e9simo primero"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0098", "fn": "normalize_for_kokoro", "input": {"text": "1\u00aa vez y 2\u00ba intento"}, "output": {"text": "primera vez y segundo intento"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0099", "fn": "normalize_for_kokoro", "input": {"text": "el 3\u00ba y el 4\u00aa"}, "output": {"text": "el tercero y el cuarta"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0100", "fn": "normalize_for_kokoro", "input": {"text": "5 km"}, "output": {"text": "cinco kil\u00f3metros"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0101", "fn": "normalize_for_kokoro", "input": {"text": "120 km/h"}, "output": {"text": "ciento veinte kil\u00f3metros por hora"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0102", "fn": "normalize_for_kokoro", "input": {"text": "30 \u00b0C"}, "output": {"text": "treinta grados cent\u00edgrados"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0103", "fn": "normalize_for_kokoro", "input": {"text": "-5\u00b0C"}, "output": {"text": "menos cinco grados cent\u00edgrados"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0104", "fn": "normalize_for_kokoro", "input": {"text": "80 kg"}, "output": {"text": "ochenta kilogramos"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0105", "fn": "normalize_for_kokoro", "input": {"text": "15 cm"}, "output": {"text": "quince cent\u00edmetros"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0106", "fn": "normalize_for_kokoro", "input": {"text": "3 mm"}, "output": {"text": "tres mil\u00edmetros"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0107", "fn": "normalize_for_kokoro", "input": {"text": "250 ml"}, "output": {"text": "doscientos cincuenta mililitros"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0108", "fn": "normalize_for_kokoro", "input": {"text": "8 GB"}, "output": {"text": "ocho gigabytes"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0109", "fn": "normalize_for_kokoro", "input": {"text": "512 MB"}, "output": {"text": "quinientos doce megabytes"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0110", "fn": "normalize_for_kokoro", "input": {"text": "300 ms"}, "output": {"text": "trescientos milisegundos"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0111", "fn": "normalize_for_kokoro", "input": {"text": "2 s"}, "output": {"text": "dos segundos"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0112", "fn": "normalize_for_kokoro", "input": {"text": "10km"}, "output": {"text": "diez kil\u00f3metros"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0113", "fn": "normalize_for_kokoro", "input": {"text": "5 Kg"}, "output": {"text": "cinco Kg"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0114", "fn": "normalize_for_kokoro", "input": {"text": "2 h"}, "output": {"text": "dos h"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0115", "fn": "normalize_for_kokoro", "input": {"text": "Recorrimos 12 km en 2 h a 6 km/h"}, "output": {"text": "Recorrimos doce kil\u00f3metros en dos h a seis kil\u00f3metros por hora"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0116", "fn": "normalize_for_kokoro", "input": {"text": "El Sr. P\u00e9rez y la Sra. G\u00f3mez"}, "output": {"text": "El se\u00f1or P\u00e9rez y la se\u00f1ora G\u00f3mez"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0117", "fn": "normalize_for_kokoro", "input": {"text": "La Dra. Ruiz y el Dr. House"}, "output": {"text": "La doctora Ruiz y el doctor House"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0118", "fn": "normalize_for_kokoro", "input": {"text": "EE. UU."}, "output": {"text": "Estados Unidos"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0119", "fn": "normalize_for_kokoro", "input": {"text": "p. ej. esto"}, "output": {"text": "por ejemplo esto"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0120", "fn": "normalize_for_kokoro", "input": {"text": "etc."}, "output": {"text": "etc\u00e9tera"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0121", "fn": "normalize_for_kokoro", "input": {"text": "aprox. 20"}, "output": {"text": "aproximadamente veinte"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0122", "fn": "normalize_for_kokoro", "input": {"text": "n.\u00ba 5"}, "output": {"text": "n\u00famero cinco"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0123", "fn": "normalize_for_kokoro", "input": {"text": "N.\u00ba 7"}, "output": {"text": "n\u00famero siete"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0124", "fn": "normalize_for_kokoro", "input": {"text": "n\u00fam. 3"}, "output": {"text": "n\u00famero tres"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0125", "fn": "normalize_for_kokoro", "input": {"text": "p\u00e1g. 12"}, "output": {"text": "p\u00e1gina doce"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0126", "fn": "normalize_for_kokoro", "input": {"text": "tel. 555-1234"}, "output": {"text": "tel\u00e9fono cinco cinco cinco, uno dos tres cuatro"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0127", "fn": "normalize_for_kokoro", "input": {"text": "a. C."}, "output": {"text": "antes de Cristo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0128", "fn": "normalize_for_kokoro", "input": {"text": "d. C."}, "output": {"text": "despu\u00e9s de Cristo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0129", "fn": "normalize_for_kokoro", "input": {"text": "Ud. puede"}, "output": {"text": "usted puede"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0130", "fn": "normalize_for_kokoro", "input": {"text": "Uds. pueden"}, "output": {"text": "ustedes pueden"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0131", "fn": "normalize_for_kokoro", "input": {"text": "Av. Reforma"}, "output": {"text": "avenida Reforma"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0132", "fn": "normalize_for_kokoro", "input": {"text": "C/ Mayor 5"}, "output": {"text": "calle Mayor cinco"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0133", "fn": "normalize_for_kokoro", "input": {"text": "Sra. y Srta. llegaron"}, "output": {"text": "se\u00f1ora y se\u00f1orita llegaron"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0134", "fn": "normalize_for_kokoro", "input": {"text": "https://example.com/ruta?x=1"}, "output": {"text": ""}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0135", "fn": "normalize_for_kokoro", "input": {"text": "Mira https://ezagent.dev y dime"}, "output": {"text": "Mira y dime"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0136", "fn": "normalize_for_kokoro", "input": {"text": "[enlace](https://example.com)"}, "output": {"text": "enlace"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0137", "fn": "normalize_for_kokoro", "input": {"text": "![imagen](foto.png)"}, "output": {"text": "imagen"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0138", "fn": "normalize_for_kokoro", "input": {"text": "**negrita** y __subrayado__"}, "output": {"text": "negrita y subrayado"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0139", "fn": "normalize_for_kokoro", "input": {"text": "`c\u00f3digo`"}, "output": {"text": "c\u00f3digo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0140", "fn": "normalize_for_kokoro", "input": {"text": "# T\u00edtulo"}, "output": {"text": "T\u00edtulo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0141", "fn": "normalize_for_kokoro", "input": {"text": "## Subt\u00edtulo"}, "output": {"text": "Subt\u00edtulo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0142", "fn": "normalize_for_kokoro", "input": {"text": "1. uno\n2. dos"}, "output": {"text": "uno\ndos"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0143", "fn": "normalize_for_kokoro", "input": {"text": "- item\n- otro"}, "output": {"text": "item\notro"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0144", "fn": "normalize_for_kokoro", "input": {"text": "\u2022 vi\u00f1eta"}, "output": {"text": "vi\u00f1eta"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0145", "fn": "normalize_for_kokoro", "input": {"text": "| Norte | 120 | 142 |"}, "output": {"text": "Norte, ciento veinte, ciento cuarenta y dos."}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0146", "fn": "normalize_for_kokoro", "input": {"text": "| a | b |\n|---|---|\n| 1 | 2 |"}, "output": {"text": "a, b.\nuno, dos."}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0147", "fn": "normalize_for_kokoro", "input": {"text": "| x | y |\n| :-: | --: |\n| 1 | 2 |\nfin"}, "output": {"text": "x, y.\nuno, dos.\nfin"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0148", "fn": "normalize_for_kokoro", "input": {"text": "Listo \ud83d\ude42"}, "output": {"text": "Listo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0149", "fn": "normalize_for_kokoro", "input": {"text": "\ud83d\ude80 despegue"}, "output": {"text": "despegue"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0150", "fn": "normalize_for_kokoro", "input": {"text": "Hecho \u2705 y \ud83d\udc4d"}, "output": {"text": "Hecho y"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0151", "fn": "normalize_for_kokoro", "input": {"text": "Familia \ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67"}, "output": {"text": "Familia"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0152", "fn": "normalize_for_kokoro", "input": {"text": "Bandera \ud83c\uddf2\ud83c\uddfd"}, "output": {"text": "Bandera"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0153", "fn": "normalize_for_kokoro", "input": {"text": "Coraz\u00f3n \u2764\ufe0f"}, "output": {"text": "Coraz\u00f3n"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0154", "fn": "normalize_for_kokoro", "input": {"text": "Flecha \u2192 5"}, "output": {"text": "Flecha cinco"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0155", "fn": "normalize_for_kokoro", "input": {"text": "emoji \ud83d\ude42\ud83d\ude80 entre palabras"}, "output": {"text": "emoji entre palabras"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0156", "fn": "normalize_for_kokoro", "input": {"text": "cafe\u0301 con leche"}, "output": {"text": "cafe\u0301 con leche"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0157", "fn": "normalize_for_kokoro", "input": {"text": "A\u0303"}, "output": {"text": "A\u0303"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0158", "fn": "normalize_for_kokoro", "input": {"text": "\u00f1and\u00fa en el \u00d1ire"}, "output": {"text": "\u00f1and\u00fa en el \u00d1ire"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0159", "fn": "normalize_for_kokoro", "input": {"text": "canci\u00f3n de Jos\u00e9 \u00c1ngel"}, "output": {"text": "canci\u00f3n de Jos\u00e9 \u00c1ngel"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0160", "fn": "normalize_for_kokoro", "input": {"text": "\u00bfQu\u00e9? \u00a1S\u00ed!"}, "output": {"text": "\u00bfQu\u00e9? \u00a1S\u00ed!"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0161", "fn": "normalize_for_kokoro", "input": {"text": "\u00abcomillas\u00bb y \u201cotras\u201d"}, "output": {"text": "\u00abcomillas\u00bb y \u201cotras\u201d"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0162", "fn": "normalize_for_kokoro", "input": {"text": "\u0130stanbul"}, "output": {"text": "\u0130stanbul"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0163", "fn": "normalize_for_kokoro", "input": {"text": "5 \u00d7 3"}, "output": {"text": "cinco por tres"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0164", "fn": "normalize_for_kokoro", "input": {"text": "\u2248 10"}, "output": {"text": "aproximadamente diez"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0165", "fn": "normalize_for_kokoro", "input": {"text": "\u2265 5"}, "output": {"text": "mayor o igual que cinco"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0166", "fn": "normalize_for_kokoro", "input": {"text": "\u2264 3"}, "output": {"text": "menor o igual que tres"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0167", "fn": "normalize_for_kokoro", "input": {"text": "\u2026"}, "output": {"text": "..."}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0168", "fn": "normalize_for_kokoro", "input": {"text": "a = b"}, "output": {"text": "a igual a b"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0169", "fn": "normalize_for_kokoro", "input": {"text": "~~tachado~~"}, "output": {"text": "tachado"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0170", "fn": "normalize_for_kokoro", "input": {"text": "~50"}, "output": {"text": "aproximadamente cincuenta"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0171", "fn": "normalize_for_kokoro", "input": {"text": "#12"}, "output": {"text": "doce"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0172", "fn": "normalize_for_kokoro", "input": {"text": "10k"}, "output": {"text": "diez mil"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0173", "fn": "normalize_for_kokoro", "input": {"text": "*uno*"}, "output": {"text": "uno"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0174", "fn": "normalize_for_kokoro", "input": {"text": "* dos *"}, "output": {"text": "dos"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0175", "fn": "normalize_for_kokoro", "input": {"text": "a*b"}, "output": {"text": "a b"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0176", "fn": "normalize_for_kokoro", "input": {"text": "50%"}, "output": {"text": "cincuenta por ciento"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0177", "fn": "normalize_for_kokoro", "input": {"text": "A & B"}, "output": {"text": "A y B"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0178", "fn": "normalize_for_kokoro", "input": {"text": "y/o"}, "output": {"text": "y o"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0179", "fn": "normalize_for_kokoro", "input": {"text": "s\u00ed/no"}, "output": {"text": "s\u00ed o no"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0180", "fn": "normalize_for_kokoro", "input": {"text": "\u00e9l/ella"}, "output": {"text": "\u00e9l o ella"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0181", "fn": "normalize_for_kokoro", "input": {"text": "opci\u00f3n A/B/C"}, "output": {"text": "opci\u00f3n A o B o C"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0182", "fn": "normalize_for_kokoro", "input": {"text": "1/2"}, "output": {"text": "un medio"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0183", "fn": "normalize_for_kokoro", "input": {"text": "3/4"}, "output": {"text": "tres cuartos"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0184", "fn": "normalize_for_kokoro", "input": {"text": "2/3"}, "output": {"text": "dos tercios"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0185", "fn": "normalize_for_kokoro", "input": {"text": "1/8"}, "output": {"text": "un octavo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0186", "fn": "normalize_for_kokoro", "input": {"text": "9/10"}, "output": {"text": "nueve d\u00e9cimos"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0187", "fn": "normalize_for_kokoro", "input": {"text": "1/0"}, "output": {"text": "uno/cero"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0188", "fn": "normalize_for_kokoro", "input": {"text": "24/7"}, "output": {"text": "todos los d\u00edas, a todas horas"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0189", "fn": "normalize_for_kokoro", "input": {"text": "5/7"}, "output": {"text": "cinco entre siete"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0190", "fn": "normalize_for_kokoro", "input": {"text": "10/100"}, "output": {"text": "diez entre cien"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0191", "fn": "normalize_for_kokoro", "input": {"text": "3-4-5"}, "output": {"text": "tres-cuatro-cinco"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0192", "fn": "normalize_for_kokoro", "input": {"text": "10-20"}, "output": {"text": "diez a veinte"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0193", "fn": "normalize_for_kokoro", "input": {"text": "1.5-2.5"}, "output": {"text": "uno coma cinco a dos coma cinco"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0194", "fn": "normalize_for_kokoro", "input": {"text": "2020-2024"}, "output": {"text": "dos mil veinte a dos mil veinticuatro"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0195", "fn": "normalize_for_kokoro", "input": {"text": "+34 600 123 456"}, "output": {"text": "m\u00e1s treinta y cuatro seiscientos ciento veintitr\u00e9s cuatrocientos cincuenta y seis"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0196", "fn": "normalize_for_kokoro", "input": {"text": "+5 grados"}, "output": {"text": "m\u00e1s cinco grados"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0197", "fn": "normalize_for_kokoro", "input": {"text": "-5 grados"}, "output": {"text": "menos cinco grados"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0198", "fn": "normalize_for_kokoro", "input": {"text": "un 20-30% m\u00e1s"}, "output": {"text": "un veinte a treinta por ciento m\u00e1s"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0199", "fn": "normalize_for_kokoro", "input": {"text": "555-1234"}, "output": {"text": "cinco cinco cinco, uno dos tres cuatro"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0200", "fn": "normalize_for_kokoro", "input": {"text": "llama al 555-1234 ya"}, "output": {"text": "llama al cinco cinco cinco, uno dos tres cuatro ya"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0201", "fn": "normalize_for_kokoro", "input": {"text": "plan 2 meses - sin costo"}, "output": {"text": "plan dos meses, sin costo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0202", "fn": "normalize_for_kokoro", "input": {"text": "10 \u20ac/mes"}, "output": {"text": "diez euros al mes"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0203", "fn": "normalize_for_kokoro", "input": {"text": "5 GB/s"}, "output": {"text": "cinco gigabytes por segundo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0204", "fn": "normalize_for_kokoro", "input": {"text": "100 req/s"}, "output": {"text": "cien req por segundo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0205", "fn": "normalize_for_kokoro", "input": {"text": "20 tokens/s"}, "output": {"text": "veinte tokens por segundo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0206", "fn": "normalize_for_kokoro", "input": {"text": "50 palabras/min"}, "output": {"text": "cincuenta palabras por minuto"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0207", "fn": "normalize_for_kokoro", "input": {"text": "3/s"}, "output": {"text": "tres por segundo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0208", "fn": "normalize_for_kokoro", "input": {"text": "2/h"}, "output": {"text": "dos por hora"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0209", "fn": "normalize_for_kokoro", "input": {"text": "1,5 GB/s"}, "output": {"text": "uno coma cinco gigabytes por segundo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0210", "fn": "normalize_for_kokoro", "input": {"text": "1000 peticiones/h"}, "output": {"text": "mil peticiones por hora"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0211", "fn": "normalize_for_kokoro", "input": {"text": "$20 per user"}, "output": {"text": "veinte d\u00f3lares per user"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0212", "fn": "normalize_for_kokoro", "input": {"text": "El plan cuesta 19,99 \u20ac/mes y el anual 199 \u20ac/a\u00f1o."}, "output": {"text": "El plan cuesta diecinueve euros con noventa y nueve al mes y el anual ciento noventa y nueve euros al a\u00f1o."}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0213", "fn": "normalize_for_kokoro", "input": {"text": "Quedan 3 d\u00edas: 2/3 del equipo"}, "output": {"text": "Quedan tres d\u00edas: dos tercios del equipo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0214", "fn": "normalize_for_kokoro", "input": {"text": "El Sr. L\u00f3pez pidi\u00f3 2 kg de caf\u00e9 por 25,50 \u20ac y dej\u00f3 propina."}, "output": {"text": "El se\u00f1or L\u00f3pez pidi\u00f3 dos kilogramos de caf\u00e9 por veinticinco euros con cincuenta y dej\u00f3 propina."}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0215", "fn": "normalize_for_kokoro", "input": {"text": "EzAgent est\u00e1 listo"}, "output": {"text": "Es Agente est\u00e1 listo"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0216", "fn": "normalize_for_kokoro", "input": {"text": "ezagent funciona"}, "output": {"text": "Es Agente funciona"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0217", "fn": "normalize_for_kokoro", "input": {"text": "EZAGENT"}, "output": {"text": "Es Agente"}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0218", "fn": "normalize_for_kokoro", "input": {"text": "Escr\u00edbeme a https://ezagent.dev o al tel. 555-1234."}, "output": {"text": "Escr\u00edbeme a o al tel\u00e9fono cinco cinco cinco, uno dos tres cuatro."}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0219", "fn": "normalize_for_kokoro", "input": {"text": "Resumen: 1.200 usuarios, 98,5% de disponibilidad y 3 h de soporte."}, "output": {"text": "Resumen: mil doscientos usuarios, noventa y ocho coma cinco por ciento de disponibilidad y tres h de soporte."}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0220", "fn": "normalize_for_kokoro", "input": {"text": "Del 1/3/2026 al 31/5/2026: 90 d\u00edas, aprox. 12 semanas."}, "output": {"text": "Del uno de marzo de dos mil veintis\u00e9is al treinta y uno de mayo de dos mil veintis\u00e9is: noventa d\u00edas, aproximadamente doce semanas."}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0221", "fn": "normalize_for_kokoro", "input": {"text": "Compra 1\u00ba: 2 GB x $15; compra 2\u00aa: 500 MB x $5."}, "output": {"text": "Compra primero: dos gigabytes x quince d\u00f3lares; compra segunda: quinientos megabytes x cinco d\u00f3lares."}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/0222", "fn": "normalize_for_kokoro", "input": {"text": "El 45% de los 1.000 encuestados prefiere la opci\u00f3n A/B."}, "output": {"text": "El cuarenta y cinco por ciento de los mil encuestados prefiere la opci\u00f3n A o B."}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/error01", "fn": "normalize_for_kokoro", "input": {"text": null}, "output": null, "error": "'NoneType' object has no attribute 'strip'"}
+{"case": "speech_text/normalize_for_kokoro/type01", "fn": "normalize_for_kokoro", "input": {"text": "El Sr. P\u00e9rez pag\u00f3 $20/mes.", "text_type": "sentence"}, "output": {"text": "El se\u00f1or P\u00e9rez pag\u00f3 veinte d\u00f3lares al mes."}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/type02", "fn": "normalize_for_kokoro", "input": {"text": "El Sr. P\u00e9rez pag\u00f3 $20/mes.", "text_type": "word"}, "output": {"text": "El se\u00f1or P\u00e9rez pag\u00f3 veinte d\u00f3lares al mes."}, "error": null}
+{"case": "speech_text/normalize_for_kokoro/type03", "fn": "normalize_for_kokoro", "input": {"text": "El Sr. P\u00e9rez pag\u00f3 $20/mes.", "text_type": "paragraph"}, "output": {"text": "El se\u00f1or P\u00e9rez pag\u00f3 veinte d\u00f3lares al mes."}, "error": null}
+{"case": "speech_text/normalize_for_speech/0001", "fn": "normalize_for_speech", "input": {"text": ""}, "output": {"text": ""}, "error": null}
+{"case": "speech_text/normalize_for_speech/0002", "fn": "normalize_for_speech", "input": {"text": "   "}, "output": {"text": ""}, "error": null}
+{"case": "speech_text/normalize_for_speech/0003", "fn": "normalize_for_speech", "input": {"text": "\n\t "}, "output": {"text": ""}, "error": null}
+{"case": "speech_text/normalize_for_speech/0004", "fn": "normalize_for_speech", "input": {"text": "Hola mundo"}, "output": {"text": "Hola mundo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0005", "fn": "normalize_for_speech", "input": {"text": "Texto con  dos  espacios"}, "output": {"text": "Texto con dos espacios"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0006", "fn": "normalize_for_speech", "input": {"text": "  espacios  alrededor  "}, "output": {"text": "espacios alrededor"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0007", "fn": "normalize_for_speech", "input": {"text": "Hola\n\n\nmundo"}, "output": {"text": "Hola mundo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0008", "fn": "normalize_for_speech", "input": {"text": "a  ,  b"}, "output": {"text": "a, b"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0009", "fn": "normalize_for_speech", "input": {"text": "punto  .  final  ."}, "output": {"text": "punto. final."}, "error": null}
+{"case": "speech_text/normalize_for_speech/0010", "fn": "normalize_for_speech", "input": {"text": "Listo."}, "output": {"text": "Listo."}, "error": null}
+{"case": "speech_text/normalize_for_speech/0011", "fn": "normalize_for_speech", "input": {"text": "Tenemos 3 tazas y 42 platos"}, "output": {"text": "Tenemos tres tazas y cuarenta y dos platos"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0012", "fn": "normalize_for_speech", "input": {"text": "0"}, "output": {"text": "cero"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0013", "fn": "normalize_for_speech", "input": {"text": "-7"}, "output": {"text": "menos siete"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0014", "fn": "normalize_for_speech", "input": {"text": "7"}, "output": {"text": "siete"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0015", "fn": "normalize_for_speech", "input": {"text": "21"}, "output": {"text": "veintiuno"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0016", "fn": "normalize_for_speech", "input": {"text": "31"}, "output": {"text": "treinta y uno"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0017", "fn": "normalize_for_speech", "input": {"text": "100"}, "output": {"text": "cien"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0018", "fn": "normalize_for_speech", "input": {"text": "101"}, "output": {"text": "ciento uno"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0019", "fn": "normalize_for_speech", "input": {"text": "1000"}, "output": {"text": "mil"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0020", "fn": "normalize_for_speech", "input": {"text": "1999"}, "output": {"text": "mil novecientos noventa y nueve"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0021", "fn": "normalize_for_speech", "input": {"text": "2000"}, "output": {"text": "dos mil"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0022", "fn": "normalize_for_speech", "input": {"text": "2026"}, "output": {"text": "dos mil veintis\u00e9is"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0023", "fn": "normalize_for_speech", "input": {"text": "1000000"}, "output": {"text": "uno cero cero cero cero cero cero"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0024", "fn": "normalize_for_speech", "input": {"text": "1000000000"}, "output": {"text": "uno cero cero cero cero cero cero cero cero cero"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0025", "fn": "normalize_for_speech", "input": {"text": "1234567890"}, "output": {"text": "uno dos tres cuatro cinco seis siete ocho nueve cero"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0026", "fn": "normalize_for_speech", "input": {"text": "123456789"}, "output": {"text": "uno dos tres cuatro cinco seis siete ocho nueve"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0027", "fn": "normalize_for_speech", "input": {"text": "-1234567890"}, "output": {"text": "menos uno dos tres cuatro cinco seis siete ocho nueve cero"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0028", "fn": "normalize_for_speech", "input": {"text": "12.345.678"}, "output": {"text": "uno dos tres cuatro cinco seis siete ocho"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0029", "fn": "normalize_for_speech", "input": {"text": "1.234"}, "output": {"text": "mil doscientos treinta y cuatro"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0030", "fn": "normalize_for_speech", "input": {"text": "3.141"}, "output": {"text": "tres mil ciento cuarenta y uno"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0031", "fn": "normalize_for_speech", "input": {"text": "3.14159"}, "output": {"text": "tres.14159"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0032", "fn": "normalize_for_speech", "input": {"text": "3,14159"}, "output": {"text": "tres coma catorce mil ciento cincuenta y nueve"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0033", "fn": "normalize_for_speech", "input": {"text": "0,5"}, "output": {"text": "cero coma cinco"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0034", "fn": "normalize_for_speech", "input": {"text": "-0,25"}, "output": {"text": "menos cero coma veinticinco"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0035", "fn": "normalize_for_speech", "input": {"text": "12,50"}, "output": {"text": "doce coma cincuenta"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0036", "fn": "normalize_for_speech", "input": {"text": "1.234,56"}, "output": {"text": "mil doscientos treinta y cuatro coma cincuenta y seis"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0037", "fn": "normalize_for_speech", "input": {"text": "-1.234,56"}, "output": {"text": "menos mil doscientos treinta y cuatro coma cincuenta y seis"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0038", "fn": "normalize_for_speech", "input": {"text": "1,234.56"}, "output": {"text": "uno coma doscientos treinta y cuatro.56"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0039", "fn": "normalize_for_speech", "input": {"text": "2,5"}, "output": {"text": "dos coma cinco"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0040", "fn": "normalize_for_speech", "input": {"text": "2.5"}, "output": {"text": "dos coma cinco"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0041", "fn": "normalize_for_speech", "input": {"text": "10."}, "output": {"text": "diez."}, "error": null}
+{"case": "speech_text/normalize_for_speech/0042", "fn": "normalize_for_speech", "input": {"text": "1..2"}, "output": {"text": "uno..2"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0043", "fn": "normalize_for_speech", "input": {"text": "1e5"}, "output": {"text": "1e5"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0044", "fn": "normalize_for_speech", "input": {"text": "0,0001"}, "output": {"text": "cero coma cero cero cero uno"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0045", "fn": "normalize_for_speech", "input": {"text": "999999999999"}, "output": {"text": "nueve nueve nueve nueve nueve nueve nueve nueve nueve nueve nueve nueve"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0046", "fn": "normalize_for_speech", "input": {"text": "El total fue 1.250 unidades y 3,75 de media"}, "output": {"text": "El total fue mil doscientos cincuenta unidades y tres coma setenta y cinco de media"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0047", "fn": "normalize_for_speech", "input": {"text": "$20"}, "output": {"text": "veinte d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0048", "fn": "normalize_for_speech", "input": {"text": "20 $"}, "output": {"text": "veinte d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0049", "fn": "normalize_for_speech", "input": {"text": "$0"}, "output": {"text": "cero d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0050", "fn": "normalize_for_speech", "input": {"text": "$1"}, "output": {"text": "un d\u00f3lar"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0051", "fn": "normalize_for_speech", "input": {"text": "$21"}, "output": {"text": "veinti\u00fan d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0052", "fn": "normalize_for_speech", "input": {"text": "$31"}, "output": {"text": "treinta y un d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0053", "fn": "normalize_for_speech", "input": {"text": "$1000000"}, "output": {"text": "un mill\u00f3n d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0054", "fn": "normalize_for_speech", "input": {"text": "$20/mes"}, "output": {"text": "veinte d\u00f3lares al mes"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0055", "fn": "normalize_for_speech", "input": {"text": "\u20ac15"}, "output": {"text": "quince euros"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0056", "fn": "normalize_for_speech", "input": {"text": "15 \u20ac"}, "output": {"text": "quince euros"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0057", "fn": "normalize_for_speech", "input": {"text": "15,50 \u20ac"}, "output": {"text": "quince euros con cincuenta"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0058", "fn": "normalize_for_speech", "input": {"text": "\u20ac0,01"}, "output": {"text": "cero euros con uno"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0059", "fn": "normalize_for_speech", "input": {"text": "\u20ac1.234.567,89"}, "output": {"text": "un mill\u00f3n doscientos treinta y cuatro mil quinientos sesenta y siete euros con ochenta y nueve"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0060", "fn": "normalize_for_speech", "input": {"text": "US$ 1.000"}, "output": {"text": "mil d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0061", "fn": "normalize_for_speech", "input": {"text": "2.5M USD"}, "output": {"text": "dos coma cinco millones de d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0062", "fn": "normalize_for_speech", "input": {"text": "$1k"}, "output": {"text": "mil d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0063", "fn": "normalize_for_speech", "input": {"text": "$2,5k"}, "output": {"text": "dos coma cinco mil d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0064", "fn": "normalize_for_speech", "input": {"text": "\u20ac3.5M"}, "output": {"text": "tres coma cinco millones de euros"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0065", "fn": "normalize_for_speech", "input": {"text": "\u00a330"}, "output": {"text": "treinta libras"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0066", "fn": "normalize_for_speech", "input": {"text": "1200 MXN"}, "output": {"text": "mil doscientos pesos mexicanos"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0067", "fn": "normalize_for_speech", "input": {"text": "35 COP"}, "output": {"text": "treinta y cinco pesos colombianos"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0068", "fn": "normalize_for_speech", "input": {"text": "500 ARS"}, "output": {"text": "quinientos pesos argentinos"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0069", "fn": "normalize_for_speech", "input": {"text": "3 CLP"}, "output": {"text": "tres pesos chilenos"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0070", "fn": "normalize_for_speech", "input": {"text": "10 PEN"}, "output": {"text": "diez soles"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0071", "fn": "normalize_for_speech", "input": {"text": "7 BRL"}, "output": {"text": "siete reales"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0072", "fn": "normalize_for_speech", "input": {"text": "1 mill\u00f3n de euros"}, "output": {"text": "uno mill\u00f3n de euros"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0073", "fn": "normalize_for_speech", "input": {"text": "un mill\u00f3n de d\u00f3lares"}, "output": {"text": "un mill\u00f3n de d\u00f3lares"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0074", "fn": "normalize_for_speech", "input": {"text": "Cuesta 25 USD/a\u00f1o"}, "output": {"text": "Cuesta veinticinco d\u00f3lares al a\u00f1o"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0075", "fn": "normalize_for_speech", "input": {"text": "Sale a 25 \u20ac/hora"}, "output": {"text": "Sale a veinticinco euros por hora"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0076", "fn": "normalize_for_speech", "input": {"text": "Paga 20 $ por usuario"}, "output": {"text": "Paga veinte d\u00f3lares por usuario"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0077", "fn": "normalize_for_speech", "input": {"text": "Son 19,99 \u20ac m\u00e1s IVA"}, "output": {"text": "Son diecinueve euros con noventa y nueve m\u00e1s IVA"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0078", "fn": "normalize_for_speech", "input": {"text": "9:00"}, "output": {"text": "nueve en punto"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0079", "fn": "normalize_for_speech", "input": {"text": "15:30"}, "output": {"text": "quince y media"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0080", "fn": "normalize_for_speech", "input": {"text": "23:15"}, "output": {"text": "veintitr\u00e9s y cuarto"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0081", "fn": "normalize_for_speech", "input": {"text": "0:05"}, "output": {"text": "cero cinco"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0082", "fn": "normalize_for_speech", "input": {"text": "12:45"}, "output": {"text": "doce cuarenta y cinco"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0083", "fn": "normalize_for_speech", "input": {"text": "a las 7:30 de la ma\u00f1ana"}, "output": {"text": "a las siete y media de la ma\u00f1ana"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0084", "fn": "normalize_for_speech", "input": {"text": "18:00 h"}, "output": {"text": "dieciocho en punto h"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0085", "fn": "normalize_for_speech", "input": {"text": "1/1/2026"}, "output": {"text": "uno de enero de dos mil veintis\u00e9is"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0086", "fn": "normalize_for_speech", "input": {"text": "31/12/1999"}, "output": {"text": "treinta y uno de diciembre de mil novecientos noventa y nueve"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0087", "fn": "normalize_for_speech", "input": {"text": "5/6/07"}, "output": {"text": "cinco de junio de dos mil siete"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0088", "fn": "normalize_for_speech", "input": {"text": "2026-11-13"}, "output": {"text": "trece de noviembre de dos mil veintis\u00e9is"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0089", "fn": "normalize_for_speech", "input": {"text": "13-11-2026"}, "output": {"text": "uno tres, uno uno, dos cero dos seis"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0090", "fn": "normalize_for_speech", "input": {"text": "32/13/2026"}, "output": {"text": "treinta y dos/trece/dos mil veintis\u00e9is"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0091", "fn": "normalize_for_speech", "input": {"text": "2026-13-01"}, "output": {"text": "dos cero dos seis, uno tres, cero uno"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0092", "fn": "normalize_for_speech", "input": {"text": "Reuni\u00f3n el 3/4/2026 a las 9:15"}, "output": {"text": "Reuni\u00f3n el tres de abril de dos mil veintis\u00e9is a las nueve y cuarto"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0093", "fn": "normalize_for_speech", "input": {"text": "1\u00ba"}, "output": {"text": "primero"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0094", "fn": "normalize_for_speech", "input": {"text": "2\u00aa"}, "output": {"text": "segunda"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0095", "fn": "normalize_for_speech", "input": {"text": "3er"}, "output": {"text": "tercero"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0096", "fn": "normalize_for_speech", "input": {"text": "10\u00ba"}, "output": {"text": "d\u00e9cimo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0097", "fn": "normalize_for_speech", "input": {"text": "21er"}, "output": {"text": "vig\u00e9simo primero"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0098", "fn": "normalize_for_speech", "input": {"text": "1\u00aa vez y 2\u00ba intento"}, "output": {"text": "primera vez y segundo intento"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0099", "fn": "normalize_for_speech", "input": {"text": "el 3\u00ba y el 4\u00aa"}, "output": {"text": "el tercero y el cuarta"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0100", "fn": "normalize_for_speech", "input": {"text": "5 km"}, "output": {"text": "cinco kil\u00f3metros"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0101", "fn": "normalize_for_speech", "input": {"text": "120 km/h"}, "output": {"text": "ciento veinte kil\u00f3metros por hora"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0102", "fn": "normalize_for_speech", "input": {"text": "30 \u00b0C"}, "output": {"text": "treinta grados cent\u00edgrados"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0103", "fn": "normalize_for_speech", "input": {"text": "-5\u00b0C"}, "output": {"text": "menos cinco grados cent\u00edgrados"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0104", "fn": "normalize_for_speech", "input": {"text": "80 kg"}, "output": {"text": "ochenta kilogramos"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0105", "fn": "normalize_for_speech", "input": {"text": "15 cm"}, "output": {"text": "quince cent\u00edmetros"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0106", "fn": "normalize_for_speech", "input": {"text": "3 mm"}, "output": {"text": "tres mil\u00edmetros"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0107", "fn": "normalize_for_speech", "input": {"text": "250 ml"}, "output": {"text": "doscientos cincuenta mililitros"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0108", "fn": "normalize_for_speech", "input": {"text": "8 GB"}, "output": {"text": "ocho gigabytes"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0109", "fn": "normalize_for_speech", "input": {"text": "512 MB"}, "output": {"text": "quinientos doce megabytes"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0110", "fn": "normalize_for_speech", "input": {"text": "300 ms"}, "output": {"text": "trescientos milisegundos"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0111", "fn": "normalize_for_speech", "input": {"text": "2 s"}, "output": {"text": "dos segundos"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0112", "fn": "normalize_for_speech", "input": {"text": "10km"}, "output": {"text": "diez kil\u00f3metros"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0113", "fn": "normalize_for_speech", "input": {"text": "5 Kg"}, "output": {"text": "cinco Kg"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0114", "fn": "normalize_for_speech", "input": {"text": "2 h"}, "output": {"text": "dos h"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0115", "fn": "normalize_for_speech", "input": {"text": "Recorrimos 12 km en 2 h a 6 km/h"}, "output": {"text": "Recorrimos doce kil\u00f3metros en dos h a seis kil\u00f3metros por hora"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0116", "fn": "normalize_for_speech", "input": {"text": "El Sr. P\u00e9rez y la Sra. G\u00f3mez"}, "output": {"text": "El se\u00f1or P\u00e9rez y la se\u00f1ora G\u00f3mez"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0117", "fn": "normalize_for_speech", "input": {"text": "La Dra. Ruiz y el Dr. House"}, "output": {"text": "La doctora Ruiz y el doctor House"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0118", "fn": "normalize_for_speech", "input": {"text": "EE. UU."}, "output": {"text": "Estados Unidos"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0119", "fn": "normalize_for_speech", "input": {"text": "p. ej. esto"}, "output": {"text": "por ejemplo esto"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0120", "fn": "normalize_for_speech", "input": {"text": "etc."}, "output": {"text": "etc\u00e9tera"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0121", "fn": "normalize_for_speech", "input": {"text": "aprox. 20"}, "output": {"text": "aproximadamente veinte"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0122", "fn": "normalize_for_speech", "input": {"text": "n.\u00ba 5"}, "output": {"text": "n\u00famero cinco"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0123", "fn": "normalize_for_speech", "input": {"text": "N.\u00ba 7"}, "output": {"text": "n\u00famero siete"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0124", "fn": "normalize_for_speech", "input": {"text": "n\u00fam. 3"}, "output": {"text": "n\u00famero tres"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0125", "fn": "normalize_for_speech", "input": {"text": "p\u00e1g. 12"}, "output": {"text": "p\u00e1gina doce"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0126", "fn": "normalize_for_speech", "input": {"text": "tel. 555-1234"}, "output": {"text": "tel\u00e9fono cinco cinco cinco, uno dos tres cuatro"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0127", "fn": "normalize_for_speech", "input": {"text": "a. C."}, "output": {"text": "antes de Cristo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0128", "fn": "normalize_for_speech", "input": {"text": "d. C."}, "output": {"text": "despu\u00e9s de Cristo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0129", "fn": "normalize_for_speech", "input": {"text": "Ud. puede"}, "output": {"text": "usted puede"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0130", "fn": "normalize_for_speech", "input": {"text": "Uds. pueden"}, "output": {"text": "ustedes pueden"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0131", "fn": "normalize_for_speech", "input": {"text": "Av. Reforma"}, "output": {"text": "avenida Reforma"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0132", "fn": "normalize_for_speech", "input": {"text": "C/ Mayor 5"}, "output": {"text": "calle Mayor cinco"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0133", "fn": "normalize_for_speech", "input": {"text": "Sra. y Srta. llegaron"}, "output": {"text": "se\u00f1ora y se\u00f1orita llegaron"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0134", "fn": "normalize_for_speech", "input": {"text": "https://example.com/ruta?x=1"}, "output": {"text": ""}, "error": null}
+{"case": "speech_text/normalize_for_speech/0135", "fn": "normalize_for_speech", "input": {"text": "Mira https://ezagent.dev y dime"}, "output": {"text": "Mira y dime"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0136", "fn": "normalize_for_speech", "input": {"text": "[enlace](https://example.com)"}, "output": {"text": "enlace"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0137", "fn": "normalize_for_speech", "input": {"text": "![imagen](foto.png)"}, "output": {"text": "imagen"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0138", "fn": "normalize_for_speech", "input": {"text": "**negrita** y __subrayado__"}, "output": {"text": "negrita y subrayado"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0139", "fn": "normalize_for_speech", "input": {"text": "`c\u00f3digo`"}, "output": {"text": "c\u00f3digo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0140", "fn": "normalize_for_speech", "input": {"text": "# T\u00edtulo"}, "output": {"text": "T\u00edtulo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0141", "fn": "normalize_for_speech", "input": {"text": "## Subt\u00edtulo"}, "output": {"text": "Subt\u00edtulo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0142", "fn": "normalize_for_speech", "input": {"text": "1. uno\n2. dos"}, "output": {"text": "uno\ndos"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0143", "fn": "normalize_for_speech", "input": {"text": "- item\n- otro"}, "output": {"text": "item\notro"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0144", "fn": "normalize_for_speech", "input": {"text": "\u2022 vi\u00f1eta"}, "output": {"text": "vi\u00f1eta"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0145", "fn": "normalize_for_speech", "input": {"text": "| Norte | 120 | 142 |"}, "output": {"text": "Norte, ciento veinte, ciento cuarenta y dos."}, "error": null}
+{"case": "speech_text/normalize_for_speech/0146", "fn": "normalize_for_speech", "input": {"text": "| a | b |\n|---|---|\n| 1 | 2 |"}, "output": {"text": "a, b.\nuno, dos."}, "error": null}
+{"case": "speech_text/normalize_for_speech/0147", "fn": "normalize_for_speech", "input": {"text": "| x | y |\n| :-: | --: |\n| 1 | 2 |\nfin"}, "output": {"text": "x, y.\nuno, dos.\nfin"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0148", "fn": "normalize_for_speech", "input": {"text": "Listo \ud83d\ude42"}, "output": {"text": "Listo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0149", "fn": "normalize_for_speech", "input": {"text": "\ud83d\ude80 despegue"}, "output": {"text": "despegue"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0150", "fn": "normalize_for_speech", "input": {"text": "Hecho \u2705 y \ud83d\udc4d"}, "output": {"text": "Hecho y"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0151", "fn": "normalize_for_speech", "input": {"text": "Familia \ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67"}, "output": {"text": "Familia"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0152", "fn": "normalize_for_speech", "input": {"text": "Bandera \ud83c\uddf2\ud83c\uddfd"}, "output": {"text": "Bandera"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0153", "fn": "normalize_for_speech", "input": {"text": "Coraz\u00f3n \u2764\ufe0f"}, "output": {"text": "Coraz\u00f3n"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0154", "fn": "normalize_for_speech", "input": {"text": "Flecha \u2192 5"}, "output": {"text": "Flecha cinco"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0155", "fn": "normalize_for_speech", "input": {"text": "emoji \ud83d\ude42\ud83d\ude80 entre palabras"}, "output": {"text": "emoji entre palabras"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0156", "fn": "normalize_for_speech", "input": {"text": "cafe\u0301 con leche"}, "output": {"text": "cafe\u0301 con leche"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0157", "fn": "normalize_for_speech", "input": {"text": "A\u0303"}, "output": {"text": "A\u0303"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0158", "fn": "normalize_for_speech", "input": {"text": "\u00f1and\u00fa en el \u00d1ire"}, "output": {"text": "\u00f1and\u00fa en el \u00d1ire"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0159", "fn": "normalize_for_speech", "input": {"text": "canci\u00f3n de Jos\u00e9 \u00c1ngel"}, "output": {"text": "canci\u00f3n de Jos\u00e9 \u00c1ngel"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0160", "fn": "normalize_for_speech", "input": {"text": "\u00bfQu\u00e9? \u00a1S\u00ed!"}, "output": {"text": "\u00bfQu\u00e9? \u00a1S\u00ed!"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0161", "fn": "normalize_for_speech", "input": {"text": "\u00abcomillas\u00bb y \u201cotras\u201d"}, "output": {"text": "\u00abcomillas\u00bb y \u201cotras\u201d"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0162", "fn": "normalize_for_speech", "input": {"text": "\u0130stanbul"}, "output": {"text": "\u0130stanbul"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0163", "fn": "normalize_for_speech", "input": {"text": "5 \u00d7 3"}, "output": {"text": "cinco por tres"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0164", "fn": "normalize_for_speech", "input": {"text": "\u2248 10"}, "output": {"text": "aproximadamente diez"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0165", "fn": "normalize_for_speech", "input": {"text": "\u2265 5"}, "output": {"text": "mayor o igual que cinco"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0166", "fn": "normalize_for_speech", "input": {"text": "\u2264 3"}, "output": {"text": "menor o igual que tres"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0167", "fn": "normalize_for_speech", "input": {"text": "\u2026"}, "output": {"text": "..."}, "error": null}
+{"case": "speech_text/normalize_for_speech/0168", "fn": "normalize_for_speech", "input": {"text": "a = b"}, "output": {"text": "a igual a b"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0169", "fn": "normalize_for_speech", "input": {"text": "~~tachado~~"}, "output": {"text": "tachado"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0170", "fn": "normalize_for_speech", "input": {"text": "~50"}, "output": {"text": "aproximadamente cincuenta"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0171", "fn": "normalize_for_speech", "input": {"text": "#12"}, "output": {"text": "doce"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0172", "fn": "normalize_for_speech", "input": {"text": "10k"}, "output": {"text": "diez mil"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0173", "fn": "normalize_for_speech", "input": {"text": "*uno*"}, "output": {"text": "uno"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0174", "fn": "normalize_for_speech", "input": {"text": "* dos *"}, "output": {"text": "dos"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0175", "fn": "normalize_for_speech", "input": {"text": "a*b"}, "output": {"text": "a b"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0176", "fn": "normalize_for_speech", "input": {"text": "50%"}, "output": {"text": "cincuenta por ciento"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0177", "fn": "normalize_for_speech", "input": {"text": "A & B"}, "output": {"text": "A y B"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0178", "fn": "normalize_for_speech", "input": {"text": "y/o"}, "output": {"text": "y o"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0179", "fn": "normalize_for_speech", "input": {"text": "s\u00ed/no"}, "output": {"text": "s\u00ed o no"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0180", "fn": "normalize_for_speech", "input": {"text": "\u00e9l/ella"}, "output": {"text": "\u00e9l o ella"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0181", "fn": "normalize_for_speech", "input": {"text": "opci\u00f3n A/B/C"}, "output": {"text": "opci\u00f3n A o B o C"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0182", "fn": "normalize_for_speech", "input": {"text": "1/2"}, "output": {"text": "un medio"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0183", "fn": "normalize_for_speech", "input": {"text": "3/4"}, "output": {"text": "tres cuartos"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0184", "fn": "normalize_for_speech", "input": {"text": "2/3"}, "output": {"text": "dos tercios"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0185", "fn": "normalize_for_speech", "input": {"text": "1/8"}, "output": {"text": "un octavo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0186", "fn": "normalize_for_speech", "input": {"text": "9/10"}, "output": {"text": "nueve d\u00e9cimos"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0187", "fn": "normalize_for_speech", "input": {"text": "1/0"}, "output": {"text": "uno/cero"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0188", "fn": "normalize_for_speech", "input": {"text": "24/7"}, "output": {"text": "todos los d\u00edas, a todas horas"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0189", "fn": "normalize_for_speech", "input": {"text": "5/7"}, "output": {"text": "cinco entre siete"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0190", "fn": "normalize_for_speech", "input": {"text": "10/100"}, "output": {"text": "diez entre cien"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0191", "fn": "normalize_for_speech", "input": {"text": "3-4-5"}, "output": {"text": "tres-cuatro-cinco"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0192", "fn": "normalize_for_speech", "input": {"text": "10-20"}, "output": {"text": "diez a veinte"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0193", "fn": "normalize_for_speech", "input": {"text": "1.5-2.5"}, "output": {"text": "uno coma cinco a dos coma cinco"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0194", "fn": "normalize_for_speech", "input": {"text": "2020-2024"}, "output": {"text": "dos mil veinte a dos mil veinticuatro"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0195", "fn": "normalize_for_speech", "input": {"text": "+34 600 123 456"}, "output": {"text": "m\u00e1s treinta y cuatro seiscientos ciento veintitr\u00e9s cuatrocientos cincuenta y seis"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0196", "fn": "normalize_for_speech", "input": {"text": "+5 grados"}, "output": {"text": "m\u00e1s cinco grados"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0197", "fn": "normalize_for_speech", "input": {"text": "-5 grados"}, "output": {"text": "menos cinco grados"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0198", "fn": "normalize_for_speech", "input": {"text": "un 20-30% m\u00e1s"}, "output": {"text": "un veinte a treinta por ciento m\u00e1s"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0199", "fn": "normalize_for_speech", "input": {"text": "555-1234"}, "output": {"text": "cinco cinco cinco, uno dos tres cuatro"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0200", "fn": "normalize_for_speech", "input": {"text": "llama al 555-1234 ya"}, "output": {"text": "llama al cinco cinco cinco, uno dos tres cuatro ya"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0201", "fn": "normalize_for_speech", "input": {"text": "plan 2 meses - sin costo"}, "output": {"text": "plan dos meses, sin costo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0202", "fn": "normalize_for_speech", "input": {"text": "10 \u20ac/mes"}, "output": {"text": "diez euros al mes"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0203", "fn": "normalize_for_speech", "input": {"text": "5 GB/s"}, "output": {"text": "cinco gigabytes por segundo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0204", "fn": "normalize_for_speech", "input": {"text": "100 req/s"}, "output": {"text": "cien req por segundo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0205", "fn": "normalize_for_speech", "input": {"text": "20 tokens/s"}, "output": {"text": "veinte tokens por segundo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0206", "fn": "normalize_for_speech", "input": {"text": "50 palabras/min"}, "output": {"text": "cincuenta palabras por minuto"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0207", "fn": "normalize_for_speech", "input": {"text": "3/s"}, "output": {"text": "tres por segundo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0208", "fn": "normalize_for_speech", "input": {"text": "2/h"}, "output": {"text": "dos por hora"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0209", "fn": "normalize_for_speech", "input": {"text": "1,5 GB/s"}, "output": {"text": "uno coma cinco gigabytes por segundo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0210", "fn": "normalize_for_speech", "input": {"text": "1000 peticiones/h"}, "output": {"text": "mil peticiones por hora"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0211", "fn": "normalize_for_speech", "input": {"text": "$20 per user"}, "output": {"text": "veinte d\u00f3lares per user"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0212", "fn": "normalize_for_speech", "input": {"text": "El plan cuesta 19,99 \u20ac/mes y el anual 199 \u20ac/a\u00f1o."}, "output": {"text": "El plan cuesta diecinueve euros con noventa y nueve al mes y el anual ciento noventa y nueve euros al a\u00f1o."}, "error": null}
+{"case": "speech_text/normalize_for_speech/0213", "fn": "normalize_for_speech", "input": {"text": "Quedan 3 d\u00edas: 2/3 del equipo"}, "output": {"text": "Quedan tres d\u00edas: dos tercios del equipo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0214", "fn": "normalize_for_speech", "input": {"text": "El Sr. L\u00f3pez pidi\u00f3 2 kg de caf\u00e9 por 25,50 \u20ac y dej\u00f3 propina."}, "output": {"text": "El se\u00f1or L\u00f3pez pidi\u00f3 dos kilogramos de caf\u00e9 por veinticinco euros con cincuenta y dej\u00f3 propina."}, "error": null}
+{"case": "speech_text/normalize_for_speech/0215", "fn": "normalize_for_speech", "input": {"text": "EzAgent est\u00e1 listo"}, "output": {"text": "EzAgent est\u00e1 listo"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0216", "fn": "normalize_for_speech", "input": {"text": "ezagent funciona"}, "output": {"text": "ezagent funciona"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0217", "fn": "normalize_for_speech", "input": {"text": "EZAGENT"}, "output": {"text": "EZAGENT"}, "error": null}
+{"case": "speech_text/normalize_for_speech/0218", "fn": "normalize_for_speech", "input": {"text": "Escr\u00edbeme a https://ezagent.dev o al tel. 555-1234."}, "output": {"text": "Escr\u00edbeme a o al tel\u00e9fono cinco cinco cinco, uno dos tres cuatro."}, "error": null}
+{"case": "speech_text/normalize_for_speech/0219", "fn": "normalize_for_speech", "input": {"text": "Resumen: 1.200 usuarios, 98,5% de disponibilidad y 3 h de soporte."}, "output": {"text": "Resumen: mil doscientos usuarios, noventa y ocho coma cinco por ciento de disponibilidad y tres h de soporte."}, "error": null}
+{"case": "speech_text/normalize_for_speech/0220", "fn": "normalize_for_speech", "input": {"text": "Del 1/3/2026 al 31/5/2026: 90 d\u00edas, aprox. 12 semanas."}, "output": {"text": "Del uno de marzo de dos mil veintis\u00e9is al treinta y uno de mayo de dos mil veintis\u00e9is: noventa d\u00edas, aproximadamente doce semanas."}, "error": null}
+{"case": "speech_text/normalize_for_speech/0221", "fn": "normalize_for_speech", "input": {"text": "Compra 1\u00ba: 2 GB x $15; compra 2\u00aa: 500 MB x $5."}, "output": {"text": "Compra primero: dos gigabytes x quince d\u00f3lares; compra segunda: quinientos megabytes x cinco d\u00f3lares."}, "error": null}
+{"case": "speech_text/normalize_for_speech/0222", "fn": "normalize_for_speech", "input": {"text": "El 45% de los 1.000 encuestados prefiere la opci\u00f3n A/B."}, "output": {"text": "El cuarenta y cinco por ciento de los mil encuestados prefiere la opci\u00f3n A o B."}, "error": null}
+{"case": "speech_text/normalize_for_speech/error01", "fn": "normalize_for_speech", "input": {"text": null}, "output": null, "error": "'NoneType' object has no attribute 'strip'"}
+{"case": "speech_text/normalize_for_speech/type01", "fn": "normalize_for_speech", "input": {"text": "El Sr. P\u00e9rez pag\u00f3 $20/mes.", "text_type": "sentence"}, "output": {"text": "El se\u00f1or P\u00e9rez pag\u00f3 veinte d\u00f3lares al mes."}, "error": null}
+{"case": "speech_text/normalize_for_speech/type02", "fn": "normalize_for_speech", "input": {"text": "El Sr. P\u00e9rez pag\u00f3 $20/mes.", "text_type": "word"}, "output": {"text": "El se\u00f1or P\u00e9rez pag\u00f3 veinte d\u00f3lares al mes."}, "error": null}
+{"case": "speech_text/normalize_for_speech/type03", "fn": "normalize_for_speech", "input": {"text": "El Sr. P\u00e9rez pag\u00f3 $20/mes.", "text_type": "paragraph"}, "output": {"text": "El se\u00f1or P\u00e9rez pag\u00f3 veinte d\u00f3lares al mes."}, "error": null}

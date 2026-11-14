@@ -25,7 +25,6 @@ function Step([string]$Name, [scriptblock]$Body) {
 
 if ($SelfTest) {
     Step "autoprueba de reglas" { uv run python "rust-migration/tools/scan_diff.py" --selftest }
-    Step "autoprueba de alcance" { uv run python "rust-migration/tools/scan_diff.py" --selftest }
     Write-Host "GATE OK (autoprueba)" -ForegroundColor Green
     exit 0
 }
@@ -38,16 +37,16 @@ if (-not $info) { Fail "tarea desconocida: $Task" }
 Step "1. alcance del diff" {
     uv run python "rust-migration/tools/scan_diff.py" --task $Task --base $Base
 }
-Step "2. cargo fmt" { cargo fmt --all --check }
-Step "3. clippy" { cargo clippy --workspace --all-targets -- -D warnings }
+Step "2. cargo fmt" { cargo fmt --all --check --manifest-path "rust/Cargo.toml" }
+Step "3. clippy" { cargo clippy --workspace --all-targets --manifest-path "rust/Cargo.toml" -- -D warnings }
 Step "4. tests de la tarea" {
     if ($info.crates.Count -gt 0) {
-        $cargoArgs = @("test")
+        $cargoArgs = @("test", "--manifest-path", "rust/Cargo.toml")
         foreach ($crate in $info.crates) { $cargoArgs += @("-p", $crate) }
         & cargo @cargoArgs
-    } else { & cargo test --workspace }
+    } else { & cargo test --workspace --manifest-path "rust/Cargo.toml" }
 }
-Step "5. tests del workspace" { cargo test --workspace }
+Step "5. tests del workspace" { cargo test --workspace --manifest-path "rust/Cargo.toml" }
 if (-not $SkipPytest) {
     Step "6. paridad Python intacta" { uv run pytest -q }
 }

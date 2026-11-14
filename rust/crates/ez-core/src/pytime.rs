@@ -34,7 +34,12 @@ pub fn date_local(secs: f64) -> String {
     match seconds_to_utc(secs) {
         Some(utc) => {
             let local = utc.with_timezone(&Local);
-            format!("{:04}-{:02}-{:02}", local.year(), local.month(), local.day())
+            format!(
+                "{:04}-{:02}-{:02}",
+                local.year(),
+                local.month(),
+                local.day()
+            )
         }
         None => String::new(),
     }
@@ -52,7 +57,11 @@ fn seconds_to_utc(secs: f64) -> Option<DateTime<Utc>> {
 
 fn format_like_python(moment: &DateTime<impl TimeZone>, with_offset: bool) -> String {
     let micros = moment.timestamp_subsec_micros();
-    let fraction = if micros == 0 { String::new() } else { format!(".{micros:06}") };
+    let fraction = if micros == 0 {
+        String::new()
+    } else {
+        format!(".{micros:06}")
+    };
     let offset = if with_offset { "+00:00" } else { "" };
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}{fraction}{offset}",
@@ -77,8 +86,14 @@ mod tests {
     #[test]
     fn utc_isoformat_matches_python() {
         assert_eq!(isoformat_utc(1735689600.0), "2025-01-01T00:00:00+00:00");
-        assert_eq!(isoformat_utc(1735689600.5), "2025-01-01T00:00:00.500000+00:00");
-        assert_eq!(isoformat_utc(1735689600.000001), "2025-01-01T00:00:00.000001+00:00");
+        assert_eq!(
+            isoformat_utc(1735689600.5),
+            "2025-01-01T00:00:00.500000+00:00"
+        );
+        assert_eq!(
+            isoformat_utc(1735689600.000001),
+            "2025-01-01T00:00:00.000001+00:00"
+        );
     }
 
     #[test]

@@ -90,7 +90,12 @@ fn write_array(items: &[Value], options: &DumpOptions, level: usize, out: &mut S
     out.push(']');
 }
 
-fn write_object(map: &serde_json::Map<String, Value>, options: &DumpOptions, level: usize, out: &mut String) {
+fn write_object(
+    map: &serde_json::Map<String, Value>,
+    options: &DumpOptions,
+    level: usize,
+    out: &mut String,
+) {
     if map.is_empty() {
         out.push_str("{}");
         return;
@@ -167,7 +172,11 @@ pub fn float_repr(value: f64) -> String {
         return "NaN".to_string();
     }
     if value.is_infinite() {
-        return if value > 0.0 { "Infinity".to_string() } else { "-Infinity".to_string() };
+        return if value > 0.0 {
+            "Infinity".to_string()
+        } else {
+            "-Infinity".to_string()
+        };
     }
     let sign = if value.is_sign_negative() { "-" } else { "" };
     let magnitude = value.abs();
@@ -181,7 +190,10 @@ pub fn float_repr(value: f64) -> String {
         .split_once('e')
         .map(|(mantissa, exponent)| (mantissa.to_string(), exponent.parse::<i32>().unwrap_or(0)))
         .unwrap_or((scientific.clone(), 0));
-    let digits: String = mantissa.chars().filter(|character| *character != '.').collect();
+    let digits: String = mantissa
+        .chars()
+        .filter(|character| *character != '.')
+        .collect();
 
     if (-4..16).contains(&exponent) {
         let body = fixed_notation(&digits, exponent);
@@ -211,7 +223,11 @@ fn fixed_notation(digits: &str, exponent: i32) -> String {
 
 fn scientific_notation(digits: &str, exponent: i32) -> String {
     let (head, tail) = digits.split_at(1);
-    let mantissa = if tail.is_empty() { head.to_string() } else { format!("{head}.{tail}") };
+    let mantissa = if tail.is_empty() {
+        head.to_string()
+    } else {
+        format!("{head}.{tail}")
+    };
     let sign = if exponent < 0 { '-' } else { '+' };
     format!("{mantissa}e{sign}{:02}", exponent.abs())
 }

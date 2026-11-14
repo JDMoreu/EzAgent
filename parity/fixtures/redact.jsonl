@@ -1,0 +1,53 @@
+{"case": "redact/0001", "fn": "redact", "input": {"text": ""}, "output": {"text": ""}, "error": null}
+{"case": "redact/0002", "fn": "redact", "input": {"text": "texto normal sin secretos"}, "output": {"text": "texto normal sin secretos"}, "error": null}
+{"case": "redact/0003", "fn": "redact", "input": {"text": "tildes: \u00f1\u00e1\u00e9\u00ed\u00f3\u00fa, comillas y emoji \ud83d\ude42"}, "output": {"text": "tildes: \u00f1\u00e1\u00e9\u00ed\u00f3\u00fa, comillas y emoji \ud83d\ude42"}, "error": null}
+{"case": "redact/0004", "fn": "redact", "input": {"text": "El proceso termin\u00f3 en 1,25 s con 3 reintentos."}, "output": {"text": "El proceso termin\u00f3 en 1,25 s con 3 reintentos."}, "error": null}
+{"case": "redact/0005", "fn": "redact", "input": {"text": "sk-abc123def456"}, "output": {"text": "[REDACTED]"}, "error": null}
+{"case": "redact/0006", "fn": "redact", "input": {"text": "sk-proj-ABCD1234xyz"}, "output": {"text": "[REDACTED]"}, "error": null}
+{"case": "redact/0007", "fn": "redact", "input": {"text": "sk-a"}, "output": {"text": "sk-a"}, "error": null}
+{"case": "redact/0008", "fn": "redact", "input": {"text": "sk-ab"}, "output": {"text": "sk-ab"}, "error": null}
+{"case": "redact/0009", "fn": "redact", "input": {"text": "sk-"}, "output": {"text": "sk-"}, "error": null}
+{"case": "redact/0010", "fn": "redact", "input": {"text": "xsk-abc123"}, "output": {"text": "xsk-abc123"}, "error": null}
+{"case": "redact/0011", "fn": "redact", "input": {"text": "clave sk-ABC_def-123 en medio"}, "output": {"text": "clave [REDACTED] en medio"}, "error": null}
+{"case": "redact/0012", "fn": "redact", "input": {"text": "Authorization: Bearer abc.def.ghi"}, "output": {"text": "Authorization: Bearer [REDACTED]"}, "error": null}
+{"case": "redact/0013", "fn": "redact", "input": {"text": "bearer token123"}, "output": {"text": "Bearer [REDACTED]"}, "error": null}
+{"case": "redact/0014", "fn": "redact", "input": {"text": "Bearer"}, "output": {"text": "Bearer"}, "error": null}
+{"case": "redact/0015", "fn": "redact", "input": {"text": "Bearer abc123; otra cosa"}, "output": {"text": "Bearer [REDACTED]; otra cosa"}, "error": null}
+{"case": "redact/0016", "fn": "redact", "input": {"text": "api_key=secret123"}, "output": {"text": "api_key=[REDACTED]"}, "error": null}
+{"case": "redact/0017", "fn": "redact", "input": {"text": "api-key: abcd"}, "output": {"text": "api-key: [REDACTED]"}, "error": null}
+{"case": "redact/0018", "fn": "redact", "input": {"text": "API_KEY=xyz"}, "output": {"text": "API_KEY=[REDACTED]"}, "error": null}
+{"case": "redact/0019", "fn": "redact", "input": {"text": "x-api-key: 123456"}, "output": {"text": "x-api-key: [REDACTED]"}, "error": null}
+{"case": "redact/0020", "fn": "redact", "input": {"text": "password=hunter2"}, "output": {"text": "password=[REDACTED]"}, "error": null}
+{"case": "redact/0021", "fn": "redact", "input": {"text": "password: \"hunter2\""}, "output": {"text": "password: \"[REDACTED]\""}, "error": null}
+{"case": "redact/0022", "fn": "redact", "input": {"text": "token='abc'"}, "output": {"text": "token='[REDACTED]'"}, "error": null}
+{"case": "redact/0023", "fn": "redact", "input": {"text": "secret: abcdef"}, "output": {"text": "secret: [REDACTED]"}, "error": null}
+{"case": "redact/0024", "fn": "redact", "input": {"text": "access_token=abc123"}, "output": {"text": "access_token=[REDACTED]"}, "error": null}
+{"case": "redact/0025", "fn": "redact", "input": {"text": "auth-token=zzz"}, "output": {"text": "auth-token=[REDACTED]"}, "error": null}
+{"case": "redact/0026", "fn": "redact", "input": {"text": "passwd=pass"}, "output": {"text": "passwd=[REDACTED]"}, "error": null}
+{"case": "redact/0027", "fn": "redact", "input": {"text": "SECRET=ABC"}, "output": {"text": "SECRET=[REDACTED]"}, "error": null}
+{"case": "redact/0028", "fn": "redact", "input": {"text": "token  =  valor"}, "output": {"text": "token  =  [REDACTED]"}, "error": null}
+{"case": "redact/0029", "fn": "redact", "input": {"text": "password = \"a b\""}, "output": {"text": "password = \"[REDACTED]\""}, "error": null}
+{"case": "redact/0030", "fn": "redact", "input": {"text": "'api_key': 'abc123'"}, "output": {"text": "'api_key': 'abc123'"}, "error": null}
+{"case": "redact/0031", "fn": "redact", "input": {"text": "(api_key=abc123)"}, "output": {"text": "(api_key=[REDACTED]"}, "error": null}
+{"case": "redact/0032", "fn": "redact", "input": {"text": "?token=abc123&user=1"}, "output": {"text": "?token=[REDACTED]&user=1"}, "error": null}
+{"case": "redact/0033", "fn": "redact", "input": {"text": "api_key=[REDACTED]"}, "output": {"text": "api_key=[REDACTED]"}, "error": null}
+{"case": "redact/0034", "fn": "redact", "input": {"text": "clave=\u00f1and\u00fa"}, "output": {"text": "clave=\u00f1and\u00fa"}, "error": null}
+{"case": "redact/0035", "fn": "redact", "input": {"text": "https://user:pass@example.com/x"}, "output": {"text": "https://[REDACTED]@example.com/x"}, "error": null}
+{"case": "redact/0036", "fn": "redact", "input": {"text": "postgres://admin:s3cr3t@db:5432/ez"}, "output": {"text": "postgres://[REDACTED]@db:5432/ez"}, "error": null}
+{"case": "redact/0037", "fn": "redact", "input": {"text": "ftp://a:b@host"}, "output": {"text": "ftp://[REDACTED]@host"}, "error": null}
+{"case": "redact/0038", "fn": "redact", "input": {"text": "https://example.com:8443/x"}, "output": {"text": "https://example.com:8443/x"}, "error": null}
+{"case": "redact/0039", "fn": "redact", "input": {"text": "d41d8cd98f00b204e9800998ecf8427e"}, "output": {"text": "[REDACTED]"}, "error": null}
+{"case": "redact/0040", "fn": "redact", "input": {"text": "d41d8cd98f00b204e9800998ecf8427"}, "output": {"text": "d41d8cd98f00b204e9800998ecf8427"}, "error": null}
+{"case": "redact/0041", "fn": "redact", "input": {"text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "output": {"text": "[REDACTED]"}, "error": null}
+{"case": "redact/0042", "fn": "redact", "input": {"text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}, "output": {"text": "[REDACTED]"}, "error": null}
+{"case": "redact/0043", "fn": "redact", "input": {"text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}, "output": {"text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}, "error": null}
+{"case": "redact/0044", "fn": "redact", "input": {"text": "AbC123xyzAbC123xyzAbC123xyzAbC123xyz12"}, "output": {"text": "[REDACTED]"}, "error": null}
+{"case": "redact/0045", "fn": "redact", "input": {"text": "AbC123xyzAbC123xyzAbC123xyzAbC123xyz=="}, "output": {"text": "[REDACTED]"}, "error": null}
+{"case": "redact/0046", "fn": "redact", "input": {"text": "AbC123xyz-_AbC123xyz-_AbC123xyz-_ab"}, "output": {"text": "[REDACTED]"}, "error": null}
+{"case": "redact/0047", "fn": "redact", "input": {"text": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.abc"}, "output": {"text": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.abc"}, "error": null}
+{"case": "redact/0048", "fn": "redact", "input": {"text": "0123456789abcdef0123456789abcdef"}, "output": {"text": "[REDACTED]"}, "error": null}
+{"case": "redact/0049", "fn": "redact", "input": {"text": "token=AbC123xyzAbC123xyzAbC123xyzAbC"}, "output": {"text": "token=[REDACTED]"}, "error": null}
+{"case": "redact/0050", "fn": "redact", "input": {"text": "2026-01-01 INFO request POST /v1?api_key=abc123&x=1"}, "output": {"text": "2026-01-01 INFO request POST /v1?api_key=[REDACTED]&x=1"}, "error": null}
+{"case": "redact/0051", "fn": "redact", "input": {"text": "api_key=aaa123 y token=bbb456"}, "output": {"text": "api_key=[REDACTED] y token=[REDACTED]"}, "error": null}
+{"case": "redact/0052", "fn": "redact", "input": {"text": "Error 500 en https://user:pass@api.example.com/v1?token=zzz con api_key=k1"}, "output": {"text": "Error 500 en https://[REDACTED]@api.example.com/v1?token=[REDACTED] con api_key=[REDACTED]"}, "error": null}
+{"case": "redact/0053", "fn": "redact", "input": {"text": "sk-live-999 Authorization: Bearer zzz.111 password=p q"}, "output": {"text": "[REDACTED] Authorization: Bearer [REDACTED] password=[REDACTED] q"}, "error": null}

@@ -12,8 +12,14 @@ fn options_from(value: &Value) -> DumpOptions {
     if let Some(indent) = object.get("indent").and_then(Value::as_u64) {
         options = options.with_indent(indent as usize);
     }
-    options.sort_keys = object.get("sort_keys").and_then(Value::as_bool).unwrap_or(false);
-    options.ensure_ascii = object.get("ensure_ascii").and_then(Value::as_bool).unwrap_or(true);
+    options.sort_keys = object
+        .get("sort_keys")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    options.ensure_ascii = object
+        .get("ensure_ascii")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
     if let Some(Value::Array(separators)) = object.get("separators") {
         if separators.len() == 2 {
             if let Some(item) = separators[0].as_str() {
@@ -39,7 +45,11 @@ fn every_dumps_case_matches_python() {
         let value = case.input.get("value").cloned().unwrap_or(Value::Null);
         let options = options_from(case.input.get("options").unwrap_or(&Value::Null));
         let produced = dumps_with(&value, &options);
-        let expected = case.output.get("text").and_then(Value::as_str).unwrap_or("");
+        let expected = case
+            .output
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         assert_eq!(produced, expected, "caso {}", case.case);
         cases_run += 1;
     }
@@ -59,12 +69,19 @@ fn round_trip_keeps_values() {
         }
         let value = case.input.get("value").cloned().unwrap_or(Value::Null);
         let text = dumps_with(&value, &DumpOptions::default());
-        let expected = case.output.get("text").and_then(Value::as_str).unwrap_or("");
+        let expected = case
+            .output
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         assert_eq!(text, expected, "caso {}", case.case);
         let back: Value = serde_json::from_str(&text).expect("json válido");
         assert_eq!(back, value, "round-trip {}", case.case);
         cases_run += 1;
     }
-    let in_file = cases.iter().filter(|case| case.function == "round_trip").count();
+    let in_file = cases
+        .iter()
+        .filter(|case| case.function == "round_trip")
+        .count();
     assert_eq!(cases_run, in_file);
 }

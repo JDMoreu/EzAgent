@@ -9,7 +9,8 @@ use tracing_subscriber::EnvFilter;
 ///
 /// `shortcut: rotación diaria por defecto de tracing-appender; Python no rota.`
 pub fn init(logs_dir: &Path, level: &str) -> Result<(), String> {
-    std::fs::create_dir_all(logs_dir).map_err(|error| format!("{}: {error}", logs_dir.display()))?;
+    std::fs::create_dir_all(logs_dir)
+        .map_err(|error| format!("{}: {error}", logs_dir.display()))?;
     let file_appender = tracing_appender::rolling::daily(logs_dir, "engine.log");
     let filter = EnvFilter::try_new(level).map_err(|error| error.to_string())?;
     tracing_subscriber::fmt()
