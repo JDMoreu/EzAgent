@@ -140,3 +140,33 @@ uv run python rust-migration/tools/make_test_map.py
 El encargo de un trabajador es el de `rust-migration/AGENTS.rust.md` §10 con el
 brief de `rust-migration/briefs/<ID>.md` y el informe en
 `rust-migration/reports/<ID>-r<ronda>.md`.
+
+## 7. Ronda 2: rechazos de Codex corregidos (2026-11-14)
+
+Cinco fallos reproducibles en tareas ya marcadas `done`, más tres defectos de
+la puerta. Todos con fixture nuevo que fija el comportamiento real de Python.
+
+| # | Fallo | Causa | Arreglo | Prueba |
+|---|---|---|---|---|
+| 1 | `resolve_safe` dejaba atravesar un junction | `resolve()` era léxico; Python usa `Path.resolve(strict=False)` | canoniza la parte existente del disco y quita el prefijo `\?\` | `paths_junction_parity` (5/5): `C:/Users/All Users` → `C:/ProgramData` se deniega |
+| 2 | Patrones de archivos protegidos | `[!x]` se traducía a `^[x]`; faltaban `]` inicial, escapes y rangos invertidos | `fnmatch.translate` portado de CPython 3.12 | `paths_globs_parity` (34/34) |
+| 3 | Fechas | acarreo de µs roto, redondeo mitad-fuera, negativos inventados y sin `timespec="milliseconds"` | `round_ties_even`, acarreo, `OSError` de Windows y `isoformat_millis_utc` | `pytime_parity` (73/73) |
+| 4 | Conversión de enteros | quitaba todos los `_`, solo dígitos ASCII, desbordaba el mínimo de `i64` | `python_int` según CPython: `_` simple, bloques `Nd`, `i128` + `try_from`, tope de 4300 dígitos | `ints_parity` (32/32) |
+| 5 | Diccionarios de transcripción | `to_lowercase()` en vez de `str.casefold()` | `casefold.rs` con la tabla completa (353 diferencias), 0 diferencias en 1 112 064 puntos de código | `stt_fold_parity` (27/27) |
+
+Defectos de la puerta:
+
+- Comparaba `rust/main...HEAD` (siempre vacío con el trabajo en `rust/main`).
+  Ahora la base por defecto es `HEAD^` y **un diff vacío es un fallo**.
+- Aceptaba una base inexistente porque ignoraba el código de salida de `git`.
+  Ahora `rev-parse --verify` y error explícito.
+- `regen.ps1 -Check` solo miraba los 27 JSONL. Ahora el manifiesto incluye los
+  526 archivos dorados (298 PNG + 228 JSON), y `--check` los verifica dos
+  veces: tal como están en disco (detecta bytes cambiados) y después de
+  regenerar (detecta generación no determinista).
+- Añadido `-Commit <sha>` para auditar una tarea histórica después de que otra
+  sesión haya commiteado encima.
+
+Verificación de la ronda: `cargo test --workspace` 51 pruebas · clippy y fmt
+limpios · `pytest` 1881 passed, 1 skipped · oráculo estable (32 fixtures +
+526 dorados) · `gate.ps1` OK en F2-01, F2-02, F2-04 y F2-06 con `-Commit`.
