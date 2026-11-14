@@ -56,7 +56,12 @@ impl VoiceApp {
             guarded(|| self.handle_event(event));
         }
         while let Some(event) = self.inner.ui.menu_events.get_nowait() {
-            guarded(|| self.handle_menu_event(event));
+            guarded(|| {
+                // `_handle_menu_event` devuelve el error al llamador (F6-06b).
+                if let Err(error) = self.handle_menu_event(&event) {
+                    tracing::warn!("Error en menú: {error}");
+                }
+            });
         }
         // Red de seguridad: un aviso encolado no se queda atascado.
         guarded(|| self.pump_announcements());
