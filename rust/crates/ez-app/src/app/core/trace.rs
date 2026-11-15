@@ -49,6 +49,10 @@ pub trait AppTrace: Send + Sync {
     fn chat_confirm_done(&self) {}
     /// Escritura real de `chat.jsonl` (`ChatStore._write`).
     fn chat_file_write(&self, _role: &str) {}
+    /// Escritura real de `voice.json` (`VoiceConfig._write_json`).
+    fn config_file_write(&self, _name: &str) {}
+    /// Servicio reemplazado por una versión que falla (`degraded.*`).
+    fn degraded(&self, _what: &str) {}
     /// Respuesta de `transcribe` (antes de descartar alucinaciones).
     fn stt_transcript(&self, _text: &str) {}
 }

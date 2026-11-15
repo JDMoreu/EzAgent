@@ -306,6 +306,10 @@ impl VoiceApp {
         self.signal_tts_stop();
         *self.inner.speech.speaking_kind.write() = None;
         self.inner.chat.contexts.lock().new_chat();
+        // El historial anota la sesión nueva (`ChatStore.new_session`).
+        super::core::trace::notify(&self.inner.runtime.trace, |trace| {
+            trace.chat_file_write("");
+        });
         *self.inner.session.last_summary.write() = String::new();
         log("Conversación nueva desde el chat.");
     }
@@ -318,7 +322,12 @@ impl VoiceApp {
         advance_turn(self);
         self.signal_tts_stop();
         *self.inner.speech.speaking_kind.write() = None;
-        if self.inner.chat.contexts.lock().switch(session) {
+        let switched = self.inner.chat.contexts.lock().switch(session);
+        if switched {
+            // El historial anota la conversación retomada (`ChatStore.resume`).
+            super::core::trace::notify(&self.inner.runtime.trace, |trace| {
+                trace.chat_file_write("");
+            });
             let last = self.inner.chat.chat.last_assistant_text();
             *self.inner.session.last_summary.write() = if last.is_empty() {
                 String::new()

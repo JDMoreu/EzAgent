@@ -350,3 +350,15 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
 - Qué hace mal (dependencia): el ancla «ls» pega la máscara del **bbox del contorno** (no la tinta recortada), que puede llevar una fila o columna vacía delante (`*` y los acentos), y redondea primero el ancla (`ctx.px`) para luego desplazar por un número entero de píxeles físicos. Un puerto que ancle la tinta recortada se desvía 1 px en las palabras que empiezan por un glifo con «bearing» (`ñ`, `*`, `Abrir`) y al sumar el redondeo de la línea base.
 - Cómo se reproduce en Rust: `paint::chat::base::{ink_bearing, ink_top}` recuperan el «bearing» y la primera fila de tinta comparando anchos/altos contra un glifo sonda (`T`, `Á`), y el ancla se redondea antes de aplicar el desplazamiento entero; `text_offset_matches_pillow_pen_and_baseline` fija los valores medidos.
 - Recomendación: ninguna en el Python. Cuando `ez-gfx` exponga el bbox del contorno (`ink_left`/`ink_top` de `draw_text`), sustituir las sondas por esas métricas.
+
+## Q-P-REPLAY-02
+- Archivo y líneas: `parity/replay/harness_ext.py:257-270` (`_hud`).
+- Qué hace mal: llama `callback()` sin argumentos para toda acción que no sea `chat_send`, `chat_switch` o `chat_delete`; `on_chat_mic(muted)` y `on_chat_confirm(yes)` exigen un booleano, así que `hud: {action: chat_mic}` o `hud: {action: chat_confirm}` fallan con `TypeError` en Python. Ningún escenario 16-25 usa esas dos acciones.
+- Cómo se reproduce en Rust: `replay::steps_c::Hud` sí acepta `chat_mic` y `chat_confirm` con `muted`/`yes` del paso (y conserva el error `el HUD no expone on_<acción>` para lo demás). Es una desviación deliberada del arnés para poder probar el mute y la confirmación; no cambia ninguna traza dorada.
+- Recomendación posterior: si se usan esas acciones, arreglar `_hud` en el Python pasando el argumento que pide cada callback (o marcar el paso como no soportado en ambos arneses).
+
+## Q-P-REPLAY-03
+- Archivo y líneas: `parity/replay/harness_ext.py:317-341` (`_drained`).
+- Qué hace mal: el plazo solo se comprueba cuando la app ya está quieta pero no lleva 0,3 s estable; si nunca queda quieta, el bucle no vence y el escenario muere por el plazo global, no por el mensaje «la app no quedó quieta». En Rust `Driver::poll_drained` reproduce la misma rama (el mensaje sale solo en ese caso).
+- Cómo se reproduce en Rust: `replay::driver::Driver::poll_drained`; los escenarios 16-25 terminan dentro del plazo global.
+- Recomendación posterior: comprobar el plazo también cuando no está quieta, si se quiere un diagnóstico más preciso.

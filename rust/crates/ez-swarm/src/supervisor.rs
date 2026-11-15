@@ -37,6 +37,7 @@ use crate::protocol;
 use crate::recovery::{Recovery, RecoveryOptions, ResetLaunches};
 use crate::service::SwarmService;
 
+pub(crate) use host::ProbeHost;
 pub use host::{HerdrHost, LaunchRequest, SwarmHost};
 
 /// Pasada con trabajo pendiente.
@@ -424,6 +425,11 @@ impl Supervisor {
     /// Enjambres activos en la última pasada (lo lee la UI).
     pub fn running(&self) -> usize {
         self.running.load(Ordering::SeqCst)
+    }
+
+    /// ¿Queda algún lanzamiento de agente en curso? (el `_launching` del Python).
+    pub fn launching(&self) -> bool {
+        !self.book.lock().launching.is_empty()
     }
 
     /// `(id, objetivo)` de los enjambres activos (lo lee la UI).

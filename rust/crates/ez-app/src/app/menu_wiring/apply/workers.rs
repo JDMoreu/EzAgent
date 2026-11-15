@@ -52,6 +52,8 @@ impl VoiceApp {
         };
         if let Err(error) = save() {
             log(format!("No pude guardar el modelo corregido: {error}"));
+        } else {
+            self.trace_config_write();
         }
         *self.inner.config.saved_llm.lock() = SavedLlm {
             provider: cfg_text(&cfg, "llm_provider", ""),

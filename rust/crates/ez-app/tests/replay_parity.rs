@@ -1,4 +1,4 @@
-//! Paridad de los escenarios 01-15 contra las trazas doradas de Python.
+//! Paridad de los escenarios 01-25 contra las trazas doradas de Python.
 //!
 //! Cada escenario corre en un proceso propio (`ezagent-replay`), porque el
 //! perfil temporal y los servicios falsos no se pueden mezclar entre corridas.
@@ -10,8 +10,13 @@
 
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Mutex;
 
 use ez_app::replay::{causal_diff, Paths};
+
+/// Los tres bloques corren de uno en uno: cada escenario ya usa varios hilos y
+/// procesos, y en paralelo los avisos hablados cambian de orden en la traza.
+static SERIAL: Mutex<()> = Mutex::new(());
 
 /// Escenarios de esta tarea, en orden.
 const SCENARIOS: [&str; 6] = [
@@ -38,6 +43,22 @@ const SCENARIOS_B: [&str; 13] = [
     "14b-llm-disconnect",
     "14c-llm-timeout",
     "15-anthropic-tools",
+];
+
+/// Escenarios 16-25 (F7-01c): topes, marcado, enjambre, chat, menú y degradación.
+const SCENARIOS_16_25: [&str; 12] = [
+    "16-tool-limits",
+    "17-tool-markup",
+    "18-swarm-delivery",
+    "19-swarm-quota",
+    "20-swarm-incidents",
+    "21-chat-panel",
+    "22-pause-wake",
+    "23-menu-settings",
+    "24-model-match",
+    "25a-no-whisper",
+    "25b-no-kokoro",
+    "25c-no-smart-turn",
 ];
 
 /// Corre un escenario y compara su orden causal con la traza dorada.
@@ -68,6 +89,9 @@ fn run_against_golden(stem: &str, paths: &Paths, out_dir: &std::path::Path) {
 
 #[test]
 fn scenarios_01_to_06_follow_the_golden_trace() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let paths = Paths::discover().expect("rutas del arnés");
     let out_dir =
         std::env::temp_dir().join(format!("ezagent-replay-parity-{}", std::process::id()));
@@ -79,11 +103,46 @@ fn scenarios_01_to_06_follow_the_golden_trace() {
 
 #[test]
 fn scenarios_07_to_15_follow_the_golden_trace() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let paths = Paths::discover().expect("rutas del arnés");
     let out_dir =
         std::env::temp_dir().join(format!("ezagent-replay-parity-b-{}", std::process::id()));
     std::fs::create_dir_all(&out_dir).expect("carpeta de trazas");
     for stem in SCENARIOS_B {
+        run_against_golden(stem, &paths, &out_dir);
+    }
+}
+
+/// Los escenarios del enjambre necesitan el binario `ezs` del mismo build.
+fn ensure_ezs(paths: &Paths) {
+    let beside = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|parent| parent.join("ezs.exe")));
+    if beside.as_ref().is_some_and(|path| path.is_file()) {
+        return;
+    }
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let status = Command::new(cargo)
+        .args(["build", "-q", "-p", "ez-swarm", "--bin", "ezs"])
+        .current_dir(paths.root.join("rust"))
+        .status()
+        .expect("cargo para compilar ezs");
+    assert!(status.success(), "no pude compilar el binario ezs");
+}
+
+#[test]
+fn scenarios_16_to_25_follow_the_golden_trace() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let paths = Paths::discover().expect("rutas del arnés");
+    ensure_ezs(&paths);
+    let out_dir =
+        std::env::temp_dir().join(format!("ezagent-replay-parity-c-{}", std::process::id()));
+    std::fs::create_dir_all(&out_dir).expect("carpeta de trazas");
+    for stem in SCENARIOS_16_25 {
         run_against_golden(stem, &paths, &out_dir);
     }
 }

@@ -24,6 +24,8 @@ pub const SAMPLE_RATE: u32 = 16_000;
 pub struct ReplaySpeaker {
     trace: Arc<Trace>,
     min_secs: f64,
+    /// `degrade: [kokoro]`: sintetizar y hablar fallan como el doble del Python.
+    degraded: bool,
     playing: AtomicUsize,
     lock: Mutex<()>,
     finished: Mutex<Vec<String>>,
@@ -32,13 +34,31 @@ pub struct ReplaySpeaker {
 impl ReplaySpeaker {
     /// Altavoz con el mínimo de reproducción por frase del escenario.
     pub fn new(trace: Arc<Trace>, min_secs: f64) -> Arc<Self> {
+        Self::build(trace, min_secs, false)
+    }
+
+    /// Altavoz sin modelo de Kokoro: cada intento anota `degraded.kokoro`.
+    pub fn degraded(trace: Arc<Trace>, min_secs: f64) -> Arc<Self> {
+        Self::build(trace, min_secs, true)
+    }
+
+    fn build(trace: Arc<Trace>, min_secs: f64, degraded: bool) -> Arc<Self> {
         Arc::new(Self {
             trace,
             min_secs,
+            degraded,
             playing: AtomicUsize::new(0),
             lock: Mutex::new(()),
             finished: Mutex::new(Vec::new()),
         })
+    }
+
+    /// Motivo del fallo del doble (`_break_speaker` del Python).
+    const BROKEN: &'static str = "No encuentro el modelo de Kokoro; revisa la voz o la ruta.";
+
+    fn broken(&self) -> Result<(), String> {
+        self.trace.record("degraded.kokoro", json!({}));
+        Err(Self::BROKEN.to_string())
     }
 
     /// ¿Ya se reprodujo una frase que contiene `needle`?
@@ -74,6 +94,9 @@ impl ReplaySpeaker {
 
 impl SpeakerApi for ReplaySpeaker {
     fn synthesize(&self, text: &str) -> Result<(Vec<f32>, u32), String> {
+        if self.degraded {
+            return self.broken().map(|()| (Vec::new(), SAMPLE_RATE));
+        }
         Ok((Self::encode(text), SAMPLE_RATE))
     }
 
@@ -120,6 +143,9 @@ impl SpeakerApi for ReplaySpeaker {
         on_level: Option<&mut dyn FnMut(f64)>,
         on_start: Option<&mut dyn FnMut()>,
     ) -> Result<bool, String> {
+        if self.degraded {
+            return self.broken().map(|()| false);
+        }
         let (samples, rate) = self.synthesize(text)?;
         self.play(&samples, rate, stop, on_level, on_start)
     }

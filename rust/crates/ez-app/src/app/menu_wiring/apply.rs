@@ -128,6 +128,7 @@ impl VoiceApp {
             .cfg
             .read()
             .save(Some(&self.inner.config.config_file))?;
+        self.trace_config_write();
         self.finish_hotkeys(&prepared);
         *self.inner.config.saved_llm.lock() = prepared.llm.saved();
         self.finish_stt_settings();

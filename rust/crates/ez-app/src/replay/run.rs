@@ -258,9 +258,22 @@ fn build_rig(
 ) -> Result<Rig, String> {
     let cfg = VoiceConfig::load(Some(config_path))?;
     let trace = Trace::new(home);
+    super::swarm_c::configure(&paths.root);
     let chat_path = home.join("EzAgent").join("chat.jsonl");
     let recorder = Recorder::new(Arc::clone(&trace), Some(&chat_path));
-    let speaker = ReplaySpeaker::new(Arc::clone(&trace), number(scenario, "speech_secs_min", 1.8));
+    let speech_secs = number(scenario, "speech_secs_min", 1.8);
+    let kokoro_broken = scenario
+        .data
+        .get("degrade")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|item| super::scenario::scalar_text(item) == "kokoro");
+    let speaker = if kokoro_broken {
+        ReplaySpeaker::degraded(Arc::clone(&trace), speech_secs)
+    } else {
+        ReplaySpeaker::new(Arc::clone(&trace), speech_secs)
+    };
     let mic = ReplayMic::new(
         Arc::clone(&trace),
         paths.audio.clone(),
@@ -276,8 +289,20 @@ fn build_rig(
         cfg.get("chat_voice").is_some_and(ez_core::config::truthy),
     )));
     parts.whisper_ready = ez_stt::server::whisper_ready(&cfg_text(&cfg, "whisper_url", ""));
-    parts.build_swarm = false;
+    let swarm = scenario.data.get("swarm").is_some();
+    parts.build_swarm = swarm;
+    if swarm {
+        parts.swarm_factory = Some(super::swarm_c::factory());
+    }
     parts.build_agent = true;
+    parts.degrade = scenario
+        .data
+        .get("degrade")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(super::scenario::scalar_text)
+        .collect();
     // DECISION: la app corre en modo real (vigilante y mensajero) pero sin
     // abrir la captura: el arnés alimenta el micrófono desde su hilo.
     parts.background = true;

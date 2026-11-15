@@ -18,6 +18,15 @@ pub trait Step: Send + Sync {
     fn describe(&self, step: &Map<String, Value>) -> String;
     /// Aplica el paso y deja la espera (o falla con un mensaje claro).
     fn apply(&self, driver: &Driver, step: &Map<String, Value>) -> Result<Option<Pending>, String>;
+    /// ¿Puede encadenarse con el siguiente sin devolver el turno a la interfaz?
+    ///
+    /// El Python avanza un paso cada 5 ms del `mainloop`; los pasos instantáneos
+    /// de chat y menú se encadenan aquí para que el `_tick` de la app procese
+    /// sus eventos después de todos ellos, como en la traza dorada. Los del
+    /// enjambre devuelven el turno para que quepa el aviso hablado.
+    fn immediate(&self) -> bool {
+        true
+    }
 }
 
 /// Todos los pasos soportados, en el orden de comprobación del Python.
@@ -37,6 +46,17 @@ pub fn handlers() -> Vec<Box<dyn Step>> {
         Box::new(crate::replay::steps_b::WaitDrained),
         Box::new(crate::replay::steps_b::HcSet),
         Box::new(Sleep),
+        Box::new(crate::replay::steps_c::Hud),
+        Box::new(crate::replay::steps_c::MenuSave),
+        Box::new(crate::replay::steps_c::WaitConfig),
+        Box::new(crate::replay::steps_c::WaitVoice),
+        Box::new(crate::replay::steps_c::SwarmStart),
+        Box::new(crate::replay::steps_c::SwarmTick),
+        Box::new(crate::replay::steps_c::SwarmAgent),
+        Box::new(crate::replay::steps_c::SwarmScreen),
+        Box::new(crate::replay::steps_c::SwarmLost),
+        Box::new(crate::replay::steps_c::SwarmResolve),
+        Box::new(crate::replay::steps_c::SwarmClock),
     ]
 }
 

@@ -12,11 +12,11 @@ use ez_core::metrics::monotonic;
 use ez_core::pytime::timestamp;
 use ez_core::pyvalue::{collapse_spaces, head_chars};
 
-use crate::db::{Db, DbResult};
+use crate::db::{Clock, Db, DbResult};
 use crate::recovery::Recovery;
 use crate::server::SwarmServer;
 use crate::service::SwarmService;
-use crate::supervisor::{Announce, Supervisor, SupervisorConfig, SwarmHost};
+use crate::supervisor::{Announce, ProbeHost, Supervisor, SupervisorConfig, SwarmHost};
 
 /// Carpeta del ejecutable `ezs` (junto al programa o en el PATH), o «».
 ///
@@ -76,6 +76,8 @@ pub struct SwarmStack {
     pub command_dir: String,
     /// Supervisor en su hilo.
     pub supervisor: Arc<Supervisor>,
+    /// `false` deja el supervisor sin hilo: el arnés lo avanza a mano (F7-01c).
+    pub supervisor_thread: bool,
 }
 
 impl SwarmStack {
@@ -87,16 +89,47 @@ impl SwarmStack {
         ask: Option<Announce>,
         command: &str,
     ) -> DbResult<Self> {
+        Self::with_clocks(
+            base_dir,
+            host,
+            announce,
+            ask,
+            command,
+            Arc::new(timestamp),
+            Arc::new(monotonic),
+            true,
+        )
+    }
+
+    /// Igual que [`Self::new`] con relojes explícitos y control del hilo.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_clocks(
+        base_dir: impl Into<PathBuf>,
+        host: Arc<dyn SwarmHost>,
+        announce: Announce,
+        ask: Option<Announce>,
+        command: &str,
+        wall: Clock,
+        clock: Clock,
+        supervisor_thread: bool,
+    ) -> DbResult<Self> {
         let base_dir = base_dir.into();
-        let store = Db::open(base_dir.join("board.db"))?;
-        let service = Arc::new(SwarmService::new(store, command, Arc::new(timestamp)));
+        // El arnés avanza el supervisor a mano y necesita ver cada cambio de
+        // `fake-hc`: sin listado, `probe` pregunta terminal por terminal.
+        let host: Arc<dyn SwarmHost> = if supervisor_thread {
+            host
+        } else {
+            Arc::new(ProbeHost::new(host))
+        };
+        let store = Db::new(base_dir.join("board.db"), Arc::clone(&wall))?;
+        let service = Arc::new(SwarmService::new(store, command, Arc::clone(&wall)));
         let server = SwarmServer::new(Arc::clone(&service), base_dir.join("endpoint.json"));
         let command_dir = find_command_dir(command);
         let mut config = SupervisorConfig::new(base_dir.join("seats"), Arc::clone(&announce));
         config.ask = ask;
         config.command_dir.clone_from(&command_dir);
-        config.clock = Arc::new(monotonic);
-        config.wall = Arc::new(timestamp);
+        config.clock = clock;
+        config.wall = wall;
         let supervisor = Arc::new(Supervisor::new(
             Arc::clone(&service),
             Arc::clone(&host),
@@ -109,6 +142,7 @@ impl SwarmStack {
             server,
             command_dir,
             supervisor,
+            supervisor_thread,
         })
     }
 
@@ -122,10 +156,12 @@ impl SwarmStack {
         &self.host
     }
 
-    /// Arranca el servidor local y el supervisor.
+    /// Arranca el servidor local y, si procede, el supervisor.
     pub fn start(&self) -> std::io::Result<()> {
         self.server.start()?;
-        self.supervisor.start();
+        if self.supervisor_thread {
+            self.supervisor.start();
+        }
         Ok(())
     }
 
@@ -173,6 +209,18 @@ impl SwarmStack {
         lines.push("</swarms>".to_string());
         Ok(lines.join("\n"))
     }
+}
+
+/// Offset of the local time zone at `epoch`, in seconds.
+///
+/// The Python harness fixes `TZ=UTC`; this lets the Rust replay use the same
+/// wall clock without changing what production shows in local time.
+pub fn local_offset_seconds(epoch: f64) -> f64 {
+    use chrono::TimeZone;
+    chrono::Local
+        .timestamp_opt(epoch as i64, 0)
+        .earliest()
+        .map_or(0.0, |moment| f64::from(moment.offset().local_minus_utc()))
 }
 
 /// `html.escape(text, quote=False)`.
