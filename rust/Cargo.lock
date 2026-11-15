@@ -531,6 +531,7 @@ dependencies = [
  "ez-herdr",
  "ez-hud",
  "ez-llm",
+ "ez-parity",
  "ez-stt",
  "ez-swarm",
  "ez-tts",
@@ -550,6 +551,7 @@ dependencies = [
  "cpal",
  "crossbeam-channel",
  "ez-core",
+ "ez-parity",
  "ndarray",
  "parking_lot 0.13.0",
  "tracing",
@@ -561,6 +563,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "ez-core",
+ "ez-parity",
  "regex",
  "scraper",
  "serde",
@@ -610,6 +613,7 @@ name = "ez-gfx"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "ez-parity",
  "freetype-rs",
  "image",
  "ndarray",
@@ -622,6 +626,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "ez-core",
+ "ez-parity",
  "regex",
  "serde",
  "serde_json",
@@ -635,6 +640,7 @@ dependencies = [
  "bytemuck",
  "ez-core",
  "ez-gfx",
+ "ez-parity",
  "image",
  "ndarray",
  "parking_lot 0.13.0",
@@ -648,6 +654,7 @@ name = "ez-llm"
 version = "0.1.0"
 dependencies = [
  "ez-core",
+ "ez-parity",
  "fancy-regex",
  "indexmap",
  "regex",
@@ -690,6 +697,7 @@ dependencies = [
  "chrono",
  "ez-core",
  "ez-herdr",
+ "ez-parity",
  "rusqlite",
  "serde",
  "serde_json",
@@ -707,6 +715,7 @@ dependencies = [
  "crossbeam-channel",
  "ez-audio",
  "ez-core",
+ "ez-parity",
  "ndarray",
  "ort",
  "parking_lot 0.13.0",

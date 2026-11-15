@@ -15,3 +15,6 @@ image = { workspace = true }
 png = { workspace = true }
 bytemuck = { workspace = true }
 ndarray = { workspace = true }
+
+[dev-dependencies]
+ez-parity = { path = "../ez-parity" }

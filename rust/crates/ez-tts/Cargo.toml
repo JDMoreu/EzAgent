@@ -19,3 +19,6 @@ crossbeam-channel = { workspace = true }
 parking_lot = { workspace = true }
 tracing = { workspace = true }
 ndarray = { workspace = true }
+
+[dev-dependencies]
+ez-parity = { path = "../ez-parity" }

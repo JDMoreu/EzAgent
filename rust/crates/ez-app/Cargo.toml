@@ -33,3 +33,6 @@ ez-agent = { path = "../ez-agent" }
 ez-herdr = { path = "../ez-herdr" }
 ez-swarm = { path = "../ez-swarm" }
 ez-chat = { path = "../ez-chat" }
+
+[dev-dependencies]
+ez-parity = { path = "../ez-parity" }

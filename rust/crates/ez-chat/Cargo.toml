@@ -17,3 +17,6 @@ chrono = { workspace = true }
 regex = { workspace = true }
 scraper = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+ez-parity = { path = "../ez-parity" }

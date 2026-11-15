@@ -19,3 +19,6 @@ bytemuck = { workspace = true }
 windows = { workspace = true }
 parking_lot = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+ez-parity = { path = "../ez-parity" }
