@@ -1076,4 +1076,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    import harness_ext  # noqa: E402,F401 - extensiones de los escenarios 16-25 (F1-12c)
+
     sys.exit(main())

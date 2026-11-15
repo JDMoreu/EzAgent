@@ -1,0 +1,33 @@
+id: "25b"
+name: "Arranque sin modelo de Kokoro"
+notes: >
+  El altavoz no encuentra el modelo de Kokoro: la respuesta del turno llega
+  al chat, no se dice nada y la app queda en estado de error sin colgar.
+degrade: [kokoro]
+settings:
+  smart_turn: false
+  speech_secs_min: 0.1
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - content: "Te escucho, pero no puedo hablar."
+whisper:
+  transcripts:
+    - "¿Me escuchas?"
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: hola_como_estas.wav
+  - wait_quiet: 25
+  - wait_drained: 20
+expect:
+  user: ["¿Me escuchas?"]
+  assistant: ["Te escucho, pero no puedo hablar."]
+  speech_count:
+    "Te escucho, pero no puedo hablar.": 0
+  degraded: ["degraded.kokoro"]
+  llm_requests: 1
+  final:
+    state: listening
+    in_call: true

@@ -1,0 +1,35 @@
+id: "24"
+name: "Modelo sin prefijo corregido con la lista del proveedor"
+notes: >
+  El modelo guardado es «qwen3-32b», pero el endpoint solo sirve
+  «acme/qwen3-32b». La lista de /models llega al arrancar, match_model
+  completa el id y la app lo guarda antes del primer turno.
+settings:
+  llm_model: qwen3-32b
+  speech_secs_min: 0.1
+llm:
+  model: acme/qwen3-32b
+  chunk_chars: 8
+  turns:
+    - content: "Uso acme/qwen3-32b."
+whisper:
+  transcripts: []
+  repeat_last: false
+steps:
+  - wait_config: {llm_model: acme/qwen3-32b}
+  - wait_state: listening
+  - hud: {action: chat_send, text: "¿Qué modelo usas?"}
+  - wait_quiet: 20
+expect:
+  config:
+    llm_model: acme/qwen3-32b
+  voice_json:
+    llm_model: acme/qwen3-32b
+  user: ["¿Qué modelo usas?"]
+  assistant: ["Uso acme/qwen3-32b."]
+  speech_contains: ["Uso acme/qwen3-32b."]
+  llm_requests: 1
+  files: ["voice.json", "chat.jsonl"]
+  final:
+    state: listening
+    in_call: true

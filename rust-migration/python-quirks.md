@@ -303,3 +303,10 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
 - Qué hace mal: el caso `text_list/009` pasa una **tupla** `("a", "b")`; `json.dumps` la serializa como lista, así que el `input` del fixture no distingue una tupla de una lista y el Python devuelve `[]` (solo acepta `list`). No hay forma de reproducirlo solo con el JSON de entrada.
 - Cómo se reproduce en Rust: el arnés detecta ese caso y devuelve `[]`; el resto de los casos usa `driver::text_list` sin cambios.
 - Recomendación posterior: marcar el tipo en la entrada (p. ej. `{"tuple": [...]}`) o eliminar ese caso del generador; regenerar el fixture.
+## Hallazgos de F1-12c (arnés de reproducción, escenarios 16-25)
+
+### Q-F112C-01
+- Archivo y líneas: `src/ezagent/swarm/incidents.py:166-175` (`describe`) y `178-188` (`question`).
+- Qué hace mal: `when()` devuelve «las 7:10 p. m.» (con punto final), `describe` añade «. Su trabajo pendiente: …» y `question` vuelve a añadir el punto de la frase. El aviso de un incidente de límite de uso queda con doble punto: «… hasta las 7:10 p. m.. Su trabajo pendiente: T1.».
+- Cómo se reproduce en Rust: el escenario 19 conserva el texto literal del Python en la locución y en la pregunta; la traza dorada fija el doble punto.
+- Recomendación posterior: quitar el punto final de `when()` o unir las frases sin duplicarlo; regenerar el escenario 19 cuando se decida.

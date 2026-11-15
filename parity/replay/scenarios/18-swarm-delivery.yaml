@@ -1,0 +1,76 @@
+id: "18"
+name: "Enjambre: plan, desarrollo en paralelo, validación y corrección"
+notes: >
+  El usuario crea un enjambre con plan, dev, front y qa. El servidor y el
+  supervisor reales reparten las tareas: plan abre la primera etapa, dev y
+  front trabajan a la vez, qa valida, devuelve el desarrollo a corregir y al
+  final todos cierran con `ezs`. Los terminales son fake-hc y las llamadas
+  `ezs` las hace el arnés con el asiento de cada miembro.
+timeout: 180
+swarm:
+  goal: "Preparar el lanzamiento"
+  members:
+    - {name: plan, role: plan, agent: opencode}
+    - {name: dev, role: dev, agent: opencode}
+    - {name: front, role: front, agent: opencode, parallel: true}
+    - {name: qa, role: qa, agent: opencode}
+settings:
+  speech_secs_min: 0.15
+  silence_secs: 1.0
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns: []
+whisper:
+  transcripts: []
+  repeat_last: false
+hc:
+  terminals: []
+steps:
+  - wait_state: listening
+  - swarm_start: {goal: "Preparar el lanzamiento", members: [{name: plan, role: plan, agent: opencode}, {name: dev, role: dev, agent: opencode}, {name: front, role: front, agent: opencode, parallel: true}, {name: qa, role: qa, agent: opencode}]}
+  - swarm_tick: {}
+  - swarm_agent: {member: plan, argv: [next]}
+  - swarm_agent: {member: plan, argv: [done, "Plan listo."]}
+  - swarm_tick: {}
+  - swarm_agent: {member: dev, argv: [next]}
+  - swarm_agent: {member: front, argv: [next]}
+  - swarm_agent: {member: dev, argv: [done, "API lista."]}
+  - swarm_agent: {member: front, argv: [done, "Pantalla lista."]}
+  - swarm_tick: {}
+  - swarm_agent: {member: qa, argv: [next]}
+  - swarm_agent: {member: qa, argv: [fix, T2, "Falta la API."]}
+  - swarm_tick: {}
+  - swarm_agent: {member: dev, argv: [next]}
+  - swarm_agent: {member: dev, argv: [done, "API corregida."]}
+  - swarm_tick: {}
+  - swarm_agent: {member: qa, argv: [next]}
+  - swarm_agent: {member: qa, argv: [done, "Validado."]}
+  - swarm_tick: {}
+  - wait_drained: 40
+expect:
+  swarm_status: done
+  swarm_tasks:
+    - "T1 done plan"
+    - "T2 done dev"
+    - "T3 done front"
+    - "T4 done qa"
+  swarm_members:
+    - "plan idle"
+    - "dev idle"
+    - "front idle"
+    - "qa idle"
+  launches:
+    - [plan]
+    - [dev, front]
+    - [qa]
+  speech_contains:
+    - "Enjambre: terminó la planificación. Ahora empiezan el desarrollo y el frontend."
+    - "Enjambre: devolvieron el desarrollo para corregir (ronda 1 de 3)."
+    - "El enjambre terminó: 4 de 4 tareas hechas. Planificar: Plan listo. Desarrollar: API corregida. Desarrollar el frontend: Pantalla lista. Validar: Validado. ¿Quieres más detalle o que te muestre el resultado?"
+  llm_requests: 0
+  user: []
+  assistant: []
+  final:
+    state: listening
+    in_call: true

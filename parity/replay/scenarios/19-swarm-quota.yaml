@@ -1,0 +1,64 @@
+id: "19"
+name: "Enjambre: límite de uso y reanudación a la hora indicada"
+notes: >
+  El agente dev choca con el límite de uso de su proveedor. El supervisor
+  reconoce la pantalla, abre un incidente y pregunta. El usuario elige esperar;
+  el reloj de prueba pasa la hora de restablecimiento y el supervisor le
+  escribe al agente para que retome su tarea.
+timeout: 120
+swarm:
+  goal: "Revisar el cobro"
+  members:
+    - {name: dev, role: dev, agent: opencode}
+    - {name: qa, role: qa, agent: opencode}
+settings:
+  speech_secs_min: 0.15
+  silence_secs: 1.0
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns: []
+whisper:
+  transcripts: []
+  repeat_last: false
+hc:
+  terminals: []
+steps:
+  - wait_state: listening
+  - swarm_start: {goal: "Revisar el cobro", members: [{name: dev, role: dev, agent: opencode}, {name: qa, role: qa, agent: opencode}]}
+  - swarm_tick: {}
+  - swarm_agent: {member: dev, argv: [next]}
+  - swarm_screen:
+      member: dev
+      state: idle
+      screen: "Usage limit reached. Your limit will reset at 7:10 PM.\nTry again later or switch to another provider."
+  - swarm_tick: {}
+  - wait_drained: 30
+  - swarm_resolve: {incident: 1, choice: wait}
+  - swarm_clock: {advance: 25860}
+  - swarm_tick: {}
+  - swarm_agent: {member: dev, argv: [next]}
+  - swarm_tick: {}
+  - swarm_agent: {member: dev, argv: [done, "Cobro revisado."]}
+  - swarm_tick: {}
+  - swarm_agent: {member: qa, argv: [next]}
+  - swarm_agent: {member: qa, argv: [done, "Validado."]}
+  - swarm_tick: {}
+  - wait_drained: 40
+expect:
+  swarm_status: done
+  swarm_tasks:
+    - "T1 done dev"
+    - "T2 done qa"
+  swarm_incidents:
+    - "I1 dev quota resolved back"
+  launches:
+    - [dev]
+    - [qa]
+  resumes_sent: 1
+  speech_contains:
+    - "El enjambre terminó: 2 de 2 tareas hechas. Desarrollar: Cobro revisado. Validar: Validado. ¿Quieres más detalle o que te muestre el resultado?"
+  llm_requests: 0
+  final:
+    state: listening
+    in_call: true

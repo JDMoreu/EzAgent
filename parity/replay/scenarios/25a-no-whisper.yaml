@@ -1,0 +1,31 @@
+id: "25a"
+name: "Arranque sin whisper"
+notes: >
+  El endpoint de whisper no responde y el arranque automático está apagado.
+  La app arranca igual, deja el aviso por voz y empieza a escuchar; ninguna
+  frase se transcribe porque no hay STT.
+settings:
+  whisper_url: "http://127.0.0.1:9/inference"
+  auto_start_whisper: false
+  smart_turn: false
+  speech_secs_min: 0.2
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns: []
+whisper:
+  transcripts: []
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - wait_drained: 20
+expect:
+  states: [idle, speaking, listening]
+  user: []
+  assistant: []
+  speech_contains:
+    - "No encuentro whisper. Revisa la carpeta de whisper en la configuración."
+  llm_requests: 0
+  final:
+    state: listening
+    in_call: true

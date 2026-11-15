@@ -1,0 +1,43 @@
+id: "21"
+name: "Chat escrito: Markdown, historial y borrar una conversación"
+notes: >
+  Dos conversaciones escritas desde el panel del chat: la respuesta conserva
+  el Markdown tal cual, «Nueva conversación» empieza de cero, retomar la
+  primera la devuelve con su historial y borrar la segunda no toca la actual.
+settings:
+  chat_voice: false
+  speech_secs_min: 0.1
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - content: "# Plan\n\n- **Uno**: abrir.\n- `dos`: cerrar.\n\n| a | b |\n| - | - |\n| 1 | 2 |"
+    - content: "Segunda respuesta."
+whisper:
+  transcripts: []
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - hud: {action: chat_send, text: "Explícame el plan."}
+  - wait_quiet: 20
+  - hud: {action: chat_new}
+  - hud: {action: chat_send, text: "¿Y ahora?"}
+  - wait_quiet: 20
+  - hud: {action: chat_switch, session: 1}
+  - wait_quiet: 5
+  - hud: {action: chat_delete, session: 2}
+  - wait_quiet: 5
+expect:
+  states: [thinking, listening]
+  user: ["Explícame el plan."]
+  assistant:
+    - "# Plan\n\n- **Uno**: abrir.\n- `dos`: cerrar.\n\n| a | b |\n| - | - |\n| 1 | 2 |"
+  tool_calls: []
+  llm_requests: 2
+  chat_history:
+    - "1:user:Explícame el plan."
+    - "1:assistant:# Plan\n\n- **Uno**: abrir.\n- `dos`: cerrar.\n\n| a | b |\n| - | - |\n| 1 | 2 |"
+  files: ["chat.jsonl"]
+  final:
+    state: listening
+    in_call: true

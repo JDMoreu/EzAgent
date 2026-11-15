@@ -1,0 +1,72 @@
+id: "20"
+name: "Enjambre: contexto lleno, ventana cerrada y programa que sale"
+notes: >
+  Tres agentes fallan de tres maneras distintas. Dev se queda sin contexto y
+  el supervisor lo reabre con su avance. A qa le desaparece la terminal: el
+  supervisor lo detecta y el usuario lo saca del enjambre. El programa de docs
+  sale solo: el supervisor lo reabre una vez sin preguntar.
+timeout: 150
+swarm:
+  goal: "Publicar la guía"
+  members:
+    - {name: dev, role: dev, agent: opencode}
+    - {name: qa, role: qa, agent: opencode, parallel: true}
+    - {name: docs, role: docs, agent: opencode, parallel: true}
+settings:
+  speech_secs_min: 0.15
+  silence_secs: 1.0
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns: []
+whisper:
+  transcripts: []
+  repeat_last: false
+hc:
+  terminals: []
+steps:
+  - wait_state: listening
+  - swarm_start: {goal: "Publicar la guía", members: [{name: dev, role: dev, agent: opencode}, {name: qa, role: qa, agent: opencode, parallel: true}, {name: docs, role: docs, agent: opencode, parallel: true}]}
+  - swarm_tick: {}
+  - swarm_agent: {member: dev, argv: [next]}
+  - swarm_agent: {member: qa, argv: [next]}
+  - swarm_agent: {member: docs, argv: [next]}
+  - swarm_screen:
+      member: dev
+      state: idle
+      screen: "prompt is too long: exceeds the model's context window\nStart a new session."
+  - swarm_lost: {member: qa, mode: remove}
+  - swarm_lost: {member: docs, mode: shell}
+  - swarm_tick: {times: 3}
+  - wait_drained: 30
+  - swarm_resolve: {incident: 2, choice: release}
+  - swarm_tick: {times: 2}
+  - swarm_agent: {member: docs, argv: [next]}
+  - swarm_agent: {member: docs, argv: [done, "Guía publicada."]}
+  - swarm_agent: {member: dev, argv: [next]}
+  - swarm_agent: {member: dev, argv: [done, "API terminada."]}
+  - swarm_tick: {}
+  - wait_drained: 40
+expect:
+  swarm_status: active
+  swarm_tasks:
+    - "T1 done dev"
+    - "T2 pending -"
+    - "T3 done docs"
+  swarm_members:
+    - "dev idle"
+    - "qa gone"
+    - "docs idle"
+  swarm_incidents:
+    - "I1 dev context resolved renew"
+    - "I2 qa closed resolved release"
+  launches:
+    - [dev, qa, docs]
+    - [dev]
+    - [docs]
+  speech_contains:
+    - "Enjambre: dev se quedó sin contexto; lo reabro en una sesión nueva con su avance guardado."
+  llm_requests: 0
+  final:
+    state: listening
+    in_call: true
