@@ -5,6 +5,30 @@ use std::path::Path;
 
 use super::*;
 
+/// `VAD: silencio=…s, …` del arranque (paridad literal con el Python).
+///
+/// `cfg.barge_in` es un `bool` del dataclass, así que Python imprime `True` o
+/// `False`; el puerto imprimía `true`.
+pub(super) fn vad_line(cfg: &VoiceConfig, smart_turn: bool) -> String {
+    let turn = if smart_turn {
+        format!(
+            "fin de turno a {}s si la frase está completa",
+            cfg_float(cfg, "turn_quick_secs", 0.35)
+        )
+    } else {
+        "sin Smart Turn".to_string()
+    };
+    let barge_in = cfg
+        .get("barge_in")
+        .map_or_else(|| "True".to_string(), python_str);
+    format!(
+        "VAD: silencio={}s, {turn}, min_rms={}, pre_roll={}s, barge_in={barge_in}",
+        cfg_float(cfg, "silence_secs", 1.3),
+        cfg_float(cfg, "min_rms", 0.0006),
+        cfg_float(cfg, "pre_roll_secs", 0.6),
+    )
+}
+
 impl VoiceApp {
     /// Arranque con las piezas ya construidas (dobles de prueba incluidos).
     pub fn with_services(
@@ -134,21 +158,7 @@ impl VoiceApp {
     fn apply_start_audio(&self) {
         let cfg = self.config();
         let detector = self.create_turn_detector(&cfg);
-        let turn = if detector.is_some() {
-            format!(
-                "fin de turno a {}s si la frase está completa",
-                cfg_float(&cfg, "turn_quick_secs", 0.35)
-            )
-        } else {
-            "sin Smart Turn".to_string()
-        };
-        log(format!(
-            "VAD: silencio={}s, {turn}, min_rms={}, pre_roll={}s, barge_in={}",
-            cfg_float(&cfg, "silence_secs", 1.3),
-            cfg_float(&cfg, "min_rms", 0.0006),
-            cfg_float(&cfg, "pre_roll_secs", 0.6),
-            cfg_truthy(&cfg, "barge_in", true),
-        ));
+        log(vad_line(&cfg, detector.is_some()));
         *self.inner.audio.turn_detector.lock() = detector;
     }
 

@@ -23,12 +23,14 @@ impl VoiceApp {
         let cfg = self.config();
         let settings = VadSettings {
             min_rms: cfg_float(&cfg, "min_rms", 0.0006),
-            silence_secs: cfg_float(&cfg, "silence_secs", 2.5),
+            silence_secs: cfg_float(&cfg, "silence_secs", 1.3),
             pre_roll_secs: cfg_float(&cfg, "pre_roll_secs", 0.6),
             min_speech_secs: cfg_float(&cfg, "min_speech_secs", 0.2),
             max_utterance_secs: cfg_float(&cfg, "max_utterance_secs", 30.0),
             noise_multiplier: cfg_float(&cfg, "noise_multiplier", 1.3),
-            barge_in_rms: cfg_float(&cfg, "barge_in_rms", 0.0),
+            // Los valores por omisión del `VoiceConfig` del Python (0.008 y
+            // 0.25): con un `voice.json` sin la clave, 0.0 apagaba el detector.
+            barge_in_rms: cfg_float(&cfg, "barge_in_rms", 0.008),
             barge_in_secs: cfg_float(&cfg, "barge_in_secs", 0.25),
             ..VadSettings::default()
         };
@@ -42,10 +44,16 @@ impl VoiceApp {
             mic.close();
             *mic = new;
         }
-        self.inner.config.cfg.write().set(
-            "input_device_index",
-            device_index.map_or(Value::Null, Value::from),
-        );
+        {
+            let mut cfg = self.inner.config.cfg.write();
+            cfg.set(
+                "input_device_index",
+                device_index.map_or(Value::Null, Value::from),
+            );
+            // El nombre viaja con el índice: es lo único que identifica el
+            // mismo micrófono en la app de Python y tras reordenar los cpal.
+            cfg.set("input_device_name", Value::from(device_name.clone()));
+        }
         log(format!(
             "Micrófono: {device_name} (índice {})",
             device_index.map_or_else(|| "None".to_string(), |index| index.to_string())

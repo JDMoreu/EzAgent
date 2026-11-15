@@ -1,5 +1,7 @@
 //! Adaptadores y callbacks del mensajero y del núcleo agéntico (F6-01).
 
+use ez_core::pyvalue::text_or_empty;
+
 use super::*;
 
 /// `Messenger` como `ContextHolder` del chat (F3-14).
@@ -84,8 +86,13 @@ pub(super) fn mic_capture(cfg: &VoiceConfig) -> MicCapture {
         .get("input_device_index")
         .and_then(Value::as_i64)
         .and_then(|value| usize::try_from(value).ok());
-    MicCapture::new(
+    // El nombre es el que sobrevive a los índices: los de PortAudio y los de
+    // cpal apuntan a micrófonos distintos con el mismo `voice.json`.
+    let name = text_or_empty(cfg.get("input_device_name"));
+    let name = if name.is_empty() { None } else { Some(name) };
+    MicCapture::new_named(
         index,
+        name.as_deref(),
         VadSettings {
             min_rms: cfg_float(cfg, "min_rms", 0.0006),
             silence_secs: cfg_float(cfg, "silence_secs", 1.3),

@@ -286,6 +286,40 @@ pub fn pick_input_device(preferred: Option<usize>) -> Option<usize> {
     )
 }
 
+/// Índice del dispositivo de entrada con ese nombre, entre los de `infos`.
+///
+/// El nombre se compara exacto y, si no aparece, sin distinguir mayúsculas.
+fn find_by_name(infos: &[InputDevice], name: &str) -> Option<usize> {
+    if name.is_empty() {
+        return None;
+    }
+    if let Some(device) = infos.iter().find(|device| device.name == name) {
+        return Some(device.index);
+    }
+    let wanted = name.to_lowercase();
+    infos
+        .iter()
+        .find(|device| device.name.to_lowercase() == wanted)
+        .map(|device| device.index)
+}
+
+/// `pick_input_device` con el nombre guardado del micrófono.
+///
+/// El nombre manda sobre el índice: los índices de PortAudio (Python), de cpal
+/// y los de una enumeración anterior apuntan a dispositivos distintos, así que
+/// «el mismo `voice.json`» sonaba por micrófonos distintos en cada app. Si el
+/// nombre ya no existe, el índice sigue siendo la pista y, si nada vale, se
+/// elige como siempre.
+// DECISION: paridad con Python añadiendo el nombre; si no hay nombre, la
+// elección es exactamente `pick_input_device`.
+pub fn pick_input_device_named(preferred: Option<usize>, name: Option<&str>) -> Option<usize> {
+    let infos = list_input_devices();
+    let hint = name
+        .and_then(|name| find_by_name(&infos, name))
+        .or(preferred);
+    choose_input_device(&infos, hint, default_input_index(), read_timing)
+}
+
 /// Configuración de entrada: prefiere int16 a la tasa pedida.
 fn input_config(
     device: &cpal::Device,
@@ -540,5 +574,28 @@ mod tests {
         });
         assert_eq!(picked, Some(7));
         assert_eq!(seen, Some((7, 16_000)));
+    }
+
+    #[test]
+    fn the_saved_name_wins_over_the_index() {
+        let infos = [
+            device(4, "Micrófono (TA82)", 48_000),
+            device(5, "Micrófono (Webcam AC410)", 48_000),
+        ];
+        // El índice 4 es el de cpal hoy; el nombre guardado manda.
+        assert_eq!(find_by_name(&infos, "Micrófono (Webcam AC410)"), Some(5));
+        assert_eq!(find_by_name(&infos, "micrófono (webcam ac410)"), Some(5));
+    }
+
+    #[test]
+    fn a_missing_or_empty_name_falls_back_to_the_index() {
+        let infos = [device(4, "Micrófono (TA82)", 48_000)];
+        assert_eq!(find_by_name(&infos, ""), None);
+        assert_eq!(find_by_name(&infos, "Micrófono (otro)"), None);
+        // Sin coincidencia, `pick_input_device_named` usa el índice.
+        assert_eq!(
+            find_by_name(&infos, "Micrófono (otro)").or(Some(4)),
+            Some(4)
+        );
     }
 }

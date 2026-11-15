@@ -17,7 +17,7 @@ use std::sync::Arc;
 use ez_core::config::{config_path, VoiceConfig};
 use ez_core::llm_providers::needs_api_key;
 use ez_core::pyvalue::truthy;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use super::core::{cfg_text, log, VoiceApp};
 use super::demo::run_demo;
@@ -83,6 +83,8 @@ pub fn run_with(argv: &[String]) -> i32 {
     };
     if let Some(mic) = cli.mic {
         cfg.set("input_device_index", json!(mic));
+        // `--mic` es explícito: el nombre guardado no debe ganarle.
+        cfg.set("input_device_name", Value::Null);
     }
     if let Some(code) = run_batch(&cli, &cfg) {
         return code;
