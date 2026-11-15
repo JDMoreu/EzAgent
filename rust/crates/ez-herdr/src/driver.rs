@@ -14,6 +14,7 @@
 mod catalog;
 mod launch;
 
+use std::sync::Arc;
 use std::sync::OnceLock;
 
 use ez_core::config::{resolve_agent_key, VoiceConfig};
@@ -26,6 +27,8 @@ use crate::session::{AgentSession, SessionHost};
 
 pub use crate::herdr::AgentLaunch;
 pub use crate::session::{command_line, valid_keys, DEFAULT_SHELL};
+#[doc(hidden)]
+pub use launch::resolve_codex_value;
 
 /// `_SAFE_VALUE`: modelo o esfuerzo que acaba dentro de un comando. Sin
 /// espacios, comillas ni saltos de línea, y sin empezar por «-».
@@ -55,7 +58,8 @@ pub(crate) fn profile_for(cfg: &VoiceConfig, key: &str) -> Map<String, Value> {
 }
 
 /// `_text_list`: texto suelto o lista de textos; lo demás, vacío.
-fn text_list(value: Option<&Value>) -> Vec<String> {
+#[doc(hidden)]
+pub fn text_list(value: Option<&Value>) -> Vec<String> {
     match value {
         Some(Value::String(text)) if !py_strip(text).is_empty() => vec![text.clone()],
         Some(Value::Array(items)) => items.iter().map(python_str).collect(),
@@ -74,7 +78,8 @@ pub(crate) fn resolve_agent_in(cfg: &VoiceConfig, name: &str) -> Option<String> 
 }
 
 /// Valida modelo/esfuerzo; devuelve el error o una cadena vacía.
-pub(crate) fn check_value(cfg: &VoiceConfig, key: &str, kind: &str, value: &str) -> String {
+#[doc(hidden)]
+pub fn check_value(cfg: &VoiceConfig, key: &str, kind: &str, value: &str) -> String {
     if !safe_value().is_match(value) {
         return format!("El {kind} {} no es válido.", repr_str(value));
     }
@@ -141,14 +146,14 @@ impl Wanted {
 ///
 /// DECISION: son punteros inyectables para que las pruebas del catálogo y del
 /// lanzamiento no lean ni escriban la configuración real del usuario.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct LaunchHooks {
     discover_mcode_models: fn() -> Vec<String>,
     discover_codex_models: fn() -> Map<String, Value>,
     opencode_default_model: fn() -> String,
     prepare_opencode_state: fn(&str, &str) -> Map<String, Value>,
     set_mcode_effort: fn(&str) -> bool,
-    which: fn(&str) -> bool,
+    which: Arc<dyn Fn(&str) -> bool + Send + Sync>,
 }
 
 impl Default for LaunchHooks {
@@ -159,7 +164,7 @@ impl Default for LaunchHooks {
             opencode_default_model: crate::prelaunch::opencode_default_model,
             prepare_opencode_state: crate::prelaunch::prepare_opencode_state,
             set_mcode_effort: crate::prelaunch::set_mcode_effort,
-            which: |program: &str| crate::herdr::process::which(program).is_some(),
+            which: Arc::new(|program: &str| crate::herdr::process::which(program).is_some()),
         }
     }
 }
@@ -192,6 +197,22 @@ impl<H: SessionHost> AgentDriver<H> {
         Self {
             session: AgentSession::new(host, cfg),
             hooks,
+        }
+    }
+
+    /// `which` inyectable para el catálogo (`shutil.which` en el oráculo).
+    #[doc(hidden)]
+    pub fn with_which(
+        host: H,
+        cfg: VoiceConfig,
+        which: Arc<dyn Fn(&str) -> bool + Send + Sync>,
+    ) -> Self {
+        Self {
+            session: AgentSession::new(host, cfg),
+            hooks: LaunchHooks {
+                which,
+                ..LaunchHooks::default()
+            },
         }
     }
 

@@ -1,5 +1,6 @@
 use super::*;
 use serde_json::json;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 fn watcher(announce: bool) -> Watcher {
     let on_event: EventCallback = Arc::new(|_, _, _, _| {});
@@ -179,7 +180,7 @@ fn el_latido_solo_avisa_cuando_cambia() {
     let health: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(Vec::new()));
     let recorder = Arc::clone(&health);
     let on_health: HealthCallback = Arc::new(move |healthy| {
-        lock(&recorder).push(healthy);
+        lock(&recorder).push(healthy.unwrap_or(false));
     });
     let on_event: EventCallback = Arc::new(|_, _, _, _| {});
     let should_announce: AnnounceCallback = Arc::new(|_| true);

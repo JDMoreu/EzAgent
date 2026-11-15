@@ -5,7 +5,7 @@ use ez_core::config::VoiceConfig;
 use serde_json::{json, Map, Value};
 
 use super::*;
-use crate::herdr::HerdrError;
+use crate::herdr::{AgentLaunch, HerdrError};
 
 struct FakeClock {
     now: Mutex<f64>,

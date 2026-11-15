@@ -72,7 +72,7 @@ fn silent_hooks() -> LaunchHooks {
         opencode_default_model: no_default_model,
         prepare_opencode_state: no_state,
         set_mcode_effort: no_effort,
-        which: not_installed,
+        which: Arc::new(not_installed),
     }
 }
 

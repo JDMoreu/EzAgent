@@ -25,7 +25,7 @@ fn plain_argument() -> &'static Regex {
     static PLAIN: OnceLock<Regex> = OnceLock::new();
     // DECISION: `$` de Python deja pasar un salto de línea final; aquí se cita
     // de más, que solo agrega comillas seguras.
-    compiled(&PLAIN, r"^[A-Za-z0-9_./:=@%+,\-]+$")
+    compiled(&PLAIN, r"^[A-Za-z0-9_./:=@%+,\\-]+$")
 }
 
 fn key_pattern() -> &'static Regex {
@@ -76,6 +76,24 @@ pub fn valid_keys(keys: &[String]) -> Option<Vec<String>> {
     let cleaned: Vec<String> = keys
         .iter()
         .map(|key| py_strip(key).to_lowercase())
+        .collect();
+    if cleaned.iter().all(|key| key_pattern().is_match(key)) {
+        Some(cleaned)
+    } else {
+        None
+    }
+}
+
+/// `valid_keys` con el valor tal cual llega del JSON (lista o cualquier cosa).
+#[doc(hidden)]
+pub fn valid_keys_value(keys: &Value) -> Option<Vec<String>> {
+    let items = keys.as_array()?;
+    if items.is_empty() || items.len() > MAX_KEYS {
+        return None;
+    }
+    let cleaned: Vec<String> = items
+        .iter()
+        .map(|item| py_strip(&python_str(item)).to_lowercase())
         .collect();
     if cleaned.iter().all(|key| key_pattern().is_match(key)) {
         Some(cleaned)

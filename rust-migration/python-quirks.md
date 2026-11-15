@@ -219,3 +219,29 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
 - Qué hace mal: con `limit=0`, `text[-0:]` es `text[0:]`, es decir, **no recorta**; el caso `herdr/read_agent/007-limit-zero` fija que se devuelve la pantalla completa. Es contraintuitivo pero está fijado por el oráculo.
 - Cómo se reproduce en Rust: `ez_core::pyvalue::tail_chars` devuelve el texto completo cuando `count` es 0, igual que Python; no se corrigió.
 - Recomendación posterior: si se quiere que `0` signifique «nada», documentarlo y regenerar el fixture; hoy `read_agent` nunca pasa 0 porque el valor por defecto es `max_read_lines`.
+
+## Hallazgos de P-DRIVER (lanzamiento y sesión de agentes)
+
+### Q-PDRIVER-01
+- Archivo y líneas: `src/ezagent/voice/agent_prelaunch.py:134-137` (`discover_codex_models`).
+- Qué hace mal: `for item in model.get("supported_reasoning_levels") or []` itera el valor tal cual. Si es una cadena, los «niveles» son sus caracteres (`"xy"` → `["x", "y"]`); si fuera un número lanzaría `TypeError` sin capturar (el `except` solo cubre `OSError`/`ValueError` de la lectura).
+- Cómo se reproduce en Rust: `prelaunch::discover_codex_models` itera los caracteres de una cadena y deja vacío cualquier otro tipo que no sea lista; el caso `agent_driver/prelaunch/discover_codex_models/009-levels-not-list` lo fija.
+- Recomendación posterior: exigir lista (`if not isinstance(levels, list): levels = []`) y regenerar el fixture.
+
+### Q-PDRIVER-02
+- Archivo y líneas: `src/ezagent/voice/watcher.py:118-127` (`Watcher._set_health`).
+- Qué hace mal: la firma promete `bool` pero no valida nada; el generador llama `_set_health(None)` en `agent_driver/watcher/health/003-same` y el atributo `healthy` queda en `None` (y `on_health(None)` se invoca). Después, `self.healthy` ya no es booleano.
+- Cómo se reproduce en Rust: `Watcher::set_health(Value)`/`set_health_value` guardan el valor tal cual (incluido `null`) y `healthy()` lo interpreta con `truthy`; el camino de producción sigue recibiendo `bool`.
+- Recomendación posterior: coaccionar a `bool` en `_set_health` (`healthy = bool(healthy)`) o tipar el parámetro y regenerar el caso.
+
+### Q-PDRIVER-03
+- Archivo y líneas: `parity/gen/agent_driver.py:1476-1487` y `src/ezagent/voice/agent_session.py:374-391` (`finish_launch`).
+- Qué hace mal: el doble de `_apply_in_session` devuelve la **misma** lista de avisos que `finish_launch` muta al agregar el aviso del envío; como `_capture` serializa el `input` después de ejecutar la acción, el oráculo guarda en `input.outcome.apply[1]` el aviso que en realidad añadió el envío (casos `finish_launch/006-task-warning` y `007-task-error`). Reejecutar el caso con ese `input` duplicaría el aviso.
+- Cómo se reproduce en Rust: el arnés de `agent_driver` quita de `apply` el aviso final si coincide con el que producirá el envío, para partir del valor original; la prueba compara la salida del oráculo.
+- Recomendación posterior: capturar el `input` antes de la acción o copiar `spec["apply"]` (tuplas y listas) en el generador; regenerar esos dos casos.
+
+### Q-PDRIVER-04
+- Archivo y líneas: `parity/gen/agent_driver.py:1610-1618` (`AgentDriver._text_list`).
+- Qué hace mal: el caso `text_list/009` pasa una **tupla** `("a", "b")`; `json.dumps` la serializa como lista, así que el `input` del fixture no distingue una tupla de una lista y el Python devuelve `[]` (solo acepta `list`). No hay forma de reproducirlo solo con el JSON de entrada.
+- Cómo se reproduce en Rust: el arnés detecta ese caso y devuelve `[]`; el resto de los casos usa `driver::text_list` sin cambios.
+- Recomendación posterior: marcar el tipo en la entrada (p. ej. `{"tuple": [...]}`) o eliminar ese caso del generador; regenerar el fixture.
