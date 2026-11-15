@@ -47,6 +47,12 @@ impl Scroll {
         self.offset = offset.clamp(0.0, self.max.max(0.0));
     }
 
+    /// Sets the offset without clamping, like assigning `view.scroll` in Python;
+    /// the next layout records the maximum and clamps it.
+    pub fn set_offset_raw(&mut self, offset: f64) {
+        self.offset = offset;
+    }
+
     /// Records a new maximum and clamps the offset, as the view does after
     /// laying the messages out.
     pub fn set_max(&mut self, max: f64) {

@@ -15,8 +15,8 @@ mod tables;
 #[cfg(test)]
 mod tests;
 
-pub use common::{human_size, is_local_target, url_netloc};
-pub use documents::layout_document;
+pub use common::{family_color, human_size, is_local_target, url_netloc};
+pub use documents::{clip, date_of, layout_document};
 pub use images::layout_image;
 pub use tables::layout_table;
 

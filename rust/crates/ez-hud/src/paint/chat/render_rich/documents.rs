@@ -19,7 +19,7 @@ const MONTHS: [&str; 12] = [
 
 // --------------------------------------------------------------- documents
 /// Cuts `text` with «…» so it fits in `width`.
-pub(super) fn clip(ctx: &Ctx<'_>, text: &str, width: f64, key: &str) -> String {
+pub fn clip(ctx: &Ctx<'_>, text: &str, width: f64, key: &str) -> String {
     if ctx.length(text, key) <= width {
         return text.to_string();
     }
@@ -70,7 +70,8 @@ pub(super) fn tile(
     );
 }
 
-fn date_of(mtime: f64) -> String {
+/// `render_rich._date`: `time.localtime` as «13 nov 2026».
+pub fn date_of(mtime: f64) -> String {
     // `time.localtime` drops the fractional part before breaking the date down.
     let iso = pytime::date_local(mtime.trunc()).expect("the modification time is a valid instant");
     let mut parts = iso.split('-');

@@ -16,9 +16,10 @@ pub use crate::geometry::{
     FADE_SECS, MARGIN, MIN_H, MIN_W, MORPH_SECS, PANEL_H, PANEL_RADIUS, PANEL_W, SCREEN_PAD,
 };
 pub use compose::{fluid_array, row_reveal, shape_progress, Frame};
+pub use window::anim::{duration, elapsed_for, step};
 pub use window::{
-    status_text, ChatEvent, ChatEvents, ChatPanel, ChatUi, ChatWindow, ACTIVE_POSES, CLOSE_SECS,
-    STATUS_TEXT,
+    hotkey_label, status_text, Anim, AnimState, ChatEvent, ChatEvents, ChatPanel, ChatUi,
+    ChatWindow, ACTIVE_POSES, CLOSE_SECS, STATUS_TEXT,
 };
 
 #[cfg(test)]

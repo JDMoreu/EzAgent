@@ -29,7 +29,7 @@ use super::compose::{self, Frame};
 use anim::{step, update_live};
 
 mod actions;
-mod anim;
+pub mod anim;
 mod chrome;
 mod input;
 mod lifecycle;
@@ -62,7 +62,7 @@ pub fn status_text(pose: &str) -> &'static str {
 }
 
 /// `_hotkey_label`: the shortcut painted in the empty state.
-pub(crate) fn hotkey_label(spec: &str) -> String {
+pub fn hotkey_label(spec: &str) -> String {
     let parts = if spec.is_empty() {
         Vec::new()
     } else {
@@ -77,20 +77,27 @@ pub(crate) fn hotkey_label(spec: &str) -> String {
 
 /// Current panel animation (`_Anim.state`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum AnimState {
+pub enum AnimState {
+    /// Closed and torn down.
     #[default]
     Closed,
+    /// Growing from the bar shape into the panel.
     Opening,
+    /// Fully open.
     Open,
+    /// Shrinking back into the bar shape.
     Closing,
 }
 
 /// `_Anim`: state, start instant and eased progress (0 = shape, 1 = panel).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct Anim {
-    pub(crate) state: AnimState,
-    pub(crate) t0: f64,
-    pub(crate) p: f64,
+pub struct Anim {
+    /// Lifecycle state.
+    pub state: AnimState,
+    /// Start instant (`time.monotonic()` seconds).
+    pub t0: f64,
+    /// Eased progress.
+    pub p: f64,
 }
 
 /// `_Resize`: edges being dragged plus the pointer and panel at the start.

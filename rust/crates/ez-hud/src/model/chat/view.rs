@@ -310,6 +310,30 @@ impl ChatView {
     pub(crate) fn hit(&mut self, rect: Rect, kind: &'static str, data: Option<ZoneData>) {
         self.hits.push(Zone { kind, rect, data });
     }
+
+    /// Assigns the scroll like the Python field; the next layout clamps it.
+    pub fn set_scroll(&mut self, offset: f64) {
+        self.scroll.set_offset_raw(offset);
+    }
+
+    /// Sets the instant the field got focus (caret blink phase).
+    // DECISION: the Python tests assign `_focus_t0` directly; this setter keeps
+    // the caret phase reproducible without making the field public.
+    pub fn set_focus_instant(&mut self, instant: f64) {
+        self.focus_t0 = instant;
+    }
+
+    /// Sets the history rows waiting for delete and fading out.
+    // DECISION: the fixtures restore these two fields, private in Python's
+    // `ChatView`; one setter keeps the port's fields encapsulated.
+    pub fn set_history_state(
+        &mut self,
+        pending: Option<i64>,
+        deleting: Option<(usize, SessionInfo, f64)>,
+    ) {
+        self.pending_delete = pending;
+        self.deleting = deleting;
+    }
 }
 
 // DECISION: Python rounds decimal digits (`round(x, n)`); scaling by 10^n and
