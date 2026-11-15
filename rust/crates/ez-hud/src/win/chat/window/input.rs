@@ -4,7 +4,6 @@ use crate::geometry::{edge_cursor, edges_at_grip, resize_rect, Edges, GRIP};
 use crate::win::monitor::work_area;
 
 use super::anim::clamp_to_work;
-use super::compose::ContentCache;
 use super::{AnimState, ChatPanel, ChatWindow, Resize};
 
 impl ChatPanel {
@@ -226,7 +225,7 @@ impl ChatPanel {
             self.configure_view(view, f64::from(width) / scale, f64::from(height) / scale);
         }
         state.base = None;
-        state.content = ContentCache::default();
+        state.content = crate::win::chat::compose::ContentCache::default();
     }
 
     pub(super) fn end_resize(&self) {
