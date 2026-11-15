@@ -13,7 +13,7 @@ use ez_audio::wake::DEFAULT_WAKE_PHRASE;
 use ez_core::pyvalue::{text_or_empty, truthy};
 use serde_json::Value;
 
-use super::core::{log, AppEvent, VoiceApp, LISTENING};
+use super::core::{log, AppEvent, VoiceApp};
 use crate::fast::{self, FastHost, FastOutcome};
 
 /// Operaciones de `VoiceApp` que pertenecen a otras tareas.
@@ -40,39 +40,32 @@ pub trait SettingsEffects: Send + Sync {
 }
 
 impl SettingsEffects for VoiceApp {
+    fn speak(&self, text: &str, kind: &str) {
+        self.speak(text, kind);
+    }
+
+    fn set_state(&self, state: &str) {
+        self.set_state(state);
+    }
+
     fn set_mic_muted(&self, muted: bool, source: &str) {
-        self.inner.session.muted.store(muted, Ordering::SeqCst);
-        self.inner.ui.hud.set_muted(muted);
-        self.inner.audio.reset_capture.set();
-        self.inner
-            .session
-            .ignore_utterance
-            .store(muted, Ordering::SeqCst);
-        let origin = if source.is_empty() {
-            "sin origen"
-        } else {
-            source
-        };
-        log(format!(
-            "Micrófono {} ({origin}).",
-            if muted { "silenciado" } else { "activo" }
-        ));
-        self.hooks().update_tray_title();
+        self.set_mic_muted(muted, source);
     }
 
     fn resume_listening_from_mic(&self) {
-        if self.inner.session.muted.load(Ordering::SeqCst) {
-            self.set_mic_muted(false, "");
-        }
-        if self.inner.session.in_call.load(Ordering::SeqCst) {
-            self.set_state(LISTENING);
-        } else {
-            self.hooks().start_call();
-        }
+        self.resume_listening_from_mic();
     }
 
     fn toggle_chat(&self) {
-        self.inner.ui.hud.toggle_chat();
+        self.toggle_chat();
+    }
+
+    fn handle_hotkey(&self, event: &str) {
+        self.handle_hotkey(event);
+    }
+
+    fn refresh_activity(&self) {
+        self.refresh_activity();
     }
 }
 

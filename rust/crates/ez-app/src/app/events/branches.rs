@@ -6,7 +6,6 @@ use ez_core::metrics::{format_stt, monotonic};
 use ez_core::pyvalue::head_chars;
 
 use super::super::core::{log, VoiceApp, LISTENING, THINKING};
-use super::api::PauseApi;
 use super::{confirm_pending, in_call, muted, stripped, turn_gen};
 
 impl VoiceApp {

@@ -19,7 +19,6 @@ use super::core::{
     advance_turn, cfg_float, cfg_truthy, log, AppEvent, VoiceApp, LISTENING, RESUME_SECS, SPEAKING,
     THINKING,
 };
-use super::events::PauseApi;
 use super::events::{confirm_pending, in_call, muted, turn_gen};
 
 /// Espejo de los `threading.Event` que la captura espera como `AtomicBool`.

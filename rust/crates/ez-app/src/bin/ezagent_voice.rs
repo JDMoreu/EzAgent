@@ -1,5 +1,5 @@
-//! Binary `ezagent-voice` (skeleton, F0-04).
+//! Binary `ezagent-voice`: mismo arranque que `python -m ezagent.voice.app`.
 
 fn main() {
-    eprintln!("ezagent-voice: sin implementar (F0-04)");
+    std::process::exit(ez_app::app::main::main());
 }
