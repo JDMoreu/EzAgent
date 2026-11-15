@@ -1231,7 +1231,10 @@ def run_scenario(data: dict[str, Any]) -> tuple[list[str], dict[str, Any], list[
             )
             root.driver = driver
             scripter = AgentScripter(home / "hc.json", data.get("agent") or {}, trace)
-            scripter.start()
+            # Solo cuando el escenario declara `agent:`; los de enjambre (F1-12c)
+            # gestionan los estados de sus terminales por su cuenta.
+            if data.get("agent") and not data.get("swarm"):
+                scripter.start()
             real_watcher_event = app.watcher.on_event
 
             def watcher_event(address: str, agent: str, state: str, reason: str) -> None:
@@ -1362,7 +1365,10 @@ def check_expect(
         errors.append(f"no debía pedir confirmación: {confirms!r}")
     errors.extend(_check_audit(expect.get("audit") or [], trace))
     errors.extend(_check_hc(expect.get("hc") or {}, context.get("hc")))
-    errors.extend(_check_files(expect.get("files") or {}))
+    # `files` como dict son archivos en disco (F1-12b); como lista, nombres
+    # escritos (F1-12c, `harness_ext`).
+    if isinstance(expect.get("files"), dict):
+        errors.extend(_check_files(expect["files"]))
     errors.extend(_check_routes(expect.get("llm_routes") or [], context.get("requests")))
     final = expect.get("final") or {}
     for key in ("state", "in_call", "muted"):

@@ -406,10 +406,17 @@ def _broken_smart_turn(trace: Any) -> Any:
 
 _orig_install = run_py.install_patches
 
-def _install(module: Any, hud: Any, root: Any, mic: Any, speaker: Any, trace: Any) -> None:
-    _orig_install(module, hud, root, mic, speaker, trace)
+def _install(
+    module: Any, hud: Any, root: Any, mic: Any, speaker: Any, trace: Any, *rest: Any
+) -> None:
+    original_context_text = module.Herdr.context_text
+    _orig_install(module, hud, root, mic, speaker, trace, *rest)
     ACTIVE["trace"] = trace
     scenario = dict(ACTIVE.get("scenario") or {})
+    if scenario.get("swarm"):
+        # F1-12b anula `Herdr.context_text` para sus avisos; el enjambre
+        # (F1-12c) depende del texto real.
+        module.Herdr.context_text = original_context_text
     if scenario.get("swarm"):
         module.VoiceApp._create_swarm = _make_create_swarm(trace)
     degrade = set(scenario.get("degrade") or [])
@@ -529,8 +536,10 @@ def _voice_json() -> dict[str, Any]:
 
 _orig_check = run_py.check_expect
 
-def _check(expect: dict[str, Any], snapshot: dict[str, Any], trace: Any, requests: int) -> list[str]:
-    errors = _orig_check(expect, snapshot, trace, requests)
+def _check(
+    expect: dict[str, Any], snapshot: dict[str, Any], trace: Any, requests: int, *rest: Any
+) -> list[str]:
+    errors = _orig_check(expect, snapshot, trace, requests, *rest)
     swarm = snapshot.get("swarm") or {}
     for key in ("swarm_tasks", "swarm_members", "swarm_incidents", "launches"):
         wanted = expect.get(key)
@@ -571,7 +580,7 @@ def _check(expect: dict[str, Any], snapshot: dict[str, Any], trace: Any, request
         )
         if failures != int(expect["tool_failures"]):
             errors.append(f"herramientas fallidas: {failures} != {expect['tool_failures']}")
-    if "files" in expect:
+    if isinstance(expect.get("files"), list):
         names = list(dict.fromkeys(item["name"] for item in trace.with_event("file.write")))
         if names != expect["files"]:
             errors.append(f"archivos escritos: {names!r} != {expect['files']!r}")
