@@ -15,6 +15,7 @@ path = "src/bin/ezagent_voice.rs"
 
 [dependencies]
 png = { workspace = true }
+ndarray = { workspace = true }
 windows = { workspace = true }
 crossbeam-channel = { workspace = true }
 parking_lot = { workspace = true }

@@ -535,6 +535,7 @@ dependencies = [
  "ez-stt",
  "ez-swarm",
  "ez-tts",
+ "ndarray",
  "parking_lot 0.13.0",
  "png",
  "serde_json",
