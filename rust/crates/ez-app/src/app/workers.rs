@@ -67,6 +67,46 @@ fn llm_error_of(error: &TurnError) -> LlmError {
     }
 }
 
+/// Acuses hablados que emite `tool_ack` justo antes de una herramienta.
+///
+// DECISION: `ez-llm` no expone una costura para apagar el acuse (el Python
+// sustituye `llm.tool_ack`); el arnés lo filtra aquí con `RuntimeState.tool_acks`.
+// Si `ez-llm` gana esa costura, borrar este filtro y su prueba.
+fn is_tool_ack(text: &str) -> bool {
+    let text = py_strip(text);
+    matches!(
+        text,
+        "Busco en la web."
+            | "Abro la página."
+            | "Ejecuto el script."
+            | "Le escribo al agente."
+            | "Se lo paso a un agente."
+    ) || delegated_ack(text)
+}
+
+/// «Se lo paso a <agente>.» de `tool_ack` (etiqueta conocida o clave corta).
+fn delegated_ack(text: &str) -> bool {
+    const LABELS: [&str; 6] = [
+        "OpenCode",
+        "Claude Code",
+        "Codex",
+        "MiniMax Code",
+        "Pi",
+        "Qwen Code",
+    ];
+    let Some(label) = text
+        .strip_prefix("Se lo paso a ")
+        .and_then(|rest| rest.strip_suffix('.'))
+    else {
+        return false;
+    };
+    LABELS.contains(&label)
+        || (label.split_whitespace().count() == 1
+            && label.chars().all(|character| {
+                character.is_alphanumeric() || character == '-' || character == '_'
+            }))
+}
+
 /// `outcome == "ok" and not "".join(full).strip()` del `finally`.
 fn final_outcome(outcome: &'static str, answer: &str) -> &'static str {
     if outcome == "ok" && answer.is_empty() {
@@ -156,6 +196,10 @@ impl AnswerRun {
                     timing.mark("first_token", None);
                     self.first_token = true;
                 }
+            }
+            // Costura del arnés: el Python apaga `llm.tool_ack`.
+            if !turn.app.inner.runtime.tool_acks && is_tool_ack(&delta) {
+                continue;
             }
             self.full.push(delta.clone());
             turn.app.inner.chat.chat.append(turn.chat_id, &delta);
