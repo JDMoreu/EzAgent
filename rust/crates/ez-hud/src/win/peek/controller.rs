@@ -9,9 +9,9 @@ use parking_lot::Mutex;
 
 use crate::paint::marks::WORKING;
 use crate::paint::peek::{
-    card_height, dismissible, ease_out, meta_line, paint_marks, paint_rows, toast_secs,
-    IconPainter, PeekBuffer, PeekItem, CLOSE_SECS, DISMISS_W, HOVER_DELAY, LEAVE_GRACE, MARGIN,
-    MAX_ROWS, OPEN_SECS, PAD_X, PAD_Y, PEEK_W, REVEAL_SECS, ROW_H,
+    card_height, ease_out, meta_line, paint_marks, paint_rows, toast_secs, IconPainter, PeekBuffer,
+    PeekItem, CLOSE_SECS, HOVER_DELAY, LEAVE_GRACE, MARGIN, MAX_ROWS, OPEN_SECS, PEEK_W,
+    REVEAL_SECS,
 };
 use crate::tokens::palette_version;
 
@@ -365,26 +365,14 @@ impl Peek {
 
     /// Fila bajo un punto de la ventana (px físicos), o `None`.
     pub fn row_at(&self, x: f64, y: f64) -> Option<usize> {
-        let scale = self.scale();
-        let lx = x / scale - MARGIN;
-        let ly = y / scale - MARGIN - PAD_Y;
         let count = self.lock.lock().rows.0.len();
-        if !(0.0..=PEEK_W).contains(&lx) || ly < 0.0 {
-            return None;
-        }
-        let index = (ly / ROW_H).floor() as usize;
-        (index < count).then_some(index)
+        crate::paint::peek::row_at(count, x, y, self.scale())
     }
 
     /// Clave de la fila cuya × está bajo el punto, o `None`.
     pub fn dismiss_at(&self, x: f64, y: f64) -> Option<String> {
-        let index = self.row_at(x, y)?;
         let rows = self.lock.lock().rows.0.clone();
-        if index >= rows.len() || !dismissible(&rows[index]) {
-            return None;
-        }
-        let lx = x / self.scale() - MARGIN;
-        (lx >= PEEK_W - PAD_X - DISMISS_W + 8.0).then(|| rows[index].key.clone())
+        crate::paint::peek::dismiss_at(&rows, x, y, self.scale())
     }
 
     /// Quita la fila al instante; la app la olvida de verdad en su hilo.

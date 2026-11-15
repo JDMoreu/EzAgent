@@ -17,7 +17,7 @@ mod text;
 
 pub use draw::{paint_marks, paint_rows};
 pub use spin::{spinner, SPIN_STEPS};
-pub use text::{age, baselines, card_height, fit, meta_line};
+pub use text::{age, baselines, card_height, dismiss_at, fit, meta_line, row_at};
 
 // Medidas en unidades de la barra (se escalan con ella, ``DropUI.bs``): una fila mide lo
 // que la píldora (38) y el radio es su mitad, así que un aviso de una fila es una cápsula
