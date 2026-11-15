@@ -1,6 +1,7 @@
 //! Pruebas de `win::drop` (F5-05): coordinación de la barra y la tarjeta con
 //! dobles de ventana, configuración, host, chat y menú.
 
+mod live_menu;
 mod support;
 
 use std::sync::atomic::Ordering;

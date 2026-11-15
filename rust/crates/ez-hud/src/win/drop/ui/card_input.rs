@@ -184,8 +184,18 @@ impl DropUI {
     }
 
     /// `_hide_from_menu`: el botón «–» cierra solo el menú; la barra sigue.
+    ///
+    /// // DECISION: `Menu::activate_hit` ya cerró el menú antes de avisar, así
+    /// // que al llegar desde ese callback el lock está tomado por el mismo
+    /// // hilo; `try_lock` reproduce el `close` idempotente del Python sin
+    /// // bloquearse.
     pub fn hide_from_menu(&self) {
-        self.close_menu();
+        let Some(panel) = self.menu_panel() else {
+            return;
+        };
+        if let Some(mut menu) = panel.try_lock() {
+            menu.close(monotonic());
+        };
     }
 
     /// `_menu_action` hacia la app.
