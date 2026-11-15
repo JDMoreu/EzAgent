@@ -138,6 +138,7 @@ fn rig(home: &Path, label: &str, command_dir: &str, context: &str) -> Rig {
         server,
         command_dir: command_dir.to_string(),
         supervisor,
+        supervisor_thread: true,
     });
     Rig { stack, host, base }
 }
