@@ -41,4 +41,11 @@ fn every_menu_case_matches_python() {
         "se saltó algún caso de {FIXTURES}"
     );
     assert!(cases_in_file >= CASE_COUNT, "faltan casos en {FIXTURES}");
+    let failures = frames::take_failures();
+    assert!(
+        failures.is_empty(),
+        "{} cuadros fuera de umbral:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
 }

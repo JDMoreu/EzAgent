@@ -318,3 +318,11 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
 - Qué hace mal (dependencia no declarada): la máscara depende del FreeType que empaquete la rueda de Pillow, que no está fijado por el proyecto. El `.venv` trae Pillow 13.0.0 con FreeType 2.14.3; `freetype-sys 0.23.0` (lo único que admite el workspace) compila FreeType 2.13.2. El intérprete de 2.13.2 desplaza y engorda los acentos compuestos: U+00B4 a 13 px sale `(3×2, top 10, [0,164,83] [48,202,2])` frente a `(3×2, top 9, [17,192,49] [10,15,0])` de Pillow, y `"Automático"` mide 10 px de alto en vez de 9.
 - Cómo se reproduce en Rust: `ez-gfx::text` produce esas mismas máscaras de 2.13.2; `tests/text_mask_parity.rs` sondea U+00B4 para distinguir los dos rasterizadores. Con 2.14.3 las 181 máscaras de la tabla coinciden byte a byte.
 - Recomendación posterior: fijar la versión de Pillow/FreeType con la que se generan los PNG dorados y actualizar `freetype-sys` a una versión con FreeType ≥ 2.14.0; mientras tanto, cualquier prueba de texto byte a byte queda atada a 2.13.2.
+
+## Hallazgos de P-HUD-D (cuadros del menú)
+
+### Q-PHUDD-01
+- Archivo y líneas: `src/ezagent/voice/hud/menu.py:3801-3866` (`Menu._draw_scroll`).
+- Qué hace mal (comportamiento no evidente): el degradado inferior y el pulgar del scroll se pintan sobre `buf` después de componer las bandas y no se recortan al alto animado (`_height.value`); usan `footer_top` del layout completo. Al cerrar el menú, entre ~100 y ~350 ms quedan visibles unas filas del degradado por debajo del borde retraído (p. ej. `anim-close-dark-100@200`: el cuerpo mide 460 px pero el PNG conserva píxeles hasta `y=537`).
+- Cómo se reproduce en Rust: `paint::menu::advanced::scroll::draw_scroll` pinta igual, fuera de las bandas y sin recorte por altura; `hud_menu_parity` compara el PNG completo y lo fija.
+- Recomendación posterior: recortar `_draw_scroll`/`draw_scroll` a `min(footer_top, H_ISLAND + altura)` si se quiere que el cierre no deje ese resto; regenerar los PNG dorados de `anim-close-*` al cambiarlo.
