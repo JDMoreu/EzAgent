@@ -247,3 +247,78 @@ fn closing_restores_the_shape_flags() {
     panel.close_now();
     assert!(!panel.is_open());
 }
+
+#[test]
+fn a_slow_history_still_animates_the_opening() {
+    let ui = Arc::new(FakeUi::default());
+    let panel = Arc::new(ChatPanel::new(
+        Arc::clone(&ui) as Arc<dyn ChatUi>,
+        Arc::new(Recorder::default()),
+    ));
+    *ui.view.lock() = Some(SendView(Box::new(sample_view())));
+    // A real conversation can take longer to paint than the morph lasts.
+    *ui.slow_view.lock() = MORPH_SECS + 0.12;
+    if !panel.open() {
+        // Sin escritorio no hay ventana nativa: el ciclo de vida no aplica.
+        return;
+    }
+    let mut progress = Vec::new();
+    for _ in 0..80 {
+        let _ = panel.render();
+        let (state, p) = {
+            let state = panel.state.lock();
+            (state.anim.state, state.anim.p)
+        };
+        progress.push(p);
+        if state == AnimState::Open {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let middle = progress.iter().filter(|p| **p > 0.0 && **p < 1.0).count();
+    assert!(
+        middle >= 3,
+        "la apertura solo pintó {middle} cuadros intermedios: {progress:?}"
+    );
+    assert_eq!(panel.state.lock().anim.state, AnimState::Open);
+    panel.close_now();
+}
+
+#[test]
+fn closing_paints_intermediate_frames_before_removing_the_window() {
+    let (panel, _) = open_panel(sample_view());
+    // Un cuadro estable deja la capa de contenido cacheada, como en la app.
+    let _ = panel.render();
+    panel.close();
+    let mut progress = Vec::new();
+    let mut finished = false;
+    for _ in 0..120 {
+        let _ = panel.render();
+        let (p, done) = {
+            let state = panel.state.lock();
+            (state.anim.p, state.finished)
+        };
+        progress.push(p);
+        finished = done;
+        if done {
+            break;
+        }
+        panel.poll(0.0);
+        assert!(
+            panel.window.lock().is_some(),
+            "la ventana se retiró a mitad del cierre (p={p})"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(finished, "el cierre no terminó: {progress:?}");
+    let middle = progress.iter().filter(|p| **p > 0.0 && **p < 1.0).count();
+    assert!(
+        middle >= 3,
+        "el cierre solo pintó {middle} cuadros intermedios: {progress:?}"
+    );
+    panel.poll(0.0);
+    assert!(
+        panel.window.lock().is_none(),
+        "la ventana siguió tras terminar el cierre"
+    );
+}
