@@ -7,7 +7,7 @@
 //! respuesta, el watcher y el hilo de UI.
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use ez_core::pyjson::{dumps_with, DumpOptions};
 use ez_core::pytime::timestamp;
@@ -53,7 +53,7 @@ fn sorted(mut rows: Vec<Row>) -> Vec<Row> {
     rows
 }
 
-fn task_row(item: &Map<String, Value>) -> Option<(String, Row)> {
+fn task_row(item: &Map<String, Value>, now: &Clock) -> Option<(String, Row)> {
     let address = stripped(item.get("address"));
     if address.is_empty() {
         return None;
@@ -70,12 +70,12 @@ fn task_row(item: &Map<String, Value>) -> Option<(String, Row)> {
     );
     row.insert(
         "created_at".to_string(),
-        Value::from(number_or(item.get("created_at"), timestamp())),
+        Value::from(number_or(item.get("created_at"), now())),
     );
     Some((address, row))
 }
 
-fn chain_row(item: &Map<String, Value>) -> Option<Row> {
+fn chain_row(item: &Map<String, Value>, now: &Clock) -> Option<Row> {
     let source = stripped(item.get("source"));
     let agent = stripped(item.get("agent"));
     if source.is_empty() || agent.is_empty() {
@@ -86,12 +86,14 @@ fn chain_row(item: &Map<String, Value>) -> Option<Row> {
     spec.insert("agent".to_string(), Value::String(agent));
     spec.insert(
         "created_at".to_string(),
-        Value::from(number_or(item.get("created_at"), timestamp())),
+        Value::from(number_or(item.get("created_at"), now())),
     );
     Some(spec)
 }
 
-fn load(path: &Path) -> State {
+type Clock = Arc<dyn Fn() -> f64 + Send + Sync>;
+
+fn load(path: &Path, now: &Clock) -> State {
     let data = std::fs::read_to_string(path)
         .ok()
         .and_then(|raw| serde_json::from_str::<Value>(&raw).ok());
@@ -112,7 +114,7 @@ fn load(path: &Path) -> State {
     };
     for item in &entries {
         if let Value::Object(item) = item {
-            if let Some((address, row)) = task_row(item) {
+            if let Some((address, row)) = task_row(item, now) {
                 state.tasks.insert(address, Value::Object(row));
             }
         }
@@ -121,7 +123,7 @@ fn load(path: &Path) -> State {
         if let Some(Value::Array(raw_chains)) = map.get("chains") {
             for item in raw_chains {
                 if let Value::Object(item) = item {
-                    if let Some(spec) = chain_row(item) {
+                    if let Some(spec) = chain_row(item, now) {
                         state.chains.push(spec);
                     }
                 }
@@ -150,7 +152,32 @@ fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
         text.to_string()
     };
     std::fs::write(&tmp, text.as_bytes())?;
-    std::fs::rename(&tmp, path)
+    std::fs::rename(&tmp, path).map_err(|error| replace_error(error, &tmp, path))
+}
+
+/// `os.replace` de Python incluye las rutas y el `WinError` en el mensaje;
+/// `std::io::Error` no, así que se reconstruye el texto que registra el oráculo.
+fn replace_error(error: std::io::Error, from: &Path, to: &Path) -> std::io::Error {
+    #[cfg(windows)]
+    {
+        if let Some(code) = error.raw_os_error() {
+            let text = error.to_string();
+            let message = text
+                .split(" (os error")
+                .next()
+                .unwrap_or(&text)
+                .trim_end_matches('.');
+            return std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!(
+                    "[WinError {code}] {message}: '{}' -> '{}'",
+                    from.display(),
+                    to.display()
+                ),
+            );
+        }
+    }
+    error
 }
 
 fn tasks_of(state: &State) -> Vec<Row> {
@@ -168,10 +195,16 @@ fn chains_of(state: &State) -> Vec<Row> {
     sorted(state.chains.clone())
 }
 
-fn prompt_value(value: Option<&Value>, limit: usize) -> String {
+pub fn prompt_value(value: Option<&Value>, limit: usize) -> String {
     let text = collapse_spaces(&text_or_empty(value));
     let text = if text.chars().count() > limit {
-        format!("{}…", py_rstrip(head_chars(&text, limit - 1)))
+        // `text[:limit - 1]` de Python: con limit 0 es `text[:-1]`.
+        let keep = if limit == 0 {
+            text.chars().count().saturating_sub(1)
+        } else {
+            limit - 1
+        };
+        format!("{}…", py_rstrip(head_chars(&text, keep)))
     } else {
         text
     };
@@ -209,16 +242,27 @@ fn chain_line(item: &Row) -> String {
 pub struct TaskRegistry {
     pub path: PathBuf,
     state: Mutex<State>,
+    clock: Clock,
 }
 
 impl TaskRegistry {
     pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self::with_clock(path, Arc::new(timestamp))
+    }
+
+    /// `new` con el reloj inyectado (el oráculo congela `time.time`).
+    pub fn with_clock(path: impl Into<PathBuf>, clock: Clock) -> Self {
         let path = path.into();
-        let state = load(&path);
+        let state = load(&path, &clock);
         Self {
             path,
             state: Mutex::new(state),
+            clock,
         }
+    }
+
+    fn now(&self) -> f64 {
+        (self.clock)()
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
@@ -266,7 +310,41 @@ impl TaskRegistry {
         task: &str,
         created_at: Option<f64>,
     ) -> std::io::Result<Option<Row>> {
-        let key = py_strip(address).to_string();
+        self.insert_task(
+            address,
+            agent,
+            task,
+            created_at.unwrap_or_else(|| self.now()),
+        )
+    }
+
+    /// `add` con los valores crudos del oráculo: `float(created_at)` lanza el
+    /// `ValueError` de Python cuando no es numérico.
+    pub fn add_raw(
+        &self,
+        address: &Value,
+        agent: &Value,
+        task: &Value,
+        created_at: Option<&Value>,
+    ) -> Result<Option<Row>, String> {
+        let created = match created_at {
+            None | Some(Value::Null) => self.now(),
+            Some(value) => ez_core::metrics::float_value(value)?,
+        };
+        let agent = text_or_empty(Some(agent));
+        let task = text_or_empty(Some(task));
+        self.insert_task(&stripped(Some(address)), &agent, &task, created)
+            .map_err(|error| error.to_string())
+    }
+
+    fn insert_task(
+        &self,
+        key: &str,
+        agent: &str,
+        task: &str,
+        created: f64,
+    ) -> std::io::Result<Option<Row>> {
+        let key = py_strip(key).to_string();
         if key.is_empty() {
             return Ok(None);
         }
@@ -277,10 +355,7 @@ impl TaskRegistry {
             "task".to_string(),
             Value::String(py_strip(task).to_string()),
         );
-        entry.insert(
-            "created_at".to_string(),
-            Value::from(created_at.unwrap_or_else(timestamp)),
-        );
+        entry.insert("created_at".to_string(), Value::from(created));
         let mut state = self.lock();
         state.tasks.insert(key, Value::Object(entry.clone()));
         self.write_locked(&state)?;
@@ -328,7 +403,7 @@ impl TaskRegistry {
         );
         entry.insert(
             "created_at".to_string(),
-            Value::from(number_or(spec.get("created_at"), timestamp())),
+            Value::from(number_or(spec.get("created_at"), self.now())),
         );
         let mut state = self.lock();
         state.chains.push(entry.clone());

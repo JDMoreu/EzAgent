@@ -3,7 +3,6 @@
 
 use std::sync::Arc;
 
-use ez_core::metrics::monotonic;
 use ez_core::pyvalue::{
     collapse_spaces, head_chars, py_strip, python_str, tail_chars, text_or_empty, truthy,
 };
@@ -14,6 +13,9 @@ use super::{json_text, strip_ansi, value_or_text, visible_name, Herdr, HerdrErro
 impl Herdr {
     /// `hc ls --json`: terminales con su estado, agente y nombre visible.
     pub fn list_agents(&self, timeout: f64) -> Result<Vec<Map<String, Value>>, HerdrError> {
+        if let Some(agents) = self.runtime.agents() {
+            return Ok(agents);
+        }
         let data = self.json(&["ls".to_string(), "--json".to_string()], timeout)?;
         Ok(parse_agents(&data))
     }
@@ -51,7 +53,7 @@ impl Herdr {
 
     /// Último snapshot de agentes si tiene menos de `max_age` segundos.
     pub fn cached_agents(&self, max_age: f64) -> Option<Vec<Map<String, Value>>> {
-        let now = monotonic();
+        let now = self.runtime.monotonic();
         let context = self.context();
         let cache = context.agents_cache.as_ref()?;
         let captured = context.agents_at?;
@@ -64,7 +66,7 @@ impl Herdr {
     /// Devuelve la metadata de terminales cacheada al momento y la refresca
     /// fuera del hilo que llama.
     pub fn context_text(self: &Arc<Self>) -> String {
-        let now = monotonic();
+        let now = self.runtime.monotonic();
         let (snapshot, captured, refresh) = {
             let mut context = self.context();
             let captured = context.at;
@@ -76,10 +78,10 @@ impl Herdr {
         };
         if refresh {
             let herdr = Arc::clone(self);
-            let spawned = std::thread::Builder::new()
-                .name("ezagent-herdr-context".to_string())
-                .spawn(move || herdr.refresh_context());
-            if spawned.is_err() {
+            if !self.runtime.spawn(
+                "ezagent-herdr-context",
+                Box::new(move || herdr.refresh_context()),
+            ) {
                 self.context().pending = false;
             }
         }
@@ -103,7 +105,8 @@ impl Herdr {
         )
     }
 
-    fn refresh_context(self: &Arc<Self>) {
+    /// Refresca la metadata del prompt con lo último de `hc ls`.
+    pub fn refresh_context(&self) {
         let snapshot = match self.build_context_snapshot() {
             Ok(snapshot) => Some(snapshot),
             Err(error) => {
@@ -115,8 +118,34 @@ impl Herdr {
         // acciones; un fallo deja el bloque vacío hasta el próximo refresco.
         let mut context = self.context();
         context.snapshot = snapshot;
-        context.at = Some(monotonic());
+        context.at = Some(self.runtime.monotonic());
         context.pending = false;
+    }
+
+    /// Solo pruebas: fija el estado cacheado que el oráculo manipula a mano.
+    #[doc(hidden)]
+    pub fn seed_context(
+        &self,
+        agents: Option<Vec<Map<String, Value>>>,
+        agents_at: Option<f64>,
+        snapshot: Option<Map<String, Value>>,
+    ) {
+        let mut context = self.context();
+        context.agents_cache = agents;
+        context.agents_at = agents_at;
+        context.snapshot = snapshot;
+    }
+
+    /// Solo pruebas: ¿hay un refresco de contexto en vuelo?
+    #[doc(hidden)]
+    pub fn context_pending(&self) -> bool {
+        self.context().pending
+    }
+
+    /// Solo pruebas: último snapshot de contexto guardado.
+    #[doc(hidden)]
+    pub fn context_snapshot(&self) -> Option<Map<String, Value>> {
+        self.context().snapshot.clone()
     }
 
     fn build_context_snapshot(&self) -> Result<Map<String, Value>, HerdrError> {
@@ -126,7 +155,7 @@ impl Herdr {
                 let agents = self.list_agents(1.0)?;
                 let mut context = self.context();
                 context.agents_cache = Some(agents.clone());
-                context.agents_at = Some(monotonic());
+                context.agents_at = Some(self.runtime.monotonic());
                 agents
             }
         };

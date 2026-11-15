@@ -65,11 +65,17 @@ impl Herdr {
     /// Guarda un mensaje largo, lo envía con `hc put` y devuelve la frase
     /// corta que se pega al agente (con la ruta donde quedó el archivo).
     fn stage_long_text(&self, address: &str, text: &str) -> Option<String> {
-        self.stage_long_text_in(&handoff_dir(), address, text)
+        self.stage_long_text_in(&handoff_dir(), address, text, &self.runtime.next_id())
     }
 
-    fn stage_long_text_in(&self, folder: &Path, address: &str, text: &str) -> Option<String> {
-        let path = folder.join(format!("mensaje-{}.md", hex_id()));
+    fn stage_long_text_in(
+        &self,
+        folder: &Path,
+        address: &str,
+        text: &str,
+        id: &str,
+    ) -> Option<String> {
+        let path = folder.join(format!("mensaje-{id}.md"));
         if std::fs::create_dir_all(folder).is_err() || write_text(&path, text).is_err() {
             return None;
         }
@@ -108,7 +114,7 @@ impl Herdr {
     /// Es la carpeta propia de EzAgent; los archivos de más de 7 días se
     /// retiran de ella al guardar uno nuevo.
     pub fn save_context(&self, text: &str) -> Option<String> {
-        save_context_in(&handoff_dir(), text)
+        save_context_in(&handoff_dir(), text, &self.runtime.next_id())
     }
 }
 
@@ -125,9 +131,9 @@ pub(super) fn is_handoff_file(name: &str) -> bool {
     name.ends_with(".md") && (name.starts_with("contexto-") || name.starts_with("mensaje-"))
 }
 
-/// `save_context` con la carpeta inyectada (pruebas).
-pub(super) fn save_context_in(folder: &Path, text: &str) -> Option<String> {
-    let path = folder.join(format!("contexto-{}.md", hex_id()));
+/// `save_context` con la carpeta y el id inyectados (pruebas).
+pub(super) fn save_context_in(folder: &Path, text: &str, id: &str) -> Option<String> {
+    let path = folder.join(format!("contexto-{id}.md"));
     if std::fs::create_dir_all(folder).is_err() || write_text(&path, text).is_err() {
         return None;
     }

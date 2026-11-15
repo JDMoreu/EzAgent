@@ -60,3 +60,17 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
 - Qué hace mal: el `kind` del resultado se calcula **después** de mover (`shutil.move` u `os.replace`), cuando `src` ya no existe; mover una carpeta informa `"kind": "file"` en vez de `"folder"`. Los casos `tools_fs/call/move-folder`, `move-folder-empty` y `move-folder-overwrite` del oráculo lo fijan así.
 - Cómo se reproduce en Rust: `tools_fs/handlers.rs::transfer` evalúa `kind_of(&src)` después de `move_into_place`/`record_move`, con el comentario del quirk; `copy_path` conserva `"folder"` porque el origen sigue existiendo.
 - Recomendación posterior: calcular `kind` antes de mover en Python (`kind = "folder" if src.is_dir() else "file"` al entrar) y regenerar `parity/fixtures/tools_fs.jsonl` (3 casos cambian de `file` a `folder`).
+
+## Hallazgos de P-HERDR (adaptador de Herdr, tareas y métricas)
+
+### Q-PHERDR-01
+- Archivo y líneas: `parity/gen/agent_driver.py:2495-2547` (`watcher/loop/*`) y `:2549-2583` (`watcher/deliver/*`).
+- Qué hace mal: la acción de cada caso solo **lee** el estado (`{"delays": stop.delays, …}` y `{"seen": seen}`); nunca llama a `Watcher._loop` ni a `Watcher._deliver`. Los 5 casos de `loop` y los 3 de `deliver` del oráculo afirman listas vacías y no prueban nada.
+- Cómo se reproduce en Rust: el arnés de `agent_driver` (pendiente en P-HERDR) debe devolver esas estructuras vacías sin ejecutar el bucle, o el generador debe llamar a la función y regenerarse. En esta ronda no se portó `agent_driver`.
+- Recomendación posterior: cambiar la acción del generador por `watcher._loop()` / `watcher._deliver()` (con el `_StopAfter` y la cola ya preparados) y regenerar `parity/fixtures/agent_driver.jsonl`.
+
+### Q-PHERDR-02
+- Archivo y líneas: `src/ezagent/voice/herdr.py:440` (`return text[-limit:]`).
+- Qué hace mal: con `limit=0`, `text[-0:]` es `text[0:]`, es decir, **no recorta**; el caso `herdr/read_agent/007-limit-zero` fija que se devuelve la pantalla completa. Es contraintuitivo pero está fijado por el oráculo.
+- Cómo se reproduce en Rust: `ez_core::pyvalue::tail_chars` devuelve el texto completo cuando `count` es 0, igual que Python; no se corrigió.
+- Recomendación posterior: si se quiere que `0` signifique «nada», documentarlo y regenerar el fixture; hoy `read_agent` nunca pasa 0 porque el valor por defecto es `max_read_lines`.

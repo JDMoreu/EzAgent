@@ -224,8 +224,9 @@ pub fn order(items: impl IntoIterator<Item = ActivityItem>) -> Vec<ActivityItem>
     ordered.sort_by(|left, right| {
         state_rank(&left.state)
             .cmp(&state_rank(&right.state))
-            .then_with(|| left.unseen.cmp(&right.unseen))
-            .then_with(|| (-right.since).total_cmp(&(-left.since)))
+            // Lo no visto va antes (`not i.unseen` de Python).
+            .then_with(|| right.unseen.cmp(&left.unseen))
+            .then_with(|| (-left.since).total_cmp(&(-right.since)))
     });
     ordered
 }
@@ -355,9 +356,12 @@ fn title_with_agent(info: Option<&Map<String, Value>>) -> String {
 }
 
 fn chain_title(spec: &Map<String, Value>) -> String {
-    let chosen = ["name", "task", "agent"]
+    // `spec.get("name") or spec.get("task") or spec.get("agent")`: si todos son
+    // falsy, Python devuelve el último (aunque sea ""), no None.
+    let chosen = ["name", "task"]
         .iter()
-        .find_map(|key| spec.get(*key).filter(|value| truthy(value)));
+        .find_map(|key| spec.get(*key).filter(|value| truthy(value)))
+        .or_else(|| spec.get("agent"));
     chosen.map(python_str).unwrap_or_else(|| "None".to_string())
 }
 
@@ -416,8 +420,17 @@ pub fn live_items(source: &dyn ActivitySource, now: Option<f64>) -> Vec<Activity
 }
 
 pub fn snapshot(source: &dyn ActivitySource, log: Option<&ActivityLog>) -> Vec<ActivityItem> {
+    snapshot_at(source, log, None)
+}
+
+/// `snapshot` con el instante inyectado (el oráculo congela `time.time`).
+pub fn snapshot_at(
+    source: &dyn ActivitySource,
+    log: Option<&ActivityLog>,
+    now: Option<f64>,
+) -> Vec<ActivityItem> {
     let recent = log.map(ActivityLog::items).unwrap_or_default();
-    merge(live_items(source, None), recent)
+    merge(live_items(source, now), recent)
 }
 
 #[cfg(test)]

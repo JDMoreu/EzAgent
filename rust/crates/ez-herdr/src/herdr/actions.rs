@@ -1,5 +1,7 @@
 //! Acciones de Herdr: teclas, terminales nuevas y lanzamiento de agentes.
 
+use std::sync::Arc;
+
 use ez_core::pyjson::dumps;
 use ez_core::pyvalue::{head_chars, py_strip, python_str, truthy};
 use serde_json::{json, Map, Value};
@@ -263,14 +265,14 @@ impl Herdr {
         let task_text = plan.task_text.clone();
         let worker = launcher;
         let thread_base = base.clone();
-        std::thread::Builder::new()
-            .name("ez-launch".to_string())
-            .spawn(move || {
-                let result =
-                    launch_outcome(&worker, &address, &key, &launch, &task_text, &thread_base);
-                on_ready(result);
-            })
-            .map_err(|error| HerdrError::failed(error.to_string()))?;
+        let runtime = Arc::clone(&self.runtime);
+        let task = Box::new(move || {
+            let result = launch_outcome(&worker, &address, &key, &launch, &task_text, &thread_base);
+            on_ready(result);
+        });
+        if !runtime.spawn("ez-launch", task) {
+            return Err(HerdrError::failed("no pude iniciar el hilo de lanzamiento"));
+        }
         let mut result = Map::new();
         result.insert("ok".to_string(), Value::Bool(true));
         result.insert("launching".to_string(), Value::Bool(true));
@@ -315,7 +317,7 @@ impl Herdr {
         key: &str,
     ) -> Result<LaunchStep, HerdrError> {
         let run_argv = if !launch.env.is_empty() || prepend.is_some_and(|list| !list.is_empty()) {
-            super::powershell_script(&command_line(argv, &launch.env, prepend))
+            super::powershell_command(&command_line(argv, &launch.env, prepend))
         } else {
             argv.to_vec()
         };
