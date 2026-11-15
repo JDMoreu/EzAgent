@@ -32,7 +32,10 @@ impl AtomicF64 {
 
 /// Los atributos de `MicCapture` que se leen o escriben durante la llamada.
 pub(super) struct Live {
+    /// Índice en la enumeración de cpal (el que abre el stream).
     device_index: AtomicI64,
+    /// Índice global de PortAudio (el que se guarda y compara la app).
+    portaudio_index: AtomicI64,
     min_rms: AtomicF64,
     silence_secs: AtomicF64,
     pre_roll_secs: AtomicF64,
@@ -48,9 +51,14 @@ pub(super) struct Live {
 }
 
 impl Live {
-    pub(super) fn new(device_index: Option<usize>, settings: VadSettings) -> Self {
+    pub(super) fn new(
+        device_index: Option<usize>,
+        portaudio_index: Option<usize>,
+        settings: VadSettings,
+    ) -> Self {
         Self {
             device_index: AtomicI64::new(index_id(device_index)),
+            portaudio_index: AtomicI64::new(index_id(portaudio_index)),
             min_rms: AtomicF64::new(settings.min_rms),
             silence_secs: AtomicF64::new(settings.silence_secs),
             pre_roll_secs: AtomicF64::new(settings.pre_roll_secs),
@@ -89,8 +97,15 @@ fn index_id(index: Option<usize>) -> i64 {
 }
 
 impl MicCapture {
-    /// Índice del dispositivo vigente, sin esperar a la captura en curso.
+    /// Índice de PortAudio del micrófono en uso (`self.mic.device_index` del
+    /// Python): el que se guarda en `voice.json` y el que entiende la app de
+    /// Python.
     pub fn device_index(&self) -> Option<usize> {
+        usize::try_from(self.inner.live.portaudio_index.load(Ordering::Relaxed)).ok()
+    }
+
+    /// Índice en la enumeración de cpal: el que abre el stream.
+    pub(super) fn cpal_index(&self) -> Option<usize> {
         usize::try_from(self.inner.live.device_index.load(Ordering::Relaxed)).ok()
     }
 
@@ -99,6 +114,10 @@ impl MicCapture {
         self.inner
             .live
             .device_index
+            .store(index_id(index), Ordering::Relaxed);
+        self.inner
+            .live
+            .portaudio_index
             .store(index_id(index), Ordering::Relaxed);
     }
 

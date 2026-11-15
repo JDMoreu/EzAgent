@@ -17,6 +17,7 @@ ort = { workspace = true }
 crossbeam-channel = { workspace = true }
 parking_lot = { workspace = true }
 tracing = { workspace = true }
+windows = { workspace = true }
 
 [dev-dependencies]
 ez-parity = { path = "../ez-parity" }
