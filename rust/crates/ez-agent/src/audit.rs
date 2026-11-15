@@ -16,8 +16,9 @@ use ez_core::pyvalue::{char_len, python_str};
 use ez_core::redact::redact;
 use serde_json::{json, Map, Value};
 
-const CONTENT_KEYS: [&str; 4] = ["content", "text", "data", "output"];
-const SECRET_KEY_PARTS: [&str; 6] = ["api_key", "apikey", "token", "password", "passwd", "secret"];
+pub const CONTENT_KEYS: [&str; 4] = ["content", "text", "data", "output"];
+pub const SECRET_KEY_PARTS: [&str; 6] =
+    ["api_key", "apikey", "token", "password", "passwd", "secret"];
 
 /// Tamaño de un contenido: textos en caracteres; contenedores, los caracteres
 /// de su serialización JSON; el resto, su representación.
@@ -75,6 +76,11 @@ impl AuditLog {
 
     pub fn log(&self, entry: &AuditEntry<'_>) {
         let ts = isoformat_millis_utc(timestamp()).unwrap_or_default();
+        self.log_at(entry, &ts);
+    }
+
+    /// `log` con el instante fijado; las pruebas de paridad congelan el reloj.
+    pub fn log_at(&self, entry: &AuditEntry<'_>, ts: &str) {
         let rounded = format!("{:.1}", entry.ms)
             .parse::<f64>()
             .unwrap_or(entry.ms);

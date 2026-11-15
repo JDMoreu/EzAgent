@@ -14,7 +14,7 @@ use indexmap::IndexMap;
 use schema::validate_args;
 use serde_json::{json, Map, Value};
 
-const TRUNCATED_NOTE: &str = "Resultado recortado; no repitas la operación solo por el tamaño.";
+pub const TRUNCATED_NOTE: &str = "Resultado recortado; no repitas la operación solo por el tamaño.";
 
 /// Lo que una herramienta declara de una llamada concreta.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

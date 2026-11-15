@@ -48,7 +48,7 @@ const GUIDES: [(&str, &str); 6] = [
 ];
 
 /// Manual resumido de un agente (`agent_guides/<agente>.guide.md`).
-pub fn load_guide(agent_key: &str) -> Option<&'static str> {
+pub fn load_guide(agent_key: &str) -> Option<String> {
     let valid = !agent_key.is_empty()
         && agent_key
             .chars()
@@ -59,7 +59,9 @@ pub fn load_guide(agent_key: &str) -> Option<&'static str> {
     GUIDES
         .iter()
         .find(|(name, _)| *name == agent_key)
-        .map(|(_, text)| *text)
+        // `Path.read_text` traduce CRLF a LF; los archivos del repo se editan
+        // en Windows y `include_str!` conserva el CRLF del checkout.
+        .map(|(_, text)| text.replace("\r\n", "\n").replace('\r', "\n"))
 }
 
 /// Valida `then`; el `Err` es el mensaje legible de Python.

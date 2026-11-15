@@ -450,10 +450,19 @@ impl SkillLibrary {
                 self.warn(inner, &message);
                 return None;
             }
-            Err(_) => {
-                // DECISION: serde_yaml no distingue la clase del error de PyYAML.
+            Err(error) => {
+                // DECISION: serde_yaml no expone la clase de PyYAML; se aproxima
+                // por el mensaje (una secuencia de flujo sin cerrar es ParserError).
+                let detail = error.to_string();
+                let kind = if detail.contains("expected ',' or ']'")
+                    || detail.contains("expected ',' or '}'")
+                {
+                    "ParserError"
+                } else {
+                    "ScannerError"
+                };
                 let message = format!(
-                    "Skill «{folder_name}»: frontmatter YAML ilegible (ScannerError); se descarta."
+                    "Skill «{folder_name}»: frontmatter YAML ilegible ({kind}); se descarta."
                 );
                 self.warn(inner, &message);
                 return None;
