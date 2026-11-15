@@ -167,8 +167,6 @@ pub fn draw_text_at(
         ez_gfx::text::chat::length(prefix, key, ctx.scale)
     };
     let style = style(key);
-    let top = text::baseline_top(body, style, baseline, ctx.scale)
-        .expect("the chat style is known and the font is bundled");
     let (logical_w, logical_h) =
         text::text_size(body, style, ctx.scale, None, "left").expect("the chat style is known");
     let pad = ((2.0 * ctx.scale).round_ties_even() as i64).max(1) as u32;
@@ -188,25 +186,130 @@ pub fn draw_text_at(
             &mut surface,
             body,
             style,
-            text::Color::Rgba(color.to_array()),
+            // DECISION: el blanco solo obtiene la cobertura; el color lo pone
+            // el mezclado de abajo, como el `draw_bitmap` de Pillow.
+            text::Color::Rgb([255, 255, 255]),
             position,
             options,
         )
         .expect("the text tile is valid");
     }
-    let mut dx = ctx.px(x + shift) - pad as i32;
-    let dy = ctx.px(top) - pad as i32;
-    let mut output_w = width;
-    if italic {
-        let baseline_row = f64::from(pad) + f64::from(ctx.px(baseline) - ctx.px(top));
-        let extra = (0.2 * f64::from(height)).ceil() as u32 + 1;
-        values = shear_rows(&values, width, height, baseline_row, extra);
-        output_w = width + 2 * extra;
-        dx -= extra as i32;
+    let coverage = values
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|pixel| (pixel[3].clamp(0.0, 1.0) * 255.0 + 0.5) as u8)
+        .collect();
+    let mask = Mask::from_raw(width, height, coverage).expect("the coverage tile has its buffer");
+    let dx = ctx.px(x + shift) - pad as i32 + ink_bearing(body, style, key, ctx.scale);
+    // Python rounds the baseline and then offsets the mask by a whole number of
+    // physical pixels; rounding the sum instead moves the text a pixel.
+    let ink_offset = ink_top(body, style, ctx.scale);
+    let dy = ctx.px(baseline) + ink_offset - pad as i32;
+    if !italic {
+        blend_mask(img, &mask, (dx, dy), color);
+        return;
     }
-    let tile = Image::from_f32_premultiplied_rgba(output_w, height, &values)
-        .expect("the text tile has its buffer");
-    img.alpha_composite(&tile, (dx, dy));
+    let baseline_row = f64::from(pad) - f64::from(ink_offset);
+    let extra = (0.2 * (f64::from(height) + baseline_row.max(0.0))).ceil() as u32 + 1;
+    let sheared = shear_rows(&mask, baseline_row, extra);
+    let tinted = multiply_mask(&sheared, color.a);
+    composite_mask(img, &tinted, color, (dx - extra as i32, dy));
+}
+
+/// Distance from the baseline to the first row of ink, in physical pixels.
+///
+/// `baseline_top` returns the outline box, which can sit one row above the
+/// raster (`*`, accents); the mask Pillow pastes carries that empty row, so the
+/// crop has to move down to compensate. `Á` is taller than any chat glyph and
+/// has no descender, so comparing heights against `Á` + text gives the ink's
+/// top row outright.
+pub(super) fn ink_top(text: &str, style: text::FontStyle, scale: f64) -> i32 {
+    let outline = text::baseline_top(text, style, 0.0, scale)
+        .map(|top| (top * scale).round_ties_even() as i32);
+    let probe = format!("Á{text}");
+    let with = text::text_size(&probe, style, scale, None, "left").map(|(_, height)| height);
+    let alone = text::text_size(text, style, scale, None, "left").map(|(_, height)| height);
+    let probe_top = text::baseline_top("Á", style, 0.0, scale)
+        .map(|top| (top * scale).round_ties_even() as i32)
+        .unwrap_or(0);
+    let (Ok(outline), Ok(with), Ok(alone)) = (outline, with, alone) else {
+        return 0;
+    };
+    let measured = probe_top + ((with - alone) * scale).round_ties_even() as i32;
+    // The probe only dominates the top row when the run does not reach above it
+    // or stop above the baseline; anything further off falls back to the box.
+    if outline <= measured && measured <= outline + 1 {
+        measured
+    } else {
+        outline
+    }
+}
+
+/// Horizontal offset between the pen and the left edge of the ink.
+///
+/// Pillow pastes the text mask at the pen, so the ink lands at `pen + bearing`;
+/// `ez_gfx::text::draw_text` anchors the cropped ink instead and drops it.
+/// `ink("T" + text) - ink(text) - advance("T")` recovers the bearing: `T` is
+/// the leftmost ink and its own bearing is zero in every style the chat uses
+/// (checked against Pillow for the eleven styles at 100, 125, 150 and 200 %).
+pub(super) fn ink_bearing(text: &str, style: text::FontStyle, key: &str, scale: f64) -> i32 {
+    let probe = format!("T{text}");
+    let with = text::text_size(&probe, style, scale, None, "left").map(|(width, _)| width * scale);
+    let alone = text::text_size(text, style, scale, None, "left").map(|(width, _)| width * scale);
+    let (Ok(with), Ok(alone)) = (with, alone) else {
+        return 0;
+    };
+    let advance = ez_gfx::text::chat::length("T", key, scale) * scale;
+    let bearing = (with - alone - advance).round_ties_even() as i32;
+    // The formula needs the run's ink to reach past the probe's; a run whose
+    // ink is narrower than the gap falls back to no offset.
+    if (-3..=3).contains(&bearing) {
+        bearing
+    } else {
+        0
+    }
+}
+
+/// `ImageDraw.text` on RGBA: Pillow's `draw_bitmap` blend (`Draw.c`).
+/// With a transparent destination it copies the ink colour and only scales the
+/// coverage; over anything else it blends every channel, alpha included, in
+/// premultiplied arithmetic.
+pub(super) fn blend_mask(img: &mut Image, mask: &Mask, dest: (i32, i32), color: Rgba) {
+    let (width, height) = (img.width() as i32, img.height() as i32);
+    let x0 = dest.0.max(0);
+    let y0 = dest.1.max(0);
+    let x1 = (dest.0 + mask.width() as i32).min(width);
+    let y1 = (dest.1 + mask.height() as i32).min(height);
+    let ink = color.to_array();
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let coverage = u32::from(mask.get((x - dest.0) as u32, (y - dest.1) as u32));
+            if coverage == 0 {
+                continue;
+            }
+            let target = img.pixel(x as u32, y as u32);
+            let mut out = target.to_array();
+            if target.a == 0 {
+                out = [
+                    ink[0],
+                    ink[1],
+                    ink[2],
+                    blend_channel(coverage, u32::from(ink[3]), 0),
+                ];
+            } else {
+                for (channel, value) in out.iter_mut().enumerate() {
+                    *value = blend_channel(coverage, u32::from(ink[channel]), u32::from(*value));
+                }
+            }
+            img.set_pixel(x as u32, y as u32, Rgba::from_array(out));
+        }
+    }
+}
+
+/// `(src * mask + dst * (255 - mask) + 127) / 255`, Pillow's text blend.
+fn blend_channel(mask: u32, source: u32, target: u32) -> u8 {
+    ((source * mask + target * (255 - mask) + 127) / 255) as u8
 }
 
 /// `_Piece` code padding and line drawing live in `ez-gfx::text::chat`; this
@@ -347,39 +450,53 @@ pub(crate) fn crop(img: &Image, x0: u32, y0: u32, x1: u32, y1: u32) -> Image {
 
 /// Applies Pillow's affine shear `(1, 0.2, -0.2 * ascent, 0, 1, 0)`, row by
 /// row around the baseline.
-// DECISION: horizontal resampling is bilinear; Pillow uses BICUBIC, a
-// sub-pixel difference on italics until parity tests land.
-fn shear_rows(values: &[f32], width: u32, height: u32, baseline_row: f64, extra: u32) -> Vec<f32> {
+///
+/// Pillow samples the source at the destination pixel centre (`y + 0.5`) and
+/// convolves with the cubic kernel below, keeping the taps that fall inside the
+/// row and truncating the accumulated coverage.
+pub(super) fn shear_rows(mask: &Mask, baseline_row: f64, extra: u32) -> Mask {
+    let width = mask.width();
+    let height = mask.height();
     let out_w = width + 2 * extra;
-    let mut out = vec![0f32; out_w as usize * height as usize * 4];
+    let mut out = vec![0u8; out_w as usize * height as usize];
     for y in 0..height {
-        let shift = 0.2 * (baseline_row - f64::from(y));
-        let out_row = y as usize * out_w as usize * 4;
+        let shift = 0.2 * (f64::from(y) + 0.5 - baseline_row);
+        let out_row = y as usize * out_w as usize;
+        let row = mask.row(y);
         for x in 0..out_w {
-            let source_x = f64::from(x) - f64::from(extra) - shift;
-            let index = (y * width) as usize;
-            let alpha = sample_row(values, index, width, source_x, 3);
-            let out_index = out_row + x as usize * 4;
-            for channel in 0..3 {
-                out[out_index + channel] = sample_row(values, index, width, source_x, channel);
-            }
-            out[out_index + 3] = alpha;
+            let source_x = f64::from(x) - f64::from(extra) + shift;
+            out[out_row + x as usize] = sample_row(row, source_x);
         }
     }
-    out
+    Mask::from_raw(out_w, height, out).expect("the sheared tile has its buffer")
 }
 
 fn is_py_space(ch: char) -> bool {
     ch.is_whitespace() || (''..='').contains(&ch)
 }
 
-fn sample_row(values: &[f32], row: usize, width: u32, x: f64, channel: usize) -> f32 {
-    if x < 0.0 || x >= f64::from(width) {
-        return 0.0;
+/// Pillow's cubic kernel for affine transforms (`a = -1`): it is not
+/// renormalised, so a half-pixel sample keeps `1.25` of the 255.
+pub(super) fn cubic_kernel(t: f64) -> f64 {
+    let t = t.abs();
+    if t < 1.0 {
+        t * t * t - 2.0 * t * t + 1.0
+    } else if t < 2.0 {
+        -t * t * t + 5.0 * t * t - 8.0 * t + 4.0
+    } else {
+        0.0
     }
-    let left = x.floor() as u32;
-    let fraction = (x - f64::from(left)) as f32;
-    let right = (left + 1).min(width - 1);
-    let sample = |index: u32| values[(row + index as usize) * 4 + channel];
-    sample(left) * (1.0 - fraction) + sample(right) * fraction
+}
+
+/// One row of Pillow's affine resample: taps within two pixels, truncated.
+fn sample_row(row: &[u8], x: f64) -> u8 {
+    let first = x.floor() as i64 - 1;
+    let mut total = 0.0;
+    for index in first..first + 4 {
+        let weight = cubic_kernel(x - index as f64);
+        if weight != 0.0 && (0..row.len() as i64).contains(&index) {
+            total += f64::from(row[index as usize]) * weight;
+        }
+    }
+    total.clamp(0.0, 255.0) as u8
 }
