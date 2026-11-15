@@ -347,3 +347,16 @@ fn resolve_codex(table: &Map<String, Value>, wanted: &mut Wanted) -> String {
     }
     String::new()
 }
+
+/// `AgentDriver._resolve_codex` con la tabla del catálogo en disco y el
+/// `wanted` como diccionario (`{"model": …, "effort": …}`); devuelve el error y
+/// el modelo resuelto.
+#[doc(hidden)]
+pub fn resolve_codex_value(wanted: &Value) -> (String, String) {
+    let mut wanted = Wanted {
+        model: text_or_empty(wanted.get("model")),
+        effort: text_or_empty(wanted.get("effort")),
+    };
+    let error = resolve_codex(&crate::prelaunch::discover_codex_models(), &mut wanted);
+    (error, wanted.model)
+}

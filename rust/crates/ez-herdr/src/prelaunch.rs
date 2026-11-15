@@ -234,6 +234,12 @@ fn discover_codex_models_at(folder: &Path) -> Map<String, Value> {
                     Value::String(python_str(level))
                 })
                 .collect(),
+            // DECISION: el Python itera el valor tal cual; una cadena produce
+            // sus caracteres (quirk reproducido).
+            Some(Value::String(text)) => text
+                .chars()
+                .map(|character| Value::String(character.to_string()))
+                .collect(),
             _ => Vec::new(),
         };
         if !slug.is_empty() && !levels.is_empty() {
@@ -245,7 +251,8 @@ fn discover_codex_models_at(folder: &Path) -> Map<String, Value> {
 
 // ---------------------------------------------------------- opencode default
 /// Quita comentarios `//` y `/* */` y comas finales, respetando las cadenas.
-fn strip_jsonc(text: &str) -> String {
+#[doc(hidden)]
+pub fn strip_jsonc(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::new();
     let mut index = 0;

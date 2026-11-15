@@ -11,17 +11,16 @@
 //! se conserva el último snapshot y se reintenta con backoff.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 use ez_core::pyloads::loads;
-use ez_core::pyvalue::{py_strip, python_str, truthy};
-use serde_json::Value;
+use ez_core::pyvalue::{py_eq, py_strip, python_str, truthy};
+use serde_json::{Map, Value};
 
-use crate::herdr::process;
+use crate::herdr::{self, HerdrRuntime};
 
 pub const POLL_S: f64 = 1.0;
 pub const IDLE_POLL_S: f64 = 5.0;
@@ -31,9 +30,66 @@ pub const STOP_JOIN_S: f64 = 5.0;
 /// `(address, agent, state, reason)`.
 pub type Event = (String, String, String, String);
 pub type EventCallback = Arc<dyn Fn(&str, &str, &str, &str) + Send + Sync>;
-pub type HealthCallback = Arc<dyn Fn(bool) + Send + Sync>;
+pub type HealthCallback = Arc<dyn Fn(Option<bool>) + Send + Sync>;
 pub type AnnounceCallback = Arc<dyn Fn(&str) -> bool + Send + Sync>;
 pub type TargetsCallback = Arc<dyn Fn() -> bool + Send + Sync>;
+
+/// Tarea que corre un hilo de `start()`.
+type Work = Box<dyn FnOnce() + Send + 'static>;
+
+/// Hilo vivo con nombre (el `threading.Thread` de `start`/`stop`).
+#[doc(hidden)]
+pub trait Worker: Send + Sync {
+    fn is_alive(&self) -> bool;
+    fn join(&self, timeout_s: f64);
+}
+
+/// Fábrica de hilos de `start()`; el arnés la sustituye por un doble.
+#[doc(hidden)]
+pub trait ThreadFactory: Send + Sync {
+    fn spawn(&self, name: &str, work: Work) -> Option<Box<dyn Worker>>;
+}
+
+struct SystemThreads;
+
+struct SystemWorker {
+    handle: Mutex<Option<JoinHandle<()>>>,
+    done: Mutex<Receiver<()>>,
+}
+
+impl Worker for SystemWorker {
+    fn is_alive(&self) -> bool {
+        lock(&self.handle)
+            .as_ref()
+            .is_some_and(|handle| !handle.is_finished())
+    }
+
+    fn join(&self, timeout_s: f64) {
+        let _ = lock(&self.done).recv_timeout(Duration::from_secs_f64(timeout_s.max(0.0)));
+    }
+}
+
+impl ThreadFactory for SystemThreads {
+    fn spawn(&self, name: &str, work: Work) -> Option<Box<dyn Worker>> {
+        let (done_sender, done) = channel();
+        let handle = std::thread::Builder::new()
+            .name(name.to_string())
+            .spawn(move || {
+                work();
+                let _ = done_sender.send(());
+            });
+        match handle {
+            Ok(handle) => Some(Box::new(SystemWorker {
+                handle: Mutex::new(Some(handle)),
+                done: Mutex::new(done),
+            })),
+            Err(error) => {
+                tracing::warn!("Watcher: no pude iniciar el hilo {name}: {error}");
+                None
+            }
+        }
+    }
+}
 
 /// `threading.Event` con espera interrumpible.
 struct StopFlag {
@@ -79,11 +135,6 @@ fn lock<T>(value: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-struct Started {
-    handle: JoinHandle<()>,
-    done: Receiver<()>,
-}
-
 struct Previous {
     entries: Vec<(String, String, String)>,
     primed: bool,
@@ -95,14 +146,16 @@ pub struct Watcher {
     should_announce: AnnounceCallback,
     on_health: Option<HealthCallback>,
     has_targets: Option<TargetsCallback>,
-    healthy: AtomicBool,
+    healthy: Mutex<Value>,
     stop: StopFlag,
     sender: Sender<Option<Event>>,
     receiver: Mutex<Receiver<Option<Event>>>,
-    poll: Mutex<Option<Started>>,
-    delivery: Mutex<Option<Started>>,
+    poll: Mutex<Option<Box<dyn Worker>>>,
+    delivery: Mutex<Option<Box<dyn Worker>>>,
     previous: Mutex<Previous>,
     live: Mutex<HashMap<String, String>>,
+    runtime: Arc<dyn HerdrRuntime>,
+    threads: Arc<dyn ThreadFactory>,
 }
 
 impl Watcher {
@@ -120,7 +173,7 @@ impl Watcher {
             should_announce,
             on_health,
             has_targets,
-            healthy: AtomicBool::new(true),
+            healthy: Mutex::new(Value::Bool(true)),
             stop: StopFlag::new(),
             sender,
             receiver: Mutex::new(receiver),
@@ -131,7 +184,23 @@ impl Watcher {
                 primed: false,
             }),
             live: Mutex::new(HashMap::new()),
+            runtime: herdr::system_runtime(),
+            threads: Arc::new(SystemThreads),
         }
+    }
+
+    /// `subprocess.run` inyectable (el oráculo lo sustituye por un doble).
+    #[doc(hidden)]
+    pub fn with_runtime(mut self, runtime: Arc<dyn HerdrRuntime>) -> Self {
+        self.runtime = runtime;
+        self
+    }
+
+    /// Fábrica de hilos inyectable (doble de `threading.Thread`).
+    #[doc(hidden)]
+    pub fn with_threads(mut self, threads: Arc<dyn ThreadFactory>) -> Self {
+        self.threads = threads;
+        self
     }
 
     /// Estado de la terminal en la última consulta buena; None si no existe.
@@ -140,26 +209,70 @@ impl Watcher {
     }
 
     pub fn healthy(&self) -> bool {
-        self.healthy.load(Ordering::SeqCst)
+        truthy(&lock(&self.healthy))
+    }
+
+    /// `_live` como diccionario (costura de paridad).
+    #[doc(hidden)]
+    pub fn live_map(&self) -> Map<String, Value> {
+        lock(&self.live)
+            .iter()
+            .map(|(address, state)| (address.clone(), Value::String(state.clone())))
+            .collect()
+    }
+
+    /// `_prev` como diccionario `dirección -> [estado, agente]`.
+    #[doc(hidden)]
+    pub fn previous_map(&self) -> Map<String, Value> {
+        lock(&self.previous)
+            .entries
+            .iter()
+            .map(|(address, state, agent)| {
+                (
+                    address.clone(),
+                    Value::Array(vec![
+                        Value::String(state.clone()),
+                        Value::String(agent.clone()),
+                    ]),
+                )
+            })
+            .collect()
+    }
+
+    /// Primer evento de la cola sin bloquear: `Some(None)` es el centinela.
+    #[doc(hidden)]
+    pub fn next_event_now(&self) -> Option<Option<Event>> {
+        lock(&self.receiver).try_recv().ok()
+    }
+
+    #[doc(hidden)]
+    pub fn stop_requested(&self) -> bool {
+        self.stop.is_set()
+    }
+
+    /// `_deliver`: entrega de la cola (`ez-watch-events`). Costura pública.
+    #[doc(hidden)]
+    pub fn deliver(&self) {
+        self.deliver_loop();
+    }
+
+    /// `_loop`: sondeo con backoff (`ez-watch-poll`). Costura pública.
+    #[doc(hidden)]
+    pub fn poll_loop(&self) {
+        self.poll_loop_inner();
     }
 
     pub fn start(self: &Arc<Self>) {
         let mut delivery = lock(&self.delivery);
-        if delivery
-            .as_ref()
-            .is_none_or(|started| started.handle.is_finished())
-        {
-            *delivery = self.spawn_worker("ez-watch-events", |watcher| watcher.deliver());
+        if delivery.as_ref().is_none_or(|worker| !worker.is_alive()) {
+            *delivery = self.spawn_worker("ez-watch-events", |watcher| watcher.deliver_loop());
         }
         drop(delivery);
         let mut poll = lock(&self.poll);
-        if poll
-            .as_ref()
-            .is_some_and(|started| !started.handle.is_finished())
-        {
+        if poll.as_ref().is_some_and(|worker| worker.is_alive()) {
             return;
         }
-        *poll = self.spawn_worker("ez-watch-poll", |watcher| watcher.poll_loop());
+        *poll = self.spawn_worker("ez-watch-poll", |watcher| watcher.poll_loop_inner());
     }
 
     /// `stop()`: avisa a los hilos y espera como mucho `STOP_JOIN_S` por cada uno.
@@ -170,36 +283,21 @@ impl Watcher {
         self.stop.set();
         let _ = self.sender.send(None);
         for slot in [&self.poll, &self.delivery] {
-            let started = lock(slot);
-            if let Some(started) = started.as_ref() {
-                if !started.handle.is_finished() {
-                    let _ = started
-                        .done
-                        .recv_timeout(Duration::from_secs_f64(STOP_JOIN_S));
+            let worker = lock(slot);
+            if let Some(worker) = worker.as_ref() {
+                if worker.is_alive() {
+                    worker.join(STOP_JOIN_S);
                 }
             }
         }
     }
 
-    fn spawn_worker(self: &Arc<Self>, name: &str, work: fn(&Watcher)) -> Option<Started> {
+    fn spawn_worker(self: &Arc<Self>, name: &str, work: fn(&Watcher)) -> Option<Box<dyn Worker>> {
         let watcher = Arc::clone(self);
-        let (done_sender, done) = channel();
-        let handle = std::thread::Builder::new()
-            .name(name.to_string())
-            .spawn(move || {
-                work(&watcher);
-                let _ = done_sender.send(());
-            });
-        match handle {
-            Ok(handle) => Some(Started { handle, done }),
-            Err(error) => {
-                tracing::warn!("Watcher: no pude iniciar el hilo {name}: {error}");
-                None
-            }
-        }
+        self.threads.spawn(name, Box::new(move || work(&watcher)))
     }
 
-    fn deliver(&self) {
+    fn deliver_loop(&self) {
         loop {
             let event = lock(&self.receiver).recv();
             match event {
@@ -218,7 +316,7 @@ impl Watcher {
         }
     }
 
-    fn poll_loop(&self) {
+    fn poll_loop_inner(&self) {
         let mut failures = 0usize;
         while !self.stop.is_set() {
             let delay = if self.poll_once() {
@@ -239,8 +337,8 @@ impl Watcher {
             }
         }
     }
-
-    fn wants_fast_poll(&self) -> bool {
+    #[doc(hidden)]
+    pub fn wants_fast_poll(&self) -> bool {
         match &self.has_targets {
             None => true,
             Some(callback) => {
@@ -251,25 +349,40 @@ impl Watcher {
         }
     }
 
-    fn set_health(&self, healthy: bool) {
-        if healthy == self.healthy() {
-            return;
+    /// `_set_health(bool)`.
+    #[doc(hidden)]
+    pub fn set_health(&self, healthy: bool) {
+        self.set_health_value(Value::Bool(healthy));
+    }
+
+    /// `_set_health` de Python: guarda el valor tal cual (también `None`) y lo
+    /// avisa si cambió. Devuelve el `healthy` resultante.
+    #[doc(hidden)]
+    pub fn set_health_value(&self, healthy: Value) -> Value {
+        {
+            let mut current = lock(&self.healthy);
+            if py_eq(&healthy, &current) {
+                return current.clone();
+            }
+            *current = healthy.clone();
         }
-        self.healthy.store(healthy, Ordering::SeqCst);
         let Some(callback) = &self.on_health else {
-            return;
+            return healthy;
         };
         let callback = Arc::clone(callback);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| callback(healthy)));
+        let value = healthy.as_bool();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| callback(value)));
         if result.is_err() {
             tracing::debug!("Watcher: on_health falló: callback");
         }
+        healthy
     }
 
     /// Consulta `hc ls`; false si el resultado no es fiable.
-    fn poll_once(&self) -> bool {
+    #[doc(hidden)]
+    pub fn poll_once(&self) -> bool {
         let argv = vec![self.hc_path.clone(), "ls".to_string(), "--json".to_string()];
-        let Ok(result) = process::run(&argv, 10.0, false) else {
+        let Ok(result) = self.runtime.run(&argv, 10.0, false) else {
             return false;
         };
         if result.returncode != 0 {
@@ -295,7 +408,8 @@ impl Watcher {
         true
     }
 
-    fn compare(&self, terminals: &[Value]) {
+    #[doc(hidden)]
+    pub fn compare(&self, terminals: &[Value]) {
         let current = collect(terminals);
         self.store_live(&current);
         let mut previous = lock(&self.previous);

@@ -12,7 +12,7 @@ use crate::herdr::{Herdr, HerdrError};
 use super::text::compiled;
 
 /// Reloj y pausa de la sesión (Python usa `time.monotonic` y `time.sleep`).
-pub(crate) trait SessionClock: Send + Sync {
+pub trait SessionClock: Send + Sync {
     fn now(&self) -> f64;
     fn sleep(&self, seconds: f64);
 }

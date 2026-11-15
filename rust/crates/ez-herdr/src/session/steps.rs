@@ -9,7 +9,8 @@ use serde_json::{Map, Value};
 /// Un paso es un texto (se escribe y Enter) o un dict con `send`, `keys` o
 /// `cycle` y, opcionalmente, `expect`/`fail` (regex que se buscan en la
 /// pantalla), `message`, `optional` y `soft`.
-pub(crate) fn session_steps(cfg: &VoiceConfig, key: &str, kind: &str) -> Vec<Map<String, Value>> {
+#[doc(hidden)]
+pub fn session_steps(cfg: &VoiceConfig, key: &str, kind: &str) -> Vec<Map<String, Value>> {
     let profile = crate::driver::profile_for(cfg, key);
     let raw = profile
         .get("session_commands")

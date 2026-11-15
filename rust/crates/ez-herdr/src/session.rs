@@ -9,6 +9,7 @@
 //! El Python es un mixin sobre `Herdr`. En Rust la hospeda el trait
 //! [`SessionHost`] y las funciones de perfil viven en [`crate::driver`].
 
+mod flow;
 mod host;
 mod prompts;
 mod steps;
@@ -17,22 +18,20 @@ mod text;
 use std::sync::Arc;
 
 use ez_core::config::VoiceConfig;
-use ez_core::pyvalue::{
-    int_value, py_splitlines, py_strip, python_str, tail_chars, text_or_empty, truthy,
-};
+use ez_core::pyvalue::{int_value, py_splitlines, py_strip, tail_chars, text_or_empty, truthy};
 use serde_json::{Map, Value};
 
-use crate::herdr::{error_row, value_or_text, AgentLaunch};
+use crate::herdr::value_or_text;
 use host::RealClock;
 use prompts::{
     blocking_dialog, key_list, prompt_glyph, ps_prompt, screen_lines, search, step_text, truthy_key,
 };
 
 pub use crate::herdr::DEFAULT_SHELL;
-pub(crate) use host::SessionClock;
-pub use host::{fill, FillValues, SessionHost};
-pub(crate) use steps::session_steps;
-pub use text::{command_line, valid_keys, MAX_KEYS};
+pub use host::{fill, FillValues, SessionClock, SessionHost};
+#[doc(hidden)]
+pub use steps::session_steps;
+pub use text::{command_line, valid_keys, valid_keys_value, MAX_KEYS};
 
 pub const READY_TIMEOUT_S: f64 = 30.0;
 pub const POLL_S: f64 = 0.25;
@@ -62,8 +61,8 @@ impl<H: SessionHost> AgentSession<H> {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn with_clock(host: H, cfg: VoiceConfig, clock: Arc<dyn SessionClock>) -> Self {
+    #[doc(hidden)]
+    pub fn with_clock(host: H, cfg: VoiceConfig, clock: Arc<dyn SessionClock>) -> Self {
         Self { host, cfg, clock }
     }
 
@@ -82,7 +81,8 @@ impl<H: SessionHost> AgentSession<H> {
     /// None (fallo de lectura) es distinto de "" (pantalla vacía): quien
     /// confirma una entrega no puede tratar un fallo como «no hay nada
     /// pendiente».
-    fn try_screen(&self, address: &str) -> Option<String> {
+    #[doc(hidden)]
+    pub fn try_screen(&self, address: &str) -> Option<String> {
         let text = self
             .host
             .read_agent(address, Some(SCREEN_LINES as i64))
@@ -92,11 +92,13 @@ impl<H: SessionHost> AgentSession<H> {
         Some(lines[start..].join("\n"))
     }
 
-    fn screen(&self, address: &str) -> String {
+    #[doc(hidden)]
+    pub fn screen(&self, address: &str) -> String {
         self.try_screen(address).unwrap_or_default()
     }
 
-    fn screen_shows_program(&self, address: &str) -> bool {
+    #[doc(hidden)]
+    pub fn screen_shows_program(&self, address: &str) -> bool {
         let lines = screen_lines(&self.screen(address));
         lines.len() >= 3 && !lines.last().is_some_and(|last| ps_prompt().is_match(last))
     }
@@ -152,7 +154,8 @@ impl<H: SessionHost> AgentSession<H> {
     // -------------------------------------------------------------- pasos
 
     /// Comprueba `expect`/`fail` en pantalla; devuelve el fallo o "".
-    fn check_screen(
+    #[doc(hidden)]
+    pub fn check_screen(
         &self,
         address: &str,
         step: &Map<String, Value>,
@@ -183,7 +186,8 @@ impl<H: SessionHost> AgentSession<H> {
     }
 
     /// Pulsa una tecla hasta que la pantalla muestre `until`.
-    fn cycle(
+    #[doc(hidden)]
+    pub fn cycle(
         &self,
         address: &str,
         step: &Map<String, Value>,
@@ -226,7 +230,8 @@ impl<H: SessionHost> AgentSession<H> {
     }
 
     /// Ejecuta un paso; devuelve (lo aplicado, motivo del fallo o "").
-    fn run_step(
+    #[doc(hidden)]
+    pub fn run_step(
         &self,
         address: &str,
         step: &Map<String, Value>,
@@ -271,7 +276,8 @@ impl<H: SessionHost> AgentSession<H> {
     /// Devuelve (aplicado, avisos, fallo grave). Un paso `soft` solo avisa;
     /// uno `optional` avisa y salta el resto de ese ajuste; cualquier otro
     /// fallo detiene todo (y se pulsa Esc para no dejar un selector abierto).
-    fn apply_in_session(
+    #[doc(hidden)]
+    pub fn apply_in_session(
         &self,
         address: &str,
         key: &str,
@@ -322,7 +328,8 @@ impl<H: SessionHost> AgentSession<H> {
     }
 
     /// ¿Quedó la tarea escrita en la caja de entrada sin enviarse?
-    fn unsent_in_input(screen: &str, task: &str) -> bool {
+    #[doc(hidden)]
+    pub fn unsent_in_input(screen: &str, task: &str) -> bool {
         let lines = screen_lines(screen);
         let tail_lines = if lines.len() > 8 {
             &lines[lines.len() - 8..]
@@ -391,151 +398,6 @@ impl<H: SessionHost> AgentSession<H> {
             deadline = self.clock.now() + CONFIRM_WINDOW_S;
         }
     }
-
-    /// Pega la tarea y confirma que el agente la recibió.
-    pub fn send_task(&self, address: &str, task: &str) -> Map<String, Value> {
-        let mut sent = self
-            .host
-            .send_agent(address, task, true)
-            .unwrap_or_else(|error| error_row(error.message()));
-        if truthy_key(&sent, "ok") && !self.confirm_submitted(address, task) {
-            sent.insert(
-                "warning".to_string(),
-                Value::String("No pude confirmar que el agente recibió la tarea.".to_string()),
-            );
-        }
-        sent
-    }
-
-    /// Espera al agente, fija modelo/esfuerzo pendientes y pega la tarea.
-    pub fn finish_launch(
-        &self,
-        address: &str,
-        key: &str,
-        launch: &AgentLaunch,
-        task: &str,
-    ) -> Map<String, Value> {
-        if !self.wait_ready(address, READY_TIMEOUT_S) {
-            return error_row(format!(
-                "Abrí la terminal {address}, pero no vi que {key} arrancara; no le \
-                 envié nada. Revísala con action=read."
-            ));
-        }
-        if self.blocking_dialog(address) {
-            return error_row(format!(
-                "{key} está pidiendo confirmar algo en la terminal {address} (por \
-                 ejemplo, confiar en la carpeta). No pulso Enter por ti: confírmalo \
-                 tú y vuelve a pedirme la tarea."
-            ));
-        }
-        let values = FillValues::from_pending(&launch.pending);
-        let (applied, mut warnings, fatal) = self.apply_in_session(address, key, &values);
-        if !fatal.is_empty() {
-            let mut result = Map::new();
-            result.insert("ok".to_string(), Value::Bool(false));
-            result.insert("applied".to_string(), strings(applied.clone()));
-            result.insert(
-                "error".to_string(),
-                Value::String(format!(
-                    "No pude fijar el {fatal}. Dejé {key} abierto en {address} sin \
-                     enviar la tarea; revísalo con action=read."
-                )),
-            );
-            return result;
-        }
-        let mut task_sent = false;
-        if !task.is_empty() {
-            let sent = self.send_task(address, task);
-            task_sent = truthy_key(&sent, "ok");
-            if !task_sent {
-                warnings.push(format!(
-                    "No pude enviar la tarea: {}",
-                    python_str(sent.get("error").unwrap_or(&Value::Null))
-                ));
-            } else if let Some(warning) = sent.get("warning").filter(|value| truthy(value)) {
-                warnings.push(python_str(warning));
-            }
-        }
-        let mut result = Map::new();
-        result.insert("ok".to_string(), Value::Bool(true));
-        result.insert("applied".to_string(), strings(applied.clone()));
-        let all: Vec<String> = launch.warnings.iter().cloned().chain(warnings).collect();
-        result.insert("warnings".to_string(), strings(all));
-        result.insert("task_sent".to_string(), Value::Bool(task_sent));
-        result
-    }
-
-    /// Cambia modelo/esfuerzo de un agente ya abierto con sus comandos.
-    pub fn configure_agent(
-        &self,
-        address: &str,
-        model: Option<&str>,
-        effort: Option<&str>,
-    ) -> Map<String, Value> {
-        let values = FillValues::new(
-            py_strip(model.unwrap_or("")),
-            py_strip(effort.unwrap_or("")),
-        );
-        if values.model.is_empty() && values.effort.is_empty() {
-            return error_row("Indica el modelo o el esfuerzo.");
-        }
-        let info = match self.host.get_agent(address) {
-            // DECISION: el Python dejaría escapar la excepción; aquí un fallo
-            // del host es un resultado más (`ok: false`).
-            Ok(info) => info,
-            Err(error) => return error_row(error.message()),
-        };
-        let raw = {
-            let agent = value_or_text(info.get("agent"), "");
-            if agent.is_empty() {
-                value_or_text(info.get("app"), "")
-            } else {
-                agent
-            }
-        };
-        let Some(key) = crate::driver::resolve_agent_in(self.config(), &raw) else {
-            let name = if raw.is_empty() {
-                "sin nombre".to_string()
-            } else {
-                raw
-            };
-            return error_row(format!(
-                "No sé qué agente es {address} ({name}); no puedo cambiarle el modelo."
-            ));
-        };
-        for (kind, label) in [("model", "modelo"), ("effort", "esfuerzo")] {
-            let value = values.get(kind);
-            if !value.is_empty() {
-                let problem = crate::driver::check_value(self.config(), &key, label, value);
-                if !problem.is_empty() {
-                    return error_row(problem);
-                }
-            }
-        }
-        let (applied, warnings, fatal) = self.apply_in_session(address, &key, &values);
-        if !fatal.is_empty() {
-            return error_row(format!("No pude fijar el {fatal}."));
-        }
-        if applied.is_empty() {
-            let message = if warnings.is_empty() {
-                "Nada que aplicar.".to_string()
-            } else {
-                warnings.join(" ")
-            };
-            return error_row(message);
-        }
-        let mut result = Map::new();
-        result.insert("ok".to_string(), Value::Bool(true));
-        result.insert("address".to_string(), Value::String(address.to_string()));
-        result.insert("agent".to_string(), Value::String(key));
-        result.insert("applied".to_string(), strings(applied.clone()));
-        result.insert("warnings".to_string(), strings(warnings));
-        result
-    }
-}
-
-fn strings(items: impl IntoIterator<Item = String>) -> Value {
-    Value::Array(items.into_iter().map(Value::String).collect())
 }
 
 /// `_SHELLS` del Python. «cmd» va con escape para no dejar en el código el
@@ -552,7 +414,8 @@ const SHELLS: [&str; 8] = [
 ];
 
 /// `_is_shell`: vacío o una shell conocida.
-fn is_shell(name: &str) -> bool {
+#[doc(hidden)]
+pub fn is_shell(name: &str) -> bool {
     let plain = py_strip(name).to_lowercase();
     let plain = [".exe", ".cmd", ".bat"]
         .iter()
