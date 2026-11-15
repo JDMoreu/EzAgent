@@ -14,7 +14,7 @@ mod live;
 
 use self::live::Live;
 
-use super::{device_at, input_config, pcm_rms, pick_input_device, to_mono_i16, CaptureError};
+use super::{device_at, input_config, pcm_rms, pick_input_device_named, to_mono_i16, CaptureError};
 use crate::barge_in::{BargeInDetector, BARGE_IN_SECS};
 use crate::segmenter::{EndProbe, Segmenter, SegmenterConfig};
 use crate::CHUNK_SECS;
@@ -200,7 +200,18 @@ enum Source {
 
 impl MicCapture {
     pub fn new(device_index: Option<usize>, settings: VadSettings) -> Self {
-        let device_index = pick_input_device(device_index);
+        Self::new_named(device_index, None, settings)
+    }
+
+    /// Como [`Self::new`], pero con el nombre guardado del micrófono: manda
+    /// sobre el índice, que cambia de dueño cuando la enumeración cambia de
+    /// orden (o cuando el `voice.json` lo escribió la app de Python).
+    pub fn new_named(
+        device_index: Option<usize>,
+        device_name: Option<&str>,
+        settings: VadSettings,
+    ) -> Self {
+        let device_index = pick_input_device_named(device_index, device_name);
         let mut name = "ninguno".to_string();
         let mut rate = 16_000;
         if let Some(index) = device_index {

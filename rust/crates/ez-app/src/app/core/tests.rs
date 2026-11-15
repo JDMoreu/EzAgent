@@ -497,3 +497,24 @@ fn start_asks_the_hooks_and_skips_threads_in_doubles() {
     assert!(fixture.app.inner.runtime.workers.lock().is_empty());
     fixture.app.shutdown();
 }
+
+#[test]
+fn vad_line_matches_the_python_text() {
+    let mut cfg = VoiceConfig::default();
+    cfg.set("silence_secs", json!(1.3));
+    cfg.set("min_rms", json!(0.014125));
+    cfg.set("pre_roll_secs", json!(0.6));
+    cfg.set("barge_in", json!(true));
+    assert_eq!(
+        super::init::vad_line(&cfg, true),
+        "VAD: silencio=1.3s, fin de turno a 0.35s si la frase está completa, \
+         min_rms=0.014125, pre_roll=0.6s, barge_in=True"
+    );
+    // Sin Smart Turn y con la interrupción apagada, como el Python.
+    cfg.set("barge_in", json!(false));
+    assert_eq!(
+        super::init::vad_line(&cfg, false),
+        "VAD: silencio=1.3s, sin Smart Turn, min_rms=0.014125, pre_roll=0.6s, \
+         barge_in=False"
+    );
+}
