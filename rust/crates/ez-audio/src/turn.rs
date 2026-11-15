@@ -4,11 +4,11 @@
 //! VAD por energía solo sabe si hay silencio; Smart Turn mira los últimos 8 s de
 //! audio y estima la probabilidad de que la frase haya acabado.
 //!
-//! La inferencia ONNX (`ort`) todavía no está cableada en este crate:
-//! [`TurnModel`] es la costura y [`UnavailableTurnModel`] el modelo que devuelve
-//! «no disponible» cuando no hay ninguno cargado.
+//! La inferencia ONNX corre en [`OrtTurnModel`], sobre el hilo `ezagent-turn`;
+//! [`UnavailableTurnModel`] queda para pruebas y para cuando no hay modelo.
 
 mod features;
+mod session;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,6 +24,7 @@ pub use features::{
     hann_window, hz_to_mel, log_mel, mel_filters, mel_to_hz, prepare, TurnFeatures, HOP, N_FFT,
     N_FRAMES, N_MELS, N_SAMPLES, SAMPLE_RATE, WINDOW_SECS,
 };
+pub use session::{onnxruntime_path, OrtTurnModel};
 
 pub const ASSET_ID: &str = "smart-turn-v3.2-cpu";
 
@@ -46,17 +47,29 @@ impl TurnModel for UnavailableTurnModel {
     }
 }
 
-/// Ruta del modelo; lo descarga (con hash verificado) si falta.
-pub fn resolve_model_path() -> Result<PathBuf, String> {
-    use ez_core::downloads::{download, is_installed, load_manifest, DownloadOptions};
+/// Ruta del modelo si ya está instalado, sin descargarlo (como `_model_path`
+/// del generador de fixtures).
+pub fn installed_model_path() -> Result<Option<PathBuf>, String> {
+    use ez_core::downloads::{asset_path, is_installed, load_manifest};
 
     let assets = load_manifest().map_err(|error| error.to_string())?;
     let asset = assets
         .get(ASSET_ID)
         .ok_or_else(|| format!("KeyError: '{ASSET_ID}'"))?;
-    if is_installed(asset, None) {
-        return Ok(ez_core::downloads::asset_path(asset, None));
+    Ok(is_installed(asset, None).then(|| asset_path(asset, None)))
+}
+
+/// Ruta del modelo; lo descarga (con hash verificado) si falta.
+pub fn resolve_model_path() -> Result<PathBuf, String> {
+    use ez_core::downloads::{download, load_manifest, DownloadOptions};
+
+    if let Some(path) = installed_model_path()? {
+        return Ok(path);
     }
+    let assets = load_manifest().map_err(|error| error.to_string())?;
+    let asset = assets
+        .get(ASSET_ID)
+        .ok_or_else(|| format!("KeyError: '{ASSET_ID}'"))?;
     download(asset, &DownloadOptions::default(), None).map_err(|error| error.to_string())
 }
 
@@ -202,6 +215,9 @@ fn run_worker(
     let Some(model) = model else {
         return;
     };
+    // El Python guarda la sesión antes de precalentar; si el precalentado
+    // falla, `probability` sigue funcionando aunque `ready` nunca se encienda.
+    *slot.lock() = Some(Arc::clone(&model));
     if warmup {
         let silence = vec![0_u8; SAMPLE_RATE as usize * 2];
         let Ok(features) = prepare(&silence, SAMPLE_RATE as i32) else {
@@ -212,7 +228,6 @@ fn run_worker(
             return;
         }
     }
-    *slot.lock() = Some(Arc::clone(&model));
     ready.store(true, Ordering::SeqCst);
     while let Ok(job) = receiver.recv() {
         if cancel.load(Ordering::SeqCst) {
@@ -227,18 +242,22 @@ fn run_worker(
 }
 
 fn load_model(model_path: &str) -> Option<Arc<dyn TurnModel>> {
-    // DECISION: sin backend ONNX no se descarga el modelo (el Python sí lo haría
-    // antes de crear la sesión); bajar 8,7 MB para nada sería peor.
-    let name = if model_path.is_empty() {
-        ASSET_ID
+    match open_model(model_path) {
+        Ok(model) => Some(Arc::new(model)),
+        Err(error) => {
+            tracing::warn!("Smart Turn no disponible; uso solo el silencio: {error}");
+            None
+        }
+    }
+}
+
+fn open_model(model_path: &str) -> Result<OrtTurnModel, String> {
+    let path = if model_path.is_empty() {
+        resolve_model_path()?
     } else {
-        model_path
+        PathBuf::from(model_path)
     };
-    tracing::warn!(
-        "Smart Turn no disponible; uso solo el silencio: no hay backend de inferencia ONNX \
-         (modelo: {name})"
-    );
-    None
+    OrtTurnModel::open(&path)
 }
 
 #[cfg(test)]
@@ -285,8 +304,9 @@ mod tests {
     }
 
     #[test]
-    fn without_backend_it_is_never_ready() {
-        let turn = SmartTurn::new(0.5, "");
+    fn missing_model_is_never_ready() {
+        let missing = std::env::temp_dir().join("ezagent-turn-sin-modelo.onnx");
+        let turn = SmartTurn::new(0.5, &missing.to_string_lossy());
         assert!(!turn.ready());
         assert!(turn.submit(&[0, 0], SAMPLE_RATE).is_none());
         assert_eq!(
