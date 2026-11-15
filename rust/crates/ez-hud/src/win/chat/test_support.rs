@@ -30,6 +30,9 @@ pub struct FakeUi {
     pub form_hidden: Mutex<bool>,
     pub chat_open: Mutex<bool>,
     pub view: Mutex<Option<SendView>>,
+    /// Seconds `make_view` sleeps: stands in for a real history that takes
+    /// longer to paint than the morph.
+    pub slow_view: Mutex<f64>,
 }
 
 impl Default for FakeUi {
@@ -51,6 +54,7 @@ impl Default for FakeUi {
             form_hidden: Mutex::new(false),
             chat_open: Mutex::new(false),
             view: Mutex::new(None),
+            slow_view: Mutex::new(0.0),
         }
     }
 }
@@ -131,6 +135,10 @@ impl ChatUi for FakeUi {
     }
 
     fn make_view(&self) -> Option<Box<ChatView>> {
+        let slow = *self.slow_view.lock();
+        if slow > 0.0 {
+            std::thread::sleep(std::time::Duration::from_secs_f64(slow));
+        }
         self.view.lock().take().map(SendView::into_inner)
     }
 }

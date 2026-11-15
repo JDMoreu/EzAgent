@@ -181,3 +181,49 @@ fn a_shared_ui_can_be_reused_for_several_scenes() {
     );
     assert_eq!((frame.width, frame.height), (60, 60));
 }
+
+#[test]
+fn the_closing_frames_reuse_the_open_content_layer() {
+    let ui = fake_ui();
+    let mut view = sample_view();
+    let window = WindowRect {
+        x: 0,
+        y: 0,
+        width: 120,
+        height: 120,
+    };
+    let mut content = ContentCache::default();
+    // Open frame: the caret blink is baked into the layer (blink = 1 at 0,6 s).
+    let mut open = Scene {
+        ui: ui.as_ref(),
+        view: &mut view,
+        anim: AnimState::Open,
+        form: (0.0, 0.0, 0.0, 0.0),
+        act: 0.0,
+        now: 0.6,
+    };
+    compose(&mut open, 1.0, false, window, &mut content);
+    let painted = content
+        .0
+        .as_ref()
+        .map(|(sig, _)| sig.clone())
+        .expect("la capa de contenido del panel abierto");
+    // Closing no longer ticks: the signature differs and a rebuild would cost
+    // the whole history again, eating the 0,20 s shrink.
+    let later = 0.7;
+    assert_ne!(signature(&mut view, later, false), painted);
+    let mut closing = Scene {
+        ui: ui.as_ref(),
+        view: &mut view,
+        anim: AnimState::Closing,
+        form: (0.0, 0.0, 0.0, 0.0),
+        act: 0.0,
+        now: later,
+    };
+    compose(&mut closing, 0.9, false, window, &mut content);
+    assert_eq!(
+        content.0.as_ref().map(|(sig, _)| sig.clone()),
+        Some(painted),
+        "el cierre volvió a pintar el contenido"
+    );
+}

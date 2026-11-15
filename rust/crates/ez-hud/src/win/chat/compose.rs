@@ -296,6 +296,7 @@ pub(crate) fn compose(
             lift,
             content,
             scene.anim == AnimState::Open,
+            scene.anim == AnimState::Closing,
         );
         if live {
             paint_live(
@@ -412,9 +413,14 @@ fn paint_content(
     lift: i32,
     content: &mut ContentCache,
     ticking: bool,
+    reuse: bool,
 ) {
     let sig = signature(scene.view, scene.now, ticking);
-    if content.0.as_ref().is_none_or(|(cached, _)| cached != &sig) {
+    // Al cerrar, la capa de contenido es la que dejó el panel abierto (solo
+    // cambia la geometría): recalcularla con un historial largo costaba más que
+    // los 0,20 s del cierre y se comía todos sus cuadros intermedios.
+    let miss = content.0.as_ref().is_none_or(|(cached, _)| cached != &sig);
+    if miss && !(reuse && content.0.is_some()) {
         content.0 = Some((sig, scene.view.render(scene.now)));
     }
     let layer = match content.0.as_ref() {

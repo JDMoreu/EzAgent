@@ -39,8 +39,7 @@ impl ChatPanel {
         let Some(anchor) = self.ui.form_anchor() else {
             return false;
         };
-        let now = monotonic();
-        if self.resume_closing(now) {
+        if self.resume_closing(monotonic()) {
             return true;
         }
         {
@@ -63,14 +62,22 @@ impl ChatPanel {
         let (x, y, width, height) = window_rect(panel, self.margin());
         let window = Arc::new(ChatWindow::new(self, x, y, width, height));
         let mut view = view;
-        self.prepare_view(&mut view, panel, now);
-        self.install_view(SendView(view), form, now);
+        self.prepare_view(&mut view, panel);
         *self.window.lock() = Some(Arc::clone(&window));
         self.ui.set_chat_open(true);
         if !window.start() {
             self.teardown(true);
             return false;
         }
+        // The morph clock starts here, not before: painting the history and
+        // creating the native window can take longer than MORPH_SECS with a
+        // real conversation (measured: +0,42 s and +0,10 s), and the first
+        // painted frame was already the open panel. Python sets
+        // `_Anim("opening", time.monotonic(), 0.0)` after `view.render` and
+        // after building the window for the same reason.
+        let now = monotonic();
+        self.install_view(SendView(view), form, now);
+        window.wake();
         window.show();
         window.set_keyboard_enabled(true);
         true
@@ -95,7 +102,7 @@ impl ChatPanel {
     }
 
     /// Configures and pre-paints the view before the morph starts.
-    fn prepare_view(&self, view: &mut ChatView, panel: crate::geometry::Rect, now: f64) {
+    fn prepare_view(&self, view: &mut ChatView, panel: crate::geometry::Rect) {
         self.configure_view(
             view,
             (panel.2 - panel.0) / self.ui.scale(),
@@ -103,7 +110,7 @@ impl ChatPanel {
         );
         // Messages are painted before the morph: the first content frame cost
         // ~100 ms in Python and froze the shape just as it started appearing.
-        view.render(now);
+        view.render(monotonic());
     }
 
     fn install_view(&self, view: SendView, form: crate::geometry::Rect, now: f64) {
@@ -155,6 +162,9 @@ impl ChatPanel {
         self.ui.set_form_hidden(false);
         if let Some(window) = self.window.lock().as_ref() {
             window.set_keyboard_enabled(false);
+            // The paint loop may be asleep on the 30 fps interval of the open
+            // panel: wake it so the shrink starts with the panel still whole.
+            window.wake();
         }
     }
 

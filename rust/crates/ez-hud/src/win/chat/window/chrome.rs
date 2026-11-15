@@ -157,6 +157,12 @@ impl ChatWindow {
         self.paint_cv.notify_all();
     }
 
+    /// Wakes the paint loop (a state change asks for a frame now, not on the
+    /// next 30 fps tick).
+    pub(crate) fn wake(&self) {
+        self.paint_cv.notify_all();
+    }
+
     // ------------------------------------------------------------- input
     pub fn on_pointer_down(&self, x: i32, y: i32) -> bool {
         self.panel
@@ -238,7 +244,6 @@ impl ChatWindow {
             if state.stop {
                 break;
             }
-            let interval = state.interval;
             drop(state);
             self.drain_events();
             // `paint_due`: a lazy-drag window (the chat) skips painting while dragged.
@@ -246,7 +251,9 @@ impl ChatWindow {
                 let status = self.window.state.lock();
                 self.window.lazy_drag && status.dragging && status.drag_moved
             };
+            let mut painted = 0.0;
             if self.window.is_visible() && !dragging {
+                let started = ez_core::metrics::monotonic();
                 // Python catches render exceptions so the window stays alive.
                 match catch_unwind(AssertUnwindSafe(|| self.render())) {
                     Ok(frame) => {
@@ -259,13 +266,20 @@ impl ChatWindow {
                     }
                     Err(_) => tracing::warn!("el render del chat falló"),
                 }
+                painted = ez_core::metrics::monotonic() - started;
             }
             state = self.paint.lock();
             if state.stop {
                 break;
             }
+            // The interval of THIS frame: the panel just set 60 fps for the
+            // morph, and waiting on the previous one lost the first frames.
+            // `wait_delay` discounts the time the frame took, so 60 fps means
+            // 60 frames per second and not 50.
+            let interval = state.interval;
+            let wait = (interval - painted).max(0.001);
             self.paint_cv
-                .wait_for(&mut state, Duration::from_secs_f64(interval));
+                .wait_for(&mut state, Duration::from_secs_f64(wait));
         }
     }
 

@@ -349,6 +349,15 @@ impl ChatPanel {
         self.refresh_view(view, pal_seen, base, content);
         let now = monotonic();
         let p = step(anim, now, self.ui.reduced(), finished);
+        // La traza de cada cuadro del morph: sin ella, un ciclo de vida roto y
+        // una composición lenta se ven igual desde fuera.
+        tracing::debug!(
+            target: "ezagent::hud::chat",
+            p,
+            state = ?anim.state,
+            finished = *finished,
+            "cuadro del chat"
+        );
         update_live(self.ui.as_ref(), view, act, last, now);
         if matches!(anim.state, AnimState::Opening | AnimState::Open) {
             self.ui.set_form_hidden(true);
