@@ -417,10 +417,14 @@ pub(super) struct Harness {
     pub(super) host: Arc<RecordingHost>,
     pub(super) menus: Arc<FakeMenuFactory>,
     pub(super) chat: Arc<FakeChat>,
+    /// La barra publica la paleta global (`set_theme`): mientras viva el
+    /// arnés, ninguna otra prueba la cambia (`theme::tests` corre en paralelo).
+    _palette: std::sync::MutexGuard<'static, ()>,
 }
 
 impl Harness {
     pub(super) fn new() -> Self {
+        let palette = crate::tokens::test_guard();
         let windows = Arc::new(FakeWindows::default());
         let config = Arc::new(RecordingConfig::default());
         let host = Arc::new(RecordingHost::default());
@@ -444,6 +448,7 @@ impl Harness {
             host,
             menus,
             chat,
+            _palette: palette,
         }
     }
 

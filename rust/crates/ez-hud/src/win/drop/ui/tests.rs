@@ -319,7 +319,7 @@ fn chat_is_optional_but_respects_asking_and_mute() {
 
 #[test]
 fn theme_custom_colors_and_chat_surface() {
-    let _guard = crate::tokens::test_guard();
+    // El arnés ya retiene el candado de la paleta.
     let harness = Harness::new();
     harness.ui.set_theme("light");
     assert_eq!(harness.ui.theme_name(), "light");
