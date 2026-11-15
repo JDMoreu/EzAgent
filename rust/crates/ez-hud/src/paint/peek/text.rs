@@ -66,6 +66,27 @@ pub fn fit(text: &str, style: FontStyle, max_w: f64, scale: f64) -> String {
 }
 
 /// Alto de la tarjeta con `rows` filas y, si hay más, la línea «y N más».
+/// Fila bajo un punto de la ventana (px físicos), o `None`.
+pub fn row_at(rows: usize, x: f64, y: f64, scale: f64) -> Option<usize> {
+    let lx = x / scale - super::MARGIN;
+    let ly = y / scale - super::MARGIN - super::PAD_Y;
+    if !(0.0..=super::PEEK_W).contains(&lx) || ly < 0.0 {
+        return None;
+    }
+    let index = (ly / super::ROW_H).floor() as usize;
+    (index < rows).then_some(index)
+}
+
+/// Clave de la fila cuya × está bajo el punto, o `None`.
+pub fn dismiss_at(items: &[super::PeekItem], x: f64, y: f64, scale: f64) -> Option<String> {
+    let index = row_at(items.len(), x, y, scale)?;
+    if !super::dismissible(&items[index]) {
+        return None;
+    }
+    let lx = x / scale - super::MARGIN;
+    (lx >= super::PEEK_W - super::PAD_X - super::DISMISS_W + 8.0).then(|| items[index].key.clone())
+}
+
 pub fn card_height(rows: usize, more: bool) -> f64 {
     PAD_Y * 2.0 + rows as f64 * ROW_H + if more { MORE_H } else { 0.0 }
 }
