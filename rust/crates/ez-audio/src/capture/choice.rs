@@ -30,9 +30,9 @@ pub struct ChosenMic {
 // DECISION: paridad con Python añadiendo el nombre; sin nombre, la elección es
 // exactamente `pick_input_device`.
 pub fn choose_mic(preferred: Option<usize>, name: Option<&str>) -> ChosenMic {
-    let all = super::list_portaudio_devices();
-    let inputs = input_devices(&all);
     let host = host_devices();
+    let all = super::portaudio_devices_with(&host);
+    let inputs = input_devices(&all);
     let default_cpal = default_cpal_input(&host);
     let hint = name
         .and_then(|name| find_by_name(&inputs, name))

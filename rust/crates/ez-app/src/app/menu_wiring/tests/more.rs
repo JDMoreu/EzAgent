@@ -22,6 +22,14 @@ fn apply_settings_changes_the_input_device() {
     let saved = fixture.app.config();
     let stored = saved.get("input_device_index").and_then(Value::as_i64);
     assert_eq!(stored, mic_index.map(|index| index as i64));
+    // El nombre viaja con el índice: es lo que identifica el mismo micrófono
+    // en la app de Python, que solo entiende el índice de PortAudio.
+    let mic_name = fixture.app.inner.audio.mic.lock().device_name().to_string();
+    let written = fixture.config_json();
+    assert_eq!(
+        written.get("input_device_name").and_then(Value::as_str),
+        Some(mic_name.as_str())
+    );
     assert!(fixture.config_file.exists());
 }
 

@@ -207,7 +207,11 @@ pub(crate) fn host_devices() -> Vec<HostDevice> {
 
 /// Enumera el bloque de MME de PortAudio, que es el que numera `voice.json`.
 pub fn list_portaudio_devices() -> Vec<PortAudioDevice> {
-    let host = host_devices();
+    portaudio_devices_with(&host_devices())
+}
+
+/// Como [`list_portaudio_devices`], con los dispositivos de cpal ya enumerados.
+pub(crate) fn portaudio_devices_with(host: &[HostDevice]) -> Vec<PortAudioDevice> {
     portaudio::list_devices(|name| {
         host.iter()
             .find(|device| portaudio::names_match(&device.name, name))
