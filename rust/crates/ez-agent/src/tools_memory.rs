@@ -58,7 +58,8 @@ fn safe_ask(ask: &ConfirmCallback, summary: &str, strong: bool) -> bool {
 
 // DECISION: las herramientas que esperan confirmación reciben más timeout que
 // el resto para no cortar mientras el usuario responde.
-fn tool_timeout(config: &AgentConfig) -> f64 {
+/// `_tool_timeout`: confirmación más 10 s, con un mínimo de 30 s.
+pub fn tool_timeout(config: &AgentConfig) -> f64 {
     (config.general.confirm_timeout_s + 10.0).max(30.0)
 }
 

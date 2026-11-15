@@ -237,6 +237,11 @@ impl Journal {
         Ok(outcomes)
     }
 
+    /// Entradas válidas del diario, de la más reciente a la más antigua.
+    pub fn load_entries_value(&self) -> Vec<Value> {
+        self.load_entries().into_iter().map(Value::Object).collect()
+    }
+
     fn load_entries(&self) -> Vec<Map<String, Value>> {
         let Ok(listing) = std::fs::read_dir(&self.dir) else {
             return Vec::new();
@@ -261,6 +266,12 @@ impl Journal {
             }
         }
         entries
+    }
+
+    /// `_write_entry` con un valor JSON crudo (para pruebas y herramientas).
+    pub fn write_entry_value(&self, entry: &Value) -> Result<(), String> {
+        let map = entry.as_object().cloned().unwrap_or_default();
+        self.write_entry(&map)
     }
 
     fn write_entry(&self, entry: &Map<String, Value>) -> Result<(), String> {

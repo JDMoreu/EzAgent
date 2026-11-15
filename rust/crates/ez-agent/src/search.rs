@@ -9,6 +9,7 @@ use std::time::Duration;
 use ez_core::pyvalue::py_strip;
 use reqwest::Url;
 use scraper::{Html, Selector};
+use serde_json::{json, Value};
 
 /// Resultado normalizado de una búsqueda.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -58,6 +59,20 @@ impl std::error::Error for SearchError {}
 /// Contrato mínimo de un proveedor de búsqueda.
 pub trait SearchProvider: Send + Sync {
     fn search(&self, query: &str, max_results: i64) -> Result<Vec<SearchResult>, SearchError>;
+
+    /// Datos crudos del proveedor, como el `Any` que devuelve el Python.
+    fn search_raw(&self, query: &str, max_results: i64) -> Result<Value, SearchError> {
+        self.search(query, max_results).map(|results| {
+            json!(results
+                .iter()
+                .map(|item| json!({
+                    "title": item.title,
+                    "url": item.url,
+                    "snippet": item.snippet,
+                }))
+                .collect::<Vec<_>>())
+        })
+    }
 }
 
 /// Clase estable del fallo para auditoría y para `ToolResult.error_kind`.
@@ -130,6 +145,25 @@ impl DdgsSearchProvider {
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
         self
+    }
+
+    /// Búsqueda con los argumentos crudos del orquestador (`Any` en Python).
+    pub fn search_json(
+        &self,
+        query: &Value,
+        max_results: &Value,
+    ) -> Result<Vec<SearchResult>, SearchError> {
+        let Value::String(query) = query else {
+            return Err(SearchError::new(
+                "La consulta de búsqueda debe ser una cadena de texto.",
+            ));
+        };
+        let Some(max_results) = max_results.as_i64() else {
+            return Err(SearchError::new(
+                "El número de resultados debe estar entre 1 y 10.",
+            ));
+        };
+        self.search(query, max_results)
     }
 
     fn endpoint(&self) -> String {

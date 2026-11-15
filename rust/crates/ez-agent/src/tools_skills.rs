@@ -19,7 +19,7 @@ use serde_json::{json, Map, Value};
 
 use crate::registry::{ToolInfo, ToolResult, ToolSpec};
 use crate::skills::{SkillError, SkillLibrary};
-use crate::tools_d::{clean_environment, run_captured, RunError};
+use crate::tools_d::{clean_environment, run_captured, Completed, RunError};
 
 pub const SCRIPT_TIMEOUT_S: f64 = 30.0;
 pub const MAX_SCRIPT_OUTPUT_CHARS: usize = 8000;
@@ -82,8 +82,66 @@ fn run_schema() -> Value {
     })
 }
 
+/// Llamada al intérprete tal como la ve un ejecutor inyectado.
+pub struct ScriptCall<'a> {
+    pub argv: &'a [String],
+    pub cwd: &'a Path,
+    pub env: &'a [(String, String)],
+    pub timeout_s: f64,
+}
+
+/// Ejecutor de scripts inyectable (el `subprocess.run` sustituido del oráculo).
+pub trait ScriptRunner: Send + Sync {
+    fn run(&self, call: &ScriptCall<'_>) -> Result<Completed, RunError>;
+}
+
+/// Escritor de aprobaciones inyectable.
+pub type ApprovalsWriter =
+    Arc<dyn Fn(&Path, &Map<String, Value>) -> std::io::Result<()> + Send + Sync>;
+
+/// Costuras de las herramientas de skills; vacías en producción.
+#[derive(Clone, Default)]
+pub struct SkillHooks {
+    /// `Some(None)` reproduce «no hay intérprete».
+    pub interpreter: Option<Option<PathBuf>>,
+    pub runner: Option<Arc<dyn ScriptRunner>>,
+    pub write_approvals: Option<ApprovalsWriter>,
+}
+
+impl SkillHooks {
+    fn interpreter(&self) -> Option<PathBuf> {
+        match &self.interpreter {
+            Some(value) => value.clone(),
+            None => python_interpreter(),
+        }
+    }
+
+    fn run(&self, call: &ScriptCall<'_>) -> Result<Completed, RunError> {
+        match &self.runner {
+            Some(runner) => runner.run(call),
+            None => run_captured(call.argv, call.cwd, call.env, call.timeout_s),
+        }
+    }
+
+    fn write_approvals(&self, path: &Path, values: &Map<String, Value>) -> std::io::Result<()> {
+        match &self.write_approvals {
+            Some(writer) => writer(path, values),
+            None => write_approvals(path, values),
+        }
+    }
+}
+
 /// Las dos herramientas de skills.
 pub fn build_skill_tools(config: &AgentConfig, library: Arc<SkillLibrary>) -> Vec<ToolSpec> {
+    build_skill_tools_with_hooks(config, library, &SkillHooks::default())
+}
+
+/// Igual que [`build_skill_tools`], con costuras de ejecución para las pruebas.
+pub fn build_skill_tools_with_hooks(
+    config: &AgentConfig,
+    library: Arc<SkillLibrary>,
+    hooks: &SkillHooks,
+) -> Vec<ToolSpec> {
     let load_library = Arc::clone(&library);
     let mut load = ToolSpec::new(
         "load_skill",
@@ -110,6 +168,7 @@ pub fn build_skill_tools(config: &AgentConfig, library: Arc<SkillLibrary>) -> Ve
         app_dir: config.app_dir.clone(),
         workspace: config.workspace.clone(),
         library,
+        hooks: hooks.clone(),
     });
     let mut run = ToolSpec::new(
         "run_skill_script",
@@ -183,6 +242,7 @@ struct RunContext {
     app_dir: PathBuf,
     workspace: PathBuf,
     library: Arc<SkillLibrary>,
+    hooks: SkillHooks,
 }
 
 fn script_error(message: &str) -> SkillError {
@@ -375,13 +435,13 @@ fn run_handler(ctx: &RunContext, args: &Map<String, Value>) -> ToolResult {
         // DECISION (del Python): la política ya pidió confirmación para esta
         // ejecución; ese consentimiento aprueba el hash actual.
         approvals.insert(skill.name.clone(), json!(folder_hash));
-        if let Err(error) = write_approvals(&approvals_path, &approvals) {
+        if let Err(error) = ctx.hooks.write_approvals(&approvals_path, &approvals) {
             return ToolResult::err(format!(
                 "No se pudo guardar la aprobación del script; no se ejecuta: {error}"
             ));
         }
     }
-    let Some(interpreter) = python_interpreter() else {
+    let Some(interpreter) = ctx.hooks.interpreter() else {
         return ToolResult::err(
             "No encuentro un intérprete de Python para ejecutar el script. Instala Python o usa la versión de código fuente de EzAgent.",
         );
@@ -391,12 +451,14 @@ fn run_handler(ctx: &RunContext, args: &Map<String, Value>) -> ToolResult {
         target.display().to_string(),
     ];
     argv.extend(raw_args);
-    match run_captured(
-        &argv,
-        &ctx.workspace,
-        &clean_environment(),
-        SCRIPT_TIMEOUT_S,
-    ) {
+    let environment = clean_environment();
+    let call = ScriptCall {
+        argv: &argv,
+        cwd: &ctx.workspace,
+        env: &environment,
+        timeout_s: SCRIPT_TIMEOUT_S,
+    };
+    match ctx.hooks.run(&call) {
         Err(RunError::Timeout { stdout }) => ToolResult {
             ok: false,
             data: json!({

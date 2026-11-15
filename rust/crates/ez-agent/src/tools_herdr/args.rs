@@ -9,6 +9,8 @@ use std::sync::{Arc, Mutex};
 use ez_core::config::{python_str, truthy};
 use ez_core::pyvalue::{py_strip, text_or_empty};
 use ez_herdr::herdr::HerdrError;
+
+use super::port::PortError;
 use serde_json::{Map, Value};
 
 mod parameters;
@@ -222,6 +224,7 @@ impl std::fmt::Display for ArgumentError {
 pub enum DelegateError {
     Argument(ArgumentError),
     Herdr(HerdrError),
+    Unexpected(String),
 }
 
 impl From<ArgumentError> for DelegateError {
@@ -236,6 +239,15 @@ impl From<HerdrError> for DelegateError {
     }
 }
 
+impl From<PortError> for DelegateError {
+    fn from(error: PortError) -> Self {
+        match error {
+            PortError::Herdr(error) => Self::Herdr(error),
+            PortError::Unexpected(message) => Self::Unexpected(message),
+        }
+    }
+}
+
 impl DelegateError {
     /// DECISION: en Rust no hay excepciones genéricas; la rama
     /// «Error inesperado…» del Python es inalcanzable y se omite.
@@ -245,6 +257,9 @@ impl DelegateError {
             Self::Herdr(error) => {
                 crate::registry::ToolResult::err(format!("No he podido hablar con Herdr: {error}"))
             }
+            Self::Unexpected(message) => crate::registry::ToolResult::err(format!(
+                "Error inesperado al usar Herdr: {message}"
+            )),
         }
     }
 }
@@ -370,14 +385,21 @@ pub fn optional_lines(
 
 /// `_wrapped`: normaliza el diccionario de Herdr a `ToolResult`.
 pub fn wrapped(result: Map<String, Value>) -> crate::registry::ToolResult {
-    if result.get("ok") == Some(&Value::Bool(false)) {
-        let message = match result.get("error") {
-            Some(value) if truthy(value) => python_str(value),
-            _ => "Herdr no pudo completar la acción.".to_string(),
-        };
-        return crate::registry::ToolResult::err(message);
+    wrapped_value(&Value::Object(result))
+}
+
+/// `_wrapped` con el valor crudo del oráculo (dict, lista, nulo o texto).
+pub fn wrapped_value(result: &Value) -> crate::registry::ToolResult {
+    if let Value::Object(map) = result {
+        if map.get("ok") == Some(&Value::Bool(false)) {
+            let message = match map.get("error") {
+                Some(value) if truthy(value) => python_str(value),
+                _ => "Herdr no pudo completar la acción.".to_string(),
+            };
+            return crate::registry::ToolResult::err(message);
+        }
     }
-    crate::registry::ToolResult::ok(Value::Object(result))
+    crate::registry::ToolResult::ok(result.clone())
 }
 
 /// `str(args.get(key) or "").strip()`.

@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use super::args::{delegate_parameters, shared_state, voice_parameters, HerdrCallbacks};
 use super::delegate::handle_delegate;
+use super::port::HerdrPort;
 use super::summaries::{delegate_info, voice_info, with_labels};
 use super::voice::handle_voice;
 use crate::registry::ToolSpec;
@@ -22,6 +23,14 @@ const VOICE_DESCRIPTION: &str = "Controla la escucha y los avisos de voz. close 
 
 /// Construye las dos herramientas de Herdr con estado compartido.
 pub fn build_herdr_tools(herdr: Arc<Herdr>, callbacks: HerdrCallbacks) -> Vec<ToolSpec> {
+    build_herdr_tools_with_port(Arc::new(herdr), callbacks)
+}
+
+/// Igual que [`build_herdr_tools`], con un adaptador inyectado para las pruebas.
+pub fn build_herdr_tools_with_port(
+    herdr: Arc<dyn HerdrPort>,
+    callbacks: HerdrCallbacks,
+) -> Vec<ToolSpec> {
     let state = shared_state();
 
     let run_herdr = Arc::clone(&herdr);
@@ -36,8 +45,9 @@ pub fn build_herdr_tools(herdr: Arc<Herdr>, callbacks: HerdrCallbacks) -> Vec<To
         // consumidor que no use describe() sea restrictivo, nunca permisivo.
         2,
         Arc::new(move |args: &Map<String, Value>| {
-            let result = handle_delegate(&run_herdr, &run_callbacks, &run_state, args);
-            Ok(with_labels(&run_herdr, result).into())
+            let result = handle_delegate(run_herdr.as_ref(), &run_callbacks, &run_state, args);
+            let label_for = |address: &str| run_herdr.label_for(address);
+            Ok(with_labels(&label_for, result).into())
         }),
     );
     // DECISION: ToolSpec solo permite un booleano para toda la herramienta.
@@ -61,7 +71,8 @@ pub fn build_herdr_tools(herdr: Arc<Herdr>, callbacks: HerdrCallbacks) -> Vec<To
         1,
         Arc::new(move |args: &Map<String, Value>| {
             let result = handle_voice(&callbacks, &state, args);
-            Ok(with_labels(&voice_herdr, result).into())
+            let label_for = |address: &str| voice_herdr.label_for(address);
+            Ok(with_labels(&label_for, result).into())
         }),
     );
     voice.untrusted_output = false;

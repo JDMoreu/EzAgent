@@ -314,7 +314,7 @@ fn max_chars_is_validated_and_truncates() {
         (json!(201), "no puede superar"),
     ];
     for (value, expected) in cases {
-        let result = run_fetch_page_values(&config, Some(&url), Some(&value));
+        let result = run_fetch_page_values(&config, Some(&url), Some(&value), &Default::default());
         assert!(
             result.error.unwrap_or_default().contains(expected),
             "{value:?}"
@@ -341,7 +341,13 @@ fn tool_uses_the_configured_max_chars_by_default() {
 #[test]
 fn redirect_targets_must_stay_public_http() {
     let (_dir, config) = config(true, 8000);
-    let error = super::fetch::hop_target("http://127.0.0.1/", &config, 1).expect_err("bloqueado");
+    let error = super::fetch::hop_target(
+        "http://127.0.0.1/",
+        &config,
+        1,
+        &super::fetch::SystemResolver,
+    )
+    .expect_err("bloqueado");
     assert!(
         error.message.starts_with("Redirección bloqueada: El host"),
         "{}",
@@ -371,11 +377,12 @@ fn redirect_targets_must_stay_public_http() {
             .message,
         "Se superó el máximo de 5 redirecciones."
     );
+    // Python comprueba el tope de redirecciones antes que el esquema.
     assert_eq!(
         super::fetch::next_redirect("http://a.test/", "ftp://b.test/", MAX_REDIRECTS)
-            .expect_err("esquema primero")
-            .kind,
-        WebToolErrorKind::UnsafeUrl
+            .expect_err("tope primero")
+            .message,
+        "Se superó el máximo de 5 redirecciones."
     );
 }
 
@@ -543,17 +550,27 @@ fn provider_failures_keep_their_kind() {
 fn fetch_arguments_are_validated_in_python_order() {
     let (_dir, config) = config(false, 200);
     let bad_url = json!(5);
-    let result = run_fetch_page_values(&config, Some(&bad_url), Some(&json!(0)));
+    let result = run_fetch_page_values(
+        &config,
+        Some(&bad_url),
+        Some(&json!(0)),
+        &Default::default(),
+    );
     assert_eq!(
         result.error.as_deref(),
         Some("El parámetro 'max_chars' debe ser mayor que cero.")
     );
-    let result = run_fetch_page_values(&config, Some(&bad_url), Some(&json!(10)));
+    let result = run_fetch_page_values(
+        &config,
+        Some(&bad_url),
+        Some(&json!(10)),
+        &Default::default(),
+    );
     assert_eq!(
         result.error.as_deref(),
         Some("La URL debe ser una cadena de texto.")
     );
-    let result = run_fetch_page_values(&config, None, Some(&json!(10)));
+    let result = run_fetch_page_values(&config, None, Some(&json!(10)), &Default::default());
     assert_eq!(
         result.error.as_deref(),
         Some("La URL no puede estar vacía.")

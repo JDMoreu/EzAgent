@@ -239,13 +239,13 @@ fn labelled_pone_el_nombre_visible_y_quita_los_crudos() {
         "title": "Claude Code",
         "name": "1"
     }));
-    labelled(&herdr, &mut item);
+    labelled(&|address| herdr.label_for(address), &mut item);
     assert_eq!(item["label"], json!("Claude Code de EzAgent"));
     for key in ["where", "title", "name"] {
         assert!(!item.contains_key(key), "{key}");
     }
     let mut labelled_already = args(json!({"address": "t2", "label": "Mía", "name": "x"}));
-    labelled(&herdr, &mut labelled_already);
+    labelled(&|address| herdr.label_for(address), &mut labelled_already);
     assert_eq!(labelled_already["label"], json!("Mía"));
     assert!(!labelled_already.contains_key("name"));
 }
@@ -254,12 +254,12 @@ fn labelled_pone_el_nombre_visible_y_quita_los_crudos() {
 fn with_labels_recorre_objetos_y_listas() {
     let herdr = Herdr::new(VoiceConfig::new());
     let object = with_labels(
-        &herdr,
+        &|address| herdr.label_for(address),
         ToolResult::ok(json!({"address": "t1", "name": "1"})),
     );
     assert_eq!(object.data["label"], json!("pestaña 1"));
     let list = with_labels(
-        &herdr,
+        &|address| herdr.label_for(address),
         ToolResult::ok(json!([{"address": "t1", "name": "1"}, {"agent": "claude"}])),
     );
     assert_eq!(list.data[0]["label"], json!("pestaña 1"));

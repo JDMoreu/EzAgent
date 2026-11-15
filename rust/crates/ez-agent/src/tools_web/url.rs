@@ -1,6 +1,6 @@
 //! Validación de destino de las URLs web (ST-21) y filtro de IPs.
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::str::FromStr;
 
 use ez_core::agent_config::AgentConfig;
@@ -162,6 +162,15 @@ pub fn validate_public_target(
     url: &str,
     config: &AgentConfig,
 ) -> Result<PublicTarget, WebToolError> {
+    validate_public_target_with(url, config, &super::fetch::SystemResolver)
+}
+
+/// Igual que [`validate_public_target`], con una resolución DNS inyectada.
+pub fn validate_public_target_with(
+    url: &str,
+    config: &AgentConfig,
+    resolver: &dyn super::fetch::HostResolver,
+) -> Result<PublicTarget, WebToolError> {
     let raw_url = py_strip(url);
     if raw_url.is_empty() {
         return Err(WebToolError::blocked_url("La URL no puede estar vacía."));
@@ -199,11 +208,10 @@ pub fn validate_public_target(
         ));
     }
     let parts = Url::parse(raw_url).map_err(|error| url_error_text(&error.to_string()))?;
-    let raw_host = parts.host_str().unwrap_or_default();
-    let host = raw_host
-        .strip_prefix('[')
-        .and_then(|inner| inner.strip_suffix(']'))
-        .unwrap_or(raw_host);
+    // DECISION: `Url::host_str` devuelve el nombre en punycode; el Python
+    // resuelve y muestra el nombre Unicode, así que se toma de la autoridad.
+    let host = authority_host(authority).to_lowercase();
+    let host = host.as_str();
     if host.is_empty() {
         return Err(WebToolError::blocked_url(
             "La URL no incluye un nombre de host válido.",
@@ -221,13 +229,14 @@ pub fn validate_public_target(
             addresses: Vec::new(),
         });
     }
-    validate_public_host(raw_url, host, port)
+    validate_public_host(raw_url, host, port, resolver)
 }
 
 fn validate_public_host(
     raw_url: &str,
     host: &str,
     port: u16,
+    resolver: &dyn super::fetch::HostResolver,
 ) -> Result<PublicTarget, WebToolError> {
     let host_clean = host.trim_end_matches('.').to_lowercase();
     if host_clean == "localhost" || host_clean.ends_with(".localhost") {
@@ -245,7 +254,7 @@ fn validate_public_host(
             addresses: vec![address],
         });
     }
-    let addresses = resolve_ips(&host_clean, port, host)?;
+    let addresses = resolve_ips(&host_clean, port, host, resolver)?;
     for address in &addresses {
         ensure_public_ip(*address, host)?;
     }
@@ -255,6 +264,20 @@ fn validate_public_host(
         port,
         addresses,
     })
+}
+
+/// Host crudo de la autoridad, sin corchetes ni puerto.
+fn authority_host(authority: &str) -> &str {
+    let without_user = authority.rsplit('@').next().unwrap_or_default();
+    if let Some(rest) = without_user.strip_prefix('[') {
+        if let Some((inside, _)) = rest.split_once(']') {
+            return inside;
+        }
+    }
+    match without_user.rsplit_once(':') {
+        Some((host, port)) if !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()) => host,
+        _ => without_user,
+    }
 }
 
 /// Autoridad cruda (`[user@]host[:port]`) entre `://` y `/`, `?` o `#`.
@@ -297,8 +320,9 @@ pub(super) struct RequestTarget {
 pub(super) fn request_target(
     url: &str,
     config: &AgentConfig,
+    resolver: &dyn super::fetch::HostResolver,
 ) -> Result<RequestTarget, WebToolError> {
-    let target = validate_public_target(url, config)?;
+    let target = validate_public_target_with(url, config, resolver)?;
     let Some(host) = target.host else {
         return Ok(RequestTarget {
             url: target.url,
@@ -337,11 +361,15 @@ fn ensure_public_ip(address: IpAddr, host: &str) -> Result<(), WebToolError> {
     Ok(())
 }
 
-fn resolve_ips(host: &str, port: u16, original: &str) -> Result<Vec<IpAddr>, WebToolError> {
-    let Ok(infos) = (host, port).to_socket_addrs() else {
+fn resolve_ips(
+    host: &str,
+    port: u16,
+    original: &str,
+    resolver: &dyn super::fetch::HostResolver,
+) -> Result<Vec<IpAddr>, WebToolError> {
+    let Some(addresses) = resolver.resolve(host, port) else {
         return Err(unresolved(original));
     };
-    let addresses: Vec<IpAddr> = infos.map(|info| info.ip()).collect();
     if addresses.is_empty() {
         return Err(unresolved(original));
     }
@@ -355,4 +383,123 @@ fn unresolved(host: &str) -> WebToolError {
 /// Valida esquema y destino; resuelve DNS y rechaza IPs no globales (ST-21).
 pub fn validate_public_url(url: &str, config: &AgentConfig) -> Result<String, WebToolError> {
     validate_public_target(url, config).map(|target| target.url)
+}
+
+/// Igual que [`validate_public_url`], con una resolución DNS inyectada.
+pub fn validate_public_url_with(
+    url: &str,
+    config: &AgentConfig,
+    resolver: &dyn super::fetch::HostResolver,
+) -> Result<String, WebToolError> {
+    validate_public_target_with(url, config, resolver).map(|target| target.url)
+}
+
+/// URL fijada, cabeceras extra y extensiones (SNI).
+pub type PinnedTarget = (String, Vec<(String, String)>, Vec<(String, String)>);
+
+/// `_pinned_request_target`: URL a la IP validada, cabeceras y extensiones.
+///
+/// DECISION: la producción fija la resolución con `reqwest::resolve`, que
+/// conserva Host y SNI sin reescribir la URL; esta función conserva la forma
+/// exacta del oráculo de Python para las pruebas de paridad.
+pub fn pinned_request_target(
+    url: &str,
+    config: &AgentConfig,
+) -> Result<PinnedTarget, WebToolError> {
+    pinned_request_target_with(url, config, &super::fetch::SystemResolver)
+}
+
+/// Igual que [`pinned_request_target`], con una resolución DNS inyectada.
+pub fn pinned_request_target_with(
+    url: &str,
+    config: &AgentConfig,
+    resolver: &dyn super::fetch::HostResolver,
+) -> Result<PinnedTarget, WebToolError> {
+    let target = validate_public_target_with(url, config, resolver)?;
+    let Some(host) = target.host.clone() else {
+        return Ok((target.url, Vec::new(), Vec::new()));
+    };
+    if target.addresses.is_empty() {
+        return Ok((target.url, Vec::new(), Vec::new()));
+    }
+    // DECISION: se prefiere una IPv4 validada para no perder conectividad en
+    // equipos sin IPv6; cualquiera de la lista ya pasó el filtro.
+    let address = target
+        .addresses
+        .iter()
+        .find(|address| address.is_ipv4())
+        .copied()
+        .unwrap_or(target.addresses[0]);
+    let parts =
+        Url::parse(&target.url).map_err(|_| WebToolError::blocked_url("La URL no es válida."))?;
+    let scheme = parts.scheme().to_lowercase();
+    let default_port = if scheme == "https" { 443 } else { 80 };
+    let mut netloc = if address.is_ipv6() {
+        format!("[{address}]")
+    } else {
+        address.to_string()
+    };
+    if target.port != default_port {
+        netloc = format!("{netloc}:{}", target.port);
+    }
+    let path = if parts.path().is_empty() {
+        "/"
+    } else {
+        parts.path()
+    };
+    let mut connect_url = format!("{scheme}://{netloc}{path}");
+    if let Some(query) = parts.query() {
+        connect_url.push('?');
+        connect_url.push_str(query);
+    }
+    let ascii_host = ascii_host(&host);
+    let host_header = if target.port == default_port {
+        ascii_host.clone()
+    } else {
+        format!("{ascii_host}:{}", target.port)
+    };
+    let headers = vec![("Host".to_string(), host_header)];
+    let extensions = if scheme == "https" {
+        vec![("sni_hostname".to_string(), ascii_host)]
+    } else {
+        Vec::new()
+    };
+    Ok((connect_url, headers, extensions))
+}
+
+/// `host.encode("idna").decode("ascii")`: los dominios van en punycode.
+fn ascii_host(host: &str) -> String {
+    Url::parse(&format!("http://{host}/"))
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .unwrap_or_else(|| host.to_string())
+}
+
+/// Versión JSON de [`validate_public_target`]; un valor que no es texto se
+/// rechaza con el mensaje del Python.
+pub fn validate_public_target_json(
+    url: &serde_json::Value,
+    config: &AgentConfig,
+    resolver: &dyn super::fetch::HostResolver,
+) -> Result<PublicTarget, WebToolError> {
+    match url {
+        serde_json::Value::String(text) => validate_public_target_with(text, config, resolver),
+        _ => Err(WebToolError::blocked_url(
+            "La URL debe ser una cadena de texto.",
+        )),
+    }
+}
+
+/// Versión JSON de [`pinned_request_target`].
+pub fn pinned_request_target_json(
+    url: &serde_json::Value,
+    config: &AgentConfig,
+    resolver: &dyn super::fetch::HostResolver,
+) -> Result<PinnedTarget, WebToolError> {
+    match url {
+        serde_json::Value::String(text) => pinned_request_target_with(text, config, resolver),
+        _ => Err(WebToolError::blocked_url(
+            "La URL debe ser una cadena de texto.",
+        )),
+    }
 }
