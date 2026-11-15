@@ -57,3 +57,4 @@ HUD (`ez-gfx`, `ez-hud`) → `ez-app`. Después: tests de paridad por dominio y
   localizado de Windows).
 - `open_path` abre con `explorer.exe` (Python usa `os.startfile`).
 - F5-10b: `Menu::draw` debe usar `draw_with` (las filas avanzadas quedan en blanco si no); tenerlo en cuenta en F6-06b (menu_wiring).
+- F6-08: las imagenes del chat solo se decodifican si son PNG (Python/Pillow acepta JPEG, GIF, WebP…). Pendiente para la auditoria (F9): exponer decodificacion en ez-gfx o ez-hud.
