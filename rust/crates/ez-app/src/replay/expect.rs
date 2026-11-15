@@ -12,6 +12,10 @@ use serde_json::{Map, Value};
 use super::driver::Snapshot;
 use super::trace::Trace;
 
+mod extra;
+
+use self::extra::check_extra;
+
 /// Datos del entorno que algunas aserciones consultan.
 pub struct Context {
     pub hc_path: Option<PathBuf>,
@@ -53,6 +57,7 @@ pub fn check(
         errors.extend(snapshot.matches_final(final_spec));
     }
     errors.extend(check_never(expect, snapshot));
+    errors.extend(check_extra(expect, snapshot, trace));
     errors
 }
 
@@ -497,6 +502,9 @@ mod tests {
             ],
             speech: vec!["buenas".to_string()],
             transcripts: vec!["hola".to_string()],
+            config: serde_json::Map::new(),
+            history: Vec::new(),
+            swarm: None,
         }
     }
 

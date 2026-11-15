@@ -41,6 +41,8 @@ struct State {
 /// Eventos por hilo con secuencia propia: el archivo queda determinista.
 pub struct Trace {
     home: String,
+    /// Id del enjambre que se sustituye por `<swarm>` (el `_scrub` del Python).
+    scrub: parking_lot::RwLock<String>,
     state: Mutex<State>,
 }
 
@@ -49,18 +51,28 @@ impl Trace {
     pub fn new(home: &Path) -> Arc<Self> {
         Arc::new(Self {
             home: home.display().to_string(),
+            scrub: parking_lot::RwLock::new(String::new()),
             state: Mutex::new(State::default()),
         })
+    }
+
+    /// A partir de ahora, `swarm` se sustituye por `<swarm>` en los eventos.
+    pub fn set_scrub(&self, swarm: &str) {
+        *self.scrub.write() = swarm.to_string();
     }
 
     /// `_stable`: rutas de la corrida y puertos locales fuera de la traza.
     pub fn stable(&self, value: Value) -> Value {
         match value {
-            Value::String(text) => Value::String(normalize_text(
-                &text,
-                &self.home,
-                &self.home.replace('\\', "/"),
-            )),
+            Value::String(text) => {
+                let text = normalize_text(&text, &self.home, &self.home.replace('\\', "/"));
+                let scrub = self.scrub.read().clone();
+                Value::String(if scrub.is_empty() {
+                    text
+                } else {
+                    text.replace(&scrub, "<swarm>")
+                })
+            }
             Value::Array(items) => {
                 Value::Array(items.into_iter().map(|item| self.stable(item)).collect())
             }

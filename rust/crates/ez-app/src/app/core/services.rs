@@ -16,6 +16,8 @@ use ez_core::config::VoiceConfig;
 use ez_herdr::herdr::Herdr;
 use ez_hud::win::drop::{DropUI, WindowFactory};
 use ez_llm::messenger::AgentRuntimeApi;
+use ez_swarm::stack::SwarmStack;
+use ez_swarm::supervisor::{Announce, SwarmHost};
 use parking_lot::Mutex;
 
 use super::hooks::ShutdownObserver;
@@ -24,6 +26,23 @@ use super::trace::AppTrace;
 /// Envoltorio del runtime que ve el mensajero (traza de herramientas).
 pub type RuntimeWrap =
     Arc<dyn Fn(Arc<dyn AgentRuntimeApi>) -> Arc<dyn AgentRuntimeApi> + Send + Sync>;
+
+/// Piezas con las que la app monta el enjambre (`_create_swarm`).
+pub struct SwarmArgs {
+    /// Carpeta del tablero, los asientos y el endpoint.
+    pub base_dir: PathBuf,
+    /// Adaptador de Herdr.
+    pub host: Arc<dyn SwarmHost>,
+    /// Aviso hablado.
+    pub announce: Announce,
+    /// Pregunta al usuario.
+    pub ask: Option<Announce>,
+    /// Nombre del comando de los agentes.
+    pub command: String,
+}
+
+/// Fábrica del enjambre; el arnés la usa para inyectar el reloj de prueba.
+pub type SwarmFactory = Arc<dyn Fn(SwarmArgs) -> Option<Arc<SwarmStack>> + Send + Sync>;
 
 /// Lo que la app necesita del altavoz (`ez_tts::Speaker` en producción).
 // DECISION: Kokoro carga un modelo real y no se puede abrir en una prueba;
@@ -131,6 +150,10 @@ pub struct AppParts {
     pub build_swarm: bool,
     /// `true` monta `_create_agent_runtime` al arrancar.
     pub build_agent: bool,
+    /// Fábrica del enjambre; `None` usa la de producción (F7-01c).
+    pub swarm_factory: Option<SwarmFactory>,
+    /// Servicios que el arnés sustituye por dobles que fallan (`degrade:`).
+    pub degrade: Vec<String>,
     /// `false` en los dobles: sin hilos de fondo ni atajos reales.
     pub background: bool,
     /// `true` lanza `_warm_stt`; el arnés lo apaga para no gastar un guion.
@@ -162,6 +185,8 @@ impl AppParts {
             whisper_ready: true,
             build_swarm: false,
             build_agent: false,
+            swarm_factory: None,
+            degrade: Vec::new(),
             background: false,
             warm_stt: true,
             mic_capture: true,

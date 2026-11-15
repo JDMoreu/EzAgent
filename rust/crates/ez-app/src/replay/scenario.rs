@@ -134,6 +134,21 @@ impl Scenario {
                 settings.insert(key.clone(), value.clone());
             }
         }
+        if self.data.get("swarm").is_some() {
+            // `_prepare` de harness_ext: opencode abre `fake-agent` (pantalla y estado).
+            let mut profile = Map::new();
+            profile.insert(
+                "command".to_string(),
+                json!([
+                    fakes.join("fake-agent.exe").display().to_string(),
+                    "--scene",
+                    "working"
+                ]),
+            );
+            let mut profiles = Map::new();
+            profiles.insert("opencode".to_string(), Value::Object(profile));
+            settings.insert("agent_profiles".to_string(), Value::Object(profiles));
+        }
         settings
     }
 

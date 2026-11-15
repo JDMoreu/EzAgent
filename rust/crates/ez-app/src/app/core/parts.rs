@@ -12,6 +12,19 @@ impl VoiceApp {
         if !cfg_truthy(cfg, "smart_turn", true) {
             return None;
         }
+        if self
+            .inner
+            .runtime
+            .degrade
+            .iter()
+            .any(|service| service == "smart_turn")
+        {
+            log("No encuentro el modelo de Smart Turn.");
+            super::trace::notify(&self.inner.runtime.trace, |trace| {
+                trace.degraded("smart_turn");
+            });
+            return None;
+        }
         let path = match ez_audio::turn::resolve_model_path() {
             Ok(path) => path,
             Err(error) => {
@@ -81,6 +94,15 @@ impl VoiceApp {
         let ask: ez_swarm::supervisor::Announce = Arc::new(move |text: &str| {
             events.put(AppEvent::SwarmNotice(text.to_string(), true));
         });
+        if let Some(factory) = &self.inner.runtime.swarm_factory {
+            return factory(super::services::SwarmArgs {
+                base_dir: base,
+                host,
+                announce,
+                ask: Some(ask),
+                command: "ezs".to_string(),
+            });
+        }
         match SwarmStack::new(base, host, announce, Some(ask), "ezs") {
             Ok(stack) => Some(Arc::new(stack)),
             Err(error) => {

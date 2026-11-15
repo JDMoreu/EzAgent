@@ -166,6 +166,14 @@ impl AppTrace for Recorder {
             .record("file.write", json!({"name": self.chat_file, "role": role}));
     }
 
+    fn config_file_write(&self, name: &str) {
+        self.trace.record("file.write", json!({"name": name}));
+    }
+
+    fn degraded(&self, what: &str) {
+        self.trace.record(&format!("degraded.{what}"), json!({}));
+    }
+
     fn stt_transcript(&self, text: &str) {
         self.trace.record("stt.transcript", json!({"text": text}));
     }

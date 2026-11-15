@@ -426,6 +426,11 @@ impl Supervisor {
         self.running.load(Ordering::SeqCst)
     }
 
+    /// ¿Queda algún lanzamiento de agente en curso? (el `_launching` del Python).
+    pub fn launching(&self) -> bool {
+        !self.book.lock().launching.is_empty()
+    }
+
     /// `(id, objetivo)` de los enjambres activos (lo lee la UI).
     pub fn active_view(&self) -> Vec<(String, String)> {
         self.view

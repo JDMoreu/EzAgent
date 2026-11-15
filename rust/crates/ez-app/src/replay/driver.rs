@@ -42,6 +42,8 @@ pub enum Pending {
         deadline: Instant,
         since: Option<Instant>,
     },
+    /// Predicado de un paso de F7-01b/F7-01c (`_predicate` del Python).
+    Check(Box<dyn FnMut() -> Result<bool, String> + Send>),
 }
 
 /// Ejecuta los pasos del YAML; cada paso puede esperar una condición.
@@ -101,26 +103,32 @@ impl Driver {
             }
             return Ok(());
         }
-        let Some(step) = self.steps.get(self.index).cloned() else {
-            self.done = true;
+        loop {
+            let Some(step) = self.steps.get(self.index).cloned() else {
+                self.done = true;
+                return Ok(());
+            };
+            self.index += 1;
+            let map = step
+                .as_object()
+                .cloned()
+                .ok_or_else(|| format!("paso mal formado: {}", py_repr(&step)))?;
+            let handler = handlers
+                .iter()
+                .find(|handler| handler.matches(&map))
+                .ok_or_else(|| format!("paso desconocido: {}", py_repr(&step)))?;
+            self.trace.record(
+                "driver.step",
+                json!({"index": self.index, "step": handler.describe(&map)}),
+            );
+            let pending = handler.apply(self, &map)?;
+            // Los pasos instantáneos se encadenan, como el `mainloop` del Python.
+            if matches!(pending, Some(Pending::Ready)) && handler.immediate() {
+                continue;
+            }
+            self.pending = pending;
             return Ok(());
-        };
-        self.index += 1;
-        let map = step
-            .as_object()
-            .cloned()
-            .ok_or_else(|| format!("paso mal formado: {}", py_repr(&step)))?;
-        let handler = handlers
-            .iter()
-            .find(|handler| handler.matches(&map))
-            .ok_or_else(|| format!("paso desconocido: {}", py_repr(&step)))?;
-        self.trace.record(
-            "driver.step",
-            json!({"index": self.index, "step": handler.describe(&map)}),
-        );
-        let pending = handler.apply(self, &map)?;
-        self.pending = pending;
-        Ok(())
+        }
     }
 
     /// Evalúa una espera; `true` cuando el guion puede seguir.
@@ -139,6 +147,7 @@ impl Driver {
                 .any(|item| item.get("text").and_then(Value::as_str) == Some(wanted))),
             Pending::Sleep(deadline) => Ok(Instant::now() >= *deadline),
             Pending::Quiet { deadline, since } => self.poll_quiet(*deadline, since),
+            Pending::Check(check) => check(),
         }
     }
 
@@ -237,6 +246,69 @@ impl Driver {
             messages,
             speech: texts(&self.trace, "speech.say"),
             transcripts: texts(&self.trace, "stt.transcript"),
+            config: self.config_snapshot(),
+            history: self.history_snapshot(),
+            swarm: self.swarm_snapshot(),
+        }
+    }
+
+    /// `snap["config"]`: adjustes visibles del menú.
+    fn config_snapshot(&self) -> Map<String, Value> {
+        const KEYS: [&str; 9] = [
+            "voice",
+            "speed",
+            "llm_provider",
+            "llm_model",
+            "llm_api_style",
+            "hotkey",
+            "chat_voice",
+            "smart_turn",
+            "silence_secs",
+        ];
+        let cfg = self.app.config();
+        let mut values = Map::new();
+        for key in KEYS {
+            values.insert(
+                key.to_string(),
+                cfg.get(key).cloned().unwrap_or(Value::Null),
+            );
+        }
+        values
+    }
+
+    /// `snap["history"]`: `sesión:rol:texto` de todas las conversaciones.
+    fn history_snapshot(&self) -> Vec<String> {
+        let chat = &self.app.inner.chat.chat;
+        let Some(store) = chat.store() else {
+            return Vec::new();
+        };
+        let mut sessions = store.sessions();
+        sessions.sort_by_key(|info| info.session);
+        let mut out = Vec::new();
+        for info in sessions {
+            for entry in store.entries(Some(info.session)) {
+                out.push(format!(
+                    "{}:{}:{}",
+                    entry.session,
+                    entry.role.as_str(),
+                    entry.text
+                ));
+            }
+        }
+        out
+    }
+
+    /// `snap["swarm"]`: vista del enjambre para las aserciones.
+    fn swarm_snapshot(&self) -> Option<Value> {
+        if self.app.inner.agents.swarm.lock().is_none() || super::swarm_c::swarm_id().is_empty() {
+            return None;
+        }
+        match super::swarm_c::view() {
+            Ok(view) => Some(view),
+            Err(error) => {
+                tracing::warn!("No pude leer el enjambre para la traza: {error}");
+                None
+            }
         }
     }
 }
@@ -249,6 +321,9 @@ pub struct Snapshot {
     pub messages: Vec<(String, String)>,
     pub speech: Vec<String>,
     pub transcripts: Vec<String>,
+    pub config: Map<String, Value>,
+    pub history: Vec<String>,
+    pub swarm: Option<Value>,
 }
 
 impl Snapshot {

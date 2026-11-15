@@ -70,8 +70,9 @@ impl VoiceApp {
 
     /// Lo que `__init__` hace después de construir los servicios.
     fn finish_start(&self, parts: AppParts) {
-        self.apply_start_hud(parts.whisper_ready);
+        // El Python crea el detector de turno antes de tocar la barra.
         self.apply_start_audio();
+        self.apply_start_hud(parts.whisper_ready);
         self.apply_start_agents(parts.build_swarm, parts.build_agent);
         self.install_chat();
         self.install_hotkeys(parts.background);
@@ -456,6 +457,8 @@ fn runtime_state(
         hooks,
         trace,
         runtime_wrap: parts.runtime_wrap.take(),
+        swarm_factory: parts.swarm_factory.take(),
+        degrade: std::mem::take(&mut parts.degrade),
         observer: parts
             .observer
             .take()

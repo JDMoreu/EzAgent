@@ -291,6 +291,10 @@ pub struct RuntimeState {
     pub trace: TraceSlot,
     /// Envoltorio del runtime para la traza de herramientas (F7-01a).
     pub runtime_wrap: Option<super::services::RuntimeWrap>,
+    /// Fábrica del enjambre (F7-01c); `None` usa la de producción.
+    pub swarm_factory: Option<super::services::SwarmFactory>,
+    /// Servicios que el arnés sustituye por dobles que fallan (`degrade:`).
+    pub degrade: Vec<String>,
     /// Observador del orden de apagado (pruebas).
     pub observer: Arc<dyn ShutdownObserver>,
     /// `false` en los dobles: sin hilos de fondo ni registro real de atajos.

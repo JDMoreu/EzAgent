@@ -57,7 +57,7 @@ pub use self::events::{AppEvent, MenuEvent, Queue};
 pub use self::hooks::{AppHooks, NullHooks, NullObserver, ShutdownObserver};
 pub use self::hud::AppHud;
 pub use self::hud_bridge::{HudConfig, HudHost};
-pub use self::services::{AppParts, SpeakerApi};
+pub use self::services::{AppParts, SpeakerApi, SwarmArgs, SwarmFactory};
 use self::state::{
     AgentsState, AudioState, ChatState, ConfigState, Flag, Inner, LlmModels, MessengerSlot,
     RuntimeState, SavedLlm, SessionState, SpeechState, TurnState, UiState,
@@ -327,6 +327,20 @@ impl VoiceApp {
     /// Ganchos vigentes (F6-02…F6-07).
     pub fn hooks(&self) -> Arc<dyn AppHooks> {
         self.inner.runtime.hooks.read().clone()
+    }
+
+    /// Anota la escritura real de `voice.json` para el arnés (F7-01c).
+    pub(crate) fn trace_config_write(&self) {
+        let name = self
+            .inner
+            .config
+            .config_file
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self::trace::notify(&self.inner.runtime.trace, |trace| {
+            trace.config_file_write(&name);
+        });
     }
 
     /// Instala los ganchos de una tarea posterior.
