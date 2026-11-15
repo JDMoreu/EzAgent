@@ -2,6 +2,7 @@
 //! dobles de ventana, configuración, host, chat y menú.
 
 mod live_menu;
+mod sidebar;
 mod support;
 
 use std::sync::atomic::Ordering;

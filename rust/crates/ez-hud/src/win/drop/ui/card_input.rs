@@ -250,6 +250,21 @@ impl DropUI {
         sw::item_at(x as f64 / self.scale(), y as f64 / self.scale())
     }
 
+    /// Resaltado de la barra lateral: siempre el de la fila bajo el puntero.
+    ///
+    /// DECISION: `drop.py` solo refresca `_sidebar_hover` en `move` con el botón
+    /// pulsado, así que al cambiar de sección la anterior conserva el resaltado
+    /// de hover. Aquí se refresca en cada movimiento (con o sin botón) para que
+    /// nunca quede una fila marcada sin el puntero encima.
+    fn track_sidebar_hover(&self, x: i32, y: i32) -> Option<&'static str> {
+        let section = self.sidebar_item(x, y);
+        let mut hover = self.sidebar_hover.lock();
+        if hover.as_deref() != section {
+            *hover = section.map(str::to_string);
+        }
+        section
+    }
+
     /// `card_pointer`: bordes, barra lateral, menú o arrastre.
     pub fn card_pointer(&self, phase: PointerPhase, x: i32, y: i32) -> bool {
         if self.card_window().is_none() || self.menu_panel().is_none() {
@@ -261,8 +276,7 @@ impl DropUI {
         }
         match phase {
             PointerPhase::Move => {
-                let section = self.sidebar_item(x, y);
-                *self.sidebar_hover.lock() = section.map(str::to_string);
+                self.track_sidebar_hover(x, y);
                 let (mx, my, _) = self.card_point(x, y);
                 let _ = self.menu_call(|menu| menu.pointer_move(mx, my, monotonic()));
                 true
@@ -297,6 +311,9 @@ impl DropUI {
             }
         }
         if let Some(section) = section {
+            // El puntero está sobre la fila: el resaltado de hover es el suyo, y
+            // la sección anterior deja de estar marcada al cambiar.
+            self.track_sidebar_hover(x, y);
             self.select_section(section);
             return true;
         }
@@ -407,11 +424,14 @@ impl DropUI {
     }
 
     /// `card_hand`: mano sobre la barra lateral o un control del menú.
+    ///
+    /// También refresca el resaltado de la barra lateral: es lo que el bucle
+    /// de ventanas llama en cada movimiento sin botón.
     pub fn card_hand(&self, x: i32, y: i32) -> bool {
         if self.menu_panel().is_none() {
             return false;
         }
-        if self.sidebar_item(x, y).is_some() {
+        if self.track_sidebar_hover(x, y).is_some() {
             return true;
         }
         let (mx, my, inside) = self.card_point(x, y);
