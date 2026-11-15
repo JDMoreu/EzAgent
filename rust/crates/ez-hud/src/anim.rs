@@ -174,15 +174,29 @@ impl Default for LevelFollower {
     }
 }
 
+/// Canales sin recortar, como los devuelve el Python (`int` sin límites).
+///
+/// El dibujo usa [`lerp_rgb`], que cabe en `u8`; el oráculo comprueba también
+/// `k` fuera de 0..1, donde el Python da valores fuera de rango.
+pub fn lerp_rgb_raw(a: [u8; 3], b: [u8; 3], k: f64) -> [i64; 3] {
+    let channel = |index: usize| {
+        let (from, to) = (f64::from(a[index]), f64::from(b[index]));
+        (from + (to - from) * k).round_ties_even() as i64
+    };
+    [channel(0), channel(1), channel(2)]
+}
+
 /// Interpola dos colores RGB y redondea cada canal.
 pub fn lerp_rgb(a: [u8; 3], b: [u8; 3], k: f64) -> [u8; 3] {
     // DECISION: la firma devuelve `u8`; con `k` fuera de 0..1 el Python daría
-    // enteros fuera de rango que el dibujo no usa, así que se recortan.
-    let channel = |index: usize| {
-        let (from, to) = (a[index] as f64, b[index] as f64);
-        (from + (to - from) * k).clamp(0.0, 255.0).round_ties_even() as u8
-    };
-    [channel(0), channel(1), channel(2)]
+    // enteros fuera de rango que el dibujo no usa, así que se recortan. El
+    // oráculo usa `lerp_rgb_raw`, que reproduce esos enteros.
+    let raw = lerp_rgb_raw(a, b, k);
+    [
+        raw[0].clamp(0, 255) as u8,
+        raw[1].clamp(0, 255) as u8,
+        raw[2].clamp(0, 255) as u8,
+    ]
 }
 
 /// Movimiento del sistema permitido (`SPI_GETCLIENTAREAANIMATION`).
