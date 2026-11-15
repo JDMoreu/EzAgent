@@ -1,16 +1,21 @@
 //! Paridad del dominio `turn` contra `parity/fixtures/turn.jsonl`.
 //!
-//! Cubre `hz_to_mel`, `mel_to_hz`, `log_mel` y `prepare` de
+//! Cubre `hz_to_mel`, `mel_to_hz`, `log_mel`, `prepare` y `probability` de
 //! `ezagent.voice.turn` sobre los WAV de `parity/golden/audio/`.
 //!
-//! Los 27 casos de `probability` necesitan una sesión de ONNX Runtime, y
-//! `ez-audio` no declara `ort` (y este brief no puede tocar `Cargo.toml`): se
-//! validan sus entradas (WAV y sha256) y se cuentan aparte con un aviso.
+//! Los 27 casos de `probability` necesitan una sesión de ONNX Runtime y el
+//! modelo instalado. Si faltan (no hay `ORT_DYLIB_PATH`, ni `onnxruntime.dll`
+//! junto al ejecutable, ni `smart-turn-v3.2-cpu.onnx` en la carpeta de datos)
+//! se omiten con un aviso explícito y se cuentan aparte.
 
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use ez_audio::resample::resampled_len;
-use ez_audio::turn::{hz_to_mel, log_mel, mel_to_hz, prepare, N_FFT, N_MELS, SAMPLE_RATE};
+use ez_audio::turn::{
+    hz_to_mel, installed_model_path, log_mel, mel_to_hz, onnxruntime_path, prepare, SmartTurn,
+    N_FFT, N_MELS, SAMPLE_RATE,
+};
 use ez_parity::fixtures::{self, FixtureCase};
 
 const FIXTURES: &str = "../../../parity/fixtures/turn.jsonl";
@@ -22,25 +27,32 @@ fn every_turn_case_matches_python() {
     let cases = fixtures::load(Path::new(FIXTURES)).expect("fixtures de turn legibles");
     let mut cases_run = 0;
     let mut cases_skipped = 0;
+    let probabilities: Vec<&FixtureCase> = cases
+        .iter()
+        .filter(|case| case.function == "probability")
+        .collect();
     for case in &cases {
         match case.function.as_str() {
             "hz_to_mel" => compare_hz(case),
             "mel_to_hz" => compare_mel(case),
             "log_mel" => compare_log_mel(case),
             "prepare" => compare_prepare(case),
-            "probability" => {
-                check_probability_input(case);
-                cases_skipped += 1;
-                continue;
-            }
+            "probability" => continue,
             other => panic!("caso sin cubrir: {} ({other})", case.case),
         }
         cases_run += 1;
     }
-    if cases_skipped > 0 {
+    if let Some(turn) = loaded_model() {
+        for case in &probabilities {
+            compare_probability(case, &turn);
+            cases_run += 1;
+        }
+        assert_eq!(cases_skipped, 0, "no debe omitirse ningún caso con modelo");
+    } else {
+        cases_skipped = probabilities.len();
         eprintln!(
-            "turn: {cases_skipped} casos de `probability` omitidos: ez-audio no declara \
-             `ort` (no hay backend ONNX en este crate); sus WAV y sha256 sí se validaron"
+            "turn: {cases_skipped} casos de `probability` omitidos: {}",
+            missing_model_reason()
         );
     }
     let cases_in_file = cases.len();
@@ -52,6 +64,53 @@ fn every_turn_case_matches_python() {
         cases_run + cases_skipped,
         cases_in_file,
         "se saltó algún caso"
+    );
+}
+
+/// Smart Turn con el modelo real, o `None` si falta la DLL o el modelo.
+fn loaded_model() -> Option<SmartTurn> {
+    let model = installed_model_path().expect("manifiesto de descargas");
+    let library = onnxruntime_path().filter(|path| path.is_file());
+    let (Some(model), Some(_)) = (model, library) else {
+        return None;
+    };
+    let turn = SmartTurn::new(0.5, &model.to_string_lossy());
+    let deadline = Instant::now() + Duration::from_secs(180);
+    while Instant::now() < deadline {
+        if turn.ready() {
+            return Some(turn);
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    panic!(
+        "Smart Turn no se cargó en 180 s con el modelo {} y la DLL {}",
+        model.display(),
+        onnxruntime_path().map_or_else(|| "<ninguna>".to_string(), |p| p.display().to_string())
+    );
+}
+
+fn missing_model_reason() -> String {
+    if installed_model_path().ok().flatten().is_none() {
+        return "el modelo smart-turn-v3.2-cpu.onnx no está instalado".to_string();
+    }
+    "no hay onnxruntime.dll (define ORT_DYLIB_PATH)".to_string()
+}
+
+fn compare_probability(case: &FixtureCase, turn: &SmartTurn) {
+    let relative = case.input["wav"].as_str().expect("wav");
+    let pcm = wav_pcm(relative);
+    let rate = case.input["rate"].as_u64().unwrap_or(0) as u32;
+    let threshold = case.input["threshold"].as_f64().expect("threshold");
+    let produced = turn
+        .probability(&pcm, rate)
+        .unwrap_or_else(|error| panic!("{}: {error}", case.case));
+    let expected = case.output["probability"].as_f64().expect("probability");
+    close(produced, expected, 1e-5, "probability", &case.case);
+    assert_eq!(
+        produced >= threshold,
+        case.output["ended"].as_bool().expect("ended"),
+        "ended de {} (probability {produced})",
+        case.case
     );
 }
 
@@ -317,22 +376,4 @@ fn compare_summary(case: &FixtureCase, data: &[f32]) {
             .collect();
         compare_floats(&produced, &expected, "frame", &case.case);
     }
-}
-
-fn check_probability_input(case: &FixtureCase) {
-    let relative = case.input["wav"].as_str().expect("wav");
-    let pcm = wav_pcm(relative);
-    assert_eq!(
-        pcm.len() / 2,
-        case.input["samples"].as_u64().unwrap_or(0) as usize,
-        "muestras de {}",
-        case.case
-    );
-    assert_eq!(
-        case.input["rate"].as_u64().unwrap_or(0) as u32,
-        SAMPLE_RATE,
-        "tasa de {}",
-        case.case
-    );
-    assert!(case.input["threshold"].as_f64().is_some());
 }
