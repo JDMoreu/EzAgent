@@ -184,22 +184,26 @@ fn horizontal_pass(
 }
 
 /// One vertical resampling pass. `dst` must be `width * out_height` pixels.
+///
+/// Accumulates a whole row at a time: the taps of one output row read
+/// contiguous rows of the source, and the additions happen in the same order
+/// per pixel as the column-wise loop, so the bytes are identical.
 fn vertical_pass(src: &[u8], width: u32, channels: usize, coeffs: &Coeffs, dst: &mut [u8]) {
-    let out_stride = width as usize * channels;
+    let stride = width as usize * channels;
+    let mut accumulator = vec![ROUND; stride];
     for (oy, &(ymin, count)) in coeffs.bounds.iter().enumerate() {
-        let taps = &coeffs.taps[oy * coeffs.ksize..];
-        let output = &mut dst[oy * out_stride..(oy + 1) * out_stride];
-        for ox in 0..width as usize {
-            let mut accumulator = [ROUND; 4];
-            for (y, &tap) in taps.iter().take(count).enumerate() {
-                let source = &src[((ymin + y) * width as usize + ox) * channels..];
-                for (channel, &value) in source.iter().take(channels).enumerate() {
-                    accumulator[channel] += i32::from(value) * tap;
-                }
+        let start = oy * coeffs.ksize;
+        let taps = &coeffs.taps[start..start + count];
+        accumulator.fill(ROUND);
+        for (y, &tap) in taps.iter().enumerate() {
+            let row = &src[(ymin + y) * stride..][..stride];
+            for (total, &value) in accumulator.iter_mut().zip(row) {
+                *total += i32::from(value) * tap;
             }
-            for (channel, &value) in accumulator.iter().take(channels).enumerate() {
-                output[ox * channels + channel] = clip8(value);
-            }
+        }
+        let output = &mut dst[oy * stride..][..stride];
+        for (out, &value) in output.iter_mut().zip(accumulator.iter()) {
+            *out = clip8(value);
         }
     }
 }
@@ -298,6 +302,28 @@ impl Image {
         }
         if width == self.width() && height == self.height() {
             return self.clone();
+        }
+        // An opaque image has nothing to premultiply: the round trip through
+        // `RGBa` is the identity, so the two extra passes (and the copy) are
+        // skipped and the bytes are exactly the same.
+        if self
+            .as_raw()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|pixel| pixel[3] == 255)
+        {
+            let resized = resample(
+                self.as_raw(),
+                self.width(),
+                self.height(),
+                width,
+                height,
+                4,
+                resampling,
+            );
+            return Image::from_rgba(width, height, resized)
+                .expect("resampling keeps the RGBA buffer length");
         }
         let premultiplied = resample(
             &self.to_premultiplied_rgba(),

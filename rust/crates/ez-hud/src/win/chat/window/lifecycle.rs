@@ -117,7 +117,7 @@ impl ChatPanel {
         state.form = form;
         state.finished = false;
         state.base = None;
-        state.content = None;
+        state.content = crate::win::chat::compose::ContentCache::default();
         state.resize = None;
         state.act = 0.0;
         state.last = now;
@@ -178,7 +178,7 @@ impl ChatPanel {
             state.anim = Anim::default();
             state.finished = false;
             state.base = None;
-            state.content = None;
+            state.content = crate::win::chat::compose::ContentCache::default();
             state.resize = None;
         }
         if let Some(window) = window {

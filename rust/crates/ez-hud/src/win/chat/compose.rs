@@ -21,7 +21,7 @@ mod shapes;
 mod tests;
 
 pub use raster::Frame;
-use raster::{blend, composite, frame_from_canvas};
+use raster::{blend, composite, composite_masked, frame_from_canvas};
 use shapes::{content_lift, content_mask, paint_shape, shape_geometry};
 
 /// Everything that composes one panel frame.
@@ -144,29 +144,114 @@ pub fn fluid_array(rgb: Option<&Array3<u8>>, width: usize, height: usize) -> Opt
     if rows == 0 || columns == 0 || channels != 3 {
         return None;
     }
-    let mut data = Vec::with_capacity(rows * columns * 3);
-    for row in 0..rows {
-        for column in 0..columns {
-            for channel in 0..3 {
-                data.push(rgb[[row, column, channel]]);
+    let data = match rgb.as_slice() {
+        Some(pixels) => pixels.to_vec(),
+        None => {
+            let mut data = Vec::with_capacity(rows * columns * 3);
+            for row in 0..rows {
+                for column in 0..columns {
+                    for channel in 0..3 {
+                        data.push(rgb[[row, column, channel]]);
+                    }
+                }
             }
+            data
         }
-    }
+    };
     let image = Image::from_rgb(columns as u32, rows as u32, data).ok()?;
     let width = width.max(2) as u32;
     let height = height.max(2) as u32;
     let resized = image.resize(width, height, Resampling::Bicubic);
+    let table = byte_scale();
     let raw = resized.as_raw();
-    Some(Array3::from_shape_fn(
-        (height as usize, width as usize, 3),
-        |(row, column, channel)| raw[(row * width as usize + column) * 4 + channel] as f32 / 255.0,
-    ))
+    let mut values = Vec::with_capacity(height as usize * width as usize * 3);
+    for pixel in raw.as_chunks::<4>().0 {
+        for channel in 0..3 {
+            values.push(table[usize::from(pixel[channel])]);
+        }
+    }
+    Array3::from_shape_vec((height as usize, width as usize, 3), values).ok()
+}
+
+/// `channel / 255.0` for every byte, the same values the division yields.
+fn byte_scale() -> &'static [f32; 256] {
+    static TABLE: std::sync::LazyLock<[f32; 256]> =
+        std::sync::LazyLock::new(|| core::array::from_fn(|value| value as f32 / 255.0));
+    &TABLE
+}
+
+/// Fingerprint and pixels of the cached content layer (`_cache` in Python).
+#[derive(Default)]
+pub struct ContentCache(Option<(Sig, ez_gfx::sdf::Layer)>);
+
+/// Scratch canvas borrowed from the thread pool.
+///
+/// The morph repaints a full window per frame; reusing the same 11 MB of
+/// pages keeps the first touch of every pixel off the frame budget. The
+/// canvas is always fully rewritten, so only the size has to match.
+struct Canvas(Option<Array3<f32>>);
+
+thread_local! {
+    static CANVAS: std::cell::RefCell<Option<Array3<f32>>> = const { std::cell::RefCell::new(None) };
+}
+
+impl Canvas {
+    fn new(width: usize, height: usize) -> Self {
+        let mut buffer = CANVAS.with(|slot| slot.borrow_mut().take());
+        match buffer.as_mut() {
+            Some(canvas) if canvas.dim() == (height, width, 4) => canvas.fill(0.0),
+            _ => buffer = Some(Array3::zeros((height, width, 4))),
+        }
+        Self(buffer)
+    }
+}
+
+impl std::ops::Deref for Canvas {
+    type Target = Array3<f32>;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref().expect("the canvas is always present")
+    }
+}
+
+impl std::ops::DerefMut for Canvas {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.as_mut().expect("the canvas is always present")
+    }
+}
+
+impl Drop for Canvas {
+    fn drop(&mut self) {
+        let Some(canvas) = self.0.take() else {
+            return;
+        };
+        CANVAS.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            let bigger = slot
+                .as_ref()
+                .is_none_or(|cached| cached.len() < canvas.len());
+            if bigger {
+                *slot = Some(canvas);
+            }
+        });
+    }
 }
 
 /// `_compose` without a warm content cache: paints one frame from scratch.
 pub fn compose_frame(scene: &mut Scene<'_>, p: f64, live: bool, window: WindowRect) -> Frame {
-    let mut content = None;
+    let mut content = ContentCache::default();
     compose(scene, p, live, window, &mut content)
+}
+
+/// `_compose` using (and refreshing) the panel's content cache.
+pub fn compose_cached(
+    scene: &mut Scene<'_>,
+    p: f64,
+    live: bool,
+    window: WindowRect,
+    content: &mut ContentCache,
+) -> Frame {
+    compose(scene, p, live, window, content)
 }
 
 /// `_compose`: paints one frame of the panel (BGRA premultiplied).
@@ -175,13 +260,13 @@ pub(crate) fn compose(
     p: f64,
     live: bool,
     window: WindowRect,
-    content: &mut Option<(Sig, ez_gfx::sdf::Layer)>,
+    content: &mut ContentCache,
 ) -> Frame {
     let scale = scene.ui.scale();
     let margin = scale * MARGIN;
     let canvas_w = window.width.max(1);
     let canvas_h = window.height.max(1);
-    let mut canvas = Array3::<f32>::zeros((canvas_h, canvas_w, 4));
+    let mut canvas = Canvas::new(canvas_w, canvas_h);
     let panel = panel_local(canvas_w, canvas_h, margin);
     let opening = scene.anim != AnimState::Closing;
     let form = form_local(scene.form, window);
@@ -245,7 +330,7 @@ fn paint_live(
         Some(y0 + lift),
     );
     for (lx, ly, layer) in layers {
-        composite(canvas, &layer.view(), lx, ly);
+        composite(canvas, &layer, lx, ly);
     }
 }
 
@@ -253,7 +338,7 @@ fn paint_live(
 pub(crate) fn stable(
     scene: &mut Scene<'_>,
     base: &mut Option<(Sig, Frame)>,
-    content: &mut Option<(Sig, ez_gfx::sdf::Layer)>,
+    content: &mut ContentCache,
     window: WindowRect,
 ) -> Frame {
     let mut key = signature(scene.view, scene.now, true);
@@ -319,14 +404,14 @@ fn paint_content(
     radius: f64,
     mask: &[f32],
     lift: i32,
-    content: &mut Option<(Sig, ez_gfx::sdf::Layer)>,
+    content: &mut ContentCache,
     ticking: bool,
 ) {
     let sig = signature(scene.view, scene.now, ticking);
-    if content.as_ref().is_none_or(|(cached, _)| cached != &sig) {
-        *content = Some((sig, scene.view.render(scene.now)));
+    if content.0.as_ref().is_none_or(|(cached, _)| cached != &sig) {
+        content.0 = Some((sig, scene.view.render(scene.now)));
     }
-    let layer = match content.as_ref() {
+    let layer = match content.0.as_ref() {
         Some((_, layer)) => layer,
         None => return,
     };
@@ -346,18 +431,17 @@ fn paint_content(
     }
     let raw = layer.as_raw();
     let stride = layer.width() as usize;
-    let mut source = Array3::<f32>::zeros((rows, columns, 4));
-    for row in 0..rows {
-        let opacity = mask[row];
-        for column in 0..columns {
-            let matte = coverage[[row, column]] * opacity;
-            let index = (row * stride + column) * 4;
-            for channel in 0..4 {
-                source[[row, column, channel]] = raw[index + channel] * matte;
-            }
-        }
-    }
-    composite(canvas, &source.view(), x0, y0 + lift);
+    composite_masked(
+        canvas,
+        raw,
+        stride,
+        &coverage,
+        mask,
+        columns,
+        rows,
+        x0,
+        y0 + lift,
+    );
 }
 
 /// `_live_layers`: premultiplied `(x, y, RGBA)` layers of the orb and status line.
