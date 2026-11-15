@@ -109,7 +109,7 @@ impl Messenger {
     ///
     /// DECISION: sin el `try/except` del Python; `repair_structure` no puede
     /// fallar en Rust, así que no hay nada que atrapar.
-    pub(super) fn close_interrupted(
+    pub fn close_interrupted(
         &self,
         partial: &[String],
         open_calls: &[Value],

@@ -14,6 +14,8 @@ pub struct SseReader<R: BufRead> {
     reader: R,
     lines: Vec<String>,
     done: bool,
+    /// Entregar el bloque pendiente al cerrarse el flujo (`iter_sse` del Python).
+    flush_last: bool,
 }
 
 impl<R: BufRead> SseReader<R> {
@@ -22,6 +24,16 @@ impl<R: BufRead> SseReader<R> {
             reader,
             lines: Vec::new(),
             done: false,
+            flush_last: true,
+        }
+    }
+
+    /// Como `new`, pero descarta el bloque sin línea en blanco al final (el
+    /// decodificador SSE del SDK de OpenAI no lo entrega).
+    pub fn new_strict(reader: R) -> Self {
+        Self {
+            flush_last: false,
+            ..Self::new(reader)
         }
     }
 
@@ -39,6 +51,10 @@ impl<R: BufRead> SseReader<R> {
                 Ok(0) => {
                     self.done = true;
                     if self.lines.is_empty() {
+                        return None;
+                    }
+                    if !self.flush_last {
+                        self.lines.clear();
                         return None;
                     }
                     return Some(Ok(std::mem::take(&mut self.lines).join("\n")));

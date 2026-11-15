@@ -85,8 +85,35 @@ pub(crate) fn build_client(settings: &LlmSettings) -> Arc<dyn LlmClient> {
     }
 }
 
+/// `_max_tokens` con los topes del perfil (`None` = 32 000 de salida y sin razonamiento).
+pub fn max_tokens_with(
+    configured: i64,
+    chat: bool,
+    has_tools: bool,
+    reasoning: bool,
+    max_output: u32,
+) -> i64 {
+    let mut limit = configured;
+    if chat {
+        limit = limit.max(CHAT_MAX_TOKENS);
+    } else if has_tools {
+        limit = limit.max(TOOL_MAX_TOKENS);
+    }
+    if reasoning {
+        // El razonamiento consume salida: con 320 tokens el turno queda mudo.
+        limit = limit.max(2048);
+    }
+    // `int(caps.max_output or 32_000)`.
+    let ceiling = if max_output == 0 {
+        32_000
+    } else {
+        i64::from(max_output)
+    };
+    limit.max(1).min(ceiling)
+}
+
 /// `_user_content`: separa el texto del usuario de los datos del entorno.
-pub(crate) fn user_content(text: &str, volatile: &str) -> String {
+pub fn user_content(text: &str, volatile: &str) -> String {
     if py_strip(volatile).is_empty() {
         return text.to_string();
     }
@@ -97,7 +124,7 @@ pub(crate) fn user_content(text: &str, volatile: &str) -> String {
 }
 
 /// `_notice`: un aviso interno viaja como mensaje del usuario.
-pub(crate) fn notice(text: &str) -> Value {
+pub fn notice(text: &str) -> Value {
     json!({
         "role": "user",
         "content": format!(
@@ -107,7 +134,7 @@ pub(crate) fn notice(text: &str) -> Value {
 }
 
 /// `_with_volatile`: copia los mensajes y añade los datos al último usuario.
-pub(crate) fn with_volatile(messages: &[Value], volatile: &str) -> Vec<Value> {
+pub fn with_volatile(messages: &[Value], volatile: &str) -> Vec<Value> {
     if py_strip(volatile).is_empty() {
         return messages.to_vec();
     }
@@ -128,7 +155,7 @@ pub(crate) fn with_volatile(messages: &[Value], volatile: &str) -> Vec<Value> {
 
 /// `_seal_tool_calls`: deja válidos los argumentos guardados y dice cuáles
 /// llegaron completos.
-pub(crate) fn seal_tool_calls(ordered: &mut [Value], finish_reason: Option<&str>) -> Vec<bool> {
+pub fn seal_tool_calls(ordered: &mut [Value], finish_reason: Option<&str>) -> Vec<bool> {
     let mut complete = Vec::with_capacity(ordered.len());
     for item in ordered.iter_mut() {
         let name = item["function"]["name"].as_str().unwrap_or("");
@@ -148,7 +175,7 @@ pub(crate) fn seal_tool_calls(ordered: &mut [Value], finish_reason: Option<&str>
 }
 
 /// `_remaining_tools`: presupuesto del runtime, nunca negativo.
-pub(crate) fn remaining_tools(runtime: Option<&Arc<dyn AgentRuntimeApi>>) -> Option<i64> {
+pub fn remaining_tools(runtime: Option<&Arc<dyn AgentRuntimeApi>>) -> Option<i64> {
     runtime
         .and_then(|runtime| runtime.remaining_tool_calls())
         .map(|remaining| remaining.max(0))
@@ -158,18 +185,13 @@ impl Messenger {
     /// `_max_tokens`: tope configurado, con holgura para chat, herramientas y razonamiento.
     pub(crate) fn max_tokens(&self, settings: &LlmSettings, chat: bool, has_tools: bool) -> i64 {
         let caps = self.caps(settings);
-        let mut limit = settings.max_tokens;
-        if chat {
-            limit = limit.max(CHAT_MAX_TOKENS);
-        } else if has_tools {
-            limit = limit.max(TOOL_MAX_TOKENS);
-        }
-        if caps.reasoning {
-            // El razonamiento consume salida: con 320 tokens el turno queda mudo.
-            limit = limit.max(2048);
-        }
-        let ceiling = i64::from(caps.max_output);
-        limit.max(1).min(ceiling)
+        max_tokens_with(
+            settings.max_tokens,
+            chat,
+            has_tools,
+            caps.reasoning,
+            caps.max_output,
+        )
     }
 
     /// `capabilities_for(provider, model, api_style)` del Python.
@@ -182,7 +204,7 @@ impl Messenger {
     }
 
     /// `_tools_for`: esquemas del runtime; si falla, las herramientas base.
-    pub(crate) fn tools_for(
+    pub fn tools_for(
         &self,
         runtime: Option<&Arc<dyn AgentRuntimeApi>>,
         text: &str,
@@ -204,7 +226,7 @@ impl Messenger {
     }
 
     /// `_base_tools`: sin selección por intención, las base para no quedar sin ninguna.
-    pub(crate) fn base_tools(&self, runtime: &Arc<dyn AgentRuntimeApi>) -> Vec<Value> {
+    pub fn base_tools(&self, runtime: &Arc<dyn AgentRuntimeApi>) -> Vec<Value> {
         runtime.base_tool_schemas().unwrap_or_else(|_| Vec::new())
     }
 
