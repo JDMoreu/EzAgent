@@ -1,6 +1,7 @@
 //! Cuadros PNG del menú y de la ventana de ajustes.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use ez_gfx::sdf::Layer;
 use ez_hud::model::menu::geometry::Menu;
@@ -41,29 +42,43 @@ fn straight(layer: &Layer) -> image::RgbaImage {
     image::RgbaImage::from_raw(layer.width(), layer.height(), data).expect("RGBA del tamaño")
 }
 
+fn failures() -> &'static Mutex<Vec<String>> {
+    static FAILURES: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+    FAILURES.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// Tabla de todos los cuadros que no pasan el umbral (se vacía al leerla).
+pub(super) fn take_failures() -> Vec<String> {
+    std::mem::take(&mut *failures().lock().expect("lista de fallos"))
+}
+
 fn check(case: &FixtureCase, png: &str, layer: &Layer) {
     let produced = straight(layer);
     let expected = parity_image::decode(&golden(png)).expect("PNG dorado legible");
     let delta = parity_image::compare(&produced, &expected);
-    assert!(
-        parity_image::within(&delta, &thresholds()),
-        "{} ({}): max={} p995={} p999={} ssim={}",
-        case.case,
-        png,
-        delta.max,
-        delta.p995,
-        delta.p999,
-        delta.ssim
-    );
+    if !parity_image::within(&delta, &thresholds()) {
+        failures().lock().expect("lista de fallos").push(format!(
+            "{} ({}): max={} p995={} p999={} ssim={}",
+            case.case, png, delta.max, delta.p995, delta.p999, delta.ssim
+        ));
+    }
 }
 
 fn frame_time(case: &FixtureCase) -> f64 {
-    case.case
+    let offset = case
+        .case
         .rsplit('@')
         .next()
         .and_then(|text| text.parse::<f64>().ok())
         .map(|ms| ms / 1000.0)
-        .unwrap_or(1.2)
+        .unwrap_or(1.2);
+    let trigger = case
+        .input
+        .get("animation")
+        .and_then(|animation| animation.get("trigger_s"))
+        .and_then(|value| value.as_f64())
+        .unwrap_or(0.0);
+    trigger + offset
 }
 
 macro_rules! steps_of {
@@ -83,23 +98,53 @@ macro_rules! steps_of {
     }};
 }
 
-fn replay(menu: &mut Menu, case: &FixtureCase, recorder: &Recorder, target: f64) {
-    let mut clock = 0.0;
+/// `_still`: aplica cada paso en orden; `draw` avanza una sola vez al final.
+fn replay_still(menu: &mut Menu, case: &FixtureCase, recorder: &Recorder) {
     for step in steps_of!(case) {
-        let t = step.get("t").and_then(|v| v.as_f64()).unwrap_or(clock);
-        while clock < t - 1e-9 {
-            clock = (clock + 1.0 / 60.0).min(t);
-            menu.update(clock);
-        }
-        if t <= target + 1e-9 {
-            apply_step!(menu, recorder, step);
-            clock = clock.max(t);
-        }
+        apply_step!(menu, recorder, step);
     }
-    while clock < target - 1e-9 {
-        clock = (clock + 1.0 / 60.0).min(target);
-        menu.update(clock);
+}
+
+/// `_animation`: pasos de 1/60 s hasta la muestra, como la aplicación real.
+fn advance_animation(
+    menu: &mut Menu,
+    case: &FixtureCase,
+    recorder: &Recorder,
+    clock: &mut f64,
+    index: &mut usize,
+    target: f64,
+) {
+    let steps = steps_of!(case);
+    while *clock < target - 1e-9 {
+        *clock = (*clock + 1.0 / 60.0).min(target);
+        while *index < steps.len() {
+            let t = steps[*index]
+                .get("t")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            if t > *clock + 1e-9 {
+                break;
+            }
+            apply_step!(menu, recorder, steps[*index]);
+            *index += 1;
+        }
+        menu.update(*clock);
     }
+    while *index < steps.len() {
+        let t = steps[*index]
+            .get("t")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        if t > target + 1e-9 {
+            break;
+        }
+        apply_step!(menu, recorder, steps[*index]);
+        *index += 1;
+    }
+}
+
+fn sample_ms(case: &FixtureCase) -> Option<f64> {
+    case.case.rsplit('@').next()?.parse::<f64>().ok()
 }
 
 fn dpi(case: &FixtureCase) -> f64 {
@@ -114,19 +159,51 @@ pub(super) fn menu_frame(case: &FixtureCase) {
     let recorder = Recorder::new(case, settings_of(case).saved_snapshot());
     let mut menu = build_menu(case, &recorder);
     let t = frame_time(case);
-    replay(&mut menu, case, &recorder, t);
     let scale = dpi(case);
     let width = ((menu.width() * scale).round_ties_even() as u32).max(1);
     let height =
         (((f64::from(tokens::H_ISLAND) + menu.viewport_height()) * scale).round_ties_even() as u32)
             .max(1);
-    let mut layer = Layer::new(width, height);
-    menu.draw_with(&mut layer, t, &mut Advanced);
     let png = case
         .output
         .get("png")
         .and_then(|value| value.as_str())
         .expect("PNG del caso");
+    if let Some(animation) = case.input.get("animation") {
+        // `_animation` dibuja en cada muestra: el pie y el botón Guardar cambian
+        // de estado al pintar, así que hay que reproducir las muestras previas.
+        let trigger = animation
+            .get("trigger_s")
+            .and_then(|value| value.as_f64())
+            .unwrap_or(0.0);
+        let wanted = sample_ms(case).unwrap_or(0.0);
+        let samples: Vec<f64> = animation
+            .get("samples_ms")
+            .and_then(|value| value.as_array())
+            .map(|items| items.iter().filter_map(|v| v.as_f64()).collect())
+            .unwrap_or_default();
+        let mut clock = 0.0;
+        let mut index = 0;
+        let mut last: Option<Layer> = None;
+        for ms in samples {
+            let target = trigger + ms / 1000.0;
+            advance_animation(&mut menu, case, &recorder, &mut clock, &mut index, target);
+            let mut layer = Layer::new(width, height);
+            menu.draw_with(&mut layer, target, &mut Advanced);
+            if (ms - wanted).abs() < 0.5 {
+                check(case, png, &layer);
+                return;
+            }
+            last = Some(layer);
+        }
+        if let Some(layer) = last {
+            check(case, png, &layer);
+        }
+        return;
+    }
+    replay_still(&mut menu, case, &recorder);
+    let mut layer = Layer::new(width, height);
+    menu.draw_with(&mut layer, t, &mut Advanced);
     check(case, png, &layer);
 }
 
@@ -149,7 +226,7 @@ pub(super) fn settings_frame(case: &FixtureCase) {
         .and_then(|v| v.as_str())
         .unwrap_or("appearance");
     let t = frame_time(case);
-    replay(&mut menu, case, &recorder, t);
+    replay_still(&mut menu, case, &recorder);
     let scale = dpi(case);
     let width = ((win_w * scale).round_ties_even() as u32).max(1);
     let height = ((win_h * scale).round_ties_even() as u32).max(1);
