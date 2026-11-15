@@ -46,6 +46,7 @@ pub(super) fn rewrite(
     entries: &[ChatEntry],
     starts: &BTreeMap<i64, f64>,
     session: i64,
+    now: impl Fn() -> f64,
 ) -> Option<(Vec<ChatEntry>, BTreeMap<i64, i64>)> {
     let mut lines: Vec<String> = Vec::new();
     let mut rewritten: Vec<ChatEntry> = Vec::new();
@@ -90,7 +91,7 @@ pub(super) fn rewrite(
         lines.push(dumps_with(
             &json!({
                 "v": VERSION,
-                "t": round3(timestamp()),
+                "t": round3(now()),
                 "event": "resume",
                 "session": session,
                 "seq": seq,
@@ -130,12 +131,30 @@ pub(super) fn index_by_session(entries: &[ChatEntry]) -> Vec<(i64, Vec<ChatEntry
     by_session
 }
 
-pub(super) fn title(text: &str) -> String {
+pub fn title(text: &str) -> String {
+    title_with(text, 60)
+}
+
+/// `_title(text, limit)`: texto plano recortado a `limit` caracteres.
+pub fn title_with(text: &str, limit: usize) -> String {
     let flat = ez_core::pyvalue::collapse_spaces(text);
-    if char_len(&flat) <= 60 {
+    if char_len(&flat) <= limit {
         return flat;
     }
-    format!("{}…", py_rstrip(head_chars(&flat, 59)))
+    let cut = if limit == 0 {
+        char_len(&flat).saturating_sub(1)
+    } else {
+        limit - 1
+    };
+    format!("{}…", py_rstrip(head_chars(&flat, cut)))
+}
+
+/// `_seq_of(data, index)`: `seq` guardado o, sin él, el índice de línea.
+pub fn seq_of(data: &Value, index: i64) -> i64 {
+    match data.get("seq") {
+        Some(value) => py_int(Some(value)).unwrap_or(index),
+        None => index,
+    }
 }
 
 /// `round(value, 3)` con los flotantes de Python.

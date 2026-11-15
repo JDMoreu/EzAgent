@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use ez_core::pytime::timestamp;
 use ez_core::pyvalue::py_strip;
 
-use crate::store::{ChatEntry, ChatStore, Role, SessionInfo, Source};
+use crate::store::{ChatEntry, ChatStore, Clock, Role, SessionInfo, Source};
 
 /// Un mensaje visible. El del asistente crece mientras llega en streaming.
 #[derive(Debug, Clone, PartialEq)]
@@ -43,12 +43,19 @@ struct Inner {
 /// Estado del chat. `version` sube con cada cambio para que la vista repinte.
 pub struct ChatModel {
     store: Option<Arc<ChatStore>>,
+    clock: Clock,
     inner: Mutex<Inner>,
 }
 
 impl ChatModel {
     /// `ChatModel(store, voice_replies)`.
     pub fn new(store: Option<Arc<ChatStore>>, voice_replies: bool) -> Self {
+        Self::with_clock(store, voice_replies, Arc::new(timestamp))
+    }
+
+    /// Igual que [`ChatModel::new`] con un reloj explícito (el oráculo lo congela).
+    pub fn with_clock(store: Option<Arc<ChatStore>>, voice_replies: bool, clock: Clock) -> Self {
+        let now = (clock)();
         let mut inner = Inner {
             voice_replies,
             mic_muted: false,
@@ -65,15 +72,21 @@ impl ChatModel {
                     &mut inner,
                     entry.role,
                     &entry.text,
-                    entry.source,
+                    entry.source.clone(),
                     Some(entry.t),
+                    now,
                 );
             }
         }
         Self {
             store,
+            clock,
             inner: Mutex::new(inner),
         }
+    }
+
+    fn now(&self) -> f64 {
+        (self.clock)()
     }
 
     /// Historial asociado, si lo hay.
@@ -92,7 +105,8 @@ impl ChatModel {
     pub fn add_user(&self, text: &str, source: Source) -> ChatMessage {
         let mut inner = self.lock();
         inner.viewing = None;
-        let message = push(&mut inner, Role::User, text, source, None);
+        let now = self.now();
+        let message = push(&mut inner, Role::User, text, source.clone(), None, now);
         if let Some(store) = &self.store {
             store.append(Role::User, text, source, None);
         }
@@ -123,7 +137,8 @@ impl ChatModel {
     /// Una nota de la propia app: se ve, pero no se guarda.
     pub fn add_note(&self, text: &str) -> ChatMessage {
         let mut inner = self.lock();
-        let message = push(&mut inner, Role::System, text, Source::Agent, None);
+        let now = self.now();
+        let message = push(&mut inner, Role::System, text, Source::Agent, None, now);
         bump(&mut inner);
         message
     }
@@ -131,7 +146,8 @@ impl ChatModel {
     /// Empieza una respuesta vacía que irá llenándose.
     pub fn begin_assistant(&self, source: Source) -> ChatMessage {
         let mut inner = self.lock();
-        let mut message = push(&mut inner, Role::Assistant, "", source, None);
+        let now = self.now();
+        let mut message = push(&mut inner, Role::Assistant, "", source, None, now);
         message.streaming = true;
         if let Some(last) = inner.messages.last_mut() {
             last.streaming = true;
@@ -160,10 +176,10 @@ impl ChatModel {
             return;
         };
         let text = py_strip(&inner.messages[index].text).to_string();
-        let source = inner.messages[index].source;
+        let source = inner.messages[index].source.clone();
         inner.messages[index].streaming = false;
         inner.messages[index].text = text.clone();
-        let now = timestamp();
+        let now = self.now();
         inner.messages[index].t = now;
         if text.is_empty() {
             inner.messages.remove(index);
@@ -200,7 +216,12 @@ impl ChatModel {
         } else {
             inner.messages[index].text = text.clone();
             if let Some(store) = &self.store {
-                store.append(Role::Assistant, &text, inner.messages[index].source, None);
+                store.append(
+                    Role::Assistant,
+                    &text,
+                    inner.messages[index].source.clone(),
+                    None,
+                );
             }
         }
         inner.busy = inner.messages.iter().any(|message| message.streaming);
@@ -254,8 +275,9 @@ impl ChatModel {
                 &mut inner,
                 entry.role,
                 &entry.text,
-                entry.source,
+                entry.source.clone(),
                 Some(entry.t),
+                self.now(),
             );
         }
         inner.confirm = None;
@@ -382,13 +404,20 @@ impl ChatModel {
     }
 }
 
-fn push(inner: &mut Inner, role: Role, text: &str, source: Source, t: Option<f64>) -> ChatMessage {
+fn push(
+    inner: &mut Inner,
+    role: Role,
+    text: &str,
+    source: Source,
+    t: Option<f64>,
+    now: f64,
+) -> ChatMessage {
     let message = ChatMessage {
         id: inner.next_id,
         role,
         text: text.to_string(),
         source,
-        t: t.unwrap_or_else(timestamp),
+        t: t.unwrap_or(now),
         streaming: false,
         error: false,
     };
@@ -412,7 +441,7 @@ fn from_entry(index: usize, entry: &ChatEntry) -> ChatMessage {
         id: -((index as i64) + 1),
         role: entry.role,
         text: entry.text.clone(),
-        source: entry.source,
+        source: entry.source.clone(),
         t: entry.t,
         streaming: false,
         error: false,

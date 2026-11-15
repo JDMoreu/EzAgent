@@ -99,7 +99,11 @@ fn unknown_roles_and_sources_are_handled() {
     let entries = store.entries(None);
     assert_eq!(entries.len(), 1);
     assert_eq!(
-        (entries[0].role, entries[0].source, entries[0].text.as_str()),
+        (
+            entries[0].role,
+            entries[0].source.clone(),
+            entries[0].text.as_str()
+        ),
         (Role::User, Source::Chat, "y")
     );
 }

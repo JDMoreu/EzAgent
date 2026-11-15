@@ -2,7 +2,7 @@
 //!
 //! Fecha y hora local de cada mensaje del chat.
 
-use chrono::{Datelike, Local, TimeZone, Timelike};
+use chrono::{DateTime, Datelike, FixedOffset, Local, TimeZone, Timelike};
 
 use crate::session::ChatMessage;
 
@@ -10,14 +10,7 @@ const MONTHS: [&str; 12] = [
     "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic",
 ];
 
-/// «13 nov 2026 · 16:46:12» en la hora local.
-pub fn stamp(t: f64) -> String {
-    let Some(moment) = Local.timestamp_opt(t.trunc() as i64, 0).single() else {
-        // DECISION: Python lanza OSError con instantes fuera de rango; aquí se
-        // avisa y se devuelve "" para no tumbar la vista.
-        tracing::warn!("No pude formatear la hora del chat: {t}");
-        return String::new();
-    };
+fn format_stamp<Tz: TimeZone>(moment: &DateTime<Tz>) -> String {
     format!(
         "{} {} {} · {:02}:{:02}:{:02}",
         moment.day(),
@@ -29,8 +22,43 @@ pub fn stamp(t: f64) -> String {
     )
 }
 
+/// «13 nov 2026 · 16:46:12» en la hora local.
+pub fn stamp(t: f64) -> String {
+    let Some(moment) = Local.timestamp_opt(t.trunc() as i64, 0).single() else {
+        // DECISION: Python lanza OSError con instantes fuera de rango; aquí se
+        // avisa y se devuelve "" para no tumbar la vista.
+        tracing::warn!("No pude formatear la hora del chat: {t}");
+        return String::new();
+    };
+    format_stamp(&moment)
+}
+
+/// El mismo texto en una zona fija. El oráculo de paridad de `chat_trace` usó
+/// una zona fija; esta puerta permite comprobarlo sin depender de la máquina.
+// DECISION: `stamp` sigue con `Local`; esta variante no la usa la aplicación.
+pub fn stamp_with_offset(t: f64, offset_seconds: i32) -> String {
+    let Some(zone) = FixedOffset::east_opt(offset_seconds) else {
+        tracing::warn!("Desfase horario inválido: {offset_seconds}");
+        return String::new();
+    };
+    let Some(moment) = zone.timestamp_opt(t.trunc() as i64, 0).single() else {
+        tracing::warn!("No pude formatear la hora del chat: {t}");
+        return String::new();
+    };
+    format_stamp(&moment)
+}
+
 /// Fecha y hora de un mensaje del usuario o de EzAgent; "" mientras se escribe.
 pub fn stamp_for(message: &ChatMessage) -> String {
+    stamp_for_with(message, stamp)
+}
+
+/// Igual que `stamp_for`, con una zona fija (la del oráculo de paridad).
+pub fn stamp_for_with_offset(message: &ChatMessage, offset_seconds: i32) -> String {
+    stamp_for_with(message, |t| stamp_with_offset(t, offset_seconds))
+}
+
+fn stamp_for_with(message: &ChatMessage, stamp: impl Fn(f64) -> String) -> String {
     if message.role.as_str() != "user" && message.role.as_str() != "assistant" {
         return String::new();
     }

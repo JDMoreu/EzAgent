@@ -140,7 +140,8 @@ pub fn clean_target(target: &str) -> String {
 
 /// ¿Parece una ruta de archivo local (y no una dirección web)?
 pub fn is_local_target(target: &str) -> bool {
-    blocks::is_local_target(&clean_target(target))
+    // Python solo recorta espacios aquí; los «<>» los quita `clean_target` antes.
+    blocks::is_local_target(py_strip(target))
 }
 
 /// Convierte markdown en bloques. Nunca falla: lo que no entiende es un párrafo.

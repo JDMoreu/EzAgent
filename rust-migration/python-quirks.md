@@ -130,3 +130,52 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
 - Recomendación posterior: limitar los minutos en `_CLOCK_12` a `[0-5]\d` (o
   envolver el `replace` en `try/except ValueError` y devolver 0). Tocaría
   regenerar `swarm/incidents/parse-reset/*` solo si se añaden casos con `:60`.
+
+## Q-P-CHAT-01
+- Archivo y líneas: `parity/gen/_common.py:56-59` (generación de `chat_trace`)
+- Qué hace mal: el generador fija `TZ=UTC` y llama a `time.tzset()`, pero en
+  Windows ese método no existe (`hasattr(time, "tzset") == False`), así que
+  `time.localtime` siguió usando la zona de la máquina que generó los casos. Los
+  30 casos de `stamp` implican un desfase fijo de −18000 s (UTC−5), no 0: por
+  ejemplo `stamp/001` entra `t = 1768496400.0` y espera «15 ene 2026 · 12:00:00».
+- Cómo se reproduce en Rust: `trace::stamp_with_offset(t, zona)` recibe el
+  desfase deducido del propio fixture (la prueba comprueba que sea el mismo en
+  todos los casos); `stamp`/`stamp_for` siguen usando la zona local real.
+- Recomendación posterior: generar los textos con una zona explícita
+  (`datetime.fromtimestamp(t, timezone(timedelta(hours=-5)))`) o fijar la zona
+  del host de generación; afecta a `parity/fixtures/chat_trace.jsonl` y a su
+  generador.
+
+## Q-P-CHAT-02
+- Archivo y líneas: `parity/gen/chat_store.py:1038-1046` (`_ContextRun.finish`)
+- Qué hace mal: el escenario escribe `seed` en el disco, pero el `input` del
+  fixture solo incluye `store`, `holder`, `setup`, `exports` y `ops`. El caso
+  `chat_store/contexts/rebuild` no se puede reproducir desde su entrada: su
+  `output.file` empieza con una línea «guardado» que nunca se declara.
+- Cómo se reproduce en Rust: `chat_store_parity.rs` recompone el único seed
+  afectado con el texto literal de `parity/gen/chat_store.py:1112`.
+- Recomendación posterior: añadir `"seed": spec.get("seed")` al `input` y
+  regenerar `parity/fixtures/chat_store.jsonl`.
+
+## Q-P-CHAT-03
+- Archivo y líneas: `src/ezagent/voice/chat/store.py:135-167` (`append`)
+- Qué hace mal: el parámetro `source` está declarado `Source` (`Literal`), pero
+  `append` no lo valida: guarda cualquier texto en el JSONL. Solo `_ingest`
+  (línea 108-113) normaliza una fuente desconocida a `"chat"` al recargar, así
+  que el archivo y la memoria pueden discrepar hasta el siguiente arranque.
+- Cómo se reproduce en Rust: `store::Source` tiene la variante `Other(String)`;
+  `ChatStore::append` la persiste tal cual y `ingest` la vuelve a `Chat`.
+  `chat_store/append-coercions` depende de esta laxitud (`source: "otro"`).
+- Recomendación posterior: validar `source` en `append` o tiparlo como `str` y
+  normalizarlo al guardar; afecta a `chat_store/append-coercions`.
+
+## Q-P-CHAT-04
+- Archivo y líneas: `src/ezagent/voice/chat/store.py:342-345` (`recent`)
+- Qué hace mal: `self._entries[-max(0, limit) :]` con `limit <= 0` usa
+  `-0 == 0`, así que devuelve **todo** el historial en vez de nada. Un llamador
+  que pida «los últimos 0 mensajes» recibe la conversación completa.
+- Cómo se reproduce en Rust: `ChatStore::recent` devuelve todas las entradas
+  cuando `limit <= 0`; `chat_store/recent` fija ese comportamiento con
+  `limit: 0` y `limit: -1`.
+- Recomendación posterior: devolver `[]` con `limit <= 0` y regenerar
+  `chat_store/recent`; no hay otro consumidor que dependa del valor actual.

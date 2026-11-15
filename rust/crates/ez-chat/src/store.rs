@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use ez_core::pyjson::{dumps_with, DumpOptions};
 use ez_core::pytime::timestamp;
@@ -20,13 +20,19 @@ use serde_json::{json, Value};
 
 mod records;
 
-pub use records::as_messages;
-use records::{
-    append_line, index_by_session, load, py_float, py_int, python_str, rewrite, round3, title,
-};
+use records::{append_line, index_by_session, load, py_float, py_int, python_str, rewrite, round3};
+pub use records::{as_messages, seq_of, title, title_with};
 
 pub const MAX_ENTRY_CHARS: usize = 200_000;
-const VERSION: i64 = 1;
+pub const VERSION: i64 = 1;
+
+// DECISION: el reloj se inyecta para reproducir el `time.time()` congelado del
+// oráculo sin tocar el reloj del proceso; en producción es `pytime::timestamp`.
+pub type Clock = Arc<dyn Fn() -> f64 + Send + Sync>;
+
+fn system_clock() -> Clock {
+    Arc::new(timestamp)
+}
 
 /// `Role` del historial.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -55,21 +61,27 @@ impl Role {
     }
 }
 
-/// `Source` del historial.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// `Source` del historial. Python lo declara `Literal` pero `append` no valida:
+/// guarda cualquier texto tal cual, así que lo no conocido se conserva en
+/// [`Source::Other`].
+// DECISION: se conserva el texto libre para no divergir de `append`; `ingest`
+// vuelve a `chat` al recargar, igual que el Python.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Source {
     #[default]
     Chat,
     Voice,
     Agent,
+    Other(String),
 }
 
 impl Source {
-    pub fn as_str(self) -> &'static str {
+    pub fn as_str(&self) -> &str {
         match self {
             Self::Chat => "chat",
             Self::Voice => "voice",
             Self::Agent => "agent",
+            Self::Other(text) => text,
         }
     }
 
@@ -132,12 +144,18 @@ struct State {
 /// Historial persistente y seguro entre hilos.
 pub struct ChatStore {
     path: PathBuf,
+    clock: Clock,
     state: Mutex<State>,
 }
 
 impl ChatStore {
     /// `ChatStore(path)`; `None` usa `default_chat_path()`.
     pub fn new(path: Option<PathBuf>) -> Self {
+        Self::with_clock(path, system_clock())
+    }
+
+    /// Igual que [`ChatStore::new`] con un reloj explícito (el oráculo lo congela).
+    pub fn with_clock(path: Option<PathBuf>, clock: Clock) -> Self {
         let path = path.unwrap_or_else(default_chat_path);
         let mut state = State {
             session: 1,
@@ -146,8 +164,13 @@ impl ChatStore {
         load(&path, &mut state);
         Self {
             path,
+            clock,
             state: Mutex::new(state),
         }
+    }
+
+    fn now(&self) -> f64 {
+        (self.clock)()
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
@@ -159,10 +182,7 @@ impl ChatStore {
     // ---------------------------------------------------------------- carga
     fn ingest(state: &mut State, data: &Value, index: i64) -> Result<(), ()> {
         let session = py_int(data.get("session")).ok_or(())?;
-        let seq = match data.get("seq") {
-            Some(value) => py_int(Some(value)).unwrap_or(index),
-            None => index,
-        };
+        let seq = seq_of(data, index);
         state.seq = state.seq.max(seq);
         state
             .activity
@@ -225,7 +245,7 @@ impl ChatStore {
         let clean = head_chars(text, MAX_ENTRY_CHARS).to_string();
         let mut state = self.lock();
         let entry = ChatEntry {
-            t: t.unwrap_or_else(timestamp),
+            t: t.unwrap_or_else(|| self.now()),
             session: state.session,
             role,
             source,
@@ -248,7 +268,7 @@ impl ChatStore {
             "t": round3(entry.t),
             "session": entry.session,
             "role": role.as_str(),
-            "source": source.as_str(),
+            "source": entry.source.as_str(),
             "text": clean,
             "seq": entry.seq,
         }));
@@ -274,7 +294,9 @@ impl ChatStore {
             let mut entries = state.entries.clone();
             entries[index].text = clean.to_string();
             let Some((rewritten, activity)) =
-                rewrite(&self.path, &entries, &state.starts, state.session)
+                rewrite(&self.path, &entries, &state.starts, state.session, || {
+                    self.now()
+                })
             else {
                 return false;
             };
@@ -292,7 +314,7 @@ impl ChatStore {
         let mut state = self.lock();
         state.session += 1;
         let session = state.session;
-        let now = timestamp();
+        let now = self.now();
         let seq = Self::next_seq(&mut state);
         state.starts.insert(session, now);
         state.activity.insert(session, seq);
@@ -320,7 +342,7 @@ impl ChatStore {
         state.activity.insert(session, seq);
         self.write(&json!({
             "v": VERSION,
-            "t": round3(timestamp()),
+            "t": round3(self.now()),
             "event": "resume",
             "session": session,
             "seq": seq,
@@ -346,7 +368,9 @@ impl ChatStore {
         if kept.len() == state.entries.len() && !state.starts.contains_key(&session) {
             return false;
         }
-        let Some((entries, activity)) = rewrite(&self.path, &kept, &starts, state.session) else {
+        let Some((entries, activity)) =
+            rewrite(&self.path, &kept, &starts, state.session, || self.now())
+        else {
             return false;
         };
         state.entries = entries;
