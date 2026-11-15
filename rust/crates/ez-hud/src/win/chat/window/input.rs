@@ -225,7 +225,7 @@ impl ChatPanel {
             self.configure_view(view, f64::from(width) / scale, f64::from(height) / scale);
         }
         state.base = None;
-        state.content = None;
+        state.content = crate::win::chat::compose::ContentCache::default();
     }
 
     pub(super) fn end_resize(&self) {

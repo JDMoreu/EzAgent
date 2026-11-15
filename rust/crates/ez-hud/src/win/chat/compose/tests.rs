@@ -66,7 +66,7 @@ fn a_scene_without_a_fluid_paints_the_body_colour() {
         "dark",
         crate::tokens::palette("dark").expect("the dark palette exists"),
     );
-    let mut content = None;
+    let mut content = ContentCache::default();
     let mut scene = Scene {
         ui: ui.as_ref(),
         view: &mut view,
@@ -128,7 +128,7 @@ fn the_live_orb_and_status_line_become_layers() {
 fn the_stable_frame_is_cached_and_only_the_live_layer_moves() {
     let ui = fake_ui();
     let mut view = sample_view();
-    let mut content = None;
+    let mut content = ContentCache::default();
     let mut base = None;
     let window = WindowRect {
         x: 0,
@@ -148,7 +148,7 @@ fn the_stable_frame_is_cached_and_only_the_live_layer_moves() {
     let second = stable(&mut scene, &mut base, &mut content, window);
     assert_eq!(first, second);
     assert!(base.is_some());
-    assert!(content.is_some());
+    assert!(content.0.is_some());
     // A different status invalidates the cached content.
     scene.view.status = String::from("Pensando…");
     let third = stable(&mut scene, &mut base, &mut content, window);
@@ -177,7 +177,7 @@ fn a_shared_ui_can_be_reused_for_several_scenes() {
             width: 60,
             height: 60,
         },
-        &mut None,
+        &mut ContentCache::default(),
     );
     assert_eq!((frame.width, frame.height), (60, 60));
 }

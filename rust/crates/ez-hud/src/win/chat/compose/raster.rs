@@ -2,9 +2,11 @@
 //!
 //! The Python composition works on a premultiplied `float32` RGBA canvas and
 //! only converts to eight-bit BGRA at the very end. The helpers here keep that
-//! order: composite, shade, blend and, at the end, quantize.
+//! order: composite, shade, blend and, at the end, quantize. Every pass walks
+//! the canvas by contiguous rows (numpy did the same under `_composite`,
+//! `_shade` and the `[..., None]` broadcasts) and allocates no temporaries.
 
-use ndarray::{Array3, ArrayView2, ArrayView3};
+use ndarray::{Array2, Array3, ArrayView3};
 
 use crate::win::layered::RgbaFrame;
 
@@ -45,23 +47,15 @@ impl Frame {
     /// rounding makes that integer step recover the exact BGRA bytes, while
     /// truncation shifted some colours down by one.
     pub fn to_rgba_frame(&self) -> RgbaFrame {
+        let table = straight_table();
         let mut data = Vec::with_capacity(self.bgra.len());
         for pixel in self.bgra.as_chunks::<4>().0 {
-            let alpha = pixel[3];
-            let straight = |channel: u8| -> u8 {
-                if alpha == 0 {
-                    0
-                } else {
-                    (f64::from(channel) * 255.0 / f64::from(alpha))
-                        .round_ties_even()
-                        .min(255.0) as u8
-                }
-            };
+            let row = usize::from(pixel[3]) * 256;
             data.extend_from_slice(&[
-                straight(pixel[2]),
-                straight(pixel[1]),
-                straight(pixel[0]),
-                alpha,
+                table[row + usize::from(pixel[2])],
+                table[row + usize::from(pixel[1])],
+                table[row + usize::from(pixel[0])],
+                pixel[3],
             ]);
         }
         RgbaFrame::new(self.width as u32, self.height as u32, data)
@@ -69,18 +63,38 @@ impl Frame {
     }
 }
 
+/// `round_ties_even(channel · 255 / alpha)`, capped at 255, indexed by
+/// `alpha · 256 + channel`.
+fn straight_table() -> &'static [u8] {
+    static TABLE: std::sync::LazyLock<Vec<u8>> = std::sync::LazyLock::new(|| {
+        let mut table = vec![0u8; 256 * 256];
+        for alpha in 1..256usize {
+            for channel in 0..256usize {
+                let value = (channel as f64 * 255.0 / alpha as f64)
+                    .round_ties_even()
+                    .min(255.0) as u8;
+                table[alpha * 256 + channel] = value;
+            }
+        }
+        table
+    });
+    &TABLE
+}
+
 /// Quantizes the premultiplied float canvas to BGRA.
 pub(super) fn frame_from_canvas(canvas: &Array3<f32>) -> Frame {
     let (height, width, _) = canvas.dim();
-    let mut bgra = Vec::with_capacity(width * height * 4);
-    for row in 0..height {
-        for column in 0..width {
-            let red = quantize(canvas[[row, column, 0]]);
-            let green = quantize(canvas[[row, column, 1]]);
-            let blue = quantize(canvas[[row, column, 2]]);
-            let alpha = quantize(canvas[[row, column, 3]]);
-            bgra.extend_from_slice(&[blue, green, red, alpha]);
-        }
+    let mut bgra = vec![0u8; width * height * 4];
+    for (out, pixel) in bgra
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(points(canvas).as_chunks::<4>().0)
+    {
+        out[0] = quantize(pixel[2]);
+        out[1] = quantize(pixel[1]);
+        out[2] = quantize(pixel[0]);
+        out[3] = quantize(pixel[3]);
     }
     Frame {
         width,
@@ -90,52 +104,130 @@ pub(super) fn frame_from_canvas(canvas: &Array3<f32>) -> Frame {
 }
 
 fn quantize(value: f32) -> u8 {
-    (value * 255.0 + 0.5).clamp(0.0, 255.0) as u8
+    // `as u8` saturates, so the clamp of the Python is already applied.
+    (value * 255.0 + 0.5) as u8
 }
 
-/// `_composite_over`: premultiplied `rgb` plus its `alpha` over the canvas.
-pub(super) fn composite_over(
-    canvas: &mut Array3<f32>,
-    rgb: &ArrayView3<f32>,
-    alpha: &ArrayView2<f32>,
+/// Contiguous pixels of a layer as one flat slice.
+pub(super) fn points(layer: &Array3<f32>) -> &[f32] {
+    layer.as_slice().expect("layers are contiguous")
+}
+
+/// Mutable pixels of the canvas as one flat slice.
+pub(super) fn points_mut(canvas: &mut Array3<f32>) -> &mut [f32] {
+    canvas.as_slice_mut().expect("the canvas is contiguous")
+}
+
+/// Canvas width in pixels.
+pub(super) fn canvas_width(canvas: &Array3<f32>) -> usize {
+    canvas.dim().1
+}
+
+/// Intersection of a source rectangle with the canvas, in both frames.
+pub(super) struct Span {
+    pub src_row: usize,
+    pub src_column: usize,
+    pub dst_row: usize,
+    pub dst_column: usize,
+    pub columns: usize,
+    pub rows: usize,
+}
+
+/// Clips `[x_from, x_to)`×`[y_from, y_to)` placed at `(x0, y0)` to the canvas.
+pub(super) fn span(
+    canvas: &Array3<f32>,
     x0: i32,
     y0: i32,
-) {
-    let (height, width) = alpha.dim();
-    let (sx0, sy0, dx0, dy0, copy_w, copy_h) = clip(canvas, width, height, x0, y0);
-    if copy_w == 0 || copy_h == 0 {
-        return;
+    x_from: usize,
+    x_to: usize,
+    y_from: usize,
+    y_to: usize,
+) -> Option<Span> {
+    let (canvas_h, canvas_w, _) = canvas.dim();
+    let left = x0 + x_from as i32;
+    let top = y0 + y_from as i32;
+    let right = x0 + x_to as i32;
+    let bottom = y0 + y_to as i32;
+    let dx0 = left.max(0);
+    let dy0 = top.max(0);
+    let dx1 = right.min(canvas_w as i32);
+    let dy1 = bottom.min(canvas_h as i32);
+    if dx0 >= dx1 || dy0 >= dy1 {
+        return None;
     }
-    for sy in sy0..sy0 + copy_h {
-        for sx in sx0..sx0 + copy_w {
-            let a = alpha[[sy, sx]];
-            let dy = dy0 + (sy - sy0);
-            let dx = dx0 + (sx - sx0);
-            for channel in 0..3 {
-                canvas[[dy, dx, channel]] =
-                    canvas[[dy, dx, channel]] * (1.0 - a) + rgb[[sy, sx, channel]];
+    Some(Span {
+        src_row: (y_from as i32 + (dy0 - top)) as usize,
+        src_column: (x_from as i32 + (dx0 - left)) as usize,
+        dst_row: dy0 as usize,
+        dst_column: dx0 as usize,
+        columns: (dx1 - dx0) as usize,
+        rows: (dy1 - dy0) as usize,
+    })
+}
+
+/// `_composite`: premultiplied `src` over the canvas.
+pub(super) fn composite(canvas: &mut Array3<f32>, src: &Array3<f32>, x0: i32, y0: i32) {
+    let (height, width, _) = src.dim();
+    let Some(clip) = span(canvas, x0, y0, 0, width, 0, height) else {
+        return;
+    };
+    let canvas_w = canvas_width(canvas);
+    let source = points(src);
+    let target = points_mut(canvas);
+    for row in 0..clip.rows {
+        let source_row = clip.src_row + row;
+        let source_column = clip.src_column;
+        let pixels = &source[(source_row * width + source_column) * 4..][..clip.columns * 4];
+        let start = ((clip.dst_row + row) * canvas_w + clip.dst_column) * 4;
+        let under = &mut target[start..start + clip.columns * 4];
+        for (bottom, top) in under
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .zip(pixels.as_chunks::<4>().0)
+        {
+            let alpha = top[3];
+            for channel in 0..4 {
+                bottom[channel] = bottom[channel] * (1.0 - alpha) + top[channel];
             }
-            canvas[[dy, dx, 3]] = canvas[[dy, dx, 3]] * (1.0 - a) + a;
         }
     }
 }
 
-/// `_shade`: blackens the canvas under `alpha` and adds its coverage to alpha.
-pub(super) fn shade(canvas: &mut Array3<f32>, alpha: &ArrayView2<f32>, x0: i32, y0: i32) {
-    let (height, width) = alpha.dim();
-    let (sx0, sy0, dx0, dy0, copy_w, copy_h) = clip(canvas, width, height, x0, y0);
-    if copy_w == 0 || copy_h == 0 {
+/// `_shade`: blackens the canvas under `alpha` (times `gain`) and adds its
+/// coverage to alpha.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn shade_rows(
+    canvas: &mut Array3<f32>,
+    alpha: &Array2<f32>,
+    x_from: usize,
+    x_to: usize,
+    y_from: usize,
+    y_to: usize,
+    x0: i32,
+    y0: i32,
+    gain: f32,
+) {
+    let (_, width) = alpha.dim();
+    let Some(clip) = span(canvas, x0, y0, x_from, x_to, y_from, y_to) else {
         return;
-    }
-    for sy in sy0..sy0 + copy_h {
-        for sx in sx0..sx0 + copy_w {
-            let a = alpha[[sy, sx]];
-            let dy = dy0 + (sy - sy0);
-            let dx = dx0 + (sx - sx0);
-            for channel in 0..3 {
-                canvas[[dy, dx, channel]] *= 1.0 - a;
-            }
-            canvas[[dy, dx, 3]] = a + canvas[[dy, dx, 3]] * (1.0 - a);
+    };
+    let canvas_w = canvas_width(canvas);
+    let source = alpha.as_slice().expect("coverage is contiguous");
+    let target = points_mut(canvas);
+    for row in 0..clip.rows {
+        let source_row = clip.src_row + row;
+        let source_column = clip.src_column;
+        let values = &source[source_row * width + source_column..][..clip.columns];
+        let start = ((clip.dst_row + row) * canvas_w + clip.dst_column) * 4;
+        let under = &mut target[start..start + clip.columns * 4];
+        for (bottom, &value) in under.as_chunks_mut::<4>().0.iter_mut().zip(values) {
+            let cover = value * gain;
+            let keep = 1.0 - cover;
+            bottom[0] *= keep;
+            bottom[1] *= keep;
+            bottom[2] *= keep;
+            bottom[3] = cover + bottom[3] * keep;
         }
     }
 }
@@ -143,84 +235,80 @@ pub(super) fn shade(canvas: &mut Array3<f32>, alpha: &ArrayView2<f32>, x0: i32, 
 /// `_shade_frame`: only the `band`-pixel border of `alpha` darkens the canvas.
 pub(super) fn shade_frame(
     canvas: &mut Array3<f32>,
-    alpha: &ArrayView2<f32>,
+    alpha: &Array2<f32>,
     x0: i32,
     y0: i32,
     band: i32,
+    gain: f32,
 ) {
     let (height, width) = alpha.dim();
     let band = band.max(1).min(height as i32).min(width as i32) as usize;
     if band * 2 >= height || band * 2 >= width {
-        shade(canvas, alpha, x0, y0);
+        shade_rows(canvas, alpha, 0, width, 0, height, x0, y0, gain);
         return;
     }
     for rows in [0..band, height - band..height] {
-        shade(
-            canvas,
-            &alpha.slice(ndarray::s![rows.clone(), ..]),
-            x0,
-            y0 + rows.start as i32,
-        );
+        shade_rows(canvas, alpha, 0, width, rows.start, rows.end, x0, y0, gain);
     }
     let middle = band..height - band;
     for columns in [0..band, width - band..width] {
-        shade(
+        shade_rows(
             canvas,
-            &alpha.slice(ndarray::s![middle.clone(), columns.clone()]),
-            x0 + columns.start as i32,
-            y0 + band as i32,
+            alpha,
+            columns.start,
+            columns.end,
+            middle.start,
+            middle.end,
+            x0,
+            y0,
+            gain,
         );
     }
 }
 
-/// `_composite_frame`: only the `band`-pixel border of `src` is composited.
-pub(super) fn composite_frame(
+/// `_paint_content` without the temporary: content × coverage × row mask.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn composite_masked(
     canvas: &mut Array3<f32>,
-    src: &ArrayView3<f32>,
+    src: &[f32],
+    src_width: usize,
+    coverage: &Array2<f32>,
+    mask: &[f32],
+    columns: usize,
+    rows: usize,
     x0: i32,
     y0: i32,
-    band: i32,
 ) {
-    let (height, width, _) = src.dim();
-    let band = band.max(1).min(height as i32).min(width as i32) as usize;
-    if band * 2 >= height || band * 2 >= width {
-        composite(canvas, src, x0, y0);
+    let (coverage_height, coverage_width) = coverage.dim();
+    let Some(clip) = span(canvas, x0, y0, 0, columns, 0, rows) else {
         return;
-    }
-    for rows in [0..band, height - band..height] {
-        composite(
-            canvas,
-            &src.slice(ndarray::s![rows.clone(), .., ..]),
-            x0,
-            y0 + rows.start as i32,
-        );
-    }
-    let middle = band..height - band;
-    for columns in [0..band, width - band..width] {
-        composite(
-            canvas,
-            &src.slice(ndarray::s![middle.clone(), columns.clone(), ..]),
-            x0 + columns.start as i32,
-            y0 + band as i32,
-        );
-    }
-}
-
-/// `_composite`: premultiplied `src` over the canvas.
-pub(super) fn composite(canvas: &mut Array3<f32>, src: &ArrayView3<f32>, x0: i32, y0: i32) {
-    let (height, width, _) = src.dim();
-    let (sx0, sy0, dx0, dy0, copy_w, copy_h) = clip(canvas, width, height, x0, y0);
-    if copy_w == 0 || copy_h == 0 {
-        return;
-    }
-    for sy in sy0..sy0 + copy_h {
-        for sx in sx0..sx0 + copy_w {
-            let top_alpha = src[[sy, sx, 3]];
-            let dy = dy0 + (sy - sy0);
-            let dx = dx0 + (sx - sx0);
+    };
+    let canvas_w = canvas_width(canvas);
+    let source = src;
+    let cover = coverage.as_slice().expect("coverage is contiguous");
+    let target = points_mut(canvas);
+    for row in 0..clip.rows {
+        let source_row = clip.src_row + row;
+        let source_column = clip.src_column;
+        debug_assert!(source_row < mask.len() && source_row < coverage_height);
+        let opacity = mask[source_row];
+        let start = ((clip.dst_row + row) * canvas_w + clip.dst_column) * 4;
+        let under = &mut target[start..start + clip.columns * 4];
+        let pixels = &source[(source_row * src_width + source_column) * 4..][..clip.columns * 4];
+        let mattes = &cover[source_row * coverage_width + source_column..][..clip.columns];
+        for ((bottom, top), &value) in under
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .zip(pixels.as_chunks::<4>().0)
+            .zip(mattes)
+        {
+            // `src * matte` is the premultiplied layer: its own alpha is the
+            // blend factor, as `_composite` reads `src[..., 3]`.
+            let matte = value * opacity;
+            let alpha = top[3] * matte;
             for channel in 0..4 {
-                canvas[[dy, dx, channel]] =
-                    canvas[[dy, dx, channel]] * (1.0 - top_alpha) + src[[sy, sx, channel]];
+                bottom[channel] = bottom[channel] * (1.0 - alpha) + top[channel] * matte;
             }
         }
     }
@@ -233,13 +321,15 @@ pub(super) fn blend(frame: &mut Frame, src: &ArrayView3<f32>, x0: i32, y0: i32) 
     if copy_w == 0 || copy_h == 0 {
         return;
     }
+    let source = src.as_slice().expect("layers are contiguous");
     for sy in sy0..sy0 + copy_h {
         for sx in sx0..sx0 + copy_w {
+            let index = (sy * width + sx) * 4;
             let top = [
-                src[[sy, sx, 0]],
-                src[[sy, sx, 1]],
-                src[[sy, sx, 2]],
-                src[[sy, sx, 3]],
+                source[index],
+                source[index + 1],
+                source[index + 2],
+                source[index + 3],
             ];
             let dy = dy0 + (sy - sy0);
             let dx = dx0 + (sx - sx0);
@@ -266,32 +356,8 @@ fn quantize_from_unit(value: f32) -> u8 {
     (value * 255.0 + 0.5) as u8
 }
 
-/// Source and destination offsets of a clipped blit.
-#[allow(clippy::too_many_arguments)]
-fn clip(
-    canvas: &Array3<f32>,
-    width: usize,
-    height: usize,
-    x0: i32,
-    y0: i32,
-) -> (usize, usize, usize, usize, usize, usize) {
-    let (canvas_h, canvas_w, _) = canvas.dim();
-    clip_bounds(canvas_w, canvas_h, width, height, x0, y0)
-}
-
 fn clip_frame(
     frame: &Frame,
-    width: usize,
-    height: usize,
-    x0: i32,
-    y0: i32,
-) -> (usize, usize, usize, usize, usize, usize) {
-    clip_bounds(frame.width, frame.height, width, height, x0, y0)
-}
-
-fn clip_bounds(
-    canvas_w: usize,
-    canvas_h: usize,
     width: usize,
     height: usize,
     x0: i32,
@@ -301,14 +367,24 @@ fn clip_bounds(
     let sy0 = (-y0).max(0) as usize;
     let dx0 = x0.max(0) as usize;
     let dy0 = y0.max(0) as usize;
-    let copy_w = width.saturating_sub(sx0).min(canvas_w.saturating_sub(dx0));
-    let copy_h = height.saturating_sub(sy0).min(canvas_h.saturating_sub(dy0));
+    let copy_w = width
+        .saturating_sub(sx0)
+        .min(frame.width.saturating_sub(dx0));
+    let copy_h = height
+        .saturating_sub(sy0)
+        .min(frame.height.saturating_sub(dy0));
     (sx0, sy0, dx0, dy0, copy_w, copy_h)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ndarray::Array2;
+
+    fn layer(data: Vec<f32>) -> Array3<f32> {
+        let pixels = data.len() / 4;
+        Array3::from_shape_vec((1, pixels, 4), data).expect("one row")
+    }
 
     #[test]
     fn frame_conversion_unpremultiplies_and_swaps_channels() {
@@ -358,7 +434,7 @@ mod tests {
             height: 1,
             bgra: vec![0, 0, 0, 0],
         };
-        let layer = Array3::from_shape_vec((1, 1, 4), vec![0.5, 0.0, 0.0, 0.5]).expect("one pixel");
+        let layer = layer(vec![0.5, 0.0, 0.0, 0.5]);
         blend(&mut frame, &layer.view(), 0, 0);
         assert_eq!(frame.pixel(0, 0), [0, 0, 128, 128]);
     }
@@ -376,10 +452,48 @@ mod tests {
                 }
             },
         );
-        composite(&mut canvas, &src.view(), -1, -1);
+        composite(&mut canvas, &src, -1, -1);
         assert!(canvas[[0, 0, 3]] == 0.0);
-        composite(&mut canvas, &src.view(), 1, 1);
+        composite(&mut canvas, &src, 1, 1);
         assert_eq!(canvas[[1, 1, 3]], 1.0);
         assert_eq!(canvas[[1, 1, 0]], 0.25);
+    }
+
+    #[test]
+    fn a_band_leaves_the_centre_of_the_canvas_alone() {
+        let mut canvas = Array3::<f32>::zeros((6, 6, 4));
+        let alpha = Array2::<f32>::ones((6, 6));
+        shade_frame(&mut canvas, &alpha, 0, 0, 1, 1.0);
+        assert_eq!(canvas[[3, 3, 3]], 0.0);
+        assert_eq!(canvas[[0, 3, 3]], 1.0);
+        assert_eq!(canvas[[5, 0, 3]], 1.0);
+        assert_eq!(canvas[[3, 5, 3]], 1.0);
+        assert_eq!(canvas[[3, 0, 3]], 1.0);
+    }
+
+    #[test]
+    fn the_row_mask_scales_the_matted_content() {
+        let mut canvas = Array3::<f32>::zeros((2, 1, 4));
+        let src = Array3::from_shape_fn((2, 1, 4), |(row, _, channel)| {
+            if channel == 3 {
+                0.5 + row as f32 * 0.25
+            } else {
+                0.25
+            }
+        });
+        let coverage = Array2::<f32>::ones((2, 1));
+        composite_masked(
+            &mut canvas,
+            src.as_slice().expect("contiguous"),
+            1,
+            &coverage,
+            &[1.0, 0.5],
+            1,
+            2,
+            0,
+            0,
+        );
+        assert!((canvas[[0, 0, 3]] - 0.5).abs() < 1e-6);
+        assert!((canvas[[1, 0, 3]] - 0.375).abs() < 1e-6);
     }
 }

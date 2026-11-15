@@ -234,7 +234,7 @@ struct PanelState {
     view: Option<SendView>,
     form: Rect,
     base: Option<(compose::Sig, Frame)>,
-    content: Option<(compose::Sig, ez_gfx::sdf::Layer)>,
+    content: compose::ContentCache,
     finished: bool,
     resize: Option<Resize>,
     act: f64,
@@ -249,7 +249,7 @@ impl PanelState {
             view: None,
             form: (0.0, 0.0, 0.0, 0.0),
             base: None,
-            content: None,
+            content: compose::ContentCache::default(),
             finished: false,
             resize: None,
             act: 0.0,
@@ -311,7 +311,7 @@ impl ChatPanel {
         view: &mut ChatView,
         pal_seen: &mut i64,
         base: &mut Option<(compose::Sig, Frame)>,
-        content: &mut Option<(compose::Sig, ez_gfx::sdf::Layer)>,
+        content: &mut compose::ContentCache,
     ) {
         let version = palette_version();
         let theme = self.ui.theme_name();
@@ -320,7 +320,7 @@ impl ChatPanel {
             let (width, height) = (view.g.width, view.g.height);
             self.configure_view(view, width, height);
             *base = None;
-            *content = None;
+            *content = compose::ContentCache::default();
         }
     }
 
