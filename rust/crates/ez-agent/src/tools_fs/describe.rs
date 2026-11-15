@@ -90,7 +90,7 @@ impl FsContext {
             );
         }
         if target.exists() && overwrite {
-            let backup = backup_path(&target);
+            let backup = backup_path(&target, &(self.clock)());
             return ToolInfo {
                 level: 2,
                 always_confirm: true,
@@ -192,7 +192,7 @@ impl FsContext {
         let (origin, bulk) = origin(&src);
         let bulk = bulk as i64;
         if dst.exists() {
-            let backup = backup_path(&dst);
+            let backup = backup_path(&dst, &(self.clock)());
             let (on, to) = if moving {
                 ("mover", "sobre")
             } else {

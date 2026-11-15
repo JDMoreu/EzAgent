@@ -67,6 +67,21 @@ where
 }
 
 fn get_datetime(args: &Map<String, Value>) -> ToolResult {
+    let now = Local::now();
+    let utc = now.with_timezone(&Utc);
+    let offset = *now.offset();
+    let local = now.with_timezone(&offset);
+    let label = format!("UTC{}", local.format("%:z"));
+    get_datetime_at(args, utc, local, &label)
+}
+
+/// `get_datetime` con el instante inyectado (el oráculo congela el reloj).
+pub fn get_datetime_at(
+    args: &Map<String, Value>,
+    now_utc: chrono::DateTime<Utc>,
+    local: chrono::DateTime<chrono::FixedOffset>,
+    local_label: &str,
+) -> ToolResult {
     let name = match args.get("timezone") {
         None | Some(Value::Null) => String::new(),
         Some(Value::String(text)) => py_strip(text).to_string(),
@@ -75,15 +90,13 @@ fn get_datetime(args: &Map<String, Value>) -> ToolResult {
     if name.is_empty() {
         // DECISION: Python da el nombre localizado de la zona de Windows
         // (`tzname()`); aquí solo hay el desfase, así que se usa «UTC±hh:mm».
-        let now = Local::now();
-        let label = format!("UTC{}", now.format("%:z"));
-        return ToolResult::ok(datetime_payload(&now, &label));
+        return ToolResult::ok(datetime_payload(&local, local_label));
     }
     if let Ok(zone) = name.parse::<Tz>() {
-        return ToolResult::ok(datetime_payload(&Utc::now().with_timezone(&zone), &name));
+        return ToolResult::ok(datetime_payload(&now_utc.with_timezone(&zone), &name));
     }
     if ["UTC", "GMT", "ETC/UTC", "ETC/GMT"].contains(&name.to_uppercase().as_str()) {
-        return ToolResult::ok(datetime_payload(&Utc::now(), &name));
+        return ToolResult::ok(datetime_payload(&now_utc, &name));
     }
     ToolResult::err(format!(
         "No se pudo cargar la zona horaria '{name}'. Usa una zona IANA como 'Europe/Madrid' o instala tzdata."

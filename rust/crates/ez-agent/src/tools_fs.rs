@@ -16,7 +16,10 @@ use serde_json::{json, Map, Value};
 
 use crate::journal::Journal;
 use crate::registry::ToolSpec;
-pub use util::{default_opener, FsContext, Opener};
+pub use util::{
+    count_items, count_phrase, default_opener, Clock, FsContext, Opener, SystemTrash, Trash,
+    TrashHandle,
+};
 
 type Handle = fn(&FsContext, &Map<String, Value>) -> crate::registry::ToolResult;
 type Describe = fn(&FsContext, &Map<String, Value>) -> crate::registry::ToolInfo;
@@ -55,10 +58,29 @@ pub fn build_fs_tools(
     journal: Arc<Journal>,
     opener: Opener,
 ) -> Vec<ToolSpec> {
+    build_fs_tools_with(
+        config,
+        journal,
+        opener,
+        Arc::new(SystemTrash),
+        util::local_stamp(),
+    )
+}
+
+/// Igual que [`build_fs_tools`], con Papelera y reloj inyectables.
+pub fn build_fs_tools_with(
+    config: &AgentConfig,
+    journal: Arc<Journal>,
+    opener: Opener,
+    trash: TrashHandle,
+    clock: Clock,
+) -> Vec<ToolSpec> {
     let context = Arc::new(FsContext {
         config: config.clone(),
         journal,
         opener,
+        trash,
+        clock,
     });
     let path = json!({"type": "string", "description": "Ruta de la carpeta o del archivo."});
     let pair = json!({

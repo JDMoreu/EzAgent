@@ -89,6 +89,7 @@ fn validates_arguments_before_running() {
         deny: vec![],
         deny_globs: vec![],
         timeout_s: 2.0,
+        runner: system_runner(),
     };
     let run = |args: Value| run_declarative_tool(&ctx, args.as_object().expect("objeto"));
     assert_eq!(

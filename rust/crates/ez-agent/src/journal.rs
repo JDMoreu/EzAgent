@@ -15,8 +15,9 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
+use crate::tools_fs::{Clock, SystemTrash, Trash, TrashHandle};
 use ez_core::dirs;
 use ez_core::pyjson::{dumps_with, DumpOptions};
 use ez_core::pyloads;
@@ -27,10 +28,6 @@ use serde_json::{json, Map, Value};
 /// Validador de rutas del deshacer: devuelve la ruta resuelta y permitida.
 pub type Validate<'a> = &'a dyn Fn(&Path) -> Result<PathBuf, String>;
 
-fn now_iso() -> String {
-    now_local_iso_seconds()
-}
-
 /// Carpeta por defecto del diario: `%APPDATA%/EzAgent/journal` (o XDG).
 pub fn default_journal_dir() -> PathBuf {
     let base = ["APPDATA", "XDG_CONFIG_HOME"]
@@ -40,10 +37,6 @@ pub fn default_journal_dir() -> PathBuf {
         Some(base) => PathBuf::from(base).join("EzAgent").join("journal"),
         None => dirs::home().join(".config").join("EzAgent").join("journal"),
     }
-}
-
-fn send_to_trash(path: &Path) -> Result<(), String> {
-    trash::delete(path).map_err(|error| error.to_string())
 }
 
 /// Resultado de revertir una entrada del diario.
@@ -72,6 +65,8 @@ impl UndoOutcome {
 pub struct Journal {
     dir: PathBuf,
     state: Mutex<u64>,
+    trash: TrashHandle,
+    clock: Clock,
 }
 
 fn step(pairs: &[(&str, &Path)], action: &str) -> Value {
@@ -85,12 +80,31 @@ fn step(pairs: &[(&str, &Path)], action: &str) -> Value {
 
 impl Journal {
     pub fn new(directory: Option<&Path>) -> Result<Self, String> {
+        Self::with_hooks(
+            directory,
+            Arc::new(SystemTrash),
+            Arc::new(now_local_iso_seconds),
+        )
+    }
+
+    /// Igual que [`Journal::new`], con Papelera y reloj inyectables.
+    pub fn with_hooks(
+        directory: Option<&Path>,
+        trash: TrashHandle,
+        clock: Clock,
+    ) -> Result<Self, String> {
         let dir = directory.map_or_else(default_journal_dir, Path::to_path_buf);
         std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
         Ok(Self {
             dir,
             state: Mutex::new(0),
+            trash,
+            clock,
         })
+    }
+
+    fn now_iso(&self) -> String {
+        (self.clock)()
     }
 
     pub fn directory(&self) -> &Path {
@@ -116,7 +130,7 @@ impl Journal {
         let mut entry = Map::new();
         entry.insert("version".into(), json!(1));
         entry.insert("id".into(), json!(entry_id));
-        entry.insert("ts".into(), json!(now_iso()));
+        entry.insert("ts".into(), json!(self.now_iso()));
         entry.insert("kind".into(), json!(kind));
         entry.insert("summary".into(), json!(summary));
         entry.insert("steps".into(), Value::Array(steps));
@@ -216,7 +230,7 @@ impl Journal {
             .collect();
         let mut outcomes = Vec::new();
         for mut entry in entries {
-            let outcome = undo_entry(&entry, validate);
+            let outcome = undo_entry(&entry, validate, &*self.trash);
             self.mark_undone(&mut entry, outcome.error.as_deref());
             outcomes.push(outcome);
         }
@@ -273,7 +287,7 @@ impl Journal {
         };
         write().map_err(|error| {
             if tmp.exists() {
-                let _ = send_to_trash(&tmp);
+                let _ = self.trash.delete(&tmp);
             }
             error.to_string()
         })
@@ -281,7 +295,7 @@ impl Journal {
 
     fn mark_undone(&self, entry: &mut Map<String, Value>, error: Option<&str>) {
         entry.insert("undone".into(), json!(true));
-        entry.insert("undone_at".into(), json!(now_iso()));
+        entry.insert("undone_at".into(), json!(self.now_iso()));
         entry.insert("undo_error".into(), json!(error));
         // DECISION (del Python): si no se puede reescribir la entrada, el
         // resultado de la reversión ya se devolvió; no se oculta con un error.
@@ -289,7 +303,11 @@ impl Journal {
     }
 }
 
-fn undo_entry(entry: &Map<String, Value>, validate: Option<Validate<'_>>) -> UndoOutcome {
+fn undo_entry(
+    entry: &Map<String, Value>,
+    validate: Option<Validate<'_>>,
+    trash: &dyn Trash,
+) -> UndoOutcome {
     let text = |key: &str| entry.get(key).map(python_str).unwrap_or_default();
     let (entry_id, kind, summary) = (text("id"), text("kind"), text("summary"));
     let steps = match entry.get("steps") {
@@ -305,7 +323,9 @@ fn undo_entry(entry: &Map<String, Value>, validate: Option<Validate<'_>>) -> Und
             };
         }
     };
-    let result = steps.iter().try_for_each(|step| run_step(step, validate));
+    let result = steps
+        .iter()
+        .try_for_each(|step| run_step(step, validate, trash));
     let (ok, error) = match result {
         Ok(()) => (true, None),
         Err(message) => (false, Some(message)),
@@ -339,7 +359,7 @@ fn exists_or_link(path: &Path) -> bool {
     path.symlink_metadata().is_ok()
 }
 
-fn run_step(step: &Value, validate: Option<Validate<'_>>) -> Result<(), String> {
+fn run_step(step: &Value, validate: Option<Validate<'_>>, trash: &dyn Trash) -> Result<(), String> {
     let Value::Object(step) = step else {
         return Err("Paso inverso inválido.".into());
     };
@@ -350,7 +370,7 @@ fn run_step(step: &Value, validate: Option<Validate<'_>>) -> Result<(), String> 
             if !exists_or_link(&path) {
                 return Ok(());
             }
-            send_to_trash(&path)
+            trash.delete(&path)
         }
         "move" => {
             let src = validated(step, "src", validate)?;
@@ -370,7 +390,7 @@ fn run_step(step: &Value, validate: Option<Validate<'_>>) -> Result<(), String> 
             if let Some(parent) = dst.parent() {
                 std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
             }
-            move_path(&src, &dst)
+            move_path(&src, &dst, trash)
         }
         "copy_back" => {
             let src = validated(step, "src", validate)?;
@@ -381,21 +401,21 @@ fn run_step(step: &Value, validate: Option<Validate<'_>>) -> Result<(), String> 
                     src.display()
                 ));
             }
-            restore_copy(&src, &dst)
+            restore_copy(&src, &dst, trash)
         }
         other => Err(format!("Acción inversa desconocida: {other}")),
     }
 }
 
 /// `shutil.move`: renombra y, entre volúmenes, copia y envía el origen a la Papelera.
-fn move_path(src: &Path, dst: &Path) -> Result<(), String> {
+fn move_path(src: &Path, dst: &Path, trash: &dyn Trash) -> Result<(), String> {
     if std::fs::rename(src, dst).is_ok() {
         return Ok(());
     }
     // DECISION: `shutil.move` borra el origen tras copiar; aquí va a la
     // Papelera, porque el contrato prohíbe el borrado recursivo.
     copy_tree(src, dst).map_err(|error| error.to_string())?;
-    send_to_trash(src)
+    trash.delete(src)
 }
 
 fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -410,7 +430,7 @@ fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::copy(src, dst).map(|_| ())
 }
 
-fn restore_copy(src: &Path, dst: &Path) -> Result<(), String> {
+fn restore_copy(src: &Path, dst: &Path, trash: &dyn Trash) -> Result<(), String> {
     let parent = dst
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -423,7 +443,7 @@ fn restore_copy(src: &Path, dst: &Path) -> Result<(), String> {
     let outcome = std::fs::copy(src, &tmp).and_then(|_| std::fs::rename(&tmp, dst));
     outcome.map_err(|error| {
         if tmp.exists() {
-            let _ = send_to_trash(&tmp);
+            let _ = trash.delete(&tmp);
         }
         error.to_string()
     })
