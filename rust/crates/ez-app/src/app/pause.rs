@@ -105,7 +105,12 @@ impl VoiceApp {
         let _guard = self.inner.turn.wake_lock.lock();
         let cfg = self.config();
         let text = match transcribe(&cfg, &pcm_to_wav(pcm, rate), None) {
-            Ok(text) => text,
+            Ok(text) => {
+                super::core::trace::notify(&self.inner.runtime.trace, |trace| {
+                    trace.stt_transcript(&text);
+                });
+                text
+            }
             Err(_) => {
                 // Python usa `type(exc).__name__`; el error de `ez-stt` es STTError.
                 log("Pausa: no pude comprobar la frase (STTError).");

@@ -22,6 +22,7 @@ use ez_tts::queue::{SpeechQueue, SpeechQueueOptions};
 use crate::sentences::Sentences;
 
 use super::core::state::{Flag, PendingStt};
+use super::core::trace;
 use super::core::{cfg_text, is_filler_sentence, log, timed_stream, AppEvent, VoiceApp, SPEAKING};
 use super::events::turn_gen;
 use super::states::StopBridge;
@@ -282,6 +283,9 @@ impl VoiceApp {
         let cfg = self.config();
         match transcribe(&cfg, &pcm_to_wav(&pcm, rate), None) {
             Ok(text) => {
+                trace::notify(&self.inner.runtime.trace, |trace| {
+                    trace.stt_transcript(&text);
+                });
                 timing.mark("stt_ready", None);
                 let text = if is_hallucination(&text, pcm_is_weak(&pcm, rate)) {
                     log(format!(

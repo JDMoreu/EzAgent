@@ -9,9 +9,17 @@ publish.workspace = true
 name = "ez_app"
 path = "src/lib.rs"
 
+[features]
+replay = ["dep:serde_yaml"]
+
 [[bin]]
 name = "ezagent-voice"
 path = "src/bin/ezagent_voice.rs"
+
+[[bin]]
+name = "ezagent-replay"
+path = "src/bin/ezagent_replay.rs"
+required-features = ["replay"]
 
 [dependencies]
 png = { workspace = true }
@@ -20,6 +28,7 @@ windows = { workspace = true }
 crossbeam-channel = { workspace = true }
 parking_lot = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true, optional = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-appender = { workspace = true }

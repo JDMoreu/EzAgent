@@ -7,13 +7,16 @@
 //! métodos sobre estos mismos campos.
 
 mod callbacks;
+mod chat_model;
 mod events;
 mod hooks;
+mod hud;
 mod hud_bridge;
 mod init;
 mod parts;
 mod services;
 pub mod state;
+pub mod trace;
 
 #[cfg(test)]
 mod tests;
@@ -38,7 +41,7 @@ use ez_core::pyvalue::py_strip;
 use ez_herdr::herdr::Herdr;
 use ez_herdr::tasks::TaskRegistry;
 use ez_herdr::watcher::{AnnounceCallback, EventCallback, TargetsCallback, Watcher};
-use ez_hud::win::drop::{create_ui, DropUI};
+use ez_hud::win::drop::create_ui;
 use ez_hud::win::ui_loop::UiLoop;
 use ez_llm::messenger::{AgentRuntimeApi, Messenger, MessengerCallbacks};
 use ez_swarm::stack::SwarmStack;
@@ -49,14 +52,17 @@ use serde_json::{json, Value};
 use crate::tray::TrayIcon;
 
 use self::callbacks::mic_capture;
+pub use self::chat_model::AppChat;
 pub use self::events::{AppEvent, MenuEvent, Queue};
 pub use self::hooks::{AppHooks, NullHooks, NullObserver, ShutdownObserver};
+pub use self::hud::AppHud;
 pub use self::hud_bridge::{HudConfig, HudHost};
 pub use self::services::{AppParts, SpeakerApi};
 use self::state::{
     AgentsState, AudioState, ChatState, ConfigState, Flag, Inner, LlmModels, MessengerSlot,
     RuntimeState, SavedLlm, SessionState, SpeechState, TurnState, UiState,
 };
+pub use self::trace::{AppTrace, TraceSlot};
 
 pub use ez_stt::server::{ensure_whisper, free_local_port, resource_root, whisper_ready};
 
@@ -309,7 +315,7 @@ impl VoiceApp {
     }
 
     /// `self.hud`.
-    pub fn hud(&self) -> &Arc<ez_hud::win::drop::DropUI> {
+    pub fn hud(&self) -> &Arc<AppHud> {
         &self.inner.ui.hud
     }
 

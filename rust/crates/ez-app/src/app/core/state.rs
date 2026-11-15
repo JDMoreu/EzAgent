@@ -13,13 +13,11 @@ use std::thread::JoinHandle;
 use ez_audio::capture::{InputDevice, MicCapture};
 use ez_audio::turn::SmartTurn;
 use ez_chat::contexts::ChatContexts;
-use ez_chat::session::ChatModel;
 use ez_core::config::VoiceConfig;
 use ez_core::metrics::{LatencyStats, TurnTimings};
 use ez_herdr::herdr::Herdr;
 use ez_herdr::tasks::TaskRegistry;
 use ez_herdr::watcher::Watcher;
-use ez_hud::win::drop::DropUI;
 use ez_hud::win::ui_loop::UiLoop;
 use ez_llm::messenger::Messenger;
 use ez_swarm::stack::SwarmStack;
@@ -29,9 +27,12 @@ use serde_json::{Map, Value};
 use crate::hotkeys::GlobalHotkey;
 use crate::tray::TrayIcon;
 
+use super::chat_model::AppChat;
 use super::events::{AppEvent, MenuEvent, Queue};
 use super::hooks::{AppHooks, ShutdownObserver};
+use super::hud::AppHud;
 use super::services::SpeakerApi;
+use super::trace::TraceSlot;
 
 /// `threading.Event`: indicador con espera interrumpible.
 #[derive(Debug, Default)]
@@ -221,7 +222,7 @@ pub struct SpeechState {
 /// Chat escrito y contexto por conversación (`chat`, `contexts`, `_condenser*`).
 pub struct ChatState {
     /// `self.chat`.
-    pub chat: Arc<ChatModel>,
+    pub chat: Arc<AppChat>,
     /// `self.contexts`.
     pub contexts: Mutex<ChatContexts>,
     /// `_condenser`, ya reducido a su `conclusion_start`.
@@ -263,7 +264,7 @@ pub struct UiState {
     /// `self.root` / `root.mainloop` / `root.after`.
     pub ui: UiLoop,
     /// `self.hud`.
-    pub hud: Arc<DropUI>,
+    pub hud: Arc<AppHud>,
     /// `self.events`.
     pub events: Arc<Queue<AppEvent>>,
     /// `self.hotkey_events`.
@@ -286,10 +287,16 @@ pub struct RuntimeState {
     pub whisper_proc: Mutex<Option<Child>>,
     /// Ganchos de las tareas F6-02…F6-07 (compartidos con el vigilante).
     pub hooks: Arc<RwLock<Arc<dyn AppHooks>>>,
+    /// Observador del arnés de reproducción (F7-01a).
+    pub trace: TraceSlot,
+    /// Envoltorio del runtime para la traza de herramientas (F7-01a).
+    pub runtime_wrap: Option<super::services::RuntimeWrap>,
     /// Observador del orden de apagado (pruebas).
     pub observer: Arc<dyn ShutdownObserver>,
     /// `false` en los dobles: sin hilos de fondo ni registro real de atajos.
     pub background: bool,
+    /// `false` cuando el arnés alimenta la captura desde fuera (F7-01a).
+    pub mic_capture: bool,
 }
 
 /// Estado completo compartido por todas las copias de [`super::VoiceApp`].

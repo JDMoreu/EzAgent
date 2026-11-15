@@ -239,11 +239,10 @@ impl VoiceApp {
 
     /// Red de seguridad de `answer_done`: registra el último agente lanzado.
     fn watch_pending_notify(&self) {
-        let notify = self
-            .inner
-            .agents
-            .messenger
-            .lock()
+        // DECISION: se suelta el cerrojo del mensajero antes de llamarlo; su
+        // callback `last_user_text` vuelve a pedir este mismo cerrojo (F7-01a).
+        let messenger = self.inner.agents.messenger.lock().clone();
+        let notify = messenger
             .as_ref()
             .and_then(|messenger| messenger.pending_notify_address());
         let Some(address) = notify else {

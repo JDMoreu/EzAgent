@@ -164,7 +164,7 @@ impl VoiceApp {
             mic_mute: Some(bool_hook(&weak, |hooks, muted| hooks.mic_mute(muted))),
         };
         let messenger = Messenger::new(cfg.clone(), callbacks, runtime);
-        let chat = Arc::clone(&self.inner.chat.chat);
+        let chat = Arc::clone(self.inner.chat.chat.inner());
         messenger.set_on_context_event(Arc::new(move |text| {
             chat.add_note(text);
         }));

@@ -7,11 +7,10 @@ use std::sync::{Arc, Weak};
 use ez_chat::session::ChatModel;
 use ez_hud::model::chat::view::ChatView;
 use ez_hud::win::chat::ChatUi;
-use ez_hud::win::drop::DropUI;
 use ndarray::Array3;
 
 use crate::app::core::state::Inner;
-use crate::app::core::VoiceApp;
+use crate::app::core::{AppHud, VoiceApp};
 
 use super::host::HudHost;
 use super::input::HudInput;
@@ -24,7 +23,7 @@ use super::model::HudModel;
 /// this value; a strong `Arc` would leak the HUD (Python's cycle collector
 /// breaks the same cycle at exit).
 pub(super) struct HudChatUi {
-    hud: Weak<DropUI>,
+    hud: Weak<AppHud>,
     chat: Arc<ChatModel>,
     inner: Weak<Inner>,
     hotkey: String,
@@ -38,7 +37,7 @@ impl HudChatUi {
         let (roots, base_dirs) = app.chat_media_roots();
         Self {
             hud: Arc::downgrade(&app.inner.ui.hud),
-            chat: Arc::clone(&app.inner.chat.chat),
+            chat: Arc::clone(app.inner.chat.chat.inner()),
             inner: Arc::downgrade(&app.inner),
             hotkey,
             roots: Some(roots),
