@@ -34,7 +34,7 @@ use ez_chat::session::ChatModel;
 use ez_chat::store::{ChatStore, ModelMessage, Role};
 use ez_core::config::{config_path, int_value, truthy, VoiceConfig};
 use ez_core::metrics::{monotonic, LatencyStats, TurnTimings};
-use ez_core::pyvalue::{py_split, py_strip};
+use ez_core::pyvalue::py_strip;
 use ez_herdr::herdr::Herdr;
 use ez_herdr::tasks::TaskRegistry;
 use ez_herdr::watcher::{AnnounceCallback, EventCallback, TargetsCallback, Watcher};
@@ -113,8 +113,7 @@ pub fn log(message: impl AsRef<str>) {
 
 /// `_hotkey_key`: normaliza un atajo para comparar duplicados.
 pub fn hotkey_key(spec: &str) -> String {
-    py_split(spec)
-        .flat_map(|part| part.split('+'))
+    spec.split('+')
         .map(py_strip)
         .filter(|part| !part.is_empty())
         .map(str::to_lowercase)
