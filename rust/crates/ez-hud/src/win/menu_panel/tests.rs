@@ -81,7 +81,22 @@ fn card_layer(width: f64, viewport: f64) -> Layer {
 
 #[test]
 fn the_adapter_draws_exactly_like_the_model() {
-    let mut panel = LiveMenuFactory
+    // La pintura lee la paleta global, que otras pruebas pueden retiñir en
+    // paralelo: si su versión cambia entre los dos cuadros, se repite.
+    let mut matched = false;
+    for _ in 0..8 {
+        let version = crate::tokens::palette_version();
+        matched = compare_adapter_with_model();
+        if matched || crate::tokens::palette_version() == version {
+            break;
+        }
+    }
+    assert!(matched, "el adaptador pinta igual que el modelo");
+}
+
+/// Dibuja el mismo menú por el adaptador y por el modelo y compara las capas.
+fn compare_adapter_with_model() -> bool {
+    let panel = LiveMenuFactory
         .create(
             dirty_settings(),
             SCALE,
@@ -124,24 +139,20 @@ fn the_adapter_draws_exactly_like_the_model() {
         (through_adapter, directly)
     };
 
-    assert_eq!(through_adapter.as_raw(), directly.as_raw());
+    let same = through_adapter.as_raw() == directly.as_raw();
     assert!(
         directly.as_raw().iter().any(|value| *value > 0.0),
         "la tarjeta dibujada no quedó vacía"
     );
+    same
 }
 
 #[test]
 fn opening_and_clicking_save_reach_the_callbacks() {
     let saves = no_saves();
-    let mut panel = LiveMenuPanel::new(
-        dirty_settings(),
-        SCALE,
-        "dark",
-        SCREEN_H,
-        callbacks(&saves),
-    )
-    .expect("el menú se crea");
+    let mut panel =
+        LiveMenuPanel::new(dirty_settings(), SCALE, "dark", SCREEN_H, callbacks(&saves))
+            .expect("el menú se crea");
     let groups = groups();
     let title = title();
     panel.set_width(CONTENT_W);
@@ -183,7 +194,10 @@ fn live_scale_and_models_reach_the_settings() {
         .settings
         .set("llm_provider", &SettingValue::Text("opencode".into()))
         .expect("proveedor válido");
-    let options = model.settings.select_options("llm_model_pick").unwrap_or_default();
+    let options = model
+        .settings
+        .select_options("llm_model_pick")
+        .unwrap_or_default();
     assert!(options
         .iter()
         .any(|option| option.value == SettingValue::Text("gpt-4.1".into())));

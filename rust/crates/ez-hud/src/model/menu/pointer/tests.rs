@@ -259,10 +259,7 @@ fn destructive_actions_need_a_second_click() {
     assert!(menu.is_armed("new_conversation", 2.1));
     menu.pointer_down(x, y, 3.1);
     menu.pointer_up(x, y, 3.1);
-    assert_eq!(
-        actions.lock().as_slice(),
-        &["new_conversation".to_string()]
-    );
+    assert_eq!(actions.lock().as_slice(), &["new_conversation".to_string()]);
     assert!(!menu.is_armed("new_conversation", 3.2));
 }
 

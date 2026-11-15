@@ -37,9 +37,7 @@ fn start_test_commits_the_edit_and_reports_the_snapshot() {
     let snapshots = Arc::new(Mutex::new(Vec::<SettingsValues>::new()));
     let recorded = Arc::clone(&snapshots);
     let callbacks = MenuCallbacks {
-        test: Some(Box::new(move |values| {
-            recorded.lock().push(values.clone())
-        })),
+        test: Some(Box::new(move |values| recorded.lock().push(values.clone()))),
         ..MenuCallbacks::default()
     };
     let mut menu = menu(callbacks);

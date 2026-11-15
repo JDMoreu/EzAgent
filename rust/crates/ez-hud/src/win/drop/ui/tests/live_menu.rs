@@ -3,7 +3,6 @@
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Duration;
 
 use crate::layout::{FOOTER, PAD_BOTTOM};
 use crate::model::menu::rects::{SAVE_BUTTON_X0, SAVE_BUTTON_X1};
@@ -25,6 +24,9 @@ fn dirty_settings() -> MenuSettings {
 }
 
 /// Barra con ventanas falsas, la fábrica real de menú y ajustes sucios.
+///
+/// `set_motion("reduced")` abre el menú sin animación: la tarjeta se puede
+/// pintar y pulsar en el mismo instante de la prueba.
 fn bar_with_live_menu() -> (Arc<DropUI>, Arc<RecordingHost>) {
     let windows = Arc::new(FakeWindows::default());
     let config = Arc::new(RecordingConfig::default());
@@ -38,7 +40,7 @@ fn bar_with_live_menu() -> (Arc<DropUI>, Arc<RecordingHost>) {
         ..DropUiOptions::default()
     });
     ui.set_menu_settings_provider(Some(Arc::new(|| Some(dirty_settings()))));
-    ui.set_theme("dark");
+    ui.set_motion("reduced");
     ui.show("idle");
     (ui, host)
 }
@@ -50,11 +52,11 @@ fn the_live_factory_opens_and_paints_the_card() {
     ui.toggle_menu();
     assert!(ui.menu_open(), "el menú se abrió");
     assert!(ui.menu_panel().is_some(), "la tarjeta tiene menú");
-    // La tarjeta entra con el fundido de apertura (320 ms): sin esperar, el
-    // cuadro es transparente por diseño.
-    std::thread::sleep(Duration::from_millis(400));
     let frame = ui.render_card();
-    assert!(frame.width > 1 && frame.height > 1, "la tarjeta tiene tamaño");
+    assert!(
+        frame.width > 1 && frame.height > 1,
+        "la tarjeta tiene tamaño"
+    );
     assert!(
         frame.data.iter().any(|value| *value != 0),
         "el cuadro de la tarjeta no está vacío"
@@ -65,8 +67,6 @@ fn the_live_factory_opens_and_paints_the_card() {
 fn a_click_on_save_reaches_the_host() {
     let (ui, host) = bar_with_live_menu();
     ui.toggle_menu();
-    // `T_SLOW` (320 ms) de apertura: el alto animado debe llegar al pie.
-    std::thread::sleep(Duration::from_millis(400));
     let viewport = ui
         .menu_panel()
         .expect("la tarjeta tiene menú")

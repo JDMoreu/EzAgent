@@ -390,6 +390,25 @@ fn finish_start_reports_missing_whisper() {
 }
 
 #[test]
+fn the_app_installs_the_menu_provider_and_the_real_factory() {
+    // `hud_hidden = true` deja la barra sin ventana: `toggle_menu` llega hasta
+    // crear el menú (proveedor de ajustes y fábrica real) y se detiene ahí.
+    let speaker = Arc::new(FakeSpeaker::default());
+    let output: Arc<dyn SpeakerApi> = speaker;
+    let mic = Arc::new(Mutex::new(MicCapture::new(None, VadSettings::default())));
+    let tasks_path = temp_path("tasks.json");
+    let mut parts = AppParts::new(output, mic);
+    parts.chat = Some(Arc::new(ChatModel::new(None, false)));
+    let app = VoiceApp::with_services(test_config(), Some(tasks_path.clone()), parts);
+    app.toggle_menu();
+    assert!(
+        app.hud().menu_panel().is_some(),
+        "la app instaló el proveedor y la fábrica real creó el menú"
+    );
+    let _ = std::fs::remove_file(&tasks_path);
+}
+
+#[test]
 fn hud_config_reads_writes_and_remembers() {
     let cfg = Arc::new(parking_lot::RwLock::new(VoiceConfig::new()));
     let adapter = HudConfig {
