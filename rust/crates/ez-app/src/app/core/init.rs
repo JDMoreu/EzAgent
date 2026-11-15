@@ -72,6 +72,7 @@ impl VoiceApp {
         self.apply_start_hud(parts.whisper_ready);
         self.apply_start_audio();
         self.apply_start_agents(parts.build_swarm, parts.build_agent);
+        self.install_chat();
         self.install_hotkeys(parts.background);
         self.start_warm_workers(parts.background);
         self.schedule_start_timers();
@@ -132,9 +133,8 @@ impl VoiceApp {
     }
 
     /// Enjambre, runtime, mensajero y contexto reconstruido.
-    // DECISION: el chat del HUD (`chat_model`, `on_chat_*`), el menú
-    // (`menu_settings_provider`) y la bandeja son de F6-02/F6-05/F6-06; aquí
-    // solo se deja el mensajero y el contexto listos.
+    // DECISION: el chat del HUD se conecta en `chat_wiring` (F6-08); aquí solo
+    // se deja el mensajero y el contexto listos.
     fn apply_start_agents(&self, build_swarm: bool, build_agent: bool) {
         let cfg = self.config();
         if build_swarm {

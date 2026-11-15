@@ -3,6 +3,7 @@
 pub mod activity;
 pub mod call;
 pub mod chat;
+pub mod chat_wiring;
 pub mod core;
 pub mod demo;
 pub mod events;
