@@ -10,6 +10,21 @@ pub type Palette = [[f32; 3]; 5];
 /// Poses que conservan el color personalizado; las de aviso tienen el suyo.
 pub const CUSTOM_POSES: [&str; 7] = ["idle", "listen", "think", "speak", "done", "sleep", "mute"];
 
+/// Estado visual (`UiState`) -> pose de la barra.
+pub const POSE_OF: [(&str, &str); 8] = [
+    ("off", "idle"),
+    ("idle", "idle"),
+    ("listen", "listen"),
+    ("think", "think"),
+    ("speak", "speak"),
+    ("notice", "speak"),
+    ("mute", "mute"),
+    ("error", "error"),
+];
+
+/// Brillo de la forma por pose cuando no es el de fábrica.
+pub const BRIGHT: [(&str, f64); 2] = [("mute", 0.9), ("sleep", 0.97)];
+
 const IDLE: usize = 0;
 const LISTEN: usize = 1;
 const THINK: usize = 2;

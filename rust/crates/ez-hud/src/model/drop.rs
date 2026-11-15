@@ -17,4 +17,4 @@ pub use geometry::{
     HOVER_MARGIN, HYSTERESIS, LAYOUTS, MOTION_MODES, NB, ORB_GAP, PAD, PILL_H, PILL_W, SHADOW,
 };
 pub use model::{DropModel, Update};
-pub use palette::{colors_for, Palette, CUSTOM_POSES};
+pub use palette::{colors_for, Palette, BRIGHT, CUSTOM_POSES, POSE_OF};

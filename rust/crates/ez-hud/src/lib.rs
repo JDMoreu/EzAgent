@@ -1,5 +1,6 @@
 //! Crate skeleton created by F0-04.
 
+pub mod a11y;
 pub mod anim;
 pub mod geometry;
 pub mod layout;
