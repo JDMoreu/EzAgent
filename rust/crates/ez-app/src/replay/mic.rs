@@ -171,7 +171,10 @@ impl ReplayMic {
                     let reason = pipeline.segmenter.last_close_reason.clone();
                     self.trace
                         .record("vad.utterance", json!({"reason": reason}));
-                    app.inner.audio.mic.lock().last_speech_end = pipeline.last_speech_end;
+                    app.inner
+                        .audio
+                        .mic()
+                        .set_last_speech_end(pipeline.last_speech_end);
                     app.events().put(AppEvent::AudioUtterance(pcm, SAMPLE_RATE));
                 }
             }

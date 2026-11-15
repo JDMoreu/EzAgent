@@ -139,7 +139,11 @@ impl VoiceApp {
             on_utterance: Some(&mut on_utterance),
             on_barge_in: Some(&mut on_barge),
         };
-        let result = self.inner.audio.mic.lock().stream(
+        // DECISION: el clon es barato (`Arc` por dentro) y `stream` corre sin
+        // retener el cerrojo del micrófono: el menú y el chat siguen vivos
+        // durante toda la llamada, como en el Python (audio.py §stream).
+        let mic = self.inner.audio.mic();
+        let result = mic.stream(
             &flags.stop,
             hooks,
             Some(&flags.reset),
@@ -412,13 +416,7 @@ impl VoiceApp {
         let now = monotonic();
         *self.inner.turn.last_turn_audio.lock() = Some((pcm.clone(), rate, now));
         *self.inner.turn.turn_started.lock() = now;
-        let speech_end = self
-            .inner
-            .audio
-            .mic
-            .try_lock()
-            .and_then(|mic| mic.last_speech_end)
-            .unwrap_or(now);
+        let speech_end = self.inner.audio.mic().last_speech_end().unwrap_or(now);
         let timing = Arc::new(TurnTimings::new(speech_end, now));
         *self.inner.turn.turn_timing.lock() = Some(Arc::clone(&timing));
         let generation = if confirm_pending(self) {

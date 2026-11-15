@@ -10,12 +10,13 @@ use std::time::Duration;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use crossbeam_channel::{bounded, RecvTimeoutError};
 
-use super::{
-    device_at, device_name, input_config, pcm_rms, pick_input_device, to_mono_i16, CaptureError,
-};
+mod live;
+
+use self::live::Live;
+
+use super::{device_at, input_config, pcm_rms, pick_input_device, to_mono_i16, CaptureError};
 use crate::barge_in::{BargeInDetector, BARGE_IN_SECS};
 use crate::segmenter::{EndProbe, Segmenter, SegmenterConfig};
-use crate::turn::SmartTurn;
 use crate::CHUNK_SECS;
 
 /// Valores en vivo del VAD y del barge-in: el menú del HUD los cambia sin
@@ -172,99 +173,128 @@ impl CapturePipeline {
 }
 
 /// Micrófono real con captura continua y segmentación por VAD.
+///
+/// Comparte su estado detrás de un `Arc`, como los atributos de `MicCapture` en
+/// `audio.py`: quien captura no retiene el micrófono y el menú del HUD lee y
+/// escribe los ajustes en vivo sin esperar a que termine la llamada.
+#[derive(Clone)]
 pub struct MicCapture {
-    pub device_index: Option<usize>,
-    pub device_name: String,
-    pub rate: u32,
-    pub min_rms: f64,
-    pub silence_secs: f64,
-    pub pre_roll_secs: f64,
-    pub min_speech_secs: f64,
-    pub max_utterance_secs: f64,
-    pub noise_multiplier: f64,
-    pub barge_in_rms: f64,
-    pub barge_in_secs: f64,
-    /// Detector de fin de turno (Smart Turn); `None` = solo silencio.
-    pub turn_detector: Option<Arc<SmartTurn>>,
-    pub turn_quick_secs: f64,
-    pub last_speech_end: Option<f64>,
+    inner: Arc<Inner>,
+}
+
+struct Inner {
+    device_name: String,
+    rate: u32,
+    live: Live,
+    source: Source,
+    capturing: AtomicBool,
+}
+
+/// De dónde salen los bloques de `stream`.
+enum Source {
+    Device,
+    /// Doble de las pruebas de regresión: no abre hardware y se queda en
+    /// `stream` hasta que pongan el `stop`, como una llamada de verdad.
+    Silent,
 }
 
 impl MicCapture {
     pub fn new(device_index: Option<usize>, settings: VadSettings) -> Self {
-        let mut capture = Self {
-            device_index: None,
-            device_name: "ninguno".to_string(),
-            rate: 16_000,
-            min_rms: settings.min_rms,
-            silence_secs: settings.silence_secs,
-            pre_roll_secs: settings.pre_roll_secs,
-            min_speech_secs: settings.min_speech_secs,
-            max_utterance_secs: settings.max_utterance_secs,
-            noise_multiplier: settings.noise_multiplier,
-            barge_in_rms: settings.barge_in_rms,
-            barge_in_secs: settings.barge_in_secs,
-            turn_detector: None,
-            turn_quick_secs: settings.turn_quick_secs,
-            last_speech_end: None,
-        };
-        capture.device_index = pick_input_device(device_index);
-        if let Some(index) = capture.device_index {
+        let device_index = pick_input_device(device_index);
+        let mut name = "ninguno".to_string();
+        let mut rate = 16_000;
+        if let Some(index) = device_index {
             match device_at(index) {
                 Some(device) => {
-                    let rate = device
+                    let found = device
                         .default_input_config()
                         .map_or(16_000, |config| config.sample_rate());
-                    capture.rate = if rate == 0 { 16_000 } else { rate };
-                    capture.device_name = device_name(&device.to_string());
+                    rate = if found == 0 { 16_000 } else { found };
+                    name = super::device_name(&device.to_string());
                 }
-                None => capture.device_name = "desconocido".to_string(),
+                None => name = "desconocido".to_string(),
             }
         }
-        capture
+        Self::build(device_index, name, rate, settings, Source::Device)
+    }
+
+    /// Captura de prueba: `stream` no toca el hardware y se queda esperando el
+    /// `stop`, para comprobar que la interfaz no depende de la llamada.
+    pub fn silent(settings: VadSettings) -> Self {
+        Self::build(
+            Some(0),
+            "micrófono de prueba".to_string(),
+            16_000,
+            settings,
+            Source::Silent,
+        )
+    }
+
+    fn build(
+        device_index: Option<usize>,
+        device_name: String,
+        rate: u32,
+        settings: VadSettings,
+        source: Source,
+    ) -> Self {
+        Self {
+            inner: Arc::new(Inner {
+                device_name,
+                rate,
+                live: Live::new(device_index, settings),
+                source,
+                capturing: AtomicBool::new(false),
+            }),
+        }
     }
 
     /// `close`: cpal no tiene `terminate`; el stream se cierra al salir de
     /// `stream`. Se conserva por paridad con la API del Python.
-    pub fn close(&mut self) {}
+    pub fn close(&self) {}
 
+    /// Smart Turn se consulta en cada sonda, así que encenderlo o apagarlo en
+    /// vivo llega a la captura en curso (`_end_probe` del Python).
     fn end_probe(&self) -> Option<EndProbe> {
-        let detector = Arc::clone(self.turn_detector.as_ref()?);
-        let rate = self.rate;
+        let inner = Arc::clone(&self.inner);
         Some(Box::new(move |pcm: &[u8], _state| {
-            detector.submit(pcm, rate)
+            let detector = inner.live.turn_detector();
+            detector.and_then(|detector| detector.submit(pcm, inner.rate))
         }))
-    }
-
-    fn settings(&self) -> VadSettings {
-        VadSettings {
-            min_rms: self.min_rms,
-            silence_secs: self.silence_secs,
-            pre_roll_secs: self.pre_roll_secs,
-            min_speech_secs: self.min_speech_secs,
-            max_utterance_secs: self.max_utterance_secs,
-            noise_multiplier: self.noise_multiplier,
-            turn_quick_secs: self.turn_quick_secs,
-            barge_in_rms: self.barge_in_rms,
-            barge_in_secs: self.barge_in_secs,
-        }
     }
 
     /// Captura continua; emite utterances y no se cierra entre turnos.
     pub fn stream(
-        &mut self,
+        &self,
         stop_event: &AtomicBool,
         hooks: StreamHooks<'_>,
         reset_event: Option<&AtomicBool>,
         is_speaking: Option<&dyn Fn() -> bool>,
         barge_in_rms: f64,
     ) -> Result<(), CaptureError> {
-        let index = self.device_index.ok_or(CaptureError::NoMicrophone)?;
+        let _running = Running::new(&self.inner.capturing);
+        match self.inner.source {
+            Source::Device => {
+                self.stream_device(stop_event, hooks, reset_event, is_speaking, barge_in_rms)
+            }
+            Source::Silent => stream_silent(stop_event),
+        }
+    }
+
+    fn stream_device(
+        &self,
+        stop_event: &AtomicBool,
+        hooks: StreamHooks<'_>,
+        reset_event: Option<&AtomicBool>,
+        is_speaking: Option<&dyn Fn() -> bool>,
+        barge_in_rms: f64,
+    ) -> Result<(), CaptureError> {
+        let index = self.device_index().ok_or(CaptureError::NoMicrophone)?;
         let device = device_at(index).ok_or(CaptureError::NoMicrophone)?;
-        let (stream, receiver) = open_stream(&device, self.rate)?;
+        let rate = self.rate();
+        let (stream, receiver) = open_stream(&device, rate)?;
         let mut hooks = hooks;
-        let mut pipeline = CapturePipeline::new(&self.settings(), self.rate, self.end_probe());
-        let frames = ((f64::from(self.rate) * CHUNK_SECS) as usize).max(160);
+        let mut pipeline = CapturePipeline::new(&self.settings(), rate, self.end_probe());
+        let frames = ((f64::from(rate) * CHUNK_SECS) as usize).max(160);
         let mut pending: Vec<i16> = Vec::with_capacity(frames * 2);
         while !stop_event.load(Ordering::SeqCst) {
             let batch = match receiver.recv_timeout(Duration::from_millis(100)) {
@@ -280,24 +310,48 @@ impl MicCapture {
                 let reset = reset_event.is_some_and(|flag| flag.swap(false, Ordering::SeqCst));
                 let speaking = is_speaking.is_some_and(|check| check());
                 let events = pipeline.feed(&settings, &pcm, level, speaking, reset);
-                self.last_speech_end = pipeline.last_speech_end;
-                dispatch(&mut hooks, events, level, self.rate);
+                self.set_last_speech_end(pipeline.last_speech_end);
+                dispatch(&mut hooks, events, level, rate);
             }
         }
         drop(stream);
         Ok(())
     }
 
+    /// Los ajustes del bloque siguiente: el menú los cambia en vuelo.
     fn live_settings(&self, barge_in_rms: f64) -> VadSettings {
         let mut settings = self.settings();
         // `self.barge_in_rms or barge_in_rms`.
-        settings.barge_in_rms = if self.barge_in_rms != 0.0 {
-            self.barge_in_rms
+        settings.barge_in_rms = if settings.barge_in_rms != 0.0 {
+            settings.barge_in_rms
         } else {
             barge_in_rms
         };
         settings
     }
+}
+
+/// Marca `capturing` mientras dure la captura, también si falla al abrir.
+struct Running<'a>(&'a AtomicBool);
+
+impl<'a> Running<'a> {
+    fn new(flag: &'a AtomicBool) -> Self {
+        flag.store(true, Ordering::SeqCst);
+        Self(flag)
+    }
+}
+
+impl Drop for Running<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+fn stream_silent(stop_event: &AtomicBool) -> Result<(), CaptureError> {
+    while !stop_event.load(Ordering::SeqCst) {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
 }
 
 /// Abre el stream de entrada y devuelve el receptor de buffers mono.
@@ -472,5 +526,43 @@ mod tests {
         pipeline.feed(&settings, &chunk(0), 0.0, false, false);
         assert_eq!(pipeline.segmenter.min_rms, 0.05);
         assert_eq!(pipeline.segmenter.silence_secs, 9.0);
+    }
+
+    #[test]
+    fn silent_capture_stays_in_stream_and_applies_live_changes() {
+        let mic = MicCapture::silent(VadSettings::default());
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker = {
+            let mic = mic.clone();
+            let stop = Arc::clone(&stop);
+            std::thread::spawn(move || mic.stream(&stop, StreamHooks::default(), None, None, 0.0))
+        };
+        while !mic.capturing() {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        // El menú cambia el VAD en vivo: no espera a que termine la llamada.
+        let started = std::time::Instant::now();
+        mic.set_min_rms(0.05);
+        mic.set_barge_in_rms(0.008);
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert_eq!(mic.min_rms(), 0.05);
+        // El bloque siguiente de `stream` lee esa instantánea.
+        let live = mic.live_settings(0.0);
+        assert_eq!(live.min_rms, 0.05);
+        assert_eq!(live.barge_in_rms, 0.008);
+        stop.store(true, Ordering::SeqCst);
+        worker
+            .join()
+            .expect("hilo de captura")
+            .expect("captura sin error");
+        assert!(!mic.capturing());
+    }
+
+    #[test]
+    fn the_turn_detector_is_read_on_every_probe() {
+        let mic = MicCapture::silent(VadSettings::default());
+        // Siempre hay sonda, como `Segmenter(end_probe=self._end_probe)`.
+        assert!(mic.end_probe().is_some());
+        assert!(mic.turn_detector().is_none());
     }
 }

@@ -36,9 +36,9 @@ impl VoiceApp {
             cfg_float(cfg, "turn_threshold", 0.5),
             &path.to_string_lossy(),
         ));
-        let mut mic = self.inner.audio.mic.lock();
-        mic.turn_detector = Some(Arc::clone(&detector));
-        mic.turn_quick_secs = cfg_float(cfg, "turn_quick_secs", 0.35);
+        let mic = self.inner.audio.mic();
+        mic.set_turn_detector(Some(Arc::clone(&detector)));
+        mic.set_turn_quick_secs(cfg_float(cfg, "turn_quick_secs", 0.35));
         Some(detector)
     }
 
@@ -46,14 +46,14 @@ impl VoiceApp {
     pub fn apply_turn_settings(&self) {
         let cfg = self.config();
         if !cfg_truthy(&cfg, "smart_turn", true) {
-            self.inner.audio.mic.lock().turn_detector = None;
+            self.inner.audio.mic().set_turn_detector(None);
             return;
         }
         let current = self.inner.audio.turn_detector.lock().clone();
         match current {
             Some(detector) => {
                 detector.set_threshold(cfg_float(&cfg, "turn_threshold", 0.5));
-                self.inner.audio.mic.lock().turn_detector = Some(detector);
+                self.inner.audio.mic().set_turn_detector(Some(detector));
             }
             None => {
                 let detector = self.create_turn_detector(&cfg);

@@ -157,13 +157,7 @@ impl VoiceApp {
         Ok(Prepared {
             dictionary,
             profile_name: profile_name(values, &cfg),
-            old_device: self
-                .inner
-                .audio
-                .mic
-                .lock()
-                .device_index
-                .map(|index| index as i64),
+            old_device: self.inner.audio.device_index().map(|index| index as i64),
             was_in_call: self
                 .inner
                 .session

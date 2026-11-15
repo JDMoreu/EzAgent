@@ -33,9 +33,11 @@ impl VoiceApp {
             ..VadSettings::default()
         };
         let new = MicCapture::new(index, settings);
-        let device_index = new.device_index;
-        let device_name = new.device_name.clone();
+        let device_index = new.device_index();
+        let device_name = new.device_name().to_string();
         {
+            // El cerrojo solo cubre el cambio de dispositivo: la captura vieja
+            // conserva su clon y suelta el hardware al ver el `stop`.
             let mut mic = self.inner.audio.mic.lock();
             mic.close();
             *mic = new;
@@ -57,15 +59,19 @@ impl VoiceApp {
 /// `self.mic.min_rms = self.cfg.min_rms` y los demás valores del VAD.
 pub(super) fn update_mic_settings(app: &VoiceApp) {
     let cfg = app.config();
-    let mut mic = app.inner.audio.mic.lock();
-    mic.min_rms = cfg_float(&cfg, "min_rms", mic.min_rms);
-    mic.silence_secs = cfg_float(&cfg, "silence_secs", mic.silence_secs);
-    mic.noise_multiplier = cfg_float(&cfg, "noise_multiplier", mic.noise_multiplier);
-    mic.pre_roll_secs = cfg_float(&cfg, "pre_roll_secs", mic.pre_roll_secs);
-    mic.min_speech_secs = cfg_float(&cfg, "min_speech_secs", mic.min_speech_secs);
-    mic.max_utterance_secs = cfg_float(&cfg, "max_utterance_secs", mic.max_utterance_secs);
-    mic.barge_in_rms = cfg_float(&cfg, "barge_in_rms", mic.barge_in_rms);
-    mic.barge_in_secs = cfg_float(&cfg, "barge_in_secs", mic.barge_in_secs);
+    let mic = app.inner.audio.mic();
+    mic.set_min_rms(cfg_float(&cfg, "min_rms", mic.min_rms()));
+    mic.set_silence_secs(cfg_float(&cfg, "silence_secs", mic.silence_secs()));
+    mic.set_noise_multiplier(cfg_float(&cfg, "noise_multiplier", mic.noise_multiplier()));
+    mic.set_pre_roll_secs(cfg_float(&cfg, "pre_roll_secs", mic.pre_roll_secs()));
+    mic.set_min_speech_secs(cfg_float(&cfg, "min_speech_secs", mic.min_speech_secs()));
+    mic.set_max_utterance_secs(cfg_float(
+        &cfg,
+        "max_utterance_secs",
+        mic.max_utterance_secs(),
+    ));
+    mic.set_barge_in_rms(cfg_float(&cfg, "barge_in_rms", mic.barge_in_rms()));
+    mic.set_barge_in_secs(cfg_float(&cfg, "barge_in_secs", mic.barge_in_secs()));
 }
 
 /// `int(value)` de Python convertido a un índice de dispositivo.

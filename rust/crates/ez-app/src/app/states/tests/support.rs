@@ -170,7 +170,7 @@ impl Fixture {
 
     pub(crate) fn with_config(cfg: VoiceConfig) -> Self {
         let mic = Arc::new(Mutex::new(MicCapture::new(None, VadSettings::default())));
-        mic.lock().device_index = None;
+        mic.lock().set_device_index(None);
         let speaker = RecordingSpeaker::new();
         let config_file = temp_path("voice.json");
         let tasks_path = temp_path("tasks.json");

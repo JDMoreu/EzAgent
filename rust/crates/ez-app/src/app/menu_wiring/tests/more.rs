@@ -18,7 +18,7 @@ fn apply_settings_changes_the_input_device() {
     let values = fixture.values(&[("input_device_index", SettingValue::Int(0))]);
     let restarted = fixture.app.apply_settings(&values).expect("guardado");
     assert!(!restarted);
-    let mic_index = fixture.app.inner.audio.mic.lock().device_index;
+    let mic_index = fixture.app.inner.audio.mic.lock().device_index();
     let saved = fixture.app.config();
     let stored = saved.get("input_device_index").and_then(Value::as_i64);
     assert_eq!(stored, mic_index.map(|index| index as i64));
@@ -31,8 +31,8 @@ fn apply_settings_without_device_change_updates_the_mic() {
     let values = fixture.values(&[("min_rms", SettingValue::Float(0.002))]);
     fixture.app.apply_settings(&values).expect("guardado");
     let mic = fixture.app.inner.audio.mic.lock();
-    assert!((mic.min_rms - 0.002).abs() < 1e-9);
-    assert!((mic.silence_secs - 1.3).abs() < 1e-9);
+    assert!((mic.min_rms() - 0.002).abs() < 1e-9);
+    assert!((mic.silence_secs() - 1.3).abs() < 1e-9);
 }
 
 #[test]

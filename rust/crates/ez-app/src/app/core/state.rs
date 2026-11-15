@@ -203,6 +203,20 @@ pub struct AudioState {
     pub turn_detector: TurnDetectorSlot,
 }
 
+impl AudioState {
+    /// Clon del micrófono vigente. `MicCapture` comparte su estado y su
+    /// captura no retiene el cerrojo, así que tomarlo aquí nunca espera a la
+    /// llamada en curso.
+    pub fn mic(&self) -> MicCapture {
+        self.mic.lock().clone()
+    }
+
+    /// `self.mic.device_index` (espejo del dispositivo en uso).
+    pub fn device_index(&self) -> Option<usize> {
+        self.mic().device_index()
+    }
+}
+
 /// Voz y avisos hablados (`speaker`, `_tts_*`, `_busy_*`, `_speaking_kind`).
 pub struct SpeechState {
     /// `self.speaker`.
