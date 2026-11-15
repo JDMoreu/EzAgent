@@ -1,3 +1,4 @@
+mod mic_lock;
 mod more;
 
 use std::path::PathBuf;
@@ -148,7 +149,7 @@ impl Fixture {
             rate: 16_000,
             channels: 1,
         }];
-        app.inner.audio.mic.lock().device_index = None;
+        app.inner.audio.mic.lock().set_device_index(None);
         Self {
             app,
             log,

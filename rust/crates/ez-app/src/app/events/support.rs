@@ -54,7 +54,7 @@ impl Fixture {
     pub(crate) fn new() -> Self {
         let mic = Arc::new(Mutex::new(MicCapture::new(None, VadSettings::default())));
         // Ningún test debe intentar abrir el dispositivo por omisión.
-        mic.lock().device_index = None;
+        mic.lock().set_device_index(None);
         let tasks_path = temp_path("tasks.json");
         let config_file = temp_path("voice.json");
         let mut parts = AppParts::new(Arc::new(FakeSpeaker), Arc::clone(&mic));

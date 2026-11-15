@@ -104,13 +104,7 @@ impl VoiceApp {
         if index < 0 {
             return Ok(());
         }
-        let current = self
-            .inner
-            .audio
-            .mic
-            .lock()
-            .device_index
-            .map(|index| index as i64);
+        let current = self.inner.audio.device_index().map(|index| index as i64);
         if Some(index) != current {
             self.reload_mic_with(device_option(index), true, self);
         }
@@ -147,15 +141,17 @@ impl VoiceApp {
         let number = setting_float(setting)?;
         self.inner.config.cfg.write().set(key, Value::from(number));
         if float_key(key) == Some(true) {
-            let mut mic = self.inner.audio.mic.lock();
+            // Los ajustes viven en memoria compartida: la captura en curso los
+            // lee en el bloque siguiente (audio.py §stream) sin bloqueos.
+            let mic = self.inner.audio.mic();
             match key {
-                "min_rms" => mic.min_rms = number,
-                "noise_multiplier" => mic.noise_multiplier = number,
-                "silence_secs" => mic.silence_secs = number,
-                "pre_roll_secs" => mic.pre_roll_secs = number,
-                "min_speech_secs" => mic.min_speech_secs = number,
-                "max_utterance_secs" => mic.max_utterance_secs = number,
-                "barge_in_rms" => mic.barge_in_rms = number,
+                "min_rms" => mic.set_min_rms(number),
+                "noise_multiplier" => mic.set_noise_multiplier(number),
+                "silence_secs" => mic.set_silence_secs(number),
+                "pre_roll_secs" => mic.set_pre_roll_secs(number),
+                "min_speech_secs" => mic.set_min_speech_secs(number),
+                "max_utterance_secs" => mic.set_max_utterance_secs(number),
+                "barge_in_rms" => mic.set_barge_in_rms(number),
                 _ => {}
             }
         }

@@ -34,7 +34,11 @@ impl VoiceApp {
             .map(|parent| parent.join("logs").join("latency.jsonl"));
         let mic_info = {
             let mic = parts.mic.lock();
-            (mic.device_name.clone(), mic.device_index, mic.rate)
+            (
+                mic.device_name().to_string(),
+                mic.device_index(),
+                mic.rate(),
+            )
         };
         let inner = Inner {
             config: config_state(&cfg, Arc::clone(&prepared.cfg), prepared.config_file),

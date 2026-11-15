@@ -447,7 +447,13 @@ fn apply_turn_settings_follows_the_config() {
         Arc::new(ez_audio::turn::UnavailableTurnModel),
     ));
     *fixture.app.inner.audio.turn_detector.lock() = Some(Arc::clone(&detector));
-    fixture.app.inner.audio.mic.lock().turn_detector = Some(Arc::clone(&detector));
+    fixture
+        .app
+        .inner
+        .audio
+        .mic
+        .lock()
+        .set_turn_detector(Some(Arc::clone(&detector)));
     fixture
         .app
         .inner
@@ -456,7 +462,7 @@ fn apply_turn_settings_follows_the_config() {
         .write()
         .set("smart_turn", json!(false));
     fixture.app.apply_turn_settings();
-    assert!(fixture.app.inner.audio.mic.lock().turn_detector.is_none());
+    assert!(fixture.app.inner.audio.mic.lock().turn_detector().is_none());
     {
         let mut cfg = fixture.app.inner.config.cfg.write();
         cfg.set("smart_turn", json!(true));
@@ -464,7 +470,7 @@ fn apply_turn_settings_follows_the_config() {
     }
     fixture.app.apply_turn_settings();
     assert!((detector.threshold() - 0.7).abs() < 1e-9);
-    assert!(fixture.app.inner.audio.mic.lock().turn_detector.is_some());
+    assert!(fixture.app.inner.audio.mic.lock().turn_detector().is_some());
     assert_eq!(fixture.app.check_hotkey_duplicates(&Map::new()), Ok(()));
 }
 

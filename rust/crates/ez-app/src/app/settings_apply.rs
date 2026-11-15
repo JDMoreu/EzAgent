@@ -262,7 +262,10 @@ impl VoiceApp {
     /// `_refresh_devices`: enumera los micrófonos para el menú.
     pub fn refresh_devices(&self) {
         // `list_input_devices` ya devuelve una lista vacía si falla el host.
-        *self.inner.config.devices_cache.lock() = list_input_devices();
+        // La enumeración (PortAudio) se hace fuera del cerrojo para que el menú
+        // no espere a que termine.
+        let devices = list_input_devices();
+        *self.inner.config.devices_cache.lock() = devices;
     }
 }
 

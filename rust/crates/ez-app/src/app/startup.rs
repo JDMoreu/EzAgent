@@ -380,10 +380,10 @@ impl VoiceApp {
         observer.step("altavoz");
         self.inner.speech.speaker.close();
         observer.step("microfono");
-        self.inner.audio.mic.lock().close();
+        self.inner.audio.mic().close();
         observer.step("detector");
         *self.inner.audio.turn_detector.lock() = None;
-        self.inner.audio.mic.lock().turn_detector = None;
+        self.inner.audio.mic().set_turn_detector(None);
         observer.step("bandeja");
         if let Some(tray) = self.inner.ui.tray.lock().take() {
             tray.stop();

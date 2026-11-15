@@ -26,7 +26,7 @@ fn start_call_sets_the_call_state_and_advances_the_turn() {
     assert!(!app.inner.session.user_speaking.load(Ordering::SeqCst));
     // En los dobles no se abre el micrófono ni se crea el hilo de captura.
     assert!(app.inner.turn.call_thread.lock().is_none());
-    assert!(fixture.mic.lock().device_index.is_none());
+    assert!(fixture.mic.lock().device_index().is_none());
     app.start_call();
     assert_eq!(turn_gen(app), 1);
 }
@@ -257,7 +257,7 @@ fn utterance_merges_the_resumed_phrase_and_records_the_timing() {
     let fixture = Fixture::new();
     let app = &fixture.app;
     app.start_call();
-    fixture.mic.lock().last_speech_end = Some(12.5);
+    fixture.mic.lock().set_last_speech_end(Some(12.5));
     *app.inner.turn.resume_pcm.lock() = Some((vec![9], 16_000));
     app.on_utterance(vec![1, 2], 16_000);
     let last = app

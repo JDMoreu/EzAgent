@@ -81,7 +81,7 @@ impl VoiceApp {
                 .unwrap_or(SettingValue::None);
             values.insert(*key, value);
         }
-        let device = self.inner.audio.mic.lock().device_index;
+        let device = self.inner.audio.device_index();
         values.insert(
             "input_device_index",
             device.map_or(SettingValue::None, |index| SettingValue::Int(index as i64)),
