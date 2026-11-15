@@ -1,0 +1,34 @@
+id: "25c"
+name: "Arranque sin Smart Turn"
+notes: >
+  Smart Turn está activado pero su modelo no está: el detector no se crea,
+  el VAD por silencio sigue solo y el turno se transcribe y responde igual.
+degrade: [smart_turn]
+settings:
+  smart_turn: true
+  silence_secs: 1.0
+  speech_secs_min: 0.2
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - content: "Claro, aquí estoy."
+whisper:
+  transcripts:
+    - "Hola, ¿cómo estás?"
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: hola_como_estas.wav
+  - wait_quiet: 25
+  - wait_drained: 15
+expect:
+  states: [thinking, speaking, listening]
+  user: ["Hola, ¿cómo estás?"]
+  assistant: ["Claro, aquí estoy."]
+  speech_contains: ["Claro, aquí estoy."]
+  degraded: ["degraded.smart_turn"]
+  llm_requests: 1
+  final:
+    state: listening
+    in_call: true

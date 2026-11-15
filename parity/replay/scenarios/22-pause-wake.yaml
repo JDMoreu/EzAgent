@@ -1,0 +1,45 @@
+id: "22"
+name: "Pausa por voz y reactivación con la frase clave"
+notes: >
+  Tras un turno normal, «Pausa.» cierra la escucha sin colgar y lo dice. En
+  pausa solo se transcribe una frase corta para buscar «EzAgent, escúchame»,
+  que devuelve el micrófono sin abrir otra llamada.
+settings:
+  close_action: pause
+  silence_secs: 1.0
+  speech_secs_min: 0.2
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - content: "Puedo ayudarte."
+whisper:
+  transcripts:
+    - "¿Qué puedes hacer?"
+    - "Pausa."
+    - "EzAgent, escúchame."
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: que_puedes_hacer.wav
+  - wait_quiet: 25
+  - audio: cuelga.wav
+  - wait_quiet: 20
+  - audio: ezagent_escuchame.wav
+  - wait_quiet: 20
+  - wait_drained: 15
+expect:
+  states: [thinking, speaking, listening, speaking, listening]
+  user: ["¿Qué puedes hacer?"]
+  assistant: ["Puedo ayudarte."]
+  speech_contains:
+    - "Puedo ayudarte."
+    - "En pausa. Di «EzAgent, escúchame» cuando me necesites."
+    - "Dime."
+  speech_count:
+    "Puedo ayudarte.": 1
+  llm_requests: 1
+  final:
+    state: listening
+    in_call: true
+    muted: false

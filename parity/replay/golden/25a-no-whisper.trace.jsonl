@@ -1,0 +1,13 @@
+{"thread": "main#0", "seq": 1, "event": "hud.in_call", "value": false}
+{"thread": "main#0", "seq": 2, "event": "hud.show", "state": "idle"}
+{"thread": "main#0", "seq": 3, "event": "app.start", "scenario": "25a"}
+{"thread": "main#0", "seq": 4, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 5, "event": "driver.step", "index": 1, "step": "wait_state:listening"}
+{"thread": "main#0", "seq": 6, "event": "hud.in_call", "value": true}
+{"thread": "main#0", "seq": 7, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 8, "event": "driver.step", "index": 2, "step": "wait_drained:20"}
+{"thread": "main#0", "seq": 9, "event": "hud.close"}
+{"thread": "main#0", "seq": 10, "event": "app.end", "state": "listening", "in_call": true, "muted": false}
+{"thread": "main#0", "seq": 11, "event": "llm.requests", "count": 0}
+{"thread": "ezagent-tts#0", "seq": 1, "event": "speech.say", "text": "No encuentro whisper. Revisa la carpeta de whisper en la configuración."}
+{"thread": "ezagent-tts#0", "seq": 2, "event": "speech.cut", "text": "No encuentro whisper. Revisa la carpeta de whisper en la configuración."}

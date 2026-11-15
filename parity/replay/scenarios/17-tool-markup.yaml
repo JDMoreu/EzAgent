@@ -1,0 +1,37 @@
+id: "17"
+name: "Marcado de herramienta escrito como texto"
+notes: >
+  El modelo escribe su formato nativo de llamada dentro del texto. El filtro
+  corta en el marcador, no lo muestra ni lo dice, y la app avisa de que no se
+  ejecutó ninguna herramienta. El marcador llega partido en trozos de 3.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.2
+llm:
+  model: fake-model
+  chunk_chars: 3
+  turns:
+    - content: "Voy a revisarlo. <｜DSML｜ invoke name=\"get_datetime\">{\"when\":\"hoy\"}</｜DSML｜ invoke>"
+whisper:
+  transcripts:
+    - "¿Qué hora es?"
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: que_hora_es.wav
+  - wait_quiet: 25
+  - wait_drained: 15
+expect:
+  states: [thinking, speaking, listening]
+  user: ["¿Qué hora es?"]
+  assistant:
+    - "Voy a revisarlo. No pude ejecutar esa acción porque la herramienta no respondió. No se hizo nada; inténtalo de nuevo."
+  speech_contains:
+    - "Voy a revisarlo."
+    - "No pude ejecutar esa acción porque la herramienta no respondió."
+  tool_calls: []
+  llm_requests: 1
+  never: ["<｜DSML｜", "invoke name"]
+  final:
+    state: listening
+    in_call: true

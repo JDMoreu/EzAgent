@@ -1,0 +1,39 @@
+{"thread": "main#0", "seq": 1, "event": "hud.in_call", "value": false}
+{"thread": "main#0", "seq": 2, "event": "hud.show", "state": "idle"}
+{"thread": "main#0", "seq": 3, "event": "app.start", "scenario": "16"}
+{"thread": "main#0", "seq": 4, "event": "driver.step", "index": 1, "step": "wait_state:listening"}
+{"thread": "main#0", "seq": 5, "event": "hud.in_call", "value": true}
+{"thread": "main#0", "seq": 6, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 7, "event": "driver.step", "index": 2, "step": "audio:que_hora_es.wav"}
+{"thread": "main#0", "seq": 8, "event": "driver.step", "index": 3, "step": "wait_quiet:25"}
+{"thread": "main#0", "seq": 9, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 10, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 11, "event": "chat.user", "text": "¿Qué hora es?", "source": "voice"}
+{"thread": "main#0", "seq": 12, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 13, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 14, "event": "driver.step", "index": 4, "step": "wait_drained:15"}
+{"thread": "main#0", "seq": 15, "event": "hud.close"}
+{"thread": "main#0", "seq": 16, "event": "app.end", "state": "listening", "in_call": true, "muted": false}
+{"thread": "main#0", "seq": 17, "event": "chat.snapshot", "role": "user", "text": "¿Qué hora es?"}
+{"thread": "main#0", "seq": 18, "event": "chat.snapshot", "role": "assistant", "text": "Conservé los resultados obtenidos, pero no pude completar la tarea. Todavía no hay una entrega final confirmada."}
+{"thread": "main#0", "seq": 19, "event": "audit.line", "tool": "get_datetime", "level": 0, "decision": "allow", "ok": true, "taint": false, "args": {}}
+{"thread": "main#0", "seq": 20, "event": "audit.line", "tool": "get_datetime", "level": 0, "decision": "allow", "ok": true, "taint": false, "args": {}}
+{"thread": "main#0", "seq": 21, "event": "audit.line", "tool": "get_datetime", "level": 0, "decision": "allow", "ok": true, "taint": false, "args": {}}
+{"thread": "main#0", "seq": 22, "event": "audit.line", "tool": "get_datetime", "level": 0, "decision": "allow", "ok": true, "taint": false, "args": {}}
+{"thread": "main#0", "seq": 23, "event": "llm.requests", "count": 2}
+{"thread": "ezagent-call#0", "seq": 1, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 2, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-stt#0", "seq": 1, "event": "stt.transcript", "text": "¿Qué hora es?"}
+{"thread": "ezagent-answer#0", "seq": 1, "event": "tool.call", "name": "get_datetime", "args": "{}"}
+{"thread": "ezagent-answer#0", "seq": 2, "event": "tool.result", "name": "get_datetime", "ok": true, "outcome": "completed"}
+{"thread": "ezagent-answer#0", "seq": 3, "event": "tool.call", "name": "get_datetime", "args": "{}"}
+{"thread": "ezagent-answer#0", "seq": 4, "event": "tool.result", "name": "get_datetime", "ok": true, "outcome": "completed"}
+{"thread": "ezagent-answer#0", "seq": 5, "event": "tool.call", "name": "get_datetime", "args": "{}"}
+{"thread": "ezagent-answer#0", "seq": 6, "event": "tool.result", "name": "get_datetime", "ok": true, "outcome": "completed"}
+{"thread": "ezagent-answer#0", "seq": 7, "event": "tool.call", "name": "get_datetime", "args": "{}"}
+{"thread": "ezagent-answer#0", "seq": 8, "event": "tool.result", "name": "get_datetime", "ok": true, "outcome": "completed"}
+{"thread": "ezagent-answer#0", "seq": 9, "event": "file.write", "name": "chat.jsonl", "role": "assistant"}
+{"thread": "ezagent-answer#0", "seq": 10, "event": "chat.assistant", "text": "Conservé los resultados obtenidos, pero no pude completar la tarea. Todavía no hay una entrega final confirmada."}
+{"thread": "ezagent-speech#0", "seq": 1, "event": "speech.say", "text": "Conservé los resultados obtenidos,"}
+{"thread": "ezagent-speech#0", "seq": 2, "event": "speech.say", "text": "pero no pude completar la tarea."}
+{"thread": "ezagent-speech#0", "seq": 3, "event": "speech.say", "text": "Todavía no hay una entrega final confirmada."}

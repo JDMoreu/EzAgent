@@ -235,3 +235,71 @@ Eventos que emite el arnés:
    aquí); si necesitas una aserción nueva, añádela a `check_expect`.
 4. Ejecuta `--scenario NN` y luego `--verify` antes de dar el escenario por
    bueno.
+
+## Escenarios 16-25 (F1-12c)
+
+Las extensiones de estos escenarios viven en `parity/replay/harness_ext.py`;
+`run_py.py` lo importa con una sola línea al final y conserva intacto el
+comportamiento de 01-15. No se añadieron WAV: todos reutilizan los de
+`parity/replay/audio/`.
+
+| # | Archivo | Qué mide |
+|---|---|---|
+| 16 | `16-tool-limits.yaml` | tope de llamadas por turno (4 de 5 pedidas) y de rondas (segunda ronda final sin herramientas) |
+| 17 | `17-tool-markup.yaml` | marcado nativo de herramienta escrito como texto: se corta, no se dice ni se ejecuta |
+| 18 | `18-swarm-delivery.yaml` | enjambre real: plan → dev ∥ front → qa → fix → cierre, con `ezs` |
+| 19 | `19-swarm-quota.yaml` | incidente de límite de uso, pregunta, espera y reanudación a la hora indicada |
+| 20 | `20-swarm-incidents.yaml` | contexto lleno (reabre), ventana cerrada (pregunta y release) y programa que sale (reabre una vez) |
+| 21 | `21-chat-panel.yaml` | chat escrito: Markdown, historial, nueva conversación y borrar otra |
+| 22 | `22-pause-wake.yaml` | pausa por voz y reactivación con la frase clave |
+| 23 | `23-menu-settings.yaml` | guardado del menú: voz, proveedor y atajo, persistentes en `voice.json` |
+| 24 | `24-model-match.yaml` | `fetch_models` + `match_model`: «qwen3-32b» se completa a «acme/qwen3-32b» |
+| 25a | `25a-no-whisper.yaml` | arranque sin whisper: aviso hablado y app escuchando |
+| 25b | `25b-no-kokoro.yaml` | arranque sin Kokoro: la respuesta llega al chat y no se habla |
+| 25c | `25c-no-smart-turn.yaml` | arranque sin Smart Turn: el VAD por silencio sigue solo |
+
+### Pasos nuevos
+
+Además de los de la tabla anterior:
+
+| Paso | Efecto |
+|---|---|
+| `hud: {action: chat_send, text: ...}` | llama al callback del panel de chat (`on_chat_send`, `on_chat_new`, `on_chat_switch`, `on_chat_delete`, `on_chat_stop`) |
+| `menu_save: {clave: valor}` | construye la instantánea del menú, cambia esos valores y pulsa «Guardar» por `on_save` |
+| `wait_config: {clave: valor}` | espera a que `VoiceApp.cfg` tenga esos valores |
+| `wait_voice: {clave: valor}` | espera a que `voice.json` (APPDATA temporal) los tenga |
+| `wait_drained: 40` | espera a que no haya eventos, avisos ni hilos de voz/turno y la app esté estable 0,3 s |
+| `swarm_start`, `swarm_tick`, `swarm_agent`, `swarm_screen`, `swarm_lost`, `swarm_resolve`, `swarm_clock` | montan y mueven el enjambre (ver abajo) |
+
+### Enjambre (18-20)
+
+- `VoiceApp._create_swarm` devuelve un `SwarmStack` **real** (SQLite, servicio,
+  `SwarmServer` y `Supervisor`) solo cuando el YAML trae un bloque `swarm:`.
+  El servidor escucha en `127.0.0.1`; el supervisor **no arranca su hilo**:
+  `swarm_tick` llama a `Supervisor.tick()` y espera a que terminen los
+  lanzamientos. Así el orden es causal y reproducible.
+- `SwarmStore`, `SwarmService`, `Supervisor` y `Recovery` comparten un reloj de
+  prueba (`Clock`): la hora de pared empieza en 2025-01-01 12:00 UTC y
+  `swarm_clock` la adelanta. Los incidentes de límite de uso usan esa hora.
+- Los terminales son de `fake-hc`; el perfil de `opencode` se cambia a
+  `fake-agent.exe` para que la pantalla y el estado se vean como un agente
+  real. `fake-agent` no ejecuta nada: el arnés hace de cerebro y lanza
+  `ezs.exe` con el `EZS_SEAT` del miembro (igual que lo haría el agente).
+  Tras `done`/`fix`/`fail` se marca la terminal como `idle`, que es lo que
+  haría el agente al terminar su turno.
+- El id aleatorio del enjambre se sustituye por `<swarm>` en la traza. Los
+  ids de tarea (T1…) y de incidente (I1…) sí son deterministas. Los puertos,
+  tokens, rutas de asiento y el directorio temporal nunca se anotan.
+
+### Aserciones nuevas
+
+`swarm_tasks`, `swarm_members`, `swarm_incidents`, `swarm_status`, `launches`,
+`resumes_sent`, `config`, `voice_json`, `chat_history`, `degraded`,
+`tool_failures` y `files` (además de las de `check_expect`).
+
+### Tiempo y determinismo
+
+Los diez escenarios nuevos (doce YAML por las variantes 25a/b/c) tardan unos
+dos minutos y `--verify` da trazas idénticas en dos procesos distintos. Las
+locuciones usan `speech_secs_min` bajo en los escenarios de enjambre para que
+los avisos no alarguen la corrida; el texto y el orden no cambian.

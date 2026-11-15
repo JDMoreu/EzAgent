@@ -1,0 +1,39 @@
+{"thread": "main#0", "seq": 1, "event": "hud.in_call", "value": false}
+{"thread": "main#0", "seq": 2, "event": "hud.show", "state": "idle"}
+{"thread": "main#0", "seq": 3, "event": "app.start", "scenario": "21"}
+{"thread": "main#0", "seq": 4, "event": "driver.step", "index": 1, "step": "wait_state:listening"}
+{"thread": "main#0", "seq": 5, "event": "hud.in_call", "value": true}
+{"thread": "main#0", "seq": 6, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 7, "event": "driver.step", "index": 2, "step": "hud:{'action': 'chat_send', 'text': 'Explícame el plan.'}"}
+{"thread": "main#0", "seq": 8, "event": "hud.panel", "action": "chat_send"}
+{"thread": "main#0", "seq": 9, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 10, "event": "chat.user", "text": "Explícame el plan.", "source": "chat"}
+{"thread": "main#0", "seq": 11, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 12, "event": "driver.step", "index": 3, "step": "wait_quiet:20"}
+{"thread": "main#0", "seq": 13, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 14, "event": "driver.step", "index": 4, "step": "hud:{'action': 'chat_new'}"}
+{"thread": "main#0", "seq": 15, "event": "hud.panel", "action": "chat_new"}
+{"thread": "main#0", "seq": 16, "event": "driver.step", "index": 5, "step": "hud:{'action': 'chat_send', 'text': '¿Y ahora?'}"}
+{"thread": "main#0", "seq": 17, "event": "hud.panel", "action": "chat_send"}
+{"thread": "main#0", "seq": 18, "event": "driver.step", "index": 6, "step": "wait_quiet:20"}
+{"thread": "main#0", "seq": 19, "event": "file.write", "name": "chat.jsonl", "role": ""}
+{"thread": "main#0", "seq": 20, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 21, "event": "chat.user", "text": "¿Y ahora?", "source": "chat"}
+{"thread": "main#0", "seq": 22, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 23, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 24, "event": "driver.step", "index": 7, "step": "hud:{'action': 'chat_switch', 'session': 1}"}
+{"thread": "main#0", "seq": 25, "event": "hud.panel", "action": "chat_switch"}
+{"thread": "main#0", "seq": 26, "event": "driver.step", "index": 8, "step": "wait_quiet:5"}
+{"thread": "main#0", "seq": 27, "event": "file.write", "name": "chat.jsonl", "role": ""}
+{"thread": "main#0", "seq": 28, "event": "driver.step", "index": 9, "step": "hud:{'action': 'chat_delete', 'session': 2}"}
+{"thread": "main#0", "seq": 29, "event": "hud.panel", "action": "chat_delete"}
+{"thread": "main#0", "seq": 30, "event": "driver.step", "index": 10, "step": "wait_quiet:5"}
+{"thread": "main#0", "seq": 31, "event": "hud.close"}
+{"thread": "main#0", "seq": 32, "event": "app.end", "state": "listening", "in_call": true, "muted": false}
+{"thread": "main#0", "seq": 33, "event": "chat.snapshot", "role": "user", "text": "Explícame el plan."}
+{"thread": "main#0", "seq": 34, "event": "chat.snapshot", "role": "assistant", "text": "# Plan\n\n- **Uno**: abrir.\n- `dos`: cerrar.\n\n| a | b |\n| - | - |\n| 1 | 2 |"}
+{"thread": "main#0", "seq": 35, "event": "llm.requests", "count": 2}
+{"thread": "ezagent-chat#0", "seq": 1, "event": "file.write", "name": "chat.jsonl", "role": "assistant"}
+{"thread": "ezagent-chat#0", "seq": 2, "event": "chat.assistant", "text": "# Plan\n\n- **Uno**: abrir.\n- `dos`: cerrar.\n\n| a | b |\n| - | - |\n| 1 | 2 |"}
+{"thread": "ezagent-chat#1", "seq": 1, "event": "file.write", "name": "chat.jsonl", "role": "assistant"}
+{"thread": "ezagent-chat#1", "seq": 2, "event": "chat.assistant", "text": "Segunda respuesta."}

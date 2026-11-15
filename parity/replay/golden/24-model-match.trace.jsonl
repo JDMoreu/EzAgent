@@ -1,0 +1,24 @@
+{"thread": "main#0", "seq": 1, "event": "hud.in_call", "value": false}
+{"thread": "main#0", "seq": 2, "event": "hud.show", "state": "idle"}
+{"thread": "main#0", "seq": 3, "event": "app.start", "scenario": "24"}
+{"thread": "main#0", "seq": 4, "event": "driver.step", "index": 1, "step": "wait_config:{'llm_model': 'acme/qwen3-32b'}"}
+{"thread": "main#0", "seq": 5, "event": "file.write", "name": "voice.json"}
+{"thread": "main#0", "seq": 6, "event": "driver.step", "index": 2, "step": "wait_state:listening"}
+{"thread": "main#0", "seq": 7, "event": "hud.in_call", "value": true}
+{"thread": "main#0", "seq": 8, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 9, "event": "driver.step", "index": 3, "step": "hud:{'action': 'chat_send', 'text': '¿Qué modelo usas?'}"}
+{"thread": "main#0", "seq": 10, "event": "hud.panel", "action": "chat_send"}
+{"thread": "main#0", "seq": 11, "event": "driver.step", "index": 4, "step": "wait_quiet:20"}
+{"thread": "main#0", "seq": 12, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 13, "event": "chat.user", "text": "¿Qué modelo usas?", "source": "chat"}
+{"thread": "main#0", "seq": 14, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 15, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 16, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 17, "event": "hud.close"}
+{"thread": "main#0", "seq": 18, "event": "app.end", "state": "listening", "in_call": true, "muted": false}
+{"thread": "main#0", "seq": 19, "event": "chat.snapshot", "role": "user", "text": "¿Qué modelo usas?"}
+{"thread": "main#0", "seq": 20, "event": "chat.snapshot", "role": "assistant", "text": "Uso acme/qwen3-32b."}
+{"thread": "main#0", "seq": 21, "event": "llm.requests", "count": 1}
+{"thread": "ezagent-speech#0", "seq": 1, "event": "speech.say", "text": "Uso acme/qwen3-32b."}
+{"thread": "ezagent-chat#0", "seq": 1, "event": "file.write", "name": "chat.jsonl", "role": "assistant"}
+{"thread": "ezagent-chat#0", "seq": 2, "event": "chat.assistant", "text": "Uso acme/qwen3-32b."}

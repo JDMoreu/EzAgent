@@ -205,3 +205,11 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
 - Qué hace mal: `str(value or "")` convierte `None` en `""` y `123` en `"123"`, de modo que acepta entradas que no son cadenas sin avisar; el oráculo incluye ambos casos.
 - Cómo se reproduce en Rust: `theme::parse_hex` recibe `&str`; la prueba aplica la misma coerción (`Value::Null` → `""`, número → su texto) antes de llamar.
 - Recomendación posterior: tipar la entrada como `str` en la firma o rechazar no-cadenas explícitamente; no cambia ninguna salida actual.
+
+## Hallazgos de F1-12c (arnés de reproducción, escenarios 16-25)
+
+### Q-F112C-01
+- Archivo y líneas: `src/ezagent/swarm/incidents.py:166-175` (`describe`) y `178-188` (`question`).
+- Qué hace mal: `when()` devuelve «las 7:10 p. m.» (con punto final), `describe` añade «. Su trabajo pendiente: …» y `question` vuelve a añadir el punto de la frase. El aviso de un incidente de límite de uso queda con doble punto: «… hasta las 7:10 p. m.. Su trabajo pendiente: T1.».
+- Cómo se reproduce en Rust: el escenario 19 conserva el texto literal del Python en la locución y en la pregunta; la traza dorada fija el doble punto.
+- Recomendación posterior: quitar el punto final de `when()` o unir las frases sin duplicarlo; regenerar el escenario 19 cuando se decida.

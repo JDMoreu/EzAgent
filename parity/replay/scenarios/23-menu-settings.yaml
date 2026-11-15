@@ -1,0 +1,40 @@
+id: "23"
+name: "Ajustes desde el menú: voz, proveedor y atajos"
+notes: >
+  El panel de ajustes entrega su instantánea al guardar: cambian la voz, el
+  proveedor del LLM y el atajo de llamada. La app valida, aplica y escribe
+  voice.json; el resto de valores se conserva.
+settings:
+  speech_secs_min: 0.1
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns: []
+whisper:
+  transcripts: []
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - menu_save:
+      voice: em_santa
+      llm_provider: openai
+      hotkey: ctrl+alt+k
+  - wait_voice:
+      voice: em_santa
+      llm_provider: openai
+      hotkey: ctrl+alt+k
+  - wait_drained: 15
+expect:
+  config:
+    voice: em_santa
+    llm_provider: openai
+    hotkey: ctrl+alt+k
+  voice_json:
+    voice: em_santa
+    llm_provider: openai
+    hotkey: ctrl+alt+k
+  files: ["voice.json"]
+  llm_requests: 0
+  final:
+    state: listening
+    in_call: true
