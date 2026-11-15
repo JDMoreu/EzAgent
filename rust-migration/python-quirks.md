@@ -310,3 +310,11 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
 - Qué hace mal: `when()` devuelve «las 7:10 p. m.» (con punto final), `describe` añade «. Su trabajo pendiente: …» y `question` vuelve a añadir el punto de la frase. El aviso de un incidente de límite de uso queda con doble punto: «… hasta las 7:10 p. m.. Su trabajo pendiente: T1.».
 - Cómo se reproduce en Rust: el escenario 19 conserva el texto literal del Python en la locución y en la pregunta; la traza dorada fija el doble punto.
 - Recomendación posterior: quitar el punto final de `when()` o unir las frases sin duplicarlo; regenerar el escenario 19 cuando se decida.
+
+## Hallazgos de P-GFX-TEXT (texto del HUD)
+
+### Q-PGFXTEXT-01
+- Archivo y líneas: `src/ezagent/voice/hud/text.py:99` (`ImageFont.truetype`) y `pyproject.toml` (versión de Pillow).
+- Qué hace mal (dependencia no declarada): la máscara depende del FreeType que empaquete la rueda de Pillow, que no está fijado por el proyecto. El `.venv` trae Pillow 13.0.0 con FreeType 2.14.3; `freetype-sys 0.23.0` (lo único que admite el workspace) compila FreeType 2.13.2. El intérprete de 2.13.2 desplaza y engorda los acentos compuestos: U+00B4 a 13 px sale `(3×2, top 10, [0,164,83] [48,202,2])` frente a `(3×2, top 9, [17,192,49] [10,15,0])` de Pillow, y `"Automático"` mide 10 px de alto en vez de 9.
+- Cómo se reproduce en Rust: `ez-gfx::text` produce esas mismas máscaras de 2.13.2; `tests/text_mask_parity.rs` sondea U+00B4 para distinguir los dos rasterizadores. Con 2.14.3 las 181 máscaras de la tabla coinciden byte a byte.
+- Recomendación posterior: fijar la versión de Pillow/FreeType con la que se generan los PNG dorados y actualizar `freetype-sys` a una versión con FreeType ≥ 2.14.0; mientras tanto, cualquier prueba de texto byte a byte queda atada a 2.13.2.
