@@ -40,3 +40,16 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
   (el estado ya cambió en memoria) y decidir si el puerto debe exponer el fallo
   a quien llama; no afecta a fixtures de paridad.
 
+
+## Q-P-AGENT-A-01
+- Archivo y líneas: `src/ezagent/agent/system_prompt.py:186-189`
+- Qué hace mal: `_os_description()` usa `platform.system()` y `platform.release()`
+  del equipo donde corre; el texto `{{os}}` y, por tanto, el prompt completo
+  cambian de una máquina a otra (`Windows 11` en el oráculo). Los fixtures de
+  `system_prompt` solo son deterministas en ese host.
+- Cómo se reproduce en Rust: `system_prompt.rs` fija `DEFAULT_OS = "Windows 11"`
+  y expone `set_os_description` para que la aplicación ponga la versión real; la
+  prueba de paridad no cambia ese valor y compara el resto byte a byte.
+- Recomendación posterior: inyectar la descripción del SO desde la configuración
+  (o fijarla en el generador de fixtures) y regenerar `system_prompt.jsonl` en un
+  host declarado; afecta a `system_prompt/build/*` y `system_prompt/parts/*`.
