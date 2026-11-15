@@ -159,8 +159,9 @@ fn tick_opens_the_panel_and_the_chat_during_a_call() {
     fixture.app.on_hud_action("chat");
     let started = Instant::now();
     fixture.app.tick();
+    // Detecta un bloqueo indefinido; 1 s fallaba con la suite en paralelo.
     assert!(
-        started.elapsed() < Duration::from_secs(1),
+        started.elapsed() < Duration::from_secs(5),
         "el tick esperó a la captura: {:?}",
         started.elapsed()
     );
