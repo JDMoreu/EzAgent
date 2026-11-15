@@ -1,0 +1,41 @@
+{"thread": "main#0", "seq": 1, "event": "hud.in_call", "value": false}
+{"thread": "main#0", "seq": 2, "event": "hud.show", "state": "idle"}
+{"thread": "main#0", "seq": 3, "event": "app.start", "scenario": "08"}
+{"thread": "main#0", "seq": 4, "event": "driver.step", "index": 1, "step": "wait_state:listening"}
+{"thread": "main#0", "seq": 5, "event": "hud.in_call", "value": true}
+{"thread": "main#0", "seq": 6, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 7, "event": "driver.step", "index": 2, "step": "audio:planifica_y_pasa.wav"}
+{"thread": "main#0", "seq": 8, "event": "driver.step", "index": 3, "step": "wait_speech:¿Quieres que te lo resuma"}
+{"thread": "main#0", "seq": 9, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 10, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 11, "event": "chat.user", "text": "Planifica la tarea y luego pásala a desarrollo.", "source": "voice"}
+{"thread": "main#0", "seq": 12, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 13, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 14, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 15, "event": "hud.notice"}
+{"thread": "main#0", "seq": 16, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 17, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 18, "event": "driver.step", "index": 4, "step": "wait_quiet:40"}
+{"thread": "main#0", "seq": 19, "event": "hud.close"}
+{"thread": "main#0", "seq": 20, "event": "app.end", "state": "listening", "in_call": true, "muted": false}
+{"thread": "main#0", "seq": 21, "event": "chat.snapshot", "role": "user", "text": "Planifica la tarea y luego pásala a desarrollo."}
+{"thread": "main#0", "seq": 22, "event": "chat.snapshot", "role": "assistant", "text": "Se lo paso a planificador. Planificador y desarrollo están en marcha. Te aviso al cerrar el flujo."}
+{"thread": "main#0", "seq": 23, "event": "audit.line", "tool": "delegate_to_agent", "level": 1, "decision": "allow", "ok": true, "taint": false, "args": {"action": "run", "agent": "planificador", "name": "planificador", "task": "Planifica una landing sencilla.", "then": [{"agent": "desarrollo", "name": "desarrollo", "task": "Este es el plan:\n{output}\n\nImplementa el plan."}]}}
+{"thread": "main#0", "seq": 24, "event": "llm.requests", "count": 2}
+{"thread": "ezagent-call#0", "seq": 1, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 2, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-stt#0", "seq": 1, "event": "stt.transcript", "text": "Planifica la tarea y luego pásala a desarrollo."}
+{"thread": "ezagent-answer#0", "seq": 1, "event": "tool.call", "name": "delegate_to_agent", "args": "{\"action\":\"run\",\"agent\":\"planificador\",\"name\":\"planificador\",\"task\":\"Planifica una landing sencilla.\",\"then\":[{\"agent\":\"desarrollo\",\"name\":\"desarrollo\",\"task\":\"Este es el plan:\\n{output}\\n\\nImplementa el plan.\"}]}"}
+{"thread": "ezagent-answer#0", "seq": 2, "event": "tool.result", "name": "delegate_to_agent", "ok": true, "outcome": "completed"}
+{"thread": "ezagent-answer#0", "seq": 3, "event": "file.write", "name": "chat.jsonl", "role": "assistant"}
+{"thread": "ezagent-answer#0", "seq": 4, "event": "chat.assistant", "text": "Se lo paso a planificador. Planificador y desarrollo están en marcha. Te aviso al cerrar el flujo."}
+{"thread": "ezagent-speech#0", "seq": 1, "event": "speech.say", "text": "Se lo paso a planificador."}
+{"thread": "ezagent-speech#0", "seq": 2, "event": "speech.say", "text": "Planificador y desarrollo están en marcha."}
+{"thread": "ezagent-speech#0", "seq": 3, "event": "speech.say", "text": "Te aviso al cerrar el flujo."}
+{"thread": "ezagent-tts#0", "seq": 1, "event": "speech.say", "text": "Terminó «planificador». Ahora empieza «desarrollo»."}
+{"thread": "ezagent-tts#1", "seq": 1, "event": "speech.say", "text": "Oye, terminó todo el flujo: planificador → desarrollo. ¿Quieres que te lo resuma, que te muestre el resultado o que haga algo más con él?"}
+{"thread": "services#0", "seq": 1, "event": "agent.scene", "name": "planificador", "agent": "claude", "state": "done"}
+{"thread": "services#0", "seq": 2, "event": "agent.scene", "name": "desarrollo", "agent": "opencode", "state": "done"}
+{"thread": "ez-watch-events#0", "seq": 1, "event": "watcher.event", "agent": "claude", "state": "idle", "reason": "done"}
+{"thread": "ez-watch-events#0", "seq": 2, "event": "hud.show", "state": "speaking"}
+{"thread": "ez-watch-events#0", "seq": 3, "event": "watcher.event", "agent": "opencode", "state": "idle", "reason": "done"}

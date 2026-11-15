@@ -1,0 +1,67 @@
+id: "14a"
+name: "Errores HTTP del LLM: 401, 404, 413 y 429"
+notes: >
+  Cuatro turnos con el guion de `fake-llm`: clave inválida, modelo
+  desconocido, petición demasiado grande y límite de peticiones con
+  `Retry-After`. No hay reintentos: la app dice el mensaje amable del
+  proveedor y sigue escuchando.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.6
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - status: 401
+      error: "Invalid API key"
+      error_type: "invalid_request_error"
+    - status: 404
+      error: "model not found"
+      error_type: "invalid_request_error"
+    - status: 413
+      error: "request too large"
+      error_type: "invalid_request_error"
+    - status: 429
+      error: "rate limit"
+      error_type: "rate_limit_error"
+      retry_after: 2
+whisper:
+  transcripts:
+    - "¿Qué hora es?"
+    - "¿Qué fecha es hoy?"
+    - "¿Cuánto es dos más dos?"
+    - "¿Qué día es?"
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: que_hora_es.wav
+  - wait_speech: "La clave de Personalizado no es válida"
+  - audio: que_hora_es.wav
+  - wait_speech: "no reconoce el modelo fake-model"
+  - audio: que_hora_es.wav
+  - wait_speech: "La petición es más grande"
+  - audio: que_hora_es.wav
+  - wait_speech: "me limitó por demasiadas peticiones"
+  - wait_quiet: 20
+expect:
+  states: [listening, thinking, speaking, listening, thinking, speaking, listening]
+  user:
+    - "¿Qué hora es?"
+    - "¿Qué fecha es hoy?"
+    - "¿Cuánto es dos más dos?"
+    - "¿Qué día es?"
+  assistant:
+    - "La clave de Personalizado no es válida o no tiene acceso. Revísala en ajustes."
+    - "Personalizado no reconoce el modelo fake-model. Revisa el nombre en ajustes."
+    - "La petición es más grande de lo que permite tu plan de Personalizado por minuto. Usa otro proveedor o un plan con más tokens."
+    - "Personalizado me limitó por demasiadas peticiones o tokens por minuto. Espera unos 2 segundos o elige otro modelo o proveedor en ajustes."
+  speech_any:
+    - "La clave de Personalizado no es válida"
+    - "no reconoce el modelo fake-model"
+    - "La petición es más grande"
+    - "me limitó por demasiadas peticiones"
+    - "Espera unos 2 segundos"
+  llm_requests: 4
+  final:
+    state: listening
+    in_call: true

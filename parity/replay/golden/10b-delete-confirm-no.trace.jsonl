@@ -1,0 +1,36 @@
+{"thread": "main#0", "seq": 1, "event": "hud.in_call", "value": false}
+{"thread": "main#0", "seq": 2, "event": "hud.show", "state": "idle"}
+{"thread": "main#0", "seq": 3, "event": "app.start", "scenario": "10b"}
+{"thread": "main#0", "seq": 4, "event": "driver.step", "index": 1, "step": "wait_state:listening"}
+{"thread": "main#0", "seq": 5, "event": "hud.in_call", "value": true}
+{"thread": "main#0", "seq": 6, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 7, "event": "driver.step", "index": 2, "step": "audio:borra_la_nota.wav"}
+{"thread": "main#0", "seq": 8, "event": "driver.step", "index": 3, "step": "wait_speech:¿Confirmas?"}
+{"thread": "main#0", "seq": 9, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 10, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 11, "event": "chat.user", "text": "Borra la nota de prueba.", "source": "voice"}
+{"thread": "main#0", "seq": 12, "event": "chat.confirm", "summary": "Voy a enviar a la Papelera el archivo «<tmp>\\EzAgentWorkspace\\nota.txt».", "strong": false}
+{"thread": "main#0", "seq": 13, "event": "hud.confirm", "summary": "Voy a enviar a la Papelera el archivo «<tmp>\\EzAgentWorkspace\\nota.txt».", "strong": false}
+{"thread": "main#0", "seq": 14, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 15, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 16, "event": "driver.step", "index": 4, "step": "audio:no_cancela.wav"}
+{"thread": "main#0", "seq": 17, "event": "driver.step", "index": 5, "step": "wait_quiet:30"}
+{"thread": "main#0", "seq": 18, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 19, "event": "chat.confirm_done"}
+{"thread": "main#0", "seq": 20, "event": "hud.confirm_done"}
+{"thread": "main#0", "seq": 21, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 22, "event": "hud.close"}
+{"thread": "main#0", "seq": 23, "event": "app.end", "state": "listening", "in_call": true, "muted": false}
+{"thread": "main#0", "seq": 24, "event": "chat.snapshot", "role": "user", "text": "Borra la nota de prueba."}
+{"thread": "main#0", "seq": 25, "event": "audit.line", "tool": "delete_path", "level": 2, "decision": "confirm_no", "ok": false, "taint": false, "args": {"path": "nota.txt"}}
+{"thread": "main#0", "seq": 26, "event": "llm.requests", "count": 2}
+{"thread": "ezagent-call#0", "seq": 1, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 2, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-call#0", "seq": 3, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 4, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-stt#0", "seq": 1, "event": "stt.transcript", "text": "Borra la nota de prueba."}
+{"thread": "ezagent-stt#1", "seq": 1, "event": "stt.transcript", "text": "No, cancela."}
+{"thread": "ezagent-answer#0", "seq": 1, "event": "tool.call", "name": "delete_path", "args": "{\"path\":\"nota.txt\"}"}
+{"thread": "ezagent-answer#0", "seq": 2, "event": "tool.result", "name": "delete_path", "ok": false, "outcome": "completed"}
+{"thread": "ezagent-answer#0", "seq": 3, "event": "chat.cancel", "text": ""}
+{"thread": "ezagent-tts#0", "seq": 1, "event": "speech.say", "text": "Voy a enviar a la Papelera el archivo «<tmp>\\EzAgentWorkspace\\nota.txt». ¿Confirmas?"}

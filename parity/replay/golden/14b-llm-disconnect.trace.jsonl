@@ -1,0 +1,24 @@
+{"thread": "main#0", "seq": 1, "event": "hud.in_call", "value": false}
+{"thread": "main#0", "seq": 2, "event": "hud.show", "state": "idle"}
+{"thread": "main#0", "seq": 3, "event": "app.start", "scenario": "14b"}
+{"thread": "main#0", "seq": 4, "event": "driver.step", "index": 1, "step": "wait_state:listening"}
+{"thread": "main#0", "seq": 5, "event": "hud.in_call", "value": true}
+{"thread": "main#0", "seq": 6, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 7, "event": "driver.step", "index": 2, "step": "audio:que_hora_es.wav"}
+{"thread": "main#0", "seq": 8, "event": "driver.step", "index": 3, "step": "wait_speech:No pude conectar con Personalizado"}
+{"thread": "main#0", "seq": 9, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 10, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 11, "event": "chat.user", "text": "¿Qué hora es?", "source": "voice"}
+{"thread": "main#0", "seq": 12, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 13, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 14, "event": "driver.step", "index": 4, "step": "wait_quiet:20"}
+{"thread": "main#0", "seq": 15, "event": "hud.close"}
+{"thread": "main#0", "seq": 16, "event": "app.end", "state": "listening", "in_call": true, "muted": false}
+{"thread": "main#0", "seq": 17, "event": "chat.snapshot", "role": "user", "text": "¿Qué hora es?"}
+{"thread": "main#0", "seq": 18, "event": "chat.snapshot", "role": "assistant", "text": "No pude conectar con Personalizado. Revisa la conexión o la dirección de la API."}
+{"thread": "main#0", "seq": 19, "event": "llm.requests", "count": 0}
+{"thread": "ezagent-call#0", "seq": 1, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 2, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-stt#0", "seq": 1, "event": "stt.transcript", "text": "¿Qué hora es?"}
+{"thread": "ezagent-answer#0", "seq": 1, "event": "chat.fail", "text": "No pude conectar con Personalizado. Revisa la conexión o la dirección de la API."}
+{"thread": "ezagent-tts#0", "seq": 1, "event": "speech.say", "text": "No pude conectar con Personalizado. Revisa la conexión o la dirección de la API."}

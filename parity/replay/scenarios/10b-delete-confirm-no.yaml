@@ -1,0 +1,54 @@
+id: "10b"
+name: "Borrado con confirmación por voz: rechazar"
+notes: >
+  Misma operación destructiva que 10a, pero el usuario dice que no. La
+  herramienta no se ejecuta, el archivo sigue en su sitio y la auditoría
+  registra `confirm_no`. Como en 10a, el turno se cancela tras responder.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.8
+setup:
+  files:
+    "{workspace}/nota.txt": "Nota de prueba que se puede borrar.\n"
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: call_borrar
+          name: delete_path
+          arguments: '{"path":"nota.txt"}'
+whisper:
+  transcripts:
+    - "Borra la nota de prueba."
+    - "No, cancela."
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: borra_la_nota.wav
+  - wait_speech: "¿Confirmas?"
+  - audio: no_cancela.wav
+  - wait_quiet: 30
+expect:
+  states: [listening, thinking, speaking, listening, thinking, listening]
+  user:
+    - "Borra la nota de prueba."
+  assistant: []
+  speech_any:
+    - "Voy a enviar a la Papelera el archivo"
+    - "¿Confirmas?"
+  confirms:
+    - "Voy a enviar a la Papelera el archivo"
+  confirm_count: 1
+  tool_names: [delete_path]
+  llm_requests: 2
+  audit:
+    - {tool: delete_path, decision: confirm_no, taint: false, ok: false}
+  files:
+    "{workspace}/nota.txt":
+      exists: true
+      contains: ["Nota de prueba que se puede borrar."]
+  final:
+    state: listening
+    in_call: true

@@ -1,0 +1,65 @@
+id: "07"
+name: "Delegar a OpenCode, vigilar y avisar al terminar"
+notes: >
+  El LLM lanza OpenCode con una tarea mediante `delegate_to_agent`, EzAgent
+  registra la tarea, pone el terminal en `working` y, cuando termina, avisa y
+  pregunta qué hacer con el resultado.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.8
+  announce_all: false
+  default_cwd: "{workspace}"
+  agents:
+    opencode:
+      - "{home}/bin/opencode.exe"
+      - "--scenario"
+      - "{home}/agent.json"
+      - "--agent"
+      - "opencode"
+setup:
+  agent_bins: [opencode]
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: call_delegar
+          name: delegate_to_agent
+          arguments: '{"action":"run","agent":"opencode","name":"opencode","task":"Revisa el proyecto y dime qué ves."}'
+    - content: "Le pedí a OpenCode que revise el proyecto. Te aviso cuando termine."
+whisper:
+  transcripts:
+    - "Delega en OpenCode la revisión del proyecto y avísame al terminar."
+  repeat_last: false
+agent:
+  scenes: [working, done]
+  delay_ms: 6000
+  conclusion: "El proyecto está ordenado: no encontré archivos sueltos."
+steps:
+  - wait_state: listening
+  - audio: delega_opencode.wav
+  - wait_hc: 1
+  - wait_speech: "¿Quieres que te resuma"
+  - wait_quiet: 30
+expect:
+  states: [listening, thinking, speaking, listening, speaking, listening]
+  user:
+    - "Delega en OpenCode la revisión del proyecto y avísame al terminar."
+  assistant:
+    - "Se lo paso a OpenCode. Le pedí a OpenCode que revise el proyecto. Te aviso cuando termine."
+  tool_names: [delegate_to_agent]
+  llm_requests: 2
+  speech_any:
+    - "terminó"
+    - "¿Quieres que te resuma qué hizo"
+  audit:
+    - {tool: delegate_to_agent, decision: allow, taint: false, ok: true}
+  hc:
+    opencode:
+      state: idle
+      screen_contains: ["El proyecto está ordenado: no encontré archivos sueltos."]
+  no_confirm: true
+  final:
+    state: listening
+    in_call: true

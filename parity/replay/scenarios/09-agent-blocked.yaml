@@ -1,0 +1,77 @@
+id: "09"
+name: "Agente bloqueado que pide confirmación"
+notes: >
+  OpenCode se queda bloqueado en un diálogo de confianza. EzAgent avisa y
+  pregunta; el usuario responde y el LLM le pulsa Enter en el terminal del
+  agente sin abrir un turno nuevo del agente.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.8
+  announce_all: false
+  default_cwd: "{workspace}"
+  agents:
+    opencode:
+      - "{home}/bin/opencode.exe"
+      - "--scenario"
+      - "{home}/agent.json"
+      - "--agent"
+      - "opencode"
+setup:
+  agent_bins: [opencode]
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: call_abrir
+          name: delegate_to_agent
+          arguments: '{"action":"run","agent":"opencode","name":"opencode","task":"Confía en esta carpeta y revisa el proyecto."}'
+    - content: "OpenCode está trabajando. Te aviso si necesita algo."
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: call_enter
+          name: delegate_to_agent
+          arguments: '{"action":"keys","address":"t1","keys":["enter"]}'
+    - content: "Le di Enter; el permiso quedó concedido."
+whisper:
+  transcripts:
+    - "Delega en OpenCode la revisión del proyecto y avísame al terminar."
+    - "Dale, adelante."
+  repeat_last: false
+agent:
+  scenes: [working, blocked]
+  delay_ms: 6000
+steps:
+  - wait_state: listening
+  - audio: delega_opencode.wav
+  - wait_speech: "necesita tu atención"
+  - audio: si_confirmo.wav
+  - wait_quiet: 30
+expect:
+  states: [listening, thinking, speaking, listening, speaking, listening, thinking, speaking, listening]
+  user:
+    - "Delega en OpenCode la revisión del proyecto y avísame al terminar."
+    - "Dale, adelante."
+  assistant:
+    - "Se lo paso a OpenCode. OpenCode está trabajando. Te aviso si necesita algo."
+    - "Le di Enter; el permiso quedó concedido."
+  tool_calls:
+    - 'delegate_to_agent {"action":"run","agent":"opencode","name":"opencode","task":"Confía en esta carpeta y revisa el proyecto."}'
+    - 'delegate_to_agent {"action":"keys","address":"t1","keys":["enter"]}'
+  llm_requests: 4
+  speech_any:
+    - "necesita tu atención"
+    - "Le di Enter;"
+    - "el permiso quedó concedido."
+  audit:
+    - {tool: delegate_to_agent, decision: allow, taint: false, ok: true}
+    - {tool: delegate_to_agent, decision: allow, taint: false, ok: true}
+  hc:
+    opencode:
+      state: blocked
+      screen_contains: ["Do you trust the files in this folder?", "Yes, I trust"]
+  no_confirm: true
+  final:
+    state: listening
+    in_call: true

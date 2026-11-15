@@ -43,7 +43,7 @@ python parity/replay/run_py.py --verify
 Cada escenario se ejecuta en su **propio proceso** (también con `--all`):
 los parches son de módulo y los falsos abren puertos, así que no se pueden
 mezclar entre corridas. `--verify` compara los bytes de las dos trazas; hoy
-los seis escenarios salen idénticos.
+los 19 escenarios salen idénticos. El conjunto completo tarda unos 5 min 30 s.
 
 Si `fake-llm`/`fake-whisper` no existen, el arnés falla con la orden de
 compilación. Los puertos se piden al sistema (nunca fijos) y los procesos se
@@ -62,11 +62,15 @@ cierran siempre en `finally`.
 | `VoiceApp._create_swarm` | `None` | el enjambre no arranca su servidor |
 | `VoiceApp._create_tray` | `None` | sin icono de bandeja |
 | `VoiceApp._warm_stt` | no-op | evita consumir una transcripción del guion antes del primer turno |
+| `Herdr.context_text` | `""` | sin caché de ventanas: el aviso al terminar no depende de un `hc ls` de fondo y la traza es determinista |
+| `llm.tool_ack` | `None` con `ack_tools: false` | el acuse «Ejecuto el script.» competía con el TTS de la confirmación |
+| `tools_skills._python_interpreter` | `None` con `python_available: false` | simula el ejecutable empaquetado sin Python |
 
 Además se envuelven, sobre la instancia ya creada: `ChatModel` (`chat.user`,
 `chat.assistant`, `chat.cancel`, `chat.fail`, `chat.note`, confirmaciones y
-escrituras de `chat.jsonl`), `AgentRuntime.execute` (`tool.call`/`tool.result`)
-y `VoiceConfig._write_json` (`file.write`).
+escrituras de `chat.jsonl`), `AgentRuntime.execute` (`tool.call`/`tool.result`),
+`VoiceConfig._write_json` (`file.write`) y el callback del `Watcher`
+(`watcher.event`).
 
 El LLM se apunta con variables de entorno y `voice.json` a `fake-llm`
 (`LLM_PROVIDER=custom`, `LLM_API_STYLE=openai`, `LLM_BASE_URL=…/v1`,
@@ -107,8 +111,27 @@ whisper:                     # guion exacto de fake-whisper
 hc:                          # estado inicial de fake-hc (opcional)
   terminals: []
 
-agent:                       # guion de fake-agent para F1-12b/c (opcional)
-  scenes: [working, done]
+agent:                       # guion de fake-agent (opcional; 07-09)
+  scenes: [working, done]    # el arnés escribe esos estados en hc.json
+  delay_ms: 6000             # espera entre escenas
+  conclusion: "Listo."       # texto de la escena done
+
+setup:                       # fixtures de la corrida (opcional)
+  permissions: |             # permissions.toml de APPDATA
+    [web]
+    block_private_ips = false
+  files:
+    "{workspace}/nota.txt": "contenido"   # rutas con {home}, {workspace}
+  agent_bins: [opencode]     # copia fake-agent.exe a <home>/bin/opencode.exe
+  skills:                    # skill local en APPDATA/EzAgent/skills
+    saludo:
+      description: "Saluda"
+      body: "Devuelve un saludo."
+      scripts:
+        scripts/saludo.py: |
+          print("Hola")
+  web:                       # servidor HTTP local para el escenario de taint
+    body: "<html><body>Texto</body></html>"   # {web_url} en el guion
 
 steps:                       # guion del arnés, en orden
   - wait_state: listening
@@ -122,9 +145,21 @@ expect:                      # aserciones de alto nivel
   user: ["Hola, ¿cómo estás?"]             # mensajes del chat, en orden
   assistant: ["Claro, aquí estoy."]
   speech_contains: ["Claro, aquí estoy."]   # cada texto, presente
+  speech_any: ["terminó", "¿Confirmas?"]    # cada subcadena, en alguna locución
   speech_count: {"Claro, aquí estoy.": 1}   # repeticiones exactas
+  confirms: ["Voy a borrar"]                # subcadenas de hud.confirm
+  confirm_count: 1
   tool_calls: ["get_datetime {}"]           # "nombre argumentos_json"
+  tool_names: ["get_datetime"]              # solo nombres, en orden
   llm_requests: 1                           # peticiones de completación
+  llm_routes: [openai]                      # route de cada línea de requests.jsonl
+  audit:                                    # subsecuencia de audit.line
+    - {tool: get_datetime, decision: allow, taint: false, ok: true}
+  hc:                                       # estado final de fake-hc (por name o address)
+    opencode: {state: idle, screen_contains: ["Listo."]}
+  files:                                    # archivos al terminar
+    "{workspace}/nota.txt": {exists: false}
+  no_confirm: true
   never: ["ESTO ES UN ECO."]                # no debe aparecer en voz ni chat
   final: {state: listening, in_call: true, muted: false}
 ```
@@ -139,6 +174,11 @@ expect:                      # aserciones de alto nivel
 | `hotkey: toggle` | publica un evento de atajo global (`toggle`, `cancel`, `repeat`, `mute`, `menu`, `chat`) |
 | `wait_state: speaking` | espera al estado del HUD |
 | `wait_requests: 1` | espera a que `requests.jsonl` de `fake-llm` tenga N peticiones |
+| `wait_speech: "¿Confirmas?"` | espera a que una locución con ese texto termine y el HUD no esté en `speaking` |
+| `wait_transcript: "Dale."` | espera a esa transcripción exacta de `fake-whisper` |
+| `wait_hc: 1` | espera a que `fake-hc` tenga N terminales |
+| `wait_confirm_settled: true` | espera a que no haya confirmación pendiente y el HUD esté en `listening` o `idle` |
+| `hc_set: {name: opencode, state: idle, conclusion: "…"}` | edita `hc.json` (con el mismo cerrojo que `fake-hc`) |
 | `wait_quiet: 30` | espera a `listening`, chat sin turno, micrófono sin audio ni VAD y sin hilos de turno durante 250 ms; el número es el plazo |
 | `sleep: 0.5` | espera de reloj |
 
@@ -189,6 +229,8 @@ Eventos que emite el arnés:
 | `stt.transcript` | `text` | respuesta de `fake-whisper` |
 | `speech.say`, `speech.cut` | `text` | altavoz doble |
 | `tool.call` / `tool.result` | `name`, `args` / `ok`, `outcome` | núcleo agéntico |
+| `agent.scene` | `name`, `agent`, `state` | guion de `fake-agent` aplicado sobre `fake-hc` |
+| `watcher.event` | `agent`, `state`, `reason` | callback real del `Watcher` |
 | `audit.line` | `tool`, `level`, `decision`, `ok`, `taint`, `args` | `audit.jsonl` proyectado (sin `ts`, `turn_id` ni `ms`) |
 | `llm.requests` | `count` | líneas de `requests.jsonl` del falso |
 
@@ -202,6 +244,19 @@ Eventos que emite el arnés:
 | 4 | `04-split-phrase.yaml` | frase partida: el segundo trozo llega en `thinking` y se transcribe unido; el primer turno del LLM se cancela |
 | 5 | `05-barge-in.yaml` | barge-in sostenido: corta la frase, invalida el turno y abre otro |
 | 6 | `06-echo-discarded.yaml` | eco flojo durante el TTS: ni `stt.transcript` ni mensaje de usuario |
+| 7 | `07-delegate-opencode.yaml` | `delegate_to_agent run`: terminal de OpenCode, tarea, vigilancia y aviso al terminar |
+| 8 | `08-chain-planner-developer.yaml` | cadena con `then`: planificador → desarrollador, traspaso de la respuesta y aviso de etapa |
+| 9 | `09-agent-blocked.yaml` | agente bloqueado: aviso, respuesta del usuario y `delegate_to_agent keys` (Enter) |
+| 10a | `10a-delete-confirm-yes.yaml` | borrado de nivel 2: confirmación por voz aceptada, archivo a la Papelera |
+| 10b | `10b-delete-confirm-no.yaml` | el mismo borrado rechazado: no se ejecuta y el archivo sigue |
+| 11 | `11-taint-web-write.yaml` | `fetch_page` local marca taint; la escritura siguiente pide confirmación |
+| 12 | `12-memory.yaml` | `remember` (USER.md), `recall`, `forget` y `compact_memory` con copia `.bak` |
+| 13a | `13a-skill-script.yaml` | `load_skill` + `run_skill_script` con Python: el script escribe en el workspace |
+| 13b | `13b-skill-script-no-python.yaml` | la misma skill sin intérprete: error de la app y ningún archivo |
+| 14a | `14a-llm-http-errors.yaml` | 401, 404, 413 y 429 (con `Retry-After`) en cuatro turnos |
+| 14b | `14b-llm-disconnect.yaml` | proveedor inalcanzable: mensaje de conexión y ningún reintento |
+| 14c | `14c-llm-timeout.yaml` | respuesta retrasada 5 s con `llm_timeout_secs: 1` |
+| 15 | `15-anthropic-tools.yaml` | `LLM_API_STYLE=anthropic`: SSE de Messages y `get_datetime` con herramientas |
 
 ## Decisiones y límites
 
@@ -219,22 +274,38 @@ Eventos que emite el arnés:
 - **`_warm_stt` desactivado.** El precalentamiento real consultaría a whisper
   antes del primer turno y consumiría una transcripción del guion.
 - **Sin enjambre, bandeja ni atajos globales reales.** Se sustituyen por
-  no-ops o eventos; los escenarios 7-25 podrán levantar el enjambre con su
-  propio estado.
+  no-ops o eventos; F1-12c podrá levantar el enjambre con su propio estado.
+- **Agentes de mentira.** `fake-hc` crea el terminal y pinta la primera
+  pantalla; un hilo del arnés aplica `agent.scenes` sobre `hc.json` (con el
+  cerrojo de `fake-hc`) para que el `Watcher` real vea `working → done` o
+  `working → blocked`. `setup.agent_bins` copia `fake-agent.exe` con el nombre
+  del agente (`opencode.exe`, `claude.exe`) para que Herdr lo reconozca.
+- **Web local, nunca red real.** `setup.web` levanta un `ThreadingHTTPServer`
+  en `127.0.0.1` y `setup.permissions` desactiva `block_private_ips`; la URL
+  usa `{web_url}` y los puertos se normalizan a `127.0.0.1:<port>` en la traza.
+- **Caché de contexto desactivada.** `Herdr.context_text` devuelve `""` para
+  que el nombre visible del agente no dependa de un `hc ls` de fondo.
+- **`ack_tools: false` en 13.** El acuse hablado de `run_skill_script` compite
+  con el TTS de la confirmación y hacía la traza no determinista; se apaga solo
+  en esos dos escenarios y se documenta como costura.
+- **Quirk reproducido en las confirmaciones.** `_speak_same_turn` llama a
+  `_new_tts_stop`, que activa el `stop_event` del turno: tras responder a una
+  confirmación el turno del LLM se cancela (no se oye su texto final), aunque
+  la herramienta ya se ejecutó. Está en `rust-migration/python-quirks.md`.
 - **Un proceso por escenario** (ver arriba) y `parity/gen/manifest.json` no se
   toca.
 
-## Para F1-12b / F1-12c
+## Para F1-12c
 
 1. Añade `parity/replay/scenarios/NN-nombre.yaml` con audio ya existente en
    `parity/replay/audio/` o un WAV nuevo (PCM16 mono 16 kHz) generado con
    Kokoro y el mismo normalizado.
-2. Usa `hc:` para el estado inicial de `fake-hc` y `agent:` para el guion de
-   `fake-agent`; el arnés escribe ambos en el directorio temporal de la corrida.
+2. Usa `hc:` para el estado inicial de `fake-hc`, `agent:` para el guion de
+   `fake-agent` y `setup:` para permisos, archivos, skills y el servidor web.
 3. Si necesitas una espera nueva, añádela como paso del `Driver` (y documéntala
    aquí); si necesitas una aserción nueva, añádela a `check_expect`.
 4. Ejecuta `--scenario NN` y luego `--verify` antes de dar el escenario por
-   bueno.
+   bueno. El conjunto completo debe seguir por debajo de 6 minutos.
 
 ## Escenarios 16-25 (F1-12c)
 

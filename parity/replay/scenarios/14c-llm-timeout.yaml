@@ -1,0 +1,38 @@
+id: "14c"
+name: "Error del LLM: tiempo agotado"
+notes: >
+  `fake-llm` tarda 5 s en responder y la app corta la petición al segundo
+  (`llm_timeout_secs: 1`). El mensaje es el de conexión agotada y la app sigue
+  escuchando sin reintentar.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.6
+  llm_timeout_secs: 1.0
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - content: "Esta respuesta llega tarde."
+      delay_ms: 5000
+whisper:
+  transcripts:
+    - "¿Qué hora es?"
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: que_hora_es.wav
+  - wait_speech: "No pude conectar con Personalizado"
+  - wait_quiet: 20
+expect:
+  user:
+    - "¿Qué hora es?"
+  assistant:
+    - "No pude conectar con Personalizado. Revisa la conexión o la dirección de la API."
+  speech_contains:
+    - "No pude conectar con Personalizado. Revisa la conexión o la dirección de la API."
+  llm_requests: 1
+  never:
+    - "Esta respuesta llega tarde."
+  final:
+    state: listening
+    in_call: true

@@ -1,0 +1,101 @@
+id: "12"
+name: "Memoria: recordar, recuperar, olvidar y compactar"
+notes: >
+  Las cuatro herramientas de memoria con sus confirmaciones reales:
+  `remember` guarda una viñeta en USER.md, `recall` busca en el historial,
+  `forget` borra las líneas que coinciden y `compact_memory` reescribe
+  MEMORY.md dejando una copia .bak. Las tres operaciones que escriben piden
+  confirmación y, como en 10, el turno del LLM se cancela después.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.7
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: call_recordar
+          name: remember
+          arguments: '{"kind":"user","text":"Mi color favorito es el azul."}'
+    - content: "Anotado: tu color favorito es el azul."
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: call_recuperar
+          name: recall
+          arguments: '{"query":"color favorito","limit":3}'
+    - content: "Tu color favorito es el azul."
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: call_olvidar
+          name: forget
+          arguments: '{"query":"color favorito"}'
+    - content: "Listo, borré esa línea de la memoria."
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: call_compactar
+          name: compact_memory
+          arguments: '{"kind":"memory","text":"- trabaja en EzAgent\n- prefiere respuestas cortas"}'
+    - content: "MEMORY.md quedó compactado."
+whisper:
+  transcripts:
+    - "Recuerda que mi color favorito es el azul."
+    - "Sí, confirmo."
+    - "¿Qué recuerdas de mi color favorito?"
+    - "Olvida mi color favorito."
+    - "Sí, confirmo."
+    - "Compacta mi memoria."
+    - "Sí, confirmo."
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: recuerda_color.wav
+  - wait_speech: "¿Guardo que"
+  - audio: si_confirmo.wav
+  - wait_quiet: 20
+  - audio: que_color_tengo.wav
+  - wait_quiet: 30
+  - audio: olvida_color.wav
+  - wait_speech: "¿Borro"
+  - audio: si_confirmo.wav
+  - wait_quiet: 20
+  - audio: compacta_memoria.wav
+  - wait_speech: "¿Reescribo"
+  - audio: si_confirmo.wav
+  - wait_quiet: 20
+expect:
+  user:
+    - "Recuerda que mi color favorito es el azul."
+    - "¿Qué recuerdas de mi color favorito?"
+    - "Olvida mi color favorito."
+    - "Compacta mi memoria."
+  assistant:
+    - "Tu color favorito es el azul."
+  speech_any:
+    - "¿Guardo que «Mi color favorito es el azul.»?"
+    - "¿Borro 1 línea(s) de USER.md (1) que coinciden con «color favorito»?"
+    - "¿Reescribo MEMORY.md con 2 línea(s)?"
+  confirms:
+    - "¿Guardo que «Mi color favorito es el azul.»?"
+    - "¿Borro 1 línea(s) de USER.md (1)"
+    - "¿Reescribo MEMORY.md con 2 línea(s)?"
+  confirm_count: 3
+  tool_names: [remember, recall, forget, compact_memory]
+  llm_requests: 8
+  audit:
+    - {tool: remember, decision: allow, taint: false, ok: true}
+    - {tool: recall, decision: allow, taint: false, ok: true}
+    - {tool: forget, decision: allow, taint: false, ok: true}
+    - {tool: compact_memory, decision: allow, taint: false, ok: true}
+  files:
+    "{home}/EzAgent/memory/USER.md":
+      exists: true
+      not_contains: ["color favorito"]
+    "{home}/EzAgent/memory/MEMORY.md":
+      exists: true
+      contains: ["prefiere respuestas cortas"]
+    "{home}/EzAgent/memory/MEMORY.md.bak":
+      exists: true
+  final:
+    state: listening
+    in_call: true

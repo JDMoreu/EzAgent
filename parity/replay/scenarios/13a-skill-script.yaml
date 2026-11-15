@@ -1,0 +1,73 @@
+id: "13a"
+name: "Skill con script y Python disponible"
+notes: >
+  `load_skill` devuelve el cuerpo de la skill (dato no confiable, marca taint)
+  y `run_skill_script` pide confirmación antes de ejecutar el .py. Con Python
+  disponible, el script se ejecuta con argumentos en lista y escribe su
+  salida en el workspace.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.7
+  ack_tools: false
+setup:
+  permissions: |
+    [skills]
+    allow_scripts = true
+  skills:
+    saludo:
+      description: "Saluda y ejecuta un script de prueba"
+      body: "Devuelve un saludo breve."
+      scripts:
+        scripts/saludo.py: |
+          from pathlib import Path
+
+          Path("skill_out.txt").write_text("Hola desde la skill.\n", encoding="utf-8")
+          print("Hola desde la skill.")
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: call_cargar
+          name: load_skill
+          arguments: '{"name":"saludo"}'
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: call_script
+          name: run_skill_script
+          arguments: '{"skill":"saludo","script":"scripts/saludo.py"}'
+    - content: "El script saludó desde la skill."
+whisper:
+  transcripts:
+    - "Usa la skill de saludo y ejecuta su script."
+    - "Sí, confirmo."
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: usa_la_skill.wav
+  - wait_speech: "¿Confirmas?"
+  - audio: si_confirmo.wav
+  - wait_quiet: 30
+expect:
+  states: [listening, thinking, speaking, listening, thinking, listening]
+  user:
+    - "Usa la skill de saludo y ejecuta su script."
+  assistant: []
+  speech_any:
+    - "¿Confirmas?"
+  confirms:
+    - "Ejecutar el script «scripts/saludo.py» de la skill «saludo»"
+  confirm_count: 1
+  tool_names: [load_skill, run_skill_script]
+  llm_requests: 3
+  audit:
+    - {tool: load_skill, decision: allow, taint: true, ok: true}
+    - {tool: run_skill_script, decision: confirm_yes, taint: true, ok: true}
+  files:
+    "{workspace}/skill_out.txt":
+      exists: true
+      contains: ["Hola desde la skill."]
+  final:
+    state: listening
+    in_call: true
