@@ -14,10 +14,16 @@ use ez_audio::capture::MicCapture;
 use ez_chat::session::ChatModel;
 use ez_core::config::VoiceConfig;
 use ez_herdr::herdr::Herdr;
-use ez_hud::win::drop::DropUI;
+use ez_hud::win::drop::{DropUI, WindowFactory};
+use ez_llm::messenger::AgentRuntimeApi;
 use parking_lot::Mutex;
 
 use super::hooks::ShutdownObserver;
+use super::trace::AppTrace;
+
+/// Envoltorio del runtime que ve el mensajero (traza de herramientas).
+pub type RuntimeWrap =
+    Arc<dyn Fn(Arc<dyn AgentRuntimeApi>) -> Arc<dyn AgentRuntimeApi> + Send + Sync>;
 
 /// Lo que la app necesita del altavoz (`ez_tts::Speaker` en producción).
 // DECISION: Kokoro carga un modelo real y no se puede abrir en una prueba;
@@ -111,6 +117,8 @@ pub struct AppParts {
     pub mic: Arc<Mutex<MicCapture>>,
     /// `self.hud` ya creado; `None` lo construye `with_services`.
     pub hud: Option<Arc<DropUI>>,
+    /// Fábrica de ventanas del HUD; `None` usa la nativa de `ez-hud`.
+    pub hud_factory: Option<Arc<dyn WindowFactory>>,
     /// `self.chat`; `None` usa el historial persistente de fábrica.
     pub chat: Option<Arc<ChatModel>>,
     /// `self.herdr`; `None` lo construye con la configuración.
@@ -125,6 +133,15 @@ pub struct AppParts {
     pub build_agent: bool,
     /// `false` en los dobles: sin hilos de fondo ni atajos reales.
     pub background: bool,
+    /// `true` lanza `_warm_stt`; el arnés lo apaga para no gastar un guion.
+    pub warm_stt: bool,
+    /// `true` arranca la captura real al empezar la llamada (F7-01a la apaga
+    /// para alimentar el micrófono desde el arnés).
+    pub mic_capture: bool,
+    /// Observador de la traza de reproducción (F7-01a).
+    pub trace: Option<Arc<dyn AppTrace>>,
+    /// Envoltorio del runtime para la traza de herramientas (F7-01a).
+    pub runtime_wrap: Option<RuntimeWrap>,
     /// Observador del orden de apagado.
     pub observer: Option<Arc<dyn ShutdownObserver>>,
 }
@@ -138,6 +155,7 @@ impl AppParts {
             speaker,
             mic,
             hud: None,
+            hud_factory: None,
             chat: None,
             herdr: None,
             whisper_proc: None,
@@ -145,6 +163,10 @@ impl AppParts {
             build_swarm: false,
             build_agent: false,
             background: false,
+            warm_stt: true,
+            mic_capture: true,
+            trace: None,
+            runtime_wrap: None,
             observer: None,
         }
     }

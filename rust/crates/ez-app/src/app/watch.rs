@@ -364,7 +364,9 @@ impl VoiceApp {
 
     /// `messenger.note_done(...)`, si el mensajero ya existe.
     fn note_done(&self, address: &str, agent: &str, reason: &str, output: &str, task: &str) {
-        if let Some(messenger) = self.inner.agents.messenger.lock().as_ref() {
+        // DECISION: fuera del cerrojo: `note_done` puede volver a pedirlo.
+        let messenger = self.inner.agents.messenger.lock().clone();
+        if let Some(messenger) = messenger.as_ref() {
             messenger.note_done(address, agent, reason, output, task);
         }
     }

@@ -7,10 +7,11 @@ use ez_audio::capture::{MicCapture, VadSettings};
 use ez_chat::session::ChatModel;
 use ez_core::config::VoiceConfig;
 use ez_core::metrics::TurnTimings;
-use ez_hud::win::drop::{DropConfig, DropUI};
+use ez_hud::win::drop::DropConfig;
 use parking_lot::Mutex;
 use serde_json::{json, Map, Value};
 
+use super::hud::AppHud;
 use super::hud_bridge::HudConfig;
 use super::services::{AppParts, SpeakerApi};
 use super::state::Inner;
@@ -177,7 +178,7 @@ impl Drop for Fixture {
     }
 }
 
-fn hud_of(inner: &Inner) -> &Arc<DropUI> {
+fn hud_of(inner: &Inner) -> &Arc<AppHud> {
     &inner.ui.hud
 }
 

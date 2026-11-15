@@ -117,7 +117,7 @@ impl VoiceApp {
         let panel = Arc::new(ChatWindowPanel::new(panel_ui, events));
         let bridge = PanelBridge {
             panel,
-            chat: Arc::clone(&self.inner.chat.chat),
+            chat: Arc::clone(self.inner.chat.chat.inner()),
         };
         self.inner.ui.hud.set_chat_panel(Arc::new(bridge));
     }

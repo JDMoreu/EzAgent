@@ -12,7 +12,8 @@ impl VoiceApp {
         tasks_path: Option<PathBuf>,
         mut parts: AppParts,
     ) -> Self {
-        let prepared = prepare_start(&cfg, &mut parts);
+        let trace = super::trace::trace_slot(parts.trace.take());
+        let prepared = prepare_start(&cfg, &mut parts, &trace);
         let herdr = parts
             .herdr
             .take()
@@ -41,7 +42,7 @@ impl VoiceApp {
             turn: turn_state(),
             audio: audio_state(Arc::clone(&parts.mic)),
             speech: speech_state(Arc::clone(&parts.speaker)),
-            chat: chat_state(prepared.chat, prepared.contexts),
+            chat: chat_state(prepared.chat, prepared.contexts, Arc::clone(&trace)),
             agents: agents_state(tasks, herdr, watcher, prepared.messenger, watched),
             ui: ui_state(
                 prepared.ui,
@@ -50,7 +51,7 @@ impl VoiceApp {
                 prepared.hotkeys,
                 prepared.menu,
             ),
-            runtime: runtime_state(&mut parts, latency_path, hooks),
+            runtime: runtime_state(&mut parts, latency_path, hooks, trace),
         };
         log(format!(
             "Micrófono: {} (índice {}, {} Hz)",
@@ -74,7 +75,7 @@ impl VoiceApp {
         self.apply_start_agents(parts.build_swarm, parts.build_agent);
         self.install_chat();
         self.install_hotkeys(parts.background);
-        self.start_warm_workers(parts.background);
+        self.start_warm_workers(parts.background, parts.warm_stt);
         self.schedule_start_timers();
         self.inner.runtime.observer.step("iniciado");
     }
@@ -145,9 +146,13 @@ impl VoiceApp {
         } else {
             None
         };
-        let runtime = agent
-            .as_ref()
-            .map(|agent| Arc::new(agent.clone()) as Arc<dyn AgentRuntimeApi>);
+        let runtime = agent.as_ref().map(|agent| {
+            let core = Arc::new(agent.clone()) as Arc<dyn AgentRuntimeApi>;
+            match &self.inner.runtime.runtime_wrap {
+                Some(wrap) => wrap(core),
+                None => core,
+            }
+        });
         *self.inner.agents.agent.lock() = agent;
         let messenger = self.create_messenger(&cfg, runtime);
         *self.inner.agents.messenger.lock() = Some(messenger);
@@ -168,14 +173,16 @@ impl VoiceApp {
     }
 
     /// Kokoro y whisper se precalientan en sus hilos (`ezagent-warm-*`).
-    fn start_warm_workers(&self, background: bool) {
+    fn start_warm_workers(&self, background: bool, warm_stt: bool) {
         if !background {
             return;
         }
         let app = self.clone();
         self.start_worker("ezagent-warm-tts", move || app.warm_tts());
-        let app = self.clone();
-        self.start_worker("ezagent-warm-stt", move || app.warm_stt());
+        if warm_stt {
+            let app = self.clone();
+            self.start_worker("ezagent-warm-stt", move || app.warm_stt());
+        }
         let herdr = Arc::clone(&self.inner.agents.herdr);
         self.start_worker("ez-herdr-install", move || {
             herdr.ensure_installed();
@@ -201,20 +208,20 @@ struct Prepared {
     events: Arc<Queue<AppEvent>>,
     hotkeys: Arc<Queue<String>>,
     menu: Arc<Queue<MenuEvent>>,
-    hud: Arc<DropUI>,
+    hud: Arc<AppHud>,
     chat: Arc<ChatModel>,
     messenger: MessengerSlot,
     contexts: ChatContexts,
 }
 
-fn prepare_start(cfg: &VoiceConfig, parts: &mut AppParts) -> Prepared {
+fn prepare_start(cfg: &VoiceConfig, parts: &mut AppParts, trace: &TraceSlot) -> Prepared {
     let config_file = parts.config_file.take().unwrap_or_else(config_path);
     let cfg_cell = Arc::new(RwLock::new(cfg.clone()));
     let ui = UiLoop::new();
     let events = Queue::new(Some(ui.clone()));
     let hotkeys = Queue::new(Some(ui.clone()));
     let menu = Queue::new(Some(ui.clone()));
-    let hud = build_hud(parts, &cfg_cell, &config_file, &events, &menu);
+    let hud = build_hud(parts, &cfg_cell, &config_file, &events, &menu, trace);
     let chat = build_chat(parts, cfg);
     let messenger: MessengerSlot = Arc::new(Mutex::new(None));
     let contexts = build_contexts(&chat, &messenger);
@@ -238,10 +245,23 @@ fn build_hud(
     config_file: &Path,
     events: &Arc<Queue<AppEvent>>,
     menu_events: &Arc<Queue<MenuEvent>>,
-) -> Arc<DropUI> {
-    if let Some(hud) = parts.hud.take() {
-        return hud;
-    }
+    trace: &TraceSlot,
+) -> Arc<AppHud> {
+    let built = match parts.hud.take() {
+        Some(hud) => hud,
+        None => build_drop_ui(parts, cfg, config_file, events, menu_events),
+    };
+    AppHud::new(built, Arc::clone(trace))
+}
+
+/// Barra sin ventana nativa cuando el arnés pide su fábrica (F7-01a).
+fn build_drop_ui(
+    parts: &mut AppParts,
+    cfg: &Arc<RwLock<VoiceConfig>>,
+    config_file: &Path,
+    events: &Arc<Queue<AppEvent>>,
+    menu_events: &Arc<Queue<MenuEvent>>,
+) -> Arc<ez_hud::win::drop::DropUI> {
     let host = Arc::new(HudHost {
         events: Arc::clone(events),
         menu_events: Arc::clone(menu_events),
@@ -252,7 +272,32 @@ fn build_hud(
     });
     // F6-07 conecta el rasterizador real de iconos (F2-11).
     let icons = Arc::new(crate::app::live::LiveIcons) as Arc<dyn ez_hud::paint::peek::IconPainter>;
-    create_ui(host, Some(hud_config), Some(icons))
+    match parts.hud_factory.take() {
+        None => create_ui(host, Some(hud_config), Some(icons)),
+        Some(factory) => {
+            // Misma posición que `create_ui` (layout guardado con este mismo).
+            let cfg = cfg.read();
+            let layout = cfg_text(&cfg, "ui_layout", "").to_lowercase();
+            let same = cfg_text(&cfg, "drop_layout", "") == layout;
+            let position = if same {
+                cfg.get("drop_x")
+                    .and_then(Value::as_i64)
+                    .zip(cfg.get("drop_y").and_then(Value::as_i64))
+                    .and_then(|(x, y)| Some((i32::try_from(x).ok()?, i32::try_from(y).ok()?)))
+            } else {
+                None
+            };
+            drop(cfg);
+            ez_hud::win::drop::DropUI::new(ez_hud::win::drop::DropUiOptions {
+                position,
+                config: Some(hud_config),
+                host: Some(host),
+                icons: Some(icons),
+                factory: Some(factory),
+                ..ez_hud::win::drop::DropUiOptions::default()
+            })
+        }
+    }
 }
 
 fn build_chat(parts: &mut AppParts, cfg: &VoiceConfig) -> Arc<ChatModel> {
@@ -349,9 +394,9 @@ fn speech_state(speaker: Arc<dyn SpeakerApi>) -> SpeechState {
     }
 }
 
-fn chat_state(chat: Arc<ChatModel>, contexts: ChatContexts) -> ChatState {
+fn chat_state(chat: Arc<ChatModel>, contexts: ChatContexts, trace: TraceSlot) -> ChatState {
     ChatState {
-        chat,
+        chat: AppChat::new(chat, trace),
         contexts: Mutex::new(contexts),
         condenser: Mutex::new(None),
         condenser_client: Mutex::new(None),
@@ -382,7 +427,7 @@ fn agents_state(
 
 fn ui_state(
     ui: UiLoop,
-    hud: Arc<DropUI>,
+    hud: Arc<AppHud>,
     events: Arc<Queue<AppEvent>>,
     hotkey_events: Arc<Queue<String>>,
     menu_events: Arc<Queue<MenuEvent>>,
@@ -402,16 +447,20 @@ fn runtime_state(
     parts: &mut AppParts,
     latency_path: Option<PathBuf>,
     hooks: Arc<RwLock<Arc<dyn AppHooks>>>,
+    trace: TraceSlot,
 ) -> RuntimeState {
     RuntimeState {
         workers: Mutex::new(Vec::new()),
         latency: Mutex::new(LatencyStats::new(50, latency_path)),
         whisper_proc: Mutex::new(parts.whisper_proc.take()),
         hooks,
+        trace,
+        runtime_wrap: parts.runtime_wrap.take(),
         observer: parts
             .observer
             .take()
             .unwrap_or_else(|| Arc::new(NullObserver)),
         background: parts.background,
+        mic_capture: parts.mic_capture,
     }
 }

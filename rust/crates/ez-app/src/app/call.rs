@@ -47,8 +47,9 @@ impl VoiceApp {
         self.inner.ui.hud.set_in_call(true);
         self.set_state(LISTENING);
         log("Llamada iniciada. Habla cuando quieras; Ctrl+Alt+E para colgar.");
-        // DECISION: los dobles de prueba no abren el micrófono real.
-        if self.inner.runtime.background {
+        // DECISION: los dobles de prueba no abren el micrófono real, y el arnés
+        // de reproducción alimenta la captura desde su propio hilo (F7-01a).
+        if self.inner.runtime.background && self.inner.runtime.mic_capture {
             let app = self.clone();
             match std::thread::Builder::new()
                 .name("ezagent-call".to_string())
