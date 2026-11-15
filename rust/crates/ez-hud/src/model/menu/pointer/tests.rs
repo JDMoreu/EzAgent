@@ -1,5 +1,5 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 use crate::model::settings::{MenuSettings, SettingValue};
 
@@ -43,11 +43,11 @@ fn a_click_on_select_opens_the_selector() {
 
 #[test]
 fn a_toggle_flips_its_value_and_notifies() {
-    let events = Rc::new(RefCell::new(Vec::new()));
-    let recorded = Rc::clone(&events);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&events);
     let callbacks = MenuCallbacks {
         live_change: Some(Box::new(move |key, value| {
-            recorded.borrow_mut().push((key.to_string(), value.clone()));
+            recorded.lock().push((key.to_string(), value.clone()));
         })),
         ..MenuCallbacks::default()
     };
@@ -60,7 +60,7 @@ fn a_toggle_flips_its_value_and_notifies() {
         Some(&SettingValue::Bool(false))
     );
     assert_eq!(
-        events.borrow().as_slice(),
+        events.lock().as_slice(),
         &[("smart_turn".to_string(), SettingValue::Bool(false))]
     );
     assert!(menu
@@ -71,11 +71,11 @@ fn a_toggle_flips_its_value_and_notifies() {
 
 #[test]
 fn dragging_a_slider_emits_the_final_value_on_release() {
-    let events = Rc::new(RefCell::new(Vec::new()));
-    let recorded = Rc::clone(&events);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&events);
     let callbacks = MenuCallbacks {
         live_change: Some(Box::new(move |key, value| {
-            recorded.borrow_mut().push((key.to_string(), value.clone()));
+            recorded.lock().push((key.to_string(), value.clone()));
         })),
         ..MenuCallbacks::default()
     };
@@ -89,7 +89,7 @@ fn dragging_a_slider_emits_the_final_value_on_release() {
     assert_eq!(menu.settings.get("speed"), Some(&SettingValue::Float(1.0)));
     menu.pointer_up(middle, y, 2.1);
     assert!(menu.slider_drag.is_none());
-    let events = events.borrow();
+    let events = events.lock();
     assert!(events.len() >= 2);
     assert_eq!(events.last().expect("emisión final").0, "speed");
     assert_eq!(
@@ -124,10 +124,10 @@ fn dragging_the_meter_updates_min_rms() {
 
 #[test]
 fn clicking_a_text_row_starts_and_ends_the_edit() {
-    let states = Rc::new(RefCell::new(Vec::new()));
-    let recorded = Rc::clone(&states);
+    let states = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&states);
     let callbacks = MenuCallbacks {
-        text_edit: Some(Box::new(move |active| recorded.borrow_mut().push(active))),
+        text_edit: Some(Box::new(move |active| recorded.lock().push(active))),
         ..MenuCallbacks::default()
     };
     let mut menu = menu_with(vec![("wake_phrase", "text")], callbacks);
@@ -140,7 +140,7 @@ fn clicking_a_text_row_starts_and_ends_the_edit() {
     let (other_x, other_y) = (100.0, 20.0);
     menu.pointer_down(other_x, other_y, 2.1);
     assert!(menu.editing_key.is_none());
-    assert_eq!(states.borrow().as_slice(), &[true, false]);
+    assert_eq!(states.lock().as_slice(), &[true, false]);
 }
 
 #[test]
@@ -163,10 +163,10 @@ fn a_failed_save_restores_the_baseline_and_stays_dirty() {
 
 #[test]
 fn the_test_button_asks_the_app_to_start_the_voice_test() {
-    let tested = Rc::new(RefCell::new(0));
-    let counter = Rc::clone(&tested);
+    let tested = Arc::new(Mutex::new(0));
+    let counter = Arc::clone(&tested);
     let callbacks = MenuCallbacks {
-        test: Some(Box::new(move |_values| *counter.borrow_mut() += 1)),
+        test: Some(Box::new(move |_values| *counter.lock() += 1)),
         ..MenuCallbacks::default()
     };
     let mut menu = menu_with(vec![("test_voice", "action")], callbacks);
@@ -174,17 +174,17 @@ fn the_test_button_asks_the_app_to_start_the_voice_test() {
     let (x, y) = button.center();
     menu.pointer_down(x, y, 2.0);
     menu.pointer_up(x, y, 2.0);
-    assert_eq!(*tested.borrow(), 1);
+    assert_eq!(*tested.lock(), 1);
     assert!(menu.testing_t.active());
 }
 
 #[test]
 fn a_secret_row_copies_and_marks_the_check() {
-    let copied = Rc::new(RefCell::new(Vec::new()));
-    let recorded = Rc::clone(&copied);
+    let copied = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&copied);
     let callbacks = MenuCallbacks {
         copy: Some(Box::new(move |text| {
-            recorded.borrow_mut().push(text.to_string());
+            recorded.lock().push(text.to_string());
             true
         })),
         ..MenuCallbacks::default()
@@ -199,7 +199,7 @@ fn a_secret_row_copies_and_marks_the_check() {
     let (x, y) = button.center();
     menu.pointer_down(x, y, 2.0);
     menu.pointer_up(x, y, 2.0);
-    assert_eq!(copied.borrow().as_slice(), &["sk-123".to_string()]);
+    assert_eq!(copied.lock().as_slice(), &["sk-123".to_string()]);
     assert!(menu.copied.get("api_key").is_some_and(|until| *until > 2.0));
 }
 
@@ -218,11 +218,11 @@ fn a_palette_click_changes_the_theme() {
 
 #[test]
 fn pressing_save_calls_the_callback_and_cleans_the_dirty_flag() {
-    let calls = Rc::new(RefCell::new(0));
-    let counter = Rc::clone(&calls);
+    let calls = Arc::new(Mutex::new(0));
+    let counter = Arc::clone(&calls);
     let callbacks = MenuCallbacks {
         save: Some(Box::new(move |_values| {
-            *counter.borrow_mut() += 1;
+            *counter.lock() += 1;
             Some(true)
         })),
         ..MenuCallbacks::default()
@@ -234,18 +234,18 @@ fn pressing_save_calls_the_callback_and_cleans_the_dirty_flag() {
     let (x, y) = menu.save_rect(&menu.layout()).center();
     menu.pointer_down(x, y, 2.0);
     menu.pointer_up(x, y, 2.0);
-    assert_eq!(*calls.borrow(), 1);
+    assert_eq!(*calls.lock(), 1);
     assert!(!menu.settings.dirty());
     assert!(menu.check_until > 2.0);
 }
 
 #[test]
 fn destructive_actions_need_a_second_click() {
-    let actions = Rc::new(RefCell::new(Vec::new()));
-    let recorded = Rc::clone(&actions);
+    let actions = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&actions);
     let callbacks = MenuCallbacks {
         action: Some(Box::new(move |key| {
-            recorded.borrow_mut().push(key.to_string());
+            recorded.lock().push(key.to_string());
         })),
         ..MenuCallbacks::default()
     };
@@ -255,12 +255,12 @@ fn destructive_actions_need_a_second_click() {
     let (x, y) = button.center();
     menu.pointer_down(x, y, 2.0);
     menu.pointer_up(x, y, 2.0);
-    assert!(actions.borrow().is_empty());
+    assert!(actions.lock().is_empty());
     assert!(menu.is_armed("new_conversation", 2.1));
     menu.pointer_down(x, y, 3.1);
     menu.pointer_up(x, y, 3.1);
     assert_eq!(
-        actions.borrow().as_slice(),
+        actions.lock().as_slice(),
         &["new_conversation".to_string()]
     );
     assert!(!menu.is_armed("new_conversation", 3.2));
@@ -268,17 +268,17 @@ fn destructive_actions_need_a_second_click() {
 
 #[test]
 fn hiding_from_the_header_closes_and_notifies() {
-    let hidden = Rc::new(RefCell::new(0));
-    let counter = Rc::clone(&hidden);
+    let hidden = Arc::new(Mutex::new(0));
+    let counter = Arc::clone(&hidden);
     let callbacks = MenuCallbacks {
-        hide: Some(Box::new(move || *counter.borrow_mut() += 1)),
+        hide: Some(Box::new(move || *counter.lock() += 1)),
         ..MenuCallbacks::default()
     };
     let mut menu = menu_with(vec![("repeat_last", "action")], callbacks);
     assert!(menu.pointer_down(289.0, 62.0, 2.0));
     assert!(menu.pointer_up(289.0, 62.0, 2.0));
     assert!(!menu.is_open());
-    assert_eq!(*hidden.borrow(), 1);
+    assert_eq!(*hidden.lock(), 1);
 }
 
 #[test]

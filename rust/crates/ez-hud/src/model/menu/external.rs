@@ -275,8 +275,8 @@ impl Menu {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use parking_lot::Mutex;
+    use std::sync::Arc;
 
     use crate::model::settings::{MenuSettings, SettingValue};
     use crate::tokens::{Color, ColorMap, Rect};
@@ -337,10 +337,10 @@ mod tests {
 
     #[test]
     fn text_edit_commit_updates_settings_and_releases_the_keyboard() {
-        let states = Rc::new(RefCell::new(Vec::new()));
-        let recorded = Rc::clone(&states);
+        let states = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&states);
         let callbacks = MenuCallbacks {
-            text_edit: Some(Box::new(move |active| recorded.borrow_mut().push(active))),
+            text_edit: Some(Box::new(move |active| recorded.lock().push(active))),
             ..MenuCallbacks::default()
         };
         let mut menu = menu(callbacks);
@@ -352,7 +352,7 @@ mod tests {
             menu.settings.get("wake_phrase"),
             Some(&SettingValue::Text("Hola EzAgent".into()))
         );
-        assert_eq!(states.borrow().as_slice(), &[false]);
+        assert_eq!(states.lock().as_slice(), &[false]);
     }
 
     #[test]
@@ -373,11 +373,11 @@ mod tests {
 
     #[test]
     fn slider_release_emits_the_last_value_once() {
-        let events = Rc::new(RefCell::new(Vec::new()));
-        let recorded = Rc::clone(&events);
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&events);
         let callbacks = MenuCallbacks {
             live_change: Some(Box::new(move |key, value| {
-                recorded.borrow_mut().push((key.to_string(), value.clone()));
+                recorded.lock().push((key.to_string(), value.clone()));
             })),
             ..MenuCallbacks::default()
         };
@@ -393,7 +393,7 @@ mod tests {
         menu.slider_changed = true;
         menu.release_slider_drag(1.0, true);
         assert_eq!(
-            events.borrow().as_slice(),
+            events.lock().as_slice(),
             &[("speed".to_string(), SettingValue::Float(1.25))]
         );
         assert!(menu.slider_drag.is_none());

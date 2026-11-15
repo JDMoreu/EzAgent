@@ -1,5 +1,5 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 use crate::model::settings::{db_to_rms, MenuSettings, SettingValue, METER_DB_FLOOR, SLIDERS};
 
@@ -26,14 +26,14 @@ fn menu_with(rows: Vec<(&str, &str)>, callbacks: MenuCallbacks) -> Menu {
     menu
 }
 
-type Events = Rc<RefCell<Vec<(String, SettingValue)>>>;
+type Events = Arc<Mutex<Vec<(String, SettingValue)>>>;
 
 fn recorder() -> (Events, MenuCallbacks) {
-    let events = Rc::new(RefCell::new(Vec::new()));
-    let recorded = Rc::clone(&events);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&events);
     let callbacks = MenuCallbacks {
         live_change: Some(Box::new(move |key, value| {
-            recorded.borrow_mut().push((key.to_string(), value.clone()));
+            recorded.lock().push((key.to_string(), value.clone()));
         })),
         ..MenuCallbacks::default()
     };
@@ -52,7 +52,7 @@ fn the_pointer_maps_to_the_slider_range() {
     menu.set_slider_from_x("speed", SLIDER_TRACK_X1 + 500.0, 2.2);
     assert_eq!(menu.settings.get("speed"), Some(&SettingValue::Float(1.25)));
     assert_eq!(
-        events.borrow().as_slice(),
+        events.lock().as_slice(),
         &[
             ("speed".to_string(), SettingValue::Float(0.75)),
             ("speed".to_string(), SettingValue::Float(1.0)),
@@ -68,14 +68,14 @@ fn emissions_are_throttled_to_fifty_milliseconds_unless_forced() {
     let mut menu = menu_with(vec![("speed", "slider")], callbacks);
     menu.slider_last_emit = 100.0;
     menu.set_slider_from_x("speed", SLIDER_TRACK_X1, 100.01);
-    assert_eq!(events.borrow().len(), 0);
+    assert_eq!(events.lock().len(), 0);
     assert!(menu.slider_changed);
     assert!(menu.slider_pending.is_some());
     menu.emit_slider(100.06, false);
-    assert_eq!(events.borrow().len(), 1);
+    assert_eq!(events.lock().len(), 1);
     menu.set_slider_from_x("speed", SLIDER_TRACK_X0, 100.07);
     menu.emit_slider(100.07, true);
-    assert_eq!(events.borrow().len(), 2);
+    assert_eq!(events.lock().len(), 2);
     assert!(menu.slider_pending.is_none());
 }
 
@@ -88,7 +88,7 @@ fn an_unchanged_value_does_not_emit() {
         .expect("clave válida");
     let middle = SLIDER_TRACK_X0 + (SLIDER_TRACK_X1 - SLIDER_TRACK_X0) / 2.0;
     menu.set_slider_from_x("speed", middle, 2.0);
-    assert_eq!(events.borrow().len(), 0);
+    assert_eq!(events.lock().len(), 0);
     assert!(!menu.slider_changed);
     assert!(menu.slider_pending.is_none());
 }
@@ -111,18 +111,18 @@ fn the_meter_converts_the_position_to_decibels() {
         menu.settings.get("min_rms"),
         Some(&SettingValue::Float(db_to_rms(METER_DB_FLOOR)))
     );
-    assert_eq!(events.borrow().len(), 0);
+    assert_eq!(events.lock().len(), 0);
     assert!(menu.meter_changed && menu.meter_pending.is_some());
     menu.emit_meter(2.06);
-    assert_eq!(events.borrow().len(), 1);
+    assert_eq!(events.lock().len(), 1);
     menu.set_meter_from_x(SLIDER_TRACK_X1, 2.07);
     assert_eq!(
         menu.settings.get("min_rms"),
         Some(&SettingValue::Float(db_to_rms(-20.0)))
     );
-    assert_eq!(events.borrow().len(), 1);
+    assert_eq!(events.lock().len(), 1);
     menu.emit_meter(3.0);
-    assert_eq!(events.borrow().len(), 2);
+    assert_eq!(events.lock().len(), 2);
 }
 
 #[test]

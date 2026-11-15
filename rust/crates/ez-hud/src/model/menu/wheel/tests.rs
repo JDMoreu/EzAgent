@@ -1,5 +1,5 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 use crate::model::settings::{MenuSettings, OptionSource, SettingValue, SettingsValues};
 
@@ -103,11 +103,11 @@ fn a_menu_that_does_not_fit_scrolls_by_forty() {
 
 #[test]
 fn the_wheel_over_a_slider_moves_one_step_and_hovers_its_thumb() {
-    let events = Rc::new(RefCell::new(Vec::new()));
-    let recorded = Rc::clone(&events);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&events);
     let callbacks = MenuCallbacks {
         live_change: Some(Box::new(move |key, value| {
-            recorded.borrow_mut().push((key.to_string(), value.clone()));
+            recorded.lock().push((key.to_string(), value.clone()));
         })),
         ..MenuCallbacks::default()
     };
@@ -136,7 +136,7 @@ fn the_wheel_over_a_slider_moves_one_step_and_hovers_its_thumb() {
     assert!(menu.thumb.get("speed").is_some_and(|tween| tween.active()));
     assert!(menu.wheel(100.0, y, 120, 2.1));
     assert_eq!(menu.settings.get("speed"), Some(&SettingValue::Float(0.95)));
-    assert_eq!(events.borrow().len(), 2);
+    assert_eq!(events.lock().len(), 2);
 }
 
 #[test]

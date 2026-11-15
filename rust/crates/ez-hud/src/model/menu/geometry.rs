@@ -25,26 +25,29 @@ pub(crate) use placement::{block_delays, default_groups, T_SLOW_MS};
 // Callbacks de la capa de aplicación (los tipos del Python en `menu.py`).
 // --------------------------------------------------------------------------
 
+// DECISION: los callbacks llevan `Send + Sync` (el Python no lo necesita)
+// porque el menú real vive detrás de `Arc<Mutex<dyn MenuPanel>>` en la barra y
+// cruza al hilo de la ventana de ajustes.
 /// `LiveCallback = Callable[[str, Any], None]`.
-pub type LiveCallback = Box<dyn Fn(&str, &SettingValue)>;
+pub type LiveCallback = Box<dyn Fn(&str, &SettingValue) + Send + Sync>;
 /// `SaveCallback = Callable[[dict[str, Any]], bool | None]`.
-pub type SaveCallback = Box<dyn Fn(&SettingsValues) -> Option<bool>>;
+pub type SaveCallback = Box<dyn Fn(&SettingsValues) -> Option<bool> + Send + Sync>;
 /// `TestCallback = Callable[[dict[str, Any]], None]`.
-pub type TestCallback = Box<dyn Fn(&SettingsValues)>;
+pub type TestCallback = Box<dyn Fn(&SettingsValues) + Send + Sync>;
 /// `VoidCallback = Callable[[], None]`.
-pub type VoidCallback = Box<dyn Fn()>;
+pub type VoidCallback = Box<dyn Fn() + Send + Sync>;
 /// `on_text_edit: Callable[[bool], None]`.
-pub type TextEditCallback = Box<dyn Fn(bool)>;
+pub type TextEditCallback = Box<dyn Fn(bool) + Send + Sync>;
 /// `on_action: Callable[[str], None]`.
-pub type ActionCallback = Box<dyn Fn(&str)>;
+pub type ActionCallback = Box<dyn Fn(&str) + Send + Sync>;
 /// `on_copy: Callable[[str], bool]`.
-pub type CopyCallback = Box<dyn Fn(&str) -> bool>;
+pub type CopyCallback = Box<dyn Fn(&str) -> bool + Send + Sync>;
 /// `on_hotkey_capture: Callable[[bool], None]`.
-pub type HotkeyCaptureCallback = Box<dyn Fn(bool)>;
+pub type HotkeyCaptureCallback = Box<dyn Fn(bool) + Send + Sync>;
 /// `Callable[[str], dict[str, Color]]` de `set_palette_overrides`.
-pub type PaletteProvider = Box<dyn Fn(&str) -> ColorMap>;
+pub type PaletteProvider = Box<dyn Fn(&str) -> ColorMap + Send + Sync>;
 /// `modifier_source: Callable[[], frozenset[str]]`.
-pub type ModifierSource = Box<dyn Fn() -> BTreeSet<String>>;
+pub type ModifierSource = Box<dyn Fn() -> BTreeSet<String> + Send + Sync>;
 
 /// Callbacks que la capa de aplicación entrega al menú.
 ///
