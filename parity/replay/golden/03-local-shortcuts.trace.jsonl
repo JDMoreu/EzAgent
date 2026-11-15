@@ -1,0 +1,70 @@
+{"thread": "main#0", "seq": 1, "event": "hud.in_call", "value": false}
+{"thread": "main#0", "seq": 2, "event": "hud.show", "state": "idle"}
+{"thread": "main#0", "seq": 3, "event": "app.start", "scenario": "03"}
+{"thread": "main#0", "seq": 4, "event": "driver.step", "index": 1, "step": "wait_state:listening"}
+{"thread": "main#0", "seq": 5, "event": "hud.in_call", "value": true}
+{"thread": "main#0", "seq": 6, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 7, "event": "driver.step", "index": 2, "step": "audio:que_puedes_hacer.wav"}
+{"thread": "main#0", "seq": 8, "event": "driver.step", "index": 3, "step": "wait_quiet:25"}
+{"thread": "main#0", "seq": 9, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 10, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 11, "event": "chat.user", "text": "¿Qué puedes hacer?", "source": "voice"}
+{"thread": "main#0", "seq": 12, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 13, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 14, "event": "driver.step", "index": 4, "step": "audio:repite.wav"}
+{"thread": "main#0", "seq": 15, "event": "driver.step", "index": 5, "step": "wait_quiet:25"}
+{"thread": "main#0", "seq": 16, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 17, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 18, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 19, "event": "driver.step", "index": 6, "step": "audio:ok_gracias_muteate.wav"}
+{"thread": "main#0", "seq": 20, "event": "driver.step", "index": 7, "step": "wait_quiet:25"}
+{"thread": "main#0", "seq": 21, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 22, "event": "hud.muted", "value": true}
+{"thread": "main#0", "seq": 23, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 24, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 25, "event": "driver.step", "index": 8, "step": "audio:ezagent_escuchame.wav"}
+{"thread": "main#0", "seq": 26, "event": "driver.step", "index": 9, "step": "wait_quiet:25"}
+{"thread": "main#0", "seq": 27, "event": "hud.muted", "value": false}
+{"thread": "main#0", "seq": 28, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 29, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 30, "event": "driver.step", "index": 10, "step": "audio:cuelga.wav"}
+{"thread": "main#0", "seq": 31, "event": "driver.step", "index": 11, "step": "wait_state:idle"}
+{"thread": "main#0", "seq": 32, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 33, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 34, "event": "hud.in_call", "value": false}
+{"thread": "main#0", "seq": 35, "event": "hud.show", "state": "idle"}
+{"thread": "main#0", "seq": 36, "event": "driver.step", "index": 12, "step": "hotkey:toggle"}
+{"thread": "main#0", "seq": 37, "event": "driver.step", "index": 13, "step": "wait_state:listening"}
+{"thread": "main#0", "seq": 38, "event": "hud.in_call", "value": true}
+{"thread": "main#0", "seq": 39, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 40, "event": "driver.step", "index": 14, "step": "hotkey:cancel"}
+{"thread": "main#0", "seq": 41, "event": "driver.step", "index": 15, "step": "wait_state:idle"}
+{"thread": "main#0", "seq": 42, "event": "hud.in_call", "value": false}
+{"thread": "main#0", "seq": 43, "event": "hud.show", "state": "idle"}
+{"thread": "main#0", "seq": 44, "event": "hud.close"}
+{"thread": "main#0", "seq": 45, "event": "app.end", "state": "idle", "in_call": false, "muted": false}
+{"thread": "main#0", "seq": 46, "event": "chat.snapshot", "role": "user", "text": "¿Qué puedes hacer?"}
+{"thread": "main#0", "seq": 47, "event": "chat.snapshot", "role": "assistant", "text": "Puedo ayudarte con la hora."}
+{"thread": "main#0", "seq": 48, "event": "llm.requests", "count": 1}
+{"thread": "ezagent-call#0", "seq": 1, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 2, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-call#0", "seq": 3, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 4, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-call#0", "seq": 5, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 6, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-call#0", "seq": 7, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 8, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-call#0", "seq": 9, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 10, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-stt#0", "seq": 1, "event": "stt.transcript", "text": "¿Qué puedes hacer?"}
+{"thread": "ezagent-stt#1", "seq": 1, "event": "stt.transcript", "text": "Repite."}
+{"thread": "ezagent-stt#2", "seq": 1, "event": "stt.transcript", "text": "Ok, gracias. Mutéate."}
+{"thread": "ezagent-stt#3", "seq": 1, "event": "stt.transcript", "text": "Cuelga."}
+{"thread": "ezagent-answer#0", "seq": 1, "event": "file.write", "name": "chat.jsonl", "role": "assistant"}
+{"thread": "ezagent-answer#0", "seq": 2, "event": "chat.assistant", "text": "Puedo ayudarte con la hora."}
+{"thread": "ezagent-speech#0", "seq": 1, "event": "speech.say", "text": "Puedo ayudarte con la hora."}
+{"thread": "ezagent-tts#0", "seq": 1, "event": "speech.say", "text": "Puedo ayudarte con la hora."}
+{"thread": "ezagent-tts#1", "seq": 1, "event": "speech.say", "text": "En pausa. Di «EzAgent, escúchame» cuando me necesites."}
+{"thread": "ezagent-tts#2", "seq": 1, "event": "speech.say", "text": "Dime."}
+{"thread": "ezagent-tts#3", "seq": 1, "event": "speech.say", "text": "Listo, cierro."}
+{"thread": "ezagent-wake#0", "seq": 1, "event": "stt.transcript", "text": "EzAgent, escúchame."}

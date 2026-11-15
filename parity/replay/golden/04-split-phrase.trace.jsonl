@@ -1,0 +1,33 @@
+{"thread": "main#0", "seq": 1, "event": "hud.in_call", "value": false}
+{"thread": "main#0", "seq": 2, "event": "hud.show", "state": "idle"}
+{"thread": "main#0", "seq": 3, "event": "app.start", "scenario": "04"}
+{"thread": "main#0", "seq": 4, "event": "driver.step", "index": 1, "step": "wait_state:listening"}
+{"thread": "main#0", "seq": 5, "event": "hud.in_call", "value": true}
+{"thread": "main#0", "seq": 6, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 7, "event": "driver.step", "index": 2, "step": "audio:quiero_que.wav"}
+{"thread": "main#0", "seq": 8, "event": "driver.step", "index": 3, "step": "wait_state:thinking"}
+{"thread": "main#0", "seq": 9, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 10, "event": "driver.step", "index": 4, "step": "wait_requests:1"}
+{"thread": "main#0", "seq": 11, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 12, "event": "chat.user", "text": "Quiero que", "source": "voice"}
+{"thread": "main#0", "seq": 13, "event": "driver.step", "index": 5, "step": "audio:me_digas_que_hora_es.wav"}
+{"thread": "main#0", "seq": 14, "event": "driver.step", "index": 6, "step": "wait_quiet:30"}
+{"thread": "main#0", "seq": 15, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 16, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 17, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 18, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 19, "event": "hud.close"}
+{"thread": "main#0", "seq": 20, "event": "app.end", "state": "listening", "in_call": true, "muted": false}
+{"thread": "main#0", "seq": 21, "event": "chat.snapshot", "role": "user", "text": "Quiero que me digas qué hora es."}
+{"thread": "main#0", "seq": 22, "event": "chat.snapshot", "role": "assistant", "text": "Son las nueve y media."}
+{"thread": "main#0", "seq": 23, "event": "llm.requests", "count": 2}
+{"thread": "ezagent-call#0", "seq": 1, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 2, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-call#0", "seq": 3, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 4, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-stt#0", "seq": 1, "event": "stt.transcript", "text": "Quiero que"}
+{"thread": "ezagent-stt#1", "seq": 1, "event": "stt.transcript", "text": "Quiero que me digas qué hora es."}
+{"thread": "ezagent-answer#0", "seq": 1, "event": "chat.cancel", "text": ""}
+{"thread": "ezagent-answer#1", "seq": 1, "event": "file.write", "name": "chat.jsonl", "role": "assistant"}
+{"thread": "ezagent-answer#1", "seq": 2, "event": "chat.assistant", "text": "Son las nueve y media."}
+{"thread": "ezagent-speech#0", "seq": 1, "event": "speech.say", "text": "Son las nueve y media."}

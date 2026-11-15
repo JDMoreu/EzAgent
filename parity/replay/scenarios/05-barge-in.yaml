@@ -1,0 +1,39 @@
+id: "05"
+name: "Barge-in mientras el asistente habla"
+notes: >
+  El asistente empieza una respuesta de varias frases; el usuario habla por
+  encima con voz sostenida y BargeInDetector corta el TTS, invalida el turno y
+  abre uno nuevo con la frase del usuario.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 1.8
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - content: "Te cuento algo largo. Primero una cosa. Luego otra."
+    - content: "Vale, paro."
+whisper:
+  transcripts:
+    - "Cuéntame algo largo."
+    - "Espera, para."
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: cuentame_algo_largo.wav
+  - wait_state: speaking
+  - audio: espera_para.wav
+  - wait_quiet: 30
+expect:
+  states: [thinking, speaking, listening, thinking, speaking]
+  user: ["Cuéntame algo largo.", "Espera, para."]
+  assistant:
+    - "Te cuento algo largo. Primero una cosa. Luego otra."
+    - "Vale, paro."
+  speech_contains: ["Te cuento algo largo.", "Vale, paro."]
+  speech_count:
+    "Vale, paro.": 1
+  llm_requests: 2
+  final:
+    state: listening
+    in_call: true

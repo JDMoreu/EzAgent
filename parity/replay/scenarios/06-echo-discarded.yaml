@@ -1,0 +1,38 @@
+id: "06"
+name: "Eco durante el TTS descartado"
+notes: >
+  Mientras el asistente habla, el micrófono capta una copia floja de su propia
+  voz (por encima del umbral del VAD pero por debajo del de barge-in). La app
+  la marca como eco y no la transcribe ni abre un turno.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 6.0
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - content: "Te cuento algo largo."
+whisper:
+  transcripts:
+    - "Dime algo largo."
+    - "ESTO ES UN ECO."
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: dime_algo_largo.wav
+  - wait_state: speaking
+  - audio: eco_te_cuento.wav
+  - wait_quiet: 30
+expect:
+  states: [thinking, speaking, listening]
+  user: ["Dime algo largo."]
+  assistant:
+    - "Te cuento algo largo."
+  speech_count:
+    "Te cuento algo largo.": 1
+  llm_requests: 1
+  never: ["ESTO ES UN ECO."]
+  final:
+    state: listening
+    in_call: true
+    muted: false
