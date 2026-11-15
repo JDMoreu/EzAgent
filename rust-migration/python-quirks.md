@@ -53,3 +53,10 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
 - Recomendación posterior: inyectar la descripción del SO desde la configuración
   (o fijarla en el generador de fixtures) y regenerar `system_prompt.jsonl` en un
   host declarado; afecta a `system_prompt/build/*` y `system_prompt/parts/*`.
+## Hallazgos de P-AGENT-B (traspasos, tools_d, archivos y núcleo)
+
+### Q-PAGENTB-01
+- Archivo y líneas: `src/ezagent/agent/tools_fs.py:426-431` (`move_path`), mismo patrón en `copy_path:361-366`.
+- Qué hace mal: el `kind` del resultado se calcula **después** de mover (`shutil.move` u `os.replace`), cuando `src` ya no existe; mover una carpeta informa `"kind": "file"` en vez de `"folder"`. Los casos `tools_fs/call/move-folder`, `move-folder-empty` y `move-folder-overwrite` del oráculo lo fijan así.
+- Cómo se reproduce en Rust: `tools_fs/handlers.rs::transfer` evalúa `kind_of(&src)` después de `move_into_place`/`record_move`, con el comentario del quirk; `copy_path` conserva `"folder"` porque el origen sigue existiendo.
+- Recomendación posterior: calcular `kind` antes de mover en Python (`kind = "folder" if src.is_dir() else "file"` al entrar) y regenerar `parity/fixtures/tools_fs.jsonl` (3 casos cambian de `file` a `folder`).

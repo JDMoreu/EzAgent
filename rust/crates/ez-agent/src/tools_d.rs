@@ -53,6 +53,15 @@ fn int_text_re() -> &'static Regex {
 mod process;
 pub use process::{clean_environment, run_captured, Completed, RunError};
 
+/// Doble inyectable de `subprocess.run` (el oráculo sustituye el proceso real).
+pub type Runner = Arc<
+    dyn Fn(&[String], &Path, &[(String, String)], f64) -> Result<Completed, RunError> + Send + Sync,
+>;
+
+fn system_runner() -> Runner {
+    Arc::new(run_captured)
+}
+
 /// `tomllib` → JSON: las fechas quedan como texto.
 fn toml_to_json(value: &toml::Value) -> Value {
     match value {
@@ -73,6 +82,11 @@ fn toml_to_json(value: &toml::Value) -> Value {
 
 /// Carga todas las herramientas válidas de `config.tools_d_dir`.
 pub fn load_tools_d(config: &AgentConfig) -> Vec<ToolSpec> {
+    load_tools_d_with(config, system_runner())
+}
+
+/// Igual que [`load_tools_d`], con un doble de `subprocess.run`.
+pub fn load_tools_d_with(config: &AgentConfig, runner: Runner) -> Vec<ToolSpec> {
     let directory = &config.tools_d_dir;
     if !directory.is_dir() {
         return Vec::new();
@@ -118,7 +132,7 @@ pub fn load_tools_d(config: &AgentConfig) -> Vec<ToolSpec> {
             }
         };
         let data = toml_to_json(&toml::Value::Table(table));
-        let Some(tool) = build_tool(&data, config, &allowed, &filename) else {
+        let Some(tool) = build_tool(&data, config, &allowed, &filename, &runner) else {
             continue;
         };
         if !seen.insert(tool.name.clone()) {
@@ -164,6 +178,7 @@ fn build_tool(
     config: &AgentConfig,
     allowed: &HashSet<String>,
     filename: &str,
+    runner: &Runner,
 ) -> Option<ToolSpec> {
     let name = data.get("name").and_then(Value::as_str).map(py_strip);
     let Some(name) = name.filter(|name| tool_name_re().is_match(name)) else {
@@ -260,6 +275,7 @@ fn build_tool(
         deny: config.paths.deny.clone(),
         deny_globs: config.paths.deny_globs.clone(),
         timeout_s,
+        runner: Arc::clone(runner),
     });
     let handler_ctx = Arc::clone(&ctx);
     let describe_summary = format!("Ejecutar «{executable}» con una herramienta de tools.d");
@@ -449,6 +465,7 @@ struct RunContext {
     deny: Vec<String>,
     deny_globs: Vec<String>,
     timeout_s: f64,
+    runner: Runner,
 }
 
 fn run_declarative_tool(ctx: &RunContext, args: &Map<String, Value>) -> ToolResult {
@@ -495,7 +512,7 @@ fn run_declarative_tool(ctx: &RunContext, args: &Map<String, Value>) -> ToolResu
         }
         argv.push(replaced);
     }
-    match run_captured(&argv, &ctx.workspace, &clean_environment(), ctx.timeout_s) {
+    match (ctx.runner)(&argv, &ctx.workspace, &clean_environment(), ctx.timeout_s) {
         Err(RunError::Timeout { .. }) => ToolResult::err(format!(
             "La herramienta superó el tiempo máximo ({} s).",
             format_g(ctx.timeout_s)
@@ -527,6 +544,18 @@ fn run_declarative_tool(ctx: &RunContext, args: &Map<String, Value>) -> ToolResu
 
 fn clip(text: &str) -> String {
     head_chars(text, MAX_OUTPUT_CHARS).to_string()
+}
+
+/// `tool.handler(args)` del Python: acepta cualquier JSON y normaliza la salida.
+pub fn call_handler(spec: &ToolSpec, args: &Value) -> ToolResult {
+    let Some(args) = args.as_object() else {
+        return ToolResult::err("Los argumentos deben ser un objeto.");
+    };
+    match (spec.handler)(args) {
+        Ok(crate::registry::ToolReturn::Result(result)) => result,
+        Ok(crate::registry::ToolReturn::Value(data)) => ToolResult::ok(data),
+        Err(message) => ToolResult::failed(message),
+    }
 }
 
 mod validate;

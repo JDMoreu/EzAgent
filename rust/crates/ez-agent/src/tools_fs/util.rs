@@ -21,14 +21,43 @@ pub type FsResult<T> = Result<T, String>;
 /// Abre una ruta o URL con la aplicación predeterminada (`os.startfile`).
 pub type Opener = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
 
+/// Envía una ruta a la Papelera; inyectable para las pruebas de paridad.
+pub trait Trash: Send + Sync {
+    fn delete(&self, path: &Path) -> FsResult<()>;
+}
+
+/// La Papelera del sistema (`send2trash`).
+pub struct SystemTrash;
+
+impl Trash for SystemTrash {
+    fn delete(&self, path: &Path) -> FsResult<()> {
+        trash::delete(path).map_err(|error| error.to_string())
+    }
+}
+
+pub type TrashHandle = Arc<dyn Trash>;
+
+/// Marca de tiempo local de las copias `.bak` (`%Y%m%d-%H%M%S`).
+pub type Clock = Arc<dyn Fn() -> String + Send + Sync>;
+
+pub fn local_stamp() -> Clock {
+    Arc::new(|| Local::now().format("%Y%m%d-%H%M%S").to_string())
+}
+
 /// Todo lo que necesitan los manejadores.
 pub struct FsContext {
     pub config: AgentConfig,
     pub journal: Arc<Journal>,
     pub opener: Opener,
+    pub trash: TrashHandle,
+    pub clock: Clock,
 }
 
 impl FsContext {
+    pub fn send_to_trash(&self, path: &Path) -> FsResult<()> {
+        self.trash.delete(path)
+    }
+
     pub fn resolve_read(&self, raw: &str) -> FsResult<PathBuf> {
         let paths = &self.config.paths;
         resolve_safe(
@@ -69,16 +98,12 @@ impl FsContext {
     }
 }
 
-pub fn send_to_trash(path: &Path) -> FsResult<()> {
-    trash::delete(path).map_err(|error| error.to_string())
-}
-
 /// Lleva un temporal a la Papelera sin enmascarar el error original.
-fn discard_temp(path: &Path) {
+fn discard_temp(path: &Path, trash: &TrashHandle) {
     // DECISION (del Python): si la Papelera no está disponible, el temporal se
     // queda; nunca se borra de forma definitiva.
     if path.exists() {
-        let _ = send_to_trash(path);
+        let _ = trash.delete(path);
     }
 }
 
@@ -123,12 +148,11 @@ fn with_suffix(target: &Path, suffix: &str) -> PathBuf {
 }
 
 /// Una ruta `.bak` libre, sin sobrescribir una existente.
-pub fn backup_path(target: &Path) -> PathBuf {
+pub fn backup_path(target: &Path, stamp: &str) -> PathBuf {
     let plain = with_suffix(target, ".bak");
     if !plain.exists() {
         return plain;
     }
-    let stamp = Local::now().format("%Y%m%d-%H%M%S");
     let mut candidate = with_suffix(target, &format!(".{stamp}.bak"));
     let mut counter = 1;
     while candidate.exists() {
@@ -150,8 +174,8 @@ pub fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::copy(src, dst).map(|_| ())
 }
 
-pub fn make_backup(target: &Path) -> std::io::Result<PathBuf> {
-    let backup = backup_path(target);
+pub fn make_backup(target: &Path, stamp: &str) -> std::io::Result<PathBuf> {
+    let backup = backup_path(target, stamp);
     copy_tree(target, &backup)?;
     Ok(backup)
 }
@@ -165,7 +189,7 @@ fn temp_beside(target: &Path) -> PathBuf {
 }
 
 /// Escribe un texto en un temporal de la misma carpeta y lo sustituye de forma atómica.
-pub fn atomic_write(target: &Path, content: &str) -> std::io::Result<()> {
+pub fn atomic_write(target: &Path, content: &str, trash: &TrashHandle) -> std::io::Result<()> {
     let tmp = temp_beside(target);
     let outcome = (|| {
         let mut handle = std::fs::File::create(&tmp)?;
@@ -175,17 +199,17 @@ pub fn atomic_write(target: &Path, content: &str) -> std::io::Result<()> {
         std::fs::rename(&tmp, target)
     })();
     if outcome.is_err() {
-        discard_temp(&tmp);
+        discard_temp(&tmp, trash);
     }
     outcome
 }
 
 /// Copia un archivo a un temporal y sustituye `dst` de forma atómica.
-pub fn atomic_copy(src: &Path, dst: &Path) -> std::io::Result<()> {
+pub fn atomic_copy(src: &Path, dst: &Path, trash: &TrashHandle) -> std::io::Result<()> {
     let tmp = temp_beside(dst);
     let outcome = std::fs::copy(src, &tmp).and_then(|_| std::fs::rename(&tmp, dst));
     if outcome.is_err() {
-        discard_temp(&tmp);
+        discard_temp(&tmp, trash);
     }
     outcome
 }
