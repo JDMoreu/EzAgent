@@ -168,7 +168,7 @@ fn short_voiced_runs_are_discarded() {
 #[test]
 fn pending_probe_does_not_close_and_resuming_voice_forgets_it() {
     let config = SegmenterConfig {
-        end_probe: Some(Box::new(|_pcm| Some(Probe::new()))),
+        end_probe: Some(Box::new(|_pcm, _state| Some(Probe::new()))),
         ..SegmenterConfig::default()
     };
     let mut segmenter = Segmenter::new(config);
@@ -229,7 +229,7 @@ fn percentile_matches_numpy_linear_interpolation() {
 #[test]
 fn finished_probe_closes_with_turn_reason() {
     let config = SegmenterConfig {
-        end_probe: Some(Box::new(|_pcm| {
+        end_probe: Some(Box::new(|_pcm, _state| {
             let probe = Probe::new();
             probe.finish(true);
             Some(probe)
@@ -256,7 +256,7 @@ fn finished_probe_closes_with_turn_reason() {
 #[test]
 fn failed_probe_falls_back_to_long_silence() {
     let config = SegmenterConfig {
-        end_probe: Some(Box::new(|_pcm| {
+        end_probe: Some(Box::new(|_pcm, _state| {
             let probe = Probe::new();
             probe.fail("sin modelo");
             Some(probe)

@@ -25,7 +25,7 @@ const SKIP_NAMES: [&str; 6] = [
 ];
 
 /// Por debajo de este pico (≈ -46 dBFS) un clip es silencio o ruido de sala.
-pub const WEAK_PEAK_RMS: f32 = 0.005;
+pub const WEAK_PEAK_RMS: f64 = 0.005;
 pub const WEAK_VOICED_SECS: f64 = 0.3;
 /// Tasa mínima de lectura para considerar que un dispositivo responde.
 const MIN_TIMING_SECS: f64 = 0.005;
@@ -100,16 +100,31 @@ pub fn pcm_is_weak(pcm: &[u8], rate: u32) -> bool {
         peak = peak.max(level);
         levels.push(level);
     }
-    if peak < WEAK_PEAK_RMS {
+    if f64::from(peak) < WEAK_PEAK_RMS {
         return true;
     }
-    let threshold = (0.25 * peak).max(0.002);
+    // `max(0.002, 0.25 * peak)` en float64 y el escalar recortado a float32,
+    // que es lo que hace numpy al comparar un array float32.
+    let threshold = ((0.25 * f64::from(peak)).max(0.002)) as f32;
     let voiced = levels.iter().filter(|level| **level >= threshold).count();
     voiced as f64 * CHUNK_SECS < WEAK_VOICED_SECS
 }
 
 /// WAV mono 16 bits PCM, igual que `wave.open(buffer, "wb")`.
 pub fn pcm_to_wav(pcm: &[u8], rate: u32) -> Vec<u8> {
+    wav_bytes(pcm, rate)
+}
+
+/// Como [`pcm_to_wav`] pero reproduce el error de `wave.setframerate` con una
+/// tasa no positiva («sampling rate not specified»).
+pub fn pcm_to_wav_checked(pcm: &[u8], rate: i64) -> Result<Vec<u8>, String> {
+    if rate <= 0 || rate > i64::from(u32::MAX) {
+        return Err("sampling rate not specified".to_string());
+    }
+    Ok(wav_bytes(pcm, rate as u32))
+}
+
+fn wav_bytes(pcm: &[u8], rate: u32) -> Vec<u8> {
     let mut wav = Vec::with_capacity(44 + pcm.len());
     wav.extend_from_slice(b"RIFF");
     wav.extend_from_slice(&((36 + pcm.len()) as u32).to_le_bytes());

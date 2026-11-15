@@ -231,7 +231,9 @@ impl MicCapture {
     fn end_probe(&self) -> Option<EndProbe> {
         let detector = Arc::clone(self.turn_detector.as_ref()?);
         let rate = self.rate;
-        Some(Box::new(move |pcm: &[u8]| detector.submit(pcm, rate)))
+        Some(Box::new(move |pcm: &[u8], _state| {
+            detector.submit(pcm, rate)
+        }))
     }
 
     fn settings(&self) -> VadSettings {

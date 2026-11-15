@@ -13,7 +13,7 @@ mod tokenizer;
 pub mod trim;
 pub mod vocab;
 
-pub use tokenizer::{Tokenizer, VocabConfig};
+pub use tokenizer::{load_vocab, parse_config_vocab, Tokenizer, VocabConfig};
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -227,9 +227,23 @@ impl Kokoro {
         self.has_timings
     }
 
+    /// The inference model behind this instance.
+    pub fn model(&mut self) -> &mut dyn Model {
+        self.model.as_mut()
+    }
+
     /// The tokenizer in use (phonemizer plus vocabulary).
     pub fn tokenizer(&self) -> &Tokenizer {
         &self.tokenizer
+    }
+
+    /// `_prepare`: full phoneme string and batches with their pauses.
+    pub fn prepare(
+        &self,
+        text: &str,
+        options: &SynthesisOptions<'_>,
+    ) -> Result<Prepared, KokoroError> {
+        prepare(&self.tokenizer, text, options)
     }
 
     /// `get_voice_style`: the style of one voice of the file.
@@ -295,7 +309,7 @@ impl Kokoro {
             SAMPLE_RATE,
             options.sentence_pause,
             options.clause_pause,
-        );
+        )?;
         Ok((audio, SAMPLE_RATE, spoken))
     }
 
@@ -367,9 +381,10 @@ fn speed_value(dtypes: &HashMap<String, DType>, speed: f64) -> f64 {
 }
 
 /// What `_prepare` resolves: the full phoneme string and the batches.
-struct Prepared {
-    phonemes: String,
-    batches: Vec<(String, f64)>,
+#[derive(Debug, Clone, PartialEq)]
+pub struct Prepared {
+    pub phonemes: String,
+    pub batches: Vec<(String, f64)>,
 }
 
 /// `_prepare`: collapsed phonemes split into non-empty batches.
@@ -384,7 +399,7 @@ fn prepare(
         tokenizer.phonemize(text, options.lang, true)?
     };
     let phonemes = collapse_spaces(&phonemes);
-    let batched = chunker::split_phonemes(&phonemes, MAX_PHONEME_LENGTH);
+    let batched = chunker::split_phonemes(&phonemes, MAX_PHONEME_LENGTH)?;
     if batched.is_empty() {
         return Err(KokoroError(format!(
             "Nothing to synthesize, {} produced no phonemes",
@@ -408,8 +423,15 @@ fn prepare(
 }
 
 /// `_style_for`: `n` phonemes use row `n - 1`, capped at the file.
-fn style_for(style: &Style, length: usize) -> &[f32] {
-    let index = length.min(style.rows()).saturating_sub(1);
+///
+/// `length == 0` da `-1` en el Python, es decir, la última fila.
+pub fn style_for(style: &Style, length: usize) -> &[f32] {
+    let index = length.min(style.rows());
+    let index = if index == 0 {
+        style.rows().saturating_sub(1)
+    } else {
+        index - 1
+    };
     style.row(index).unwrap_or(&[])
 }
 
@@ -424,7 +446,7 @@ fn create_batch(
     trim: bool,
     pause: f64,
 ) -> Result<(Vec<f32>, Option<Vec<i64>>), KokoroError> {
-    let tokens = tokenizer.tokenize(phonemes, Some(MAX_PHONEME_LENGTH))?;
+    let tokens = tokenizer.tokenize(phonemes, Some(MAX_PHONEME_LENGTH as i64))?;
     if tokens.is_empty() {
         return Err(KokoroError(format!(
             "No phonemes of {} are in the model vocabulary",

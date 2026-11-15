@@ -91,15 +91,17 @@ fn pack(lengths: &[usize], limit: usize) -> Vec<(usize, usize)> {
 }
 
 /// `split_phonemes`: balanced batches of at most `max_length` phonemes.
-pub fn split_phonemes(phonemes: &str, max_length: usize) -> Vec<String> {
-    if max_length == 0 {
-        // DECISION: the Python loops forever; an empty result is safer.
-        return Vec::new();
+///
+/// `max_length == 0` con texto no vacío reproduce el `range() arg 3 must not be
+/// zero` del Python.
+pub fn split_phonemes(phonemes: &str, max_length: usize) -> Result<Vec<String>, String> {
+    if max_length == 0 && !py_strip(phonemes).is_empty() {
+        return Err("range() arg 3 must not be zero".to_string());
     }
     let mut atoms = Vec::new();
     atoms_into(py_strip(phonemes), max_length, 0, &mut atoms);
     if atoms.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let lengths: Vec<usize> = atoms.iter().map(|atom| char_len(atom)).collect();
     let fewest = pack(&lengths, max_length).len();
@@ -113,10 +115,10 @@ pub fn split_phonemes(phonemes: &str, max_length: usize) -> Vec<String> {
             low = middle + 1;
         }
     }
-    pack(&lengths, low)
+    Ok(pack(&lengths, low)
         .into_iter()
         .map(|(start, end)| atoms[start..end].join(" "))
-        .collect()
+        .collect())
 }
 
 /// `pause_after`: silence a batch ending with this text asks for.

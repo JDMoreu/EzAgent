@@ -178,7 +178,12 @@ impl Phonemizer for EspeakPhonemizer {
             .get()
             .ok_or_else(|| PhonemeError("espeak is not initialized".to_string()))?;
         let mut espeak = espeak.lock();
-        espeak.set_voice(lang).map_err(PhonemeError)?;
+        // El mensaje público de `phonemizer` cuando el idioma no existe.
+        espeak.set_voice(lang).map_err(|_| {
+            PhonemeError(format!(
+                "language {lang:?} is not supported by the espeak backend"
+            ))
+        })?;
         text::phonemize_text(text, |chunk| {
             let raw = espeak.text_to_phonemes(chunk).map_err(PhonemeError)?;
             Ok(text::postprocess(&raw))

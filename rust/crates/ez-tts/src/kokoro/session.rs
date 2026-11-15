@@ -58,17 +58,19 @@ pub trait Model: Send {
     ) -> Result<(Vec<f32>, Option<Vec<i64>>), String>;
 }
 
-/// `resolve_providers`: this build only has the CPU provider.
+/// `resolve_providers`: `ONNX_PROVIDER` wins; si no, solo CPU.
+///
+/// `ort` no tiene búsqueda de proveedores por nombre: se acepta el valor del
+/// entorno como el Python, y la sesión sigue siendo de CPU.
 pub fn resolve_providers() -> Vec<String> {
     if let Some(provider) = std::env::var("ONNX_PROVIDER")
         .ok()
         .filter(|value| !value.is_empty())
     {
-        // DECISION: `ort` has no by-name provider lookup; the Python would try
-        // the accelerated distributions, which do not exist for Rust.
         tracing::warn!(
-            "ONNX_PROVIDER={provider} no soportado por ez-tts; se usa CPUExecutionProvider"
+            "ONNX_PROVIDER={provider} no soportado por ez-tts; la sesión usa CPUExecutionProvider"
         );
+        return vec![provider];
     }
     vec!["CPUExecutionProvider".to_string()]
 }

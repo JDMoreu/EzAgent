@@ -84,3 +84,62 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
   `llm_tools/turn/0024` y `0025` fijan el texto real que sale.
 - Recomendación posterior: borrar la rama muerta o convertirla en el mensaje
   final del tercer intento; no cambia ningún fixture actual.
+
+## Hallazgos de P-AUDIO-TTS (audio, turn, wake y TTS)
+
+### Q-PAUDIO-01
+- Archivo y líneas: `kokoro_onnx/sliding.py:43` (`token_edges`)
+- Qué hace mal: con `duration` vacía (o toda a cero) `frames[-1] == 0`; la división
+  `samples / frames[-1]` da `inf`/`NaN`, `np.round(NaN).astype(int64)` produce el
+  mínimo de `int64` y los bordes salen `-9223372036854775808` en vez de un error.
+  Lo fijan `tts/sliding/token_edges/0004` a `0007` (y `0013` con una sola muestra).
+- Cómo se reproduce en Rust: `kokoro::sliding::token_edges` devuelve
+  `vec![i64::MIN; frames.len()]` cuando la suma es 0, con el comentario del quirk.
+- Recomendación posterior: devolver un error cuando `duration.is_empty()` y
+  regenerar esos cinco casos; hoy `create_timed` nunca llega ahí porque exige una
+  duración válida del modelo.
+
+### Q-PAUDIO-02
+- Archivo y líneas: `kokoro_onnx/chunker.py:41` y `:79` (`_atoms`/`split_phonemes`)
+- Qué hace mal: `split_phonemes(texto_no_vacío, max_length=0)` llega a
+  `range(0, n, 0)` y lanza `ValueError: range() arg 3 must not be zero`; con texto
+  vacío devuelve `[]`. Corrige el aviso anterior de este archivo que decía que Rust
+  devolvía `[]` en ambos casos.
+- Cómo se reproduce en Rust: `kokoro::chunker::split_phonemes` ahora devuelve
+  `Err("range() arg 3 must not be zero")` solo con texto no vacío (caso
+  `tts/chunker/split/0006`); `create` propaga el error.
+- Recomendación posterior: validar `max_length >= 1` al entrar en la función y
+  decidir si el error debe ser `ValueError` propio; no afecta a la síntesis normal.
+
+### Q-PAUDIO-03
+- Archivo y líneas: `kokoro_onnx/pauses.py:35` (`_quiet_frames`) y `:83` (`insert`)
+- Qué hace mal: si el audio dura menos que un fotograma (10 ms), `loudness` queda
+  vacío y `loudness.max()` lanza
+  `zero-size array to reduction operation maximum which has no identity`
+  (`tts/pauses/insert/0012`).
+- Cómo se reproduce en Rust: `kokoro::pauses::insert` devuelve ese mismo texto
+  como `Err` antes de calcular los fotogramas.
+- Recomendación posterior: devolver el audio sin tocar cuando no hay fotogramas
+  completos; es más útil que abortar por un clip de 4 ms.
+
+### Q-PAUDIO-04
+- Archivo y líneas: `kokoro_onnx/__init__.py:148-152` (`_style_for`)
+- Qué hace mal (comportamiento no evidente, no un fallo): con `length == 0`,
+  `min(0, len(voice)) - 1 == -1` e indexa la **última** fila del estilo; el caso
+  `tts/voices/style_for/0001` lo fija con `index: -1`.
+- Cómo se reproduce en Rust: `kokoro::style_for` trata `0` como la última fila y
+  devuelve ese `index` en la prueba; con `tokens.len() >= 1` nunca se usa.
+- Recomendación posterior: documentar el `-1` o tratar `0` como error; afecta a
+  cualquier llamada con un lote sin tokens.
+
+### Q-PAUDIO-05
+- Archivo y líneas: `src/ezagent/voice/turn.py:84-89` (`prepare`)
+- Qué hace mal: una `rate` negativa produce `length = int(round(n * 16000 / rate))`
+  negativo, pero `np.linspace(0, n - 1, max(1, length))` lo convierte en **una**
+  muestra y `np.interp` la toma del primer valor; el resultado no es un
+  remuestreo válido, sino un clip de 1 muestra (`turn/prepare/0102`).
+- Cómo se reproduce en Rust: `turn::prepare` acepta `rate: i32` y
+  `resample::resampled_len` devuelve 0 para longitudes negativas, que
+  `resample_linear` eleva a 1; el mismo clip de una muestra.
+- Recomendación posterior: validar `rate > 0` en `prepare` y documentar el rango
+  aceptado; en la práctica la captura siempre usa tasas positivas.
