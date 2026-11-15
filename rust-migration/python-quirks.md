@@ -205,3 +205,17 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
 - Qué hace mal: `str(value or "")` convierte `None` en `""` y `123` en `"123"`, de modo que acepta entradas que no son cadenas sin avisar; el oráculo incluye ambos casos.
 - Cómo se reproduce en Rust: `theme::parse_hex` recibe `&str`; la prueba aplica la misma coerción (`Value::Null` → `""`, número → su texto) antes de llamar.
 - Recomendación posterior: tipar la entrada como `str` en la firma o rechazar no-cadenas explícitamente; no cambia ninguna salida actual.
+
+## Hallazgos de P-HERDR (adaptador de Herdr, tareas y métricas)
+
+### Q-PHERDR-01
+- Archivo y líneas: `parity/gen/agent_driver.py:2495-2547` (`watcher/loop/*`) y `:2549-2583` (`watcher/deliver/*`).
+- Qué hace mal: la acción de cada caso solo **lee** el estado (`{"delays": stop.delays, …}` y `{"seen": seen}`); nunca llama a `Watcher._loop` ni a `Watcher._deliver`. Los 5 casos de `loop` y los 3 de `deliver` del oráculo afirman listas vacías y no prueban nada.
+- Cómo se reproduce en Rust: el arnés de `agent_driver` (pendiente en P-HERDR) debe devolver esas estructuras vacías sin ejecutar el bucle, o el generador debe llamar a la función y regenerarse. En esta ronda no se portó `agent_driver`.
+- Recomendación posterior: cambiar la acción del generador por `watcher._loop()` / `watcher._deliver()` (con el `_StopAfter` y la cola ya preparados) y regenerar `parity/fixtures/agent_driver.jsonl`.
+
+### Q-PHERDR-02
+- Archivo y líneas: `src/ezagent/voice/herdr.py:440` (`return text[-limit:]`).
+- Qué hace mal: con `limit=0`, `text[-0:]` es `text[0:]`, es decir, **no recorta**; el caso `herdr/read_agent/007-limit-zero` fija que se devuelve la pantalla completa. Es contraintuitivo pero está fijado por el oráculo.
+- Cómo se reproduce en Rust: `ez_core::pyvalue::tail_chars` devuelve el texto completo cuando `count` es 0, igual que Python; no se corrigió.
+- Recomendación posterior: si se quiere que `0` signifique «nada», documentarlo y regenerar el fixture; hoy `read_agent` nunca pasa 0 porque el valor por defecto es `max_read_lines`.

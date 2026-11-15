@@ -53,6 +53,24 @@ pub fn decode(bytes: &[u8]) -> String {
         .replace('\r', "\n")
 }
 
+/// `_anonymous_env()`: el entorno sin la identidad de la terminal que ejecuta
+/// EzAgent (comparación sin distinguir mayúsculas, como `os.environ`).
+pub fn anonymous_env() -> std::collections::HashMap<String, String> {
+    std::env::vars_os()
+        .filter(|(name, _)| {
+            !name
+                .to_string_lossy()
+                .eq_ignore_ascii_case("HC_TERMINAL_ID")
+        })
+        .map(|(name, value)| {
+            (
+                name.to_string_lossy().into_owned(),
+                value.to_string_lossy().into_owned(),
+            )
+        })
+        .collect()
+}
+
 /// `subprocess.run(argv, env=…, capture_output=True, timeout, CREATE_NO_WINDOW)`.
 ///
 /// `anonymous` reproduce `_anonymous_env()`: se hereda el entorno sin

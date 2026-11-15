@@ -21,14 +21,16 @@ use serde_json::{Map, Value};
 mod actions;
 mod handoff;
 pub(crate) mod process;
+mod runtime;
 mod terminals;
 mod text;
 
 pub use actions::ReadyCallback;
 pub use actions::RunAgent;
+pub use runtime::{system as system_runtime, HerdrRuntime, SystemRuntime};
 pub use text::{strip_ansi, visible_name};
 
-use process::{Completed, RunError};
+pub use process::{Completed, RunError};
 
 /// Instrucción que se antepone a la tarea cuando el agente trabaja en la GUI.
 pub const GUI_INSTRUCTION: &str = "Trabaja de forma visible en el escritorio. Usa la skill cua-driver para controlar la interfaz gráfica: abre las aplicaciones, navega, haz clic y escribe como lo haría una persona. Deja las ventanas a la vista para que el usuario vea todo el proceso. ";
@@ -156,14 +158,20 @@ pub struct Herdr {
     cfg: RwLock<VoiceConfig>,
     install_lock: Mutex<()>,
     context: Mutex<ContextState>,
+    runtime: Arc<dyn HerdrRuntime>,
 }
 
 impl Herdr {
     pub fn new(cfg: VoiceConfig) -> Self {
+        Self::with_runtime(cfg, runtime::system())
+    }
+
+    pub fn with_runtime(cfg: VoiceConfig, runtime: Arc<dyn HerdrRuntime>) -> Self {
         let herdr = Self {
             cfg: RwLock::new(cfg),
             install_lock: Mutex::new(()),
             context: Mutex::new(ContextState::default()),
+            runtime,
         };
         herdr.resolve_paths();
         herdr
@@ -179,6 +187,11 @@ impl Herdr {
 
     pub fn herdr_app_path(&self) -> String {
         self.cfg_text("herdr_app_path")
+    }
+
+    /// `_anonymous_env()`.
+    pub fn anonymous_env() -> std::collections::HashMap<String, String> {
+        process::anonymous_env()
     }
 
     /// Clave canónica de un agente a partir de cómo se dictó.
@@ -226,10 +239,10 @@ impl Herdr {
     // ------------------------------------------------------------- instalación
 
     /// Usa el binario del PATH o el que deja el instalador de Herdr.
-    fn resolve_paths(&self) {
+    pub fn resolve_paths(&self) {
         for (attr, folder, exe) in HERDR_PARTS {
             let current = self.cfg_text(attr);
-            if let Some(found) = process::which(&current) {
+            if let Some(found) = self.runtime.which(&current) {
                 self.set_cfg_text(attr, &found.to_string_lossy());
                 continue;
             }
@@ -254,7 +267,7 @@ impl Herdr {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         self.resolve_paths();
         for (attr, folder, _exe) in HERDR_PARTS {
-            if process::which(&self.cfg_text(attr)).is_some() {
+            if self.runtime.which(&self.cfg_text(attr)).is_some() {
                 continue;
             }
             tracing::info!("Herdr: falta {}; instalándolo…", folder);
@@ -263,24 +276,24 @@ impl Herdr {
                 .find(|(name, _)| *name == folder)
                 .map(|(_, script)| *script)
                 .unwrap_or("");
-            if !Self::run_installer(script) {
+            if !self.run_installer(script) {
                 tracing::warn!("Herdr: no pude instalar {}.", folder);
             }
             self.resolve_paths();
         }
         HERDR_PARTS
             .iter()
-            .all(|(attr, _, _)| process::which(&self.cfg_text(attr)).is_some())
+            .all(|(attr, _, _)| self.runtime.which(&self.cfg_text(attr)).is_some())
     }
 
     /// DECISION: `iex` sobre un script de URL fija es el instalador oficial de
     /// Herdr. Va como `-EncodedCommand` (base64 UTF-16LE): no usa shell ni
     /// interpola texto del usuario ni del modelo en la línea de comandos.
-    fn run_installer(script: &str) -> bool {
+    pub fn run_installer(&self, script: &str) -> bool {
         let argv = powershell_script(&format!(
             "$ProgressPreference = 'SilentlyContinue'; {script}"
         ));
-        match process::run(&argv, 900.0, false) {
+        match self.runtime.run(&argv, 900.0, false) {
             Ok(result) if result.returncode == 0 => true,
             Ok(result) => {
                 tracing::warn!(
@@ -299,7 +312,7 @@ impl Herdr {
 
     // ------------------------------------------------------------------- base
 
-    fn run_command(
+    pub fn run_command(
         &self,
         argv: &[String],
         timeout: f64,
@@ -308,13 +321,15 @@ impl Herdr {
         self.spawn(argv, timeout, anonymous)
     }
 
-    fn spawn(
+    /// `spawn`/`_exec` del Python: ejecuta y, si falta el binario, reintenta con
+    /// el que resolvió el instalador.
+    pub fn spawn(
         &self,
         argv: &[String],
         timeout: f64,
         anonymous: bool,
     ) -> Result<Completed, HerdrError> {
-        match process::run(argv, timeout, anonymous) {
+        match self.runtime.run(argv, timeout, anonymous) {
             Ok(result) => Ok(result),
             Err(RunError::NotFound) => {
                 let Some(replacement) = argv
@@ -326,7 +341,7 @@ impl Herdr {
                 let mut retry = Vec::with_capacity(argv.len());
                 retry.push(replacement);
                 retry.extend_from_slice(argv.get(1..).unwrap_or(&[]));
-                match process::run(&retry, timeout, anonymous) {
+                match self.runtime.run(&retry, timeout, anonymous) {
                     Ok(result) => Ok(result),
                     Err(RunError::NotFound) => Err(not_found_error(argv)),
                     Err(error) => Err(run_error(&retry, error)),
@@ -336,7 +351,8 @@ impl Herdr {
         }
     }
 
-    fn replacement_for(&self, executable: &str) -> Option<String> {
+    /// `_replacement_for`: binario ya instalado para `hc` o `herdr-app`.
+    pub fn replacement_for(&self, executable: &str) -> Option<String> {
         let name = Path::new(executable)
             .file_name()?
             .to_string_lossy()
@@ -347,7 +363,9 @@ impl Herdr {
             _ => return None,
         };
         self.ensure_installed();
-        process::which(&self.cfg_text(attr)).map(|path| path.to_string_lossy().into_owned())
+        self.runtime
+            .which(&self.cfg_text(attr))
+            .map(|path| path.to_string_lossy().into_owned())
     }
 
     fn run(&self, args: &[String], timeout: f64) -> Result<Completed, HerdrError> {
@@ -357,7 +375,7 @@ impl Herdr {
         self.run_command(&argv, timeout, false)
     }
 
-    fn json_command(&self, argv: &[String], timeout: f64) -> Result<Value, HerdrError> {
+    pub fn json_command(&self, argv: &[String], timeout: f64) -> Result<Value, HerdrError> {
         let result = self.run_command(argv, timeout, false)?;
         parse_json_output(&argv[0], &result)
     }
@@ -437,6 +455,18 @@ fn programs_dir() -> PathBuf {
             .join("Local")
             .join("Programs"),
     }
+}
+
+/// `powershell.exe -NoProfile -Command <script>` del lanzamiento en segundo
+/// plano (Python no pasa `-ExecutionPolicy` aquí), con el script en base64
+/// para no interpolar texto en la línea de comandos.
+fn powershell_command(script: &str) -> Vec<String> {
+    vec![
+        "powershell.exe".to_string(),
+        "-NoProfile".to_string(),
+        "-EncodedCommand".to_string(),
+        utf16le_base64(script),
+    ]
 }
 
 /// `powershell.exe` con el script en base64 UTF-16LE (`-EncodedCommand`).

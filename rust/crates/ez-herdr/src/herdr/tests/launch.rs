@@ -200,7 +200,7 @@ fn save_context_escribe_y_conserva_lo_reciente() {
     std::fs::write(&old, b"viejo").expect("archivo");
     let other = folder.join("notas.md");
     std::fs::write(&other, b"otras").expect("archivo");
-    let path = save_context_in(&folder, "contexto\nlargo").expect("guardado");
+    let path = save_context_in(&folder, "contexto\nlargo", &hex_id()).expect("guardado");
     assert!(path.ends_with(".md"));
     let text = std::fs::read_to_string(&path).expect("leer");
     assert_eq!(text, "contexto\r\nlargo");

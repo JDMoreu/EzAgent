@@ -18,7 +18,7 @@ use crate::pyjson::{dumps_with, DumpOptions};
 use crate::pytime::timestamp;
 
 /// Lista blanca de metadatos para no guardar transcripciones ni claves.
-const META_KEYS: &[&str] = &[
+pub const META_KEYS: &[&str] = &[
     "provider",
     "model",
     "rounds",
@@ -72,11 +72,27 @@ impl TurnTimings {
         xor_lock(&self.marks).insert(name.to_string(), at);
     }
 
+    /// `mark()` con el valor crudo del oráculo (`float(value)` de Python).
+    pub fn mark_value(&self, name: &str, at: Option<&Value>) -> Result<(), String> {
+        let at = match at {
+            None => monotonic(),
+            Some(value) => float_value(value)?,
+        };
+        self.mark(name, Some(at));
+        Ok(())
+    }
+
     /// Suma segundos de una etapa; los negativos no restan.
     pub fn add_span(&self, name: &str, seconds: f64) {
         let mut spans = xor_lock(&self.spans);
         let total = spans.get(name).copied().unwrap_or(0.0);
         spans.insert(name.to_string(), total + seconds.max(0.0));
+    }
+
+    /// `add_span()` con el valor crudo del oráculo (`float(seconds)`).
+    pub fn add_span_value(&self, name: &str, seconds: &Value) -> Result<(), String> {
+        self.add_span(name, float_value(seconds)?);
+        Ok(())
     }
 
     /// Duraciones en ms entre las marcas disponibles.
@@ -197,6 +213,32 @@ pub fn format_turn(report: &Report) -> String {
     parts.join(" | ")
 }
 
+/// `float(value)` de Python para las marcas y duraciones del oráculo.
+///
+/// Reproduce el texto de error de CPython (`could not convert string to
+/// float: 'x'`) que el fixture registra.
+pub fn float_value(value: &Value) -> Result<f64, String> {
+    match value {
+        Value::Number(number) => number
+            .as_f64()
+            .ok_or_else(|| format!("could not convert number to float: {number}")),
+        Value::Bool(flag) => Ok(f64::from(u8::from(*flag))),
+        Value::String(text) => text.trim().parse::<f64>().map_err(|_| {
+            format!(
+                "could not convert string to float: {}",
+                crate::pyvalue::repr_str(text)
+            )
+        }),
+        Value::Null => {
+            Err("float() argument must be a string or a real number, not 'NoneType'".to_string())
+        }
+        other => Err(format!(
+            "float() argument must be a string or a real number, not '{}'",
+            crate::pyvalue::python_repr(other)
+        )),
+    }
+}
+
 fn clean_meta(meta: Option<&Map<String, Value>>) -> Map<String, Value> {
     let Some(meta) = meta else {
         return Map::new();
@@ -212,9 +254,10 @@ fn clean_meta(meta: Option<&Map<String, Value>>) -> Map<String, Value> {
     out
 }
 
-/// `round(value, 1)` de Python.
+/// `round(value, 1)` de Python: redondea el valor binario exacto, no
+/// `value * 10` (2.55 → 2.5, no 2.6).
 fn round1(value: f64) -> f64 {
-    (value * 10.0).round_ties_even() / 10.0
+    format!("{value:.1}").parse().unwrap_or(value)
 }
 
 /// Acumula los turnos y publica media y P95 cada diez turnos.
@@ -330,6 +373,16 @@ impl LatencyStats {
         if !parts.is_empty() {
             tracing::info!("Latencia acumulada: {}", parts.join(" | "));
         }
+    }
+
+    /// Turnos guardados (informe y metadatos), en orden de llegada.
+    pub fn turns(&self) -> Vec<(Report, Map<String, Value>)> {
+        self.turns.iter().cloned().collect()
+    }
+
+    /// Turnos contados desde el inicio (aunque la cola los haya olvidado).
+    pub fn total(&self) -> usize {
+        self.total
     }
 
     /// Percentil con interpolación lineal, sin dependencias externas.
