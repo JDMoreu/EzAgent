@@ -53,3 +53,18 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
 - Recomendación posterior: inyectar la descripción del SO desde la configuración
   (o fijarla en el generador de fixtures) y regenerar `system_prompt.jsonl` en un
   host declarado; afecta a `system_prompt/build/*` y `system_prompt/parts/*`.
+
+## Q-P-SWARM-01
+- Archivo y líneas: `src/ezagent/swarm/incidents.py:79-82` (regex `_CLOCK_12`) y `:119-123` (`parse_reset`)
+- Qué hace mal: la hora de 12 h acepta `(\d{2})` como minutos sin validar el rango;
+  `parse_reset("resets 7:60pm", ahora)` hace `now.replace(minute=60)` y lanza
+  `ValueError: minute must be in 0..59`. En producción eso ocurre dentro de
+  `Recovery.inspect`, así que un texto así en la pantalla de un agente tumba la
+  pasada del supervisor en vez de ignorarse.
+- Cómo se reproduce en Rust: `incidents/patterns.rs::parse_reset` valida con
+  `and_hms_opt` y, si la hora no existe, devuelve `0.0` (DECISION ya anotada en
+  ese módulo): no propaga el pánico. Ningún caso de `parity/fixtures/swarm.jsonl`
+  usa minutos fuera de rango, así que la paridad no cambia.
+- Recomendación posterior: limitar los minutos en `_CLOCK_12` a `[0-5]\d` (o
+  envolver el `replace` en `try/except ValueError` y devolver 0). Tocaría
+  regenerar `swarm/incidents/parse-reset/*` solo si se añaden casos con `:60`.
