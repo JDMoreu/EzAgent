@@ -151,7 +151,8 @@ impl SmartTurn {
             .lock()
             .clone()
             .ok_or_else(|| NOT_LOADED.to_string())?;
-        model.probability(&prepare(pcm, rate))
+        let features = prepare(pcm, rate as i32)?;
+        model.probability(&features)
     }
 
     /// Encola una evaluación; `None` si el modelo aún no está listo.
@@ -203,7 +204,10 @@ fn run_worker(
     };
     if warmup {
         let silence = vec![0_u8; SAMPLE_RATE as usize * 2];
-        if let Err(error) = model.probability(&prepare(&silence, SAMPLE_RATE)) {
+        let Ok(features) = prepare(&silence, SAMPLE_RATE as i32) else {
+            return;
+        };
+        if let Err(error) = model.probability(&features) {
             tracing::warn!("Smart Turn no disponible; uso solo el silencio: {error}");
             return;
         }
@@ -215,7 +219,7 @@ fn run_worker(
             job.probe.fail("cancelado");
             continue;
         }
-        match model.probability(&prepare(&job.pcm, job.rate)) {
+        match prepare(&job.pcm, job.rate as i32).and_then(|features| model.probability(&features)) {
             Ok(value) => job.probe.finish(value >= *threshold.lock()),
             Err(error) => job.probe.fail(error),
         }

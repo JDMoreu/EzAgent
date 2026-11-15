@@ -23,11 +23,22 @@ const START_CHUNKS: usize = 3;
 #[derive(Clone, Debug, Default)]
 pub struct Probe {
     value: Arc<Mutex<Option<Result<bool, String>>>>,
+    /// Consultas a `done()` que faltan antes de darse por completada. Una
+    /// sonda real nace en 0 (completada); `scripted` la deja pendiente.
+    checks: Arc<Mutex<usize>>,
 }
 
 impl Probe {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sonda ya resuelta, como la del modo `true`/`raise_result` del oráculo.
+    pub fn scripted(checks: usize, ended: bool) -> Self {
+        Self {
+            value: Arc::new(Mutex::new(Some(Ok(ended)))),
+            checks: Arc::new(Mutex::new(checks)),
+        }
     }
 
     /// Deja el veredicto (`True` = turno terminado).
@@ -41,6 +52,12 @@ impl Probe {
     }
 
     pub fn done(&self) -> bool {
+        let mut checks = self.checks.lock();
+        if *checks > 0 {
+            *checks -= 1;
+            return *checks == 0;
+        }
+        drop(checks);
         self.value.lock().is_some()
     }
 
@@ -53,8 +70,12 @@ impl Probe {
     }
 }
 
-/// `end_probe(pcm) -> Future[bool] | None`.
-pub type EndProbe = Box<dyn Fn(&[u8]) -> Option<Probe> + Send + Sync>;
+/// `end_probe(pcm) -> Future[bool] | None`. Recibe el estado actual porque el
+/// oráculo de Python lee `_silence_run` al registrar la llamada.
+pub type EndProbe = Box<dyn Fn(&[u8], &SegmenterState) -> Option<Probe> + Send + Sync>;
+
+/// Reloj inyectable (`time.monotonic` en las pruebas y el oráculo).
+pub type Clock = Arc<dyn Fn() -> f64 + Send + Sync>;
 
 /// Valores de arranque de `Segmenter.__init__`.
 pub struct SegmenterConfig {
@@ -68,6 +89,10 @@ pub struct SegmenterConfig {
     pub quick_silence_secs: f64,
     pub min_voiced_secs: f64,
     pub probe_interval_secs: f64,
+    /// `None` = reloj monótono del proceso.
+    // DECISION: reloj inyectable para congelar `time.monotonic` como hace el
+    // oráculo (`parity/gen/audio.py`); la aplicación no lo usa.
+    pub clock: Option<Clock>,
 }
 
 impl Default for SegmenterConfig {
@@ -83,6 +108,7 @@ impl Default for SegmenterConfig {
             quick_silence_secs: 0.35,
             min_voiced_secs: 0.15,
             probe_interval_secs: 0.3,
+            clock: None,
         }
     }
 }
@@ -91,6 +117,23 @@ impl Default for SegmenterConfig {
 fn monotonic_secs() -> f64 {
     static BASE: OnceLock<Instant> = OnceLock::new();
     BASE.get_or_init(Instant::now).elapsed().as_secs_f64()
+}
+
+/// Instantánea del estado interno, para las pruebas de paridad y los eventos.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SegmenterState {
+    pub in_speech: bool,
+    pub noise: f64,
+    pub pre_roll_secs: f64,
+    pub last_close_reason: String,
+    pub last_speech_end: Option<f64>,
+    pub start_threshold: f64,
+    pub end_threshold: f64,
+    pub speech_secs: f64,
+    pub silence_secs: f64,
+    pub speech_run: usize,
+    pub pre_chunks: usize,
+    pub pre_capacity: usize,
 }
 
 /// `int(seconds / CHUNK_SECS)` con el mínimo de un chunk.
@@ -132,6 +175,7 @@ pub struct Segmenter {
     pub pre_roll_secs: f64,
     pub last_speech_end: Option<f64>,
     pub noise: f64,
+    clock: Option<Clock>,
     voiced_secs: f64,
     pending: Option<Probe>,
     /// Silencio acumulado (segundos) en el que toca la próxima sonda.
@@ -174,6 +218,7 @@ impl Segmenter {
             pre_roll_secs: config.pre_roll_secs,
             pre: VecDeque::with_capacity(pre_capacity),
             pre_capacity,
+            clock: config.clock,
             buf: Vec::new(),
             in_speech: false,
             speech_run: 0,
@@ -204,7 +249,10 @@ impl Segmenter {
     /// `Some(vec![])` es un turno descartado (clic, soplido): avisa a quien
     /// escucha de que el arranque de voz no llegó a frase.
     pub fn feed(&mut self, chunk: &[u8], level: f64) -> (Option<Vec<u8>>, bool) {
-        let now = monotonic_secs();
+        let now = match &self.clock {
+            Some(clock) => clock(),
+            None => monotonic_secs(),
+        };
         if !self.in_speech {
             self.learn_noise(level);
             self.push_pre(chunk);
@@ -341,7 +389,11 @@ impl Segmenter {
         self.schedule_probe();
         let start = self.buf.len().saturating_sub(PROBE_CHUNKS);
         let tail = self.buf[start..].concat();
-        let probe = self.end_probe.as_ref().and_then(|probe| probe(&tail));
+        let state = self.snapshot();
+        let probe = self
+            .end_probe
+            .as_ref()
+            .and_then(|probe| probe(&tail, &state));
         self.pending = probe;
         false
     }
@@ -354,6 +406,31 @@ impl Segmenter {
         let start = (self.noise * self.noise_multiplier).max(self.min_rms);
         let end = (self.noise * 1.1).max(self.min_rms * 0.6);
         (start, end)
+    }
+
+    /// Copia del estado interno, como los `_campos` privados del Python.
+    // DECISION: el oráculo compara `_silence_run`, `_pre.maxlen` y compañía;
+    // se exponen en una instantánea en vez de hacer públicos los campos.
+    pub fn state(&self) -> SegmenterState {
+        self.snapshot()
+    }
+
+    fn snapshot(&self) -> SegmenterState {
+        let (start_threshold, end_threshold) = self.thresholds();
+        SegmenterState {
+            in_speech: self.in_speech,
+            noise: self.noise,
+            pre_roll_secs: self.pre_roll_secs,
+            last_close_reason: self.last_close_reason.clone(),
+            last_speech_end: self.last_speech_end,
+            start_threshold,
+            end_threshold,
+            speech_secs: self.speech_secs,
+            silence_secs: self.silence_run,
+            speech_run: self.speech_run,
+            pre_chunks: self.pre.len(),
+            pre_capacity: self.pre_capacity,
+        }
     }
 
     pub fn flush(&mut self) -> Option<Vec<u8>> {

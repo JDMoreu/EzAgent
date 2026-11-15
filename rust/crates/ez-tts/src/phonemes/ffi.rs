@@ -30,6 +30,16 @@ type Info = unsafe extern "C" fn(*mut *const c_char) -> *const c_char;
 // SAFETY: same origin as the signatures above.
 type SetVoiceByName = unsafe extern "C" fn(*const c_char) -> i32;
 type TextToPhonemes = unsafe extern "C" fn(*mut *mut c_char, i32, i32) -> *const c_char;
+/// `espeak_ListVoices`: array of pointers terminated by NULL.
+type ListVoices = unsafe extern "C" fn(*const VoiceSpec) -> *const *const VoiceSpec;
+
+/// First three fields of `espeak_VOICE` (the rest is not read).
+#[repr(C)]
+struct VoiceSpec {
+    name: *const c_char,
+    languages: *const c_char,
+    identifier: *const c_char,
+}
 
 /// One loaded module. Function pointers stay valid while the library is alive.
 pub struct Library {
@@ -93,6 +103,7 @@ struct Api {
     terminate: Terminate,
     info: Info,
     set_voice_by_name: SetVoiceByName,
+    list_voices: ListVoices,
     text_to_phonemes: TextToPhonemes,
 }
 
@@ -113,6 +124,7 @@ impl Espeak {
             terminate: bind!(library, "espeak_Terminate", Terminate),
             info: bind!(library, "espeak_Info", Info),
             set_voice_by_name: bind!(library, "espeak_SetVoiceByName", SetVoiceByName),
+            list_voices: bind!(library, "espeak_ListVoices", ListVoices),
             text_to_phonemes: bind!(library, "espeak_TextToPhonemes", TextToPhonemes),
         };
         let version = version_of(&api)?;
@@ -156,14 +168,51 @@ impl Espeak {
         self.version
     }
 
-    /// `EspeakWrapper.set_voice("es")`: the voice name is the language code.
+    /// `EspeakWrapper.set_voice("es")`: `en-gb`/`fr-fr` se resuelven por la
+    /// lista de voces de espeak y se cargan por su identificador, como el
+    /// `phonemizer` de Python.
     pub fn set_voice(&mut self, code: &str) -> Result<(), String> {
         if self.voice.as_deref() == Some(code) {
             return Ok(());
         }
-        if self.try_voice(code)? || self.try_voice(&code.to_lowercase())? {
-            self.voice = Some(code.to_string());
-            return Ok(());
+        let identifier = self.voice_identifier(code)?;
+        if !self.try_voice(&identifier)? {
+            return Err(format!("failed to load voice \"{code}\""));
+        }
+        self.voice = Some(code.to_string());
+        Ok(())
+    }
+
+    /// First non-mbrola voice whose language is `code`, like phonemizer.
+    fn voice_identifier(&self, code: &str) -> Result<String, String> {
+        // SAFETY: a null spec asks for every voice; espeak returns a
+        // NULL-terminated array of valid pointers that stays valid until the
+        // next call to the library.
+        let voices = unsafe { (self.api.list_voices)(std::ptr::null()) };
+        if voices.is_null() {
+            return Err(format!("invalid voice code \"{code}\""));
+        }
+        let mut index = 0_isize;
+        loop {
+            // SAFETY: the array is NULL terminated; `index` stays inside it.
+            let voice = unsafe { *voices.offset(index) };
+            if voice.is_null() {
+                break;
+            }
+            // SAFETY: every non-null entry points to an `espeak_VOICE`.
+            let voice = unsafe { &*voice };
+            if !voice.languages.is_null() && !voice.identifier.is_null() {
+                // SAFETY: both fields are NUL-terminated strings owned by espeak.
+                let languages = unsafe { CStr::from_ptr(voice.languages) }.to_string_lossy();
+                // SAFETY: same as above.
+                let identifier = unsafe { CStr::from_ptr(voice.identifier) }.to_string_lossy();
+                let language: String = languages.chars().skip(1).collect();
+                let mbrola = identifier.replace('\\', "/").starts_with("mb/");
+                if !mbrola && language == code {
+                    return Ok(identifier.to_string());
+                }
+            }
+            index += 1;
         }
         Err(format!("invalid voice code \"{code}\""))
     }

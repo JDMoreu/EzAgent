@@ -49,9 +49,8 @@ pub fn token_edges(duration: &[i64], samples: usize) -> Result<Vec<i64>, String>
         frames.push(total);
     }
     if total == 0 {
-        // DECISION: the Python divides by zero and casts NaN; an error keeps
-        // a broken model from poisoning every timing.
-        return Err("duration is empty".to_string());
+        // `0 * (samples / 0)` es NaN y `astype(int64)` da el mínimo de i64.
+        return Ok(vec![i64::MIN; frames.len()]);
     }
     let ratio = samples as f64 / total as f64;
     Ok(frames
@@ -83,12 +82,19 @@ fn quietest(
     offset: usize,
     candidates: &[usize],
     sample_rate: u32,
-) -> usize {
+) -> Result<usize, String> {
     let half = (QUIET_WINDOW * f64::from(sample_rate)) as usize;
     let mut best = candidates.first().copied().unwrap_or(0);
     let mut quietest: Option<f32> = None;
     for token in candidates {
-        let at = edges[token - offset + 1].max(0) as usize;
+        let index = token - offset + 1;
+        let at = *edges.get(index).ok_or_else(|| {
+            format!(
+                "index {index} is out of bounds for axis 0 with size {}",
+                edges.len()
+            )
+        })?;
+        let at = at.max(0) as usize;
         let start = at.saturating_sub(half);
         let end = (at + half).min(audio.len());
         let frame = audio.get(start..end).unwrap_or(&[]);
@@ -102,7 +108,7 @@ fn quietest(
             quietest = Some(energy);
         }
     }
-    best
+    Ok(best)
 }
 
 /// `_join`: crossfade the kept regions, reporting where each one starts.
@@ -190,6 +196,10 @@ pub fn synthesize<F>(
 where
     F: FnMut(&[i64]) -> Result<(Vec<f32>, Vec<i64>), String>,
 {
+    if tokens.is_empty() {
+        // `_join([])` indexa `pieces[0]`.
+        return Err("list index out of range".to_string());
+    }
     let mut pieces: Vec<Vec<f32>> = Vec::new();
     let mut spans: Vec<Vec<i64>> = Vec::new();
     let mut start = 0_usize;
@@ -201,7 +211,7 @@ where
         let edges = token_edges(&duration, audio.len())?;
         if end < tokens.len() {
             let found = candidates(tokens, stops, spaces, end, start, last);
-            end = quietest(&audio, &edges, first, &found, sample_rate);
+            end = quietest(&audio, &edges, first, &found, sample_rate)?;
         }
         if end <= start {
             return Err(format!("window {start}:{end} makes no progress"));

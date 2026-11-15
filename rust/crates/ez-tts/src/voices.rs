@@ -132,6 +132,12 @@ impl Voices {
         self.styles.get(name)
     }
 
+    /// `self.voices[name]`: error de `NpzFile` cuando la voz no existe.
+    pub fn style(&self, name: &str) -> Result<&Style, String> {
+        self.get(name)
+            .ok_or_else(|| format!("'{name} is not a file in the archive'"))
+    }
+
     /// `sorted(self.voices.keys())`: Python sorts by code point.
     pub fn names(&self) -> Vec<String> {
         let mut names: Vec<String> = self.styles.keys().cloned().collect();

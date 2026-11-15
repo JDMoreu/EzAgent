@@ -511,7 +511,12 @@ fn resample_pcm(samples: &[i16], source_rate: u32, device_rate: u32) -> Vec<i16>
         .iter()
         .map(|sample| f32::from(*sample) / 32768.0)
         .collect();
-    ez_audio::resample::resample_linear(&source, source_rate, device_rate)
+    let Ok(resampled) =
+        ez_audio::resample::resample_linear(&source, source_rate as i32, device_rate as i32)
+    else {
+        return samples.to_vec();
+    };
+    resampled
         .into_iter()
         .map(|value| (value as f32 * 32768.0).clamp(-32768.0, 32767.0) as i16)
         .collect()

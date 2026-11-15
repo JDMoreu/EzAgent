@@ -169,7 +169,11 @@ fn power_spectrum(windowed: &[f64]) -> Vec<f64> {
 }
 
 /// `np.pad(audio, N_FFT // 2, mode="reflect")`.
-fn reflect_pad(audio: &[f64], pad: usize) -> Vec<f64> {
+fn reflect_pad(audio: &[f64], pad: usize) -> Result<Vec<f64>, String> {
+    const EMPTY: &str = "can't extend empty axis 0 using modes other than 'constant' or 'empty'";
+    if audio.is_empty() {
+        return Err(EMPTY.to_string());
+    }
     let mut padded = Vec::with_capacity(audio.len() + 2 * pad);
     if audio.len() > pad {
         for index in (1..=pad).rev() {
@@ -186,15 +190,18 @@ fn reflect_pad(audio: &[f64], pad: usize) -> Vec<f64> {
         padded.extend_from_slice(audio);
         padded.resize(pad + audio.len() + pad, 0.0);
     }
-    padded
+    Ok(padded)
 }
 
 /// Log-mel de Whisper (80 x 800) de 8 s de audio a 16 kHz, ya normalizado.
-pub fn log_mel(audio: &[f64]) -> Vec<f32> {
-    let padded = reflect_pad(audio, N_FFT / 2);
+pub fn log_mel(audio: &[f64]) -> Result<Vec<f32>, String> {
+    let padded = reflect_pad(audio, N_FFT / 2)?;
     let frames = 1 + padded.len().saturating_sub(N_FFT) / HOP;
     if frames <= 1 {
-        return Vec::new();
+        // `spec[:, :-1]` vacío y `spec.max()` revienta igual que en numpy.
+        return Err(
+            "zero-size array to reduction operation maximum which has no identity".to_string(),
+        );
     }
     let window = hann_window();
     let filters = mel_filters();
@@ -226,23 +233,28 @@ pub fn log_mel(audio: &[f64]) -> Vec<f32> {
         }
     }
     let top = spec.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    spec.iter()
+    Ok(spec
+        .iter()
         .map(|value| ((value.max(top - 8.0) + 4.0) / 4.0) as f32)
-        .collect()
+        .collect())
 }
 
 /// PCM int16 mono -> entrada del modelo (1 x 80 x 800).
-pub fn prepare(pcm: &[u8], rate: u32) -> TurnFeatures {
-    // DECISION: `np.frombuffer` lanza con un byte suelto; aquí se descarta ese
-    // byte, igual que `_even` hace con el audio de captura.
+///
+/// `rate` es `i32` como el `rate` de Python: una tasa negativa remuestrea a una
+/// sola muestra, y la cero reproduce el `ZeroDivisionError`.
+pub fn prepare(pcm: &[u8], rate: i32) -> Result<TurnFeatures, String> {
+    if !pcm.len().is_multiple_of(2) {
+        return Err("buffer size must be a multiple of element size".to_string());
+    }
     let samples: Vec<f32> = pcm
         .as_chunks::<2>()
         .0
         .iter()
         .map(|pair| i16::from_le_bytes(*pair) as f32 / 32768.0)
         .collect();
-    let audio: Vec<f64> = if rate != SAMPLE_RATE && !samples.is_empty() {
-        resample_linear(&samples, rate, SAMPLE_RATE)
+    let audio: Vec<f64> = if rate != SAMPLE_RATE as i32 && !samples.is_empty() {
+        resample_linear(&samples, rate, SAMPLE_RATE as i32)?
     } else {
         samples.iter().map(|value| f64::from(*value)).collect()
     };
@@ -262,9 +274,9 @@ pub fn prepare(pcm: &[u8], rate: u32) -> TurnFeatures {
     for value in &mut window {
         *value = (*value - mean) / scale;
     }
-    TurnFeatures {
-        data: log_mel(&window),
-    }
+    Ok(TurnFeatures {
+        data: log_mel(&window)?,
+    })
 }
 
 #[cfg(test)]
@@ -324,7 +336,7 @@ mod tests {
 
     #[test]
     fn silence_is_flat_after_normalization() {
-        let mel = log_mel(&vec![0.0; N_SAMPLES]);
+        let mel = log_mel(&vec![0.0; N_SAMPLES]).expect("silencio válido");
         assert_eq!(mel.len(), N_MELS * N_FRAMES);
         assert!(mel.iter().all(|value| (value + 1.5).abs() < 1e-5));
     }
@@ -344,7 +356,7 @@ mod tests {
             };
             pcm.extend_from_slice(&value.to_le_bytes());
         }
-        let features = prepare(&pcm, SAMPLE_RATE);
+        let features = prepare(&pcm, SAMPLE_RATE as i32).expect("tasa válida");
         assert_eq!(features.len(), N_MELS * N_FRAMES);
         assert!(features.data.iter().all(|value| value.is_finite()));
         // La ventana son los últimos 8 s: el primer fotograma es silencio y el
@@ -363,7 +375,7 @@ mod tests {
 
     #[test]
     fn empty_pcm_still_produces_a_valid_input() {
-        let features = prepare(&[], SAMPLE_RATE);
+        let features = prepare(&[], SAMPLE_RATE as i32).expect("tasa válida");
         assert_eq!(features.len(), N_MELS * N_FRAMES);
         assert!(features.data.iter().all(|value| (value + 1.5).abs() < 1e-5));
     }
@@ -378,8 +390,8 @@ mod tests {
             loud.extend_from_slice(&value.to_le_bytes());
             soft.extend_from_slice(&((f64::from(value) * 0.5) as i16).to_le_bytes());
         }
-        let loud = prepare(&loud, SAMPLE_RATE);
-        let soft = prepare(&soft, SAMPLE_RATE);
+        let loud = prepare(&loud, SAMPLE_RATE as i32).expect("tasa válida");
+        let soft = prepare(&soft, SAMPLE_RATE as i32).expect("tasa válida");
         for (loud, soft) in loud.data.iter().zip(soft.data) {
             assert!((loud - soft).abs() < 0.01, "{loud} vs {soft}");
         }

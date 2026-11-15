@@ -134,18 +134,25 @@ fn tokenizer_phonemize_filters_and_strips() {
 #[test]
 fn chunker_balances_batches_like_the_python() {
     assert_eq!(
-        chunker::split_phonemes("a b c d e f g h i j", 5),
+        chunker::split_phonemes("a b c d e f g h i j", 5).expect("división válida"),
         vec!["a b c", "d e f", "g h i", "j"]
     );
     assert_eq!(
-        chunker::split_phonemes("hola mundo. esto es una prueba, con calma; y mas", 20),
+        chunker::split_phonemes("hola mundo. esto es una prueba, con calma; y mas", 20)
+            .expect("división válida"),
         vec!["hola mundo.", "esto es una prueba,", "con calma; y mas"]
     );
     assert_eq!(
-        chunker::split_phonemes(&"x".repeat(12), 5),
+        chunker::split_phonemes(&"x".repeat(12), 5).expect("división válida"),
         vec!["xxxxx", "xxxxx", "xx"]
     );
-    assert!(chunker::split_phonemes("   ", 5).is_empty());
+    assert!(chunker::split_phonemes("   ", 5)
+        .expect("división válida")
+        .is_empty());
+    assert_eq!(
+        chunker::split_phonemes("a", 0),
+        Err("range() arg 3 must not be zero".to_string())
+    );
     assert_eq!(chunker::pause_after("hola.", 0.3, 0.1), 0.3);
     assert_eq!(chunker::pause_after("hola,", 0.3, 0.1), 0.1);
     assert_eq!(chunker::pause_after("hola", 0.3, 0.1), 0.0);
@@ -172,7 +179,8 @@ fn token_edges_and_timings_follow_numpy() {
     assert_eq!(edges, vec![0, 200, 500, 600, 1_000]);
     let edges = sliding::token_edges(&[1, 1, 1], 10).expect("redondeo");
     assert_eq!(edges, vec![0, 3, 7, 10]);
-    assert!(sliding::token_edges(&[], 100).is_err());
+    // 0 * (samples / 0) es NaN: `astype(int64)` da el mínimo.
+    assert_eq!(sliding::token_edges(&[], 100), Ok(vec![i64::MIN]));
     let spoken = sliding::timings("ab", &[0, 200, 500, 600, 1_000], 100);
     assert_eq!(spoken.len(), 2);
     assert_eq!(
@@ -294,14 +302,14 @@ fn pauses_are_inserted_inside_the_model_silence() {
             end: 0.6,
         },
     ];
-    let (output, moved) = pauses::insert(&audio, &timings, 24_000, 0.3, 0.1);
+    let (output, moved) = pauses::insert(&audio, &timings, 24_000, 0.3, 0.1).expect("pausas");
     assert_eq!(output.len(), 28_800);
     assert_eq!((moved[0].start, moved[0].end), (0.4, 0.5));
     assert_eq!((moved[1].start, moved[1].end), (0.7, 0.7999999999999999));
     assert_eq!(pauses::wanted_after(".", 0.3, 0.1), 0.3);
     assert_eq!(pauses::wanted_after(",", 0.3, 0.1), 0.1);
     assert_eq!(pauses::wanted_after("a", 0.3, 0.1), 0.0);
-    let (same, kept) = pauses::insert(&audio, &timings[..0], 24_000, 0.3, 0.1);
+    let (same, kept) = pauses::insert(&audio, &timings[..0], 24_000, 0.3, 0.1).expect("sin pausas");
     assert_eq!(same.len(), audio.len());
     assert!(kept.is_empty());
 }

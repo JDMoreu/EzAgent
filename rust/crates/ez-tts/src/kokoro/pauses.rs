@@ -65,11 +65,17 @@ pub fn insert(
     sample_rate: u32,
     sentence: f64,
     clause: f64,
-) -> (Vec<f32>, Vec<Timing>) {
+) -> Result<(Vec<f32>, Vec<Timing>), String> {
     if timings.is_empty() || (sentence == 0.0 && clause == 0.0) {
-        return (audio.to_vec(), timings.to_vec());
+        return Ok((audio.to_vec(), timings.to_vec()));
     }
     let frame = ((FRAME_SECS * f64::from(sample_rate)) as usize).max(1);
+    if audio.len() / frame == 0 {
+        // `_quiet_frames` hace `loudness.max()` sobre un array vacío.
+        return Err(
+            "zero-size array to reduction operation maximum which has no identity".to_string(),
+        );
+    }
     let quiet = quiet_frames(audio, frame);
     let rate = f64::from(sample_rate);
 
@@ -103,7 +109,7 @@ pub fn insert(
     }
 
     if parts.is_empty() {
-        return (audio.to_vec(), timings.to_vec());
+        return Ok((audio.to_vec(), timings.to_vec()));
     }
     parts.push(audio.get(cut..).unwrap_or(&[]));
     let mut output = Vec::new();
@@ -113,5 +119,5 @@ pub fn insert(
             output.extend_from_slice(silence);
         }
     }
-    (output, moved)
+    Ok((output, moved))
 }
