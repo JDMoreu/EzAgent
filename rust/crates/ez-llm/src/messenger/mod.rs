@@ -13,6 +13,7 @@
 mod constants;
 mod history;
 pub mod notices;
+mod parity;
 mod recovery;
 mod request;
 mod tool_loop;
@@ -28,7 +29,10 @@ use ez_core::pyvalue::text_or_empty;
 use serde_json::{json, Value};
 
 pub use request::LlmClient;
-pub use tool_loop::{AskMode, AskStream};
+pub use request::{
+    max_tokens_with, notice, remaining_tools, seal_tool_calls, user_content, with_volatile,
+};
+pub use tool_loop::{tool_ack, AskMode, AskStream};
 
 use history::HistoryState;
 use request::build_client;
@@ -197,7 +201,7 @@ pub struct MessengerCallbacks {
 
 /// Vista de la configuración que usa un turno; se toma con el lock de `VoiceConfig`.
 #[derive(Debug, Clone)]
-pub(crate) struct LlmSettings {
+pub struct LlmSettings {
     pub provider: String,
     pub model: String,
     pub base_url: String,
@@ -222,7 +226,7 @@ fn float_value(value: Option<&Value>) -> Option<f64> {
 }
 
 impl LlmSettings {
-    pub(crate) fn from_config(cfg: &VoiceConfig) -> Self {
+    pub fn from_config(cfg: &VoiceConfig) -> Self {
         Self {
             provider: text_or_empty(cfg.get("llm_provider")),
             model: text_or_empty(cfg.get("llm_model")),
@@ -247,7 +251,7 @@ impl LlmSettings {
     }
 
     /// `_request_timeout`: 1-600 s, 30 si no es un número válido.
-    pub(crate) fn request_timeout(&self) -> f64 {
+    pub fn request_timeout(&self) -> f64 {
         if (1.0..=600.0).contains(&self.timeout_secs) {
             self.timeout_secs
         } else {
@@ -256,7 +260,7 @@ impl LlmSettings {
     }
 
     /// `_turn_timeout`: 1-3600 s, 120 si no es un número válido.
-    pub(crate) fn turn_timeout(&self) -> f64 {
+    pub fn turn_timeout(&self) -> f64 {
         if (1.0..=3600.0).contains(&self.turn_timeout_secs) {
             self.turn_timeout_secs
         } else {
@@ -265,7 +269,7 @@ impl LlmSettings {
     }
 
     /// `_tool_round_limit`: entre 1 y 12 vueltas, 8 si no es un entero válido.
-    pub(crate) fn tool_round_limit(&self) -> usize {
+    pub fn tool_round_limit(&self) -> usize {
         self.max_tool_rounds.clamp(1, 12) as usize
     }
 }
@@ -373,7 +377,7 @@ impl Messenger {
         *lock(&self.shared.cfg) = cfg;
     }
 
-    pub(crate) fn settings(&self) -> LlmSettings {
+    pub fn settings(&self) -> LlmSettings {
         LlmSettings::from_config(&lock(&self.shared.cfg))
     }
 
@@ -500,7 +504,7 @@ claridad que no puedes ejecutarla en este momento."
     }
 
     /// `_prompt_parts`: `(prompt estable, datos volátiles)`.
-    pub(crate) fn prompt_parts(&self, runtime: &Arc<dyn AgentRuntimeApi>) -> (String, String) {
+    pub fn prompt_parts(&self, runtime: &Arc<dyn AgentRuntimeApi>) -> (String, String) {
         match runtime.prompt_parts() {
             Ok(parts) => parts,
             // DECISION (del Python): si el runtime no separa, todo es estable.
@@ -509,7 +513,7 @@ claridad que no puedes ejecutarla en este momento."
     }
 
     /// `_check_cancel`.
-    pub(crate) fn check_cancel(&self, token: &TurnToken) -> Result<(), TurnError> {
+    pub fn check_cancel(&self, token: &TurnToken) -> Result<(), TurnError> {
         if token.is_cancelled() {
             return Err(TurnError::cancelled("turno cancelado por el usuario"));
         }

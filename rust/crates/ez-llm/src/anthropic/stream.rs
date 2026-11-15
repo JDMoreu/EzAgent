@@ -6,13 +6,12 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufRead, BufReader, Read};
 
-use ez_core::config::int_value;
 use ez_core::pyloads;
-use ez_core::pyvalue::{py_strip, python_str, truthy};
-use serde_json::{Map, Value};
+use ez_core::pyvalue::{py_strip, python_int, python_repr, python_str, truthy};
+use serde_json::{json, Map, Value};
 
 use super::{str_or_empty, STOP_REASONS};
-use crate::errors::LlmError;
+use crate::errors::{py_type_name, ErrorKind, LlmError};
 use crate::openai::{ChatStream, Chunk, ToolCallDelta};
 use crate::sse::SseReader;
 
@@ -124,68 +123,107 @@ fn translate_event(event: &Value, state: &mut TranslateState) -> Result<Translat
     if kind == Some("error") {
         return error_translation(object);
     }
-    let block_index = object.get("index").map_or(0, |value| int_value(value, 0));
+    let block_index = block_index(object)?;
     match kind {
-        Some("content_block_start") => Ok(block_start(object, block_index, state)),
-        Some("content_block_delta") => Ok(block_delta(object, block_index, state)),
+        Some("content_block_start") => block_start(object, block_index, state),
+        Some("content_block_delta") => block_delta(object, block_index, state),
         Some("content_block_stop") => Ok(block_stop(block_index, state)),
-        Some("message_delta") => Ok(message_delta(object)),
+        Some("message_delta") => message_delta(object),
         Some("message_stop") => Ok(Translated::Stop),
         _ => Ok(Translated::Nothing),
     }
 }
 
+/// `int(event.get("index") or 0)`; un texto que no es un entero es `ValueError`.
+fn block_index(object: &Map<String, Value>) -> Result<i64, LlmError> {
+    let Some(value) = object.get("index").filter(|value| truthy(value)) else {
+        return Ok(0);
+    };
+    let index = match value {
+        Value::Bool(flag) => i64::from(*flag),
+        Value::Number(number) => number
+            .as_i64()
+            .or_else(|| number.as_f64().map(|float| float.trunc() as i64))
+            .unwrap_or(0),
+        Value::String(text) => python_int(text).ok_or_else(|| {
+            LlmError::new(
+                ErrorKind::Value,
+                format!(
+                    "invalid literal for int() with base 10: {}",
+                    python_repr(value)
+                ),
+            )
+        })?,
+        other => {
+            return Err(LlmError::new(
+                ErrorKind::Value,
+                format!(
+                    "int() argument must be a string, a bytes-like object or a real number, \
+                     not '{}'",
+                    py_type_name(other)
+                ),
+            ));
+        }
+    };
+    Ok(index)
+}
+
+/// `event.get(key) or {}`, pero fallando como el Python si no es un objeto.
+fn object_field(object: &Map<String, Value>, key: &str) -> Result<Map<String, Value>, LlmError> {
+    let value = object
+        .get(key)
+        .filter(|value| truthy(value))
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    match value {
+        Value::Object(map) => Ok(map),
+        other => Err(LlmError::new(
+            ErrorKind::Attribute,
+            format!("'{}' object has no attribute 'get'", py_type_name(&other)),
+        )),
+    }
+}
+
 fn error_translation(object: &Map<String, Value>) -> Result<Translated, LlmError> {
-    let error = object.get("error").and_then(Value::as_object);
+    let error = object_field(object, "error")?;
     let error_type = error
-        .and_then(|error| error.get("type"))
+        .get("type")
         .map(python_str)
         .unwrap_or_else(|| "error".to_string());
-    let message = error
-        .and_then(|error| error.get("message"))
-        .map(python_str)
-        .unwrap_or_default();
-    Err(LlmError::other(format!(
-        "Anthropic: {error_type}: {message}"
-    )))
+    let message = error.get("message").map(python_str).unwrap_or_default();
+    Err(LlmError::new(
+        ErrorKind::Api,
+        format!("Anthropic: {error_type}: {message}"),
+    ))
 }
 
 fn block_start(
     object: &Map<String, Value>,
     block_index: i64,
     state: &mut TranslateState,
-) -> Translated {
-    let block = object.get("content_block").and_then(Value::as_object);
-    match block
-        .and_then(|block| block.get("type"))
-        .and_then(Value::as_str)
-    {
+) -> Result<Translated, LlmError> {
+    let block = object_field(object, "content_block")?;
+    match block.get("type").and_then(Value::as_str) {
         Some("tool_use") => {
             let position = state.tool_index.len();
             state.tool_index.insert(block_index, position);
-            Translated::Chunk(tool_chunk(
+            Ok(Translated::Chunk(tool_chunk(
                 position,
-                block
-                    .and_then(|block| block.get("id"))
-                    .and_then(Value::as_str),
-                block
-                    .and_then(|block| block.get("name"))
-                    .and_then(Value::as_str),
+                block.get("id").and_then(Value::as_str),
+                block.get("name").and_then(Value::as_str),
                 "",
-            ))
+            )))
         }
         Some("text") => {
-            let text = block
-                .and_then(|block| block.get("text"))
-                .filter(|value| truthy(value));
-            text.map_or(Translated::Nothing, |text| {
+            let text = block.get("text").filter(|value| truthy(value));
+            Ok(text.map_or(Translated::Nothing, |text| {
                 Translated::Chunk(Chunk {
                     content: Some(python_str(text)),
                     ..Chunk::default()
                 })
-            })
+            }))
         }
-        _ => Translated::Nothing,
+        _ => Ok(Translated::Nothing),
     }
 }
 
@@ -193,32 +231,30 @@ fn block_delta(
     object: &Map<String, Value>,
     block_index: i64,
     state: &mut TranslateState,
-) -> Translated {
-    let delta = object.get("delta").and_then(Value::as_object);
-    let delta_type = delta
-        .and_then(|delta| delta.get("type"))
-        .and_then(Value::as_str);
+) -> Result<Translated, LlmError> {
+    let delta = object_field(object, "delta")?;
+    let delta_type = delta.get("type").and_then(Value::as_str);
     if delta_type == Some("text_delta") {
-        let text = delta
-            .and_then(|delta| delta.get("text"))
-            .filter(|value| truthy(value));
-        return text.map_or(Translated::Nothing, |text| {
+        let text = delta.get("text").filter(|value| truthy(value));
+        return Ok(text.map_or(Translated::Nothing, |text| {
             Translated::Chunk(Chunk {
                 content: Some(python_str(text)),
                 ..Chunk::default()
             })
-        });
+        }));
     }
     if delta_type == Some("input_json_delta") {
         if let Some(position) = state.tool_index.get(&block_index).copied() {
-            let partial = str_or_empty(delta.and_then(|delta| delta.get("partial_json")));
+            let partial = str_or_empty(delta.get("partial_json"));
             if !partial.is_empty() {
                 state.got_args.insert(block_index);
-                return Translated::Chunk(tool_chunk(position, None, None, &partial));
+                return Ok(Translated::Chunk(tool_chunk(
+                    position, None, None, &partial,
+                )));
             }
         }
     }
-    Translated::Nothing
+    Ok(Translated::Nothing)
 }
 
 fn block_stop(block_index: i64, state: &TranslateState) -> Translated {
@@ -231,21 +267,19 @@ fn block_stop(block_index: i64, state: &TranslateState) -> Translated {
     }
 }
 
-fn message_delta(object: &Map<String, Value>) -> Translated {
-    let stop = object
-        .get("delta")
-        .and_then(|delta| delta.get("stop_reason"))
-        .filter(|value| truthy(value));
+fn message_delta(object: &Map<String, Value>) -> Result<Translated, LlmError> {
+    let delta = object_field(object, "delta")?;
+    let stop = delta.get("stop_reason").filter(|value| truthy(value));
     let usage = object.get("usage");
     if stop.is_none() && !usage.is_some_and(truthy) {
-        return Translated::Nothing;
+        return Ok(Translated::Nothing);
     }
     let reason = stop.map(|stop| stop_reason(&python_str(stop)));
-    Translated::Chunk(Chunk {
+    Ok(Translated::Chunk(Chunk {
         finish_reason: reason,
         usage: usage.filter(|value| !value.is_null()).cloned(),
         ..Chunk::default()
-    })
+    }))
 }
 
 fn tool_chunk(index: usize, call_id: Option<&str>, name: Option<&str>, arguments: &str) -> Chunk {

@@ -36,6 +36,20 @@ fn closing(character: char) -> Option<char> {
     }
 }
 
+/// `type(value).__name__` para los mensajes de error de CPython.
+fn py_type_name(value: &Value) -> &'static str {
+    crate::errors::py_type_name(value)
+}
+
+/// `close_json` con la entrada tal como la pasa el fixture: un valor que no es
+/// texto reproduce el `TypeError` de CPython.
+pub fn close_json_value(raw: &Value) -> Result<String, String> {
+    match raw {
+        Value::String(text) => Ok(close_json(text)),
+        other => Err(format!("'{}' object is not iterable", py_type_name(other))),
+    }
+}
+
 /// Cierra un JSON cortado: comillas, corchetes y llaves que faltan.
 pub fn close_json(raw: &str) -> String {
     let mut stack: Vec<char> = Vec::new();
@@ -105,10 +119,28 @@ fn tool_calls_mut(message: &mut Value) -> impl Iterator<Item = &mut Value> {
 
 /// Deja válidos los argumentos de todas las llamadas; devuelve cuántas arregló.
 pub fn sanitize_history(messages: &mut [Value]) -> usize {
+    sanitize_history_checked(messages).unwrap_or(0)
+}
+
+/// `sanitize_history` que reproduce el `AttributeError` de CPython cuando un
+/// mensaje o una llamada no son objetos.
+pub fn sanitize_history_checked(messages: &mut [Value]) -> Result<usize, String> {
     let mut fixed = 0;
     for message in messages {
+        if !message.is_object() {
+            return Err(format!(
+                "'{}' object has no attribute 'get'",
+                py_type_name(message)
+            ));
+        }
         for call in tool_calls_mut(message) {
             let Some(function) = call.get_mut("function").and_then(Value::as_object_mut) else {
+                if !call.is_object() {
+                    return Err(format!(
+                        "'{}' object has no attribute 'get'",
+                        py_type_name(call)
+                    ));
+                }
                 continue;
             };
             let raw = function.get("arguments").and_then(Value::as_str);
@@ -128,7 +160,7 @@ pub fn sanitize_history(messages: &mut [Value]) -> usize {
             fixed += 1;
         }
     }
-    fixed
+    Ok(fixed)
 }
 
 /// ¿Es el 500 del servidor por argumentos de herramienta que no son JSON?
@@ -254,6 +286,18 @@ fn is_empty_assistant(message: &Value) -> bool {
 /// obtener resultado); se descartan resultados huérfanos, se unen `user`
 /// seguidos y no se envían `assistant` vacíos.
 pub fn repair_structure(messages: &mut Vec<Value>) -> usize {
+    repair_structure_checked(messages).unwrap_or(0)
+}
+
+/// `repair_structure` que reproduce el `AttributeError` de CPython cuando un
+/// mensaje no es un objeto.
+pub fn repair_structure_checked(messages: &mut Vec<Value>) -> Result<usize, String> {
+    if let Some(message) = messages.iter().find(|message| !message.is_object()) {
+        return Err(format!(
+            "'{}' object has no attribute 'get'",
+            py_type_name(message)
+        ));
+    }
     let mut changes = assign_call_ids(messages);
     let (mut results, original_tools) = tool_results(messages);
     let mut repaired: Vec<Value> = Vec::new();
@@ -297,7 +341,7 @@ pub fn repair_structure(messages: &mut Vec<Value>) -> usize {
     changes += original_tools - reused; // resultados sin llamada: fuera
     let (merged, repaired) = merge_user_messages(repaired);
     *messages = repaired;
-    changes + merged
+    Ok(changes + merged)
 }
 
 /// Copia con los roles que acepta el perfil; nunca muta la lista original.

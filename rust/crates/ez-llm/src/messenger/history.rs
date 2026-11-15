@@ -76,7 +76,7 @@ impl Messenger {
     }
 
     /// `_apply_deferred_history`: aplica lo aparcado al soltar el turno.
-    pub(crate) fn apply_deferred_history(&self) {
+    pub fn apply_deferred_history(&self) {
         let mut history = self.history();
         let deferred = history.deferred.take();
         if let Some((messages, summary, last_user)) = deferred {
@@ -88,7 +88,7 @@ impl Messenger {
     }
 
     /// `_take_pending_notes`: notas de agentes que esperan al siguiente turno.
-    pub(crate) fn take_pending_notes(&self) -> Vec<Value> {
+    pub fn take_pending_notes(&self) -> Vec<Value> {
         let mut history = self.history();
         std::mem::take(&mut history.pending_notes)
     }
@@ -179,7 +179,7 @@ impl Messenger {
     }
 
     /// `_wants_notify`: el usuario pidió que se le avise.
-    pub(crate) fn wants_notify(&self) -> bool {
+    pub fn wants_notify(&self) -> bool {
         wants_any(&self.history().last_user_text, NOTIFY_WORDS)
     }
 

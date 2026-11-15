@@ -8,6 +8,20 @@ use std::fmt;
 
 use ez_core::pyvalue::head_chars;
 use ez_core::redact::redact;
+use serde_json::Value;
+
+/// `type(value).__name__` de CPython para los textos de error que lo incluyen.
+pub(crate) fn py_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "NoneType",
+        Value::Bool(_) => "bool",
+        Value::Number(number) if number.is_f64() => "float",
+        Value::Number(_) => "int",
+        Value::String(_) => "str",
+        Value::Array(_) => "list",
+        Value::Object(_) => "dict",
+    }
+}
 
 /// De qué clase viene el fallo; sustituye a `type(exc).__name__` del Python.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +34,14 @@ pub enum ErrorKind {
     Connection,
     /// `APITimeoutError` / `ReadTimeout`.
     Timeout,
+    /// Evento `error` dentro del flujo (APIError o RuntimeError, según cliente).
+    Api,
+    /// Objeto donde el Python esperaba un `dict` (`AttributeError`).
+    Attribute,
+    /// Número o índice ilegible (`ValueError`).
+    Value,
+    /// JSON ilegible del flujo (`JSONDecodeError`).
+    Protocol,
     /// Cualquier otro fallo del proveedor o del flujo.
     Other,
 }
@@ -81,6 +103,16 @@ impl LlmError {
             status: None,
             retry_after: None,
             kind: ErrorKind::Other,
+        }
+    }
+
+    /// Fallo con una clase concreta y sin código HTTP (eventos `error` del flujo).
+    pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            status: None,
+            retry_after: None,
+            kind,
         }
     }
 

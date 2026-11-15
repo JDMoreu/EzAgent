@@ -60,3 +60,27 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
 - Qué hace mal: el `kind` del resultado se calcula **después** de mover (`shutil.move` u `os.replace`), cuando `src` ya no existe; mover una carpeta informa `"kind": "file"` en vez de `"folder"`. Los casos `tools_fs/call/move-folder`, `move-folder-empty` y `move-folder-overwrite` del oráculo lo fijan así.
 - Cómo se reproduce en Rust: `tools_fs/handlers.rs::transfer` evalúa `kind_of(&src)` después de `move_into_place`/`record_move`, con el comentario del quirk; `copy_path` conserva `"folder"` porque el origen sigue existiendo.
 - Recomendación posterior: calcular `kind` antes de mover en Python (`kind = "folder" if src.is_dir() else "file"` al entrar) y regenerar `parity/fixtures/tools_fs.jsonl` (3 casos cambian de `file` a `folder`).
+## Q-P-LLM-01
+- Archivo y líneas: `src/ezagent/voice/llm.py:139-147` (`_status_of`)
+- Qué hace mal: busca el código como subcadena (`f" {code}"` o `f"{code}:"`),
+  así que clasifica como 429 cualquier texto que contenga « 429» como prefijo de
+  otro número: `friendly_llm_error(Exception("Error 4290: raro"), …)` responde
+  «me limitó por demasiadas peticiones» aunque el código sea 4290.
+- Cómo se reproduce en Rust: `ez-llm/src/errors.rs::status_of` usa la misma
+  comprobación por subcadena; el caso `llm_sse/friendly_llm_error/0026` lo fija.
+- Recomendación posterior: extraer el código con un límite de palabra
+  (`(?:^|\D)(401|403|404|413|429)(?:\D|$)`) y regenerar ese fixture; es un
+  cambio observable en los avisos de voz.
+
+## Q-P-LLM-02
+- Archivo y líneas: `src/ezagent/voice/llm.py:1107-1140` (`_open_stream`)
+- Qué hace mal: el `for attempt in range(3)` solo hace `continue` en los
+  intentos 0 y 1; el intento 2 siempre retorna o lanza. El
+  `raise RuntimeError("No pude abrir el stream del proveedor.")` posterior al
+  bucle es inalcanzable, así que tres fallos seguidos devuelven el último texto
+  del proveedor y nunca ese mensaje genérico.
+- Cómo se reproduce en Rust: `ez-llm/src/messenger/recovery.rs::open_stream`
+  conserva la misma estructura y la misma rama inalcanzable; los casos
+  `llm_tools/turn/0024` y `0025` fijan el texto real que sale.
+- Recomendación posterior: borrar la rama muerta o convertirla en el mensaje
+  final del tercer intento; no cambia ningún fixture actual.

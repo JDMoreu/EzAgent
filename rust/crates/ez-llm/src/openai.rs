@@ -10,12 +10,12 @@ use std::time::Duration;
 
 use ez_core::config::int_value;
 use ez_core::pyloads;
-use ez_core::pyvalue::{py_strip, python_str};
+use ez_core::pyvalue::{py_strip, python_str, truthy};
 use reqwest::blocking::{Client, Response};
 use serde_json::{json, Map, Value};
 
 use crate::condenser::TextCompleter;
-use crate::errors::LlmError;
+use crate::errors::{ErrorKind, LlmError};
 use crate::sse::SseReader;
 
 /// `base_url` que usa el SDK de OpenAI cuando no se configura ninguna.
@@ -45,6 +45,8 @@ pub struct Chunk {
     pub finish_reason: Option<String>,
     /// `usage` del evento, cuando el proveedor lo manda.
     pub usage: Option<Value>,
+    /// El evento traía `choices: []` (el SDK igualmente entrega el trozo).
+    pub choices_empty: bool,
 }
 
 /// Flujo de trozos que consume el `Messenger`, con cierre explícito como en el SDK.
@@ -114,7 +116,8 @@ impl OpenAiChatClient {
         if status >= 400 {
             let retry_after = retry_after(&response);
             let text = read_text(response).unwrap_or_default();
-            let error = LlmError::http(status, format!("Error code: {status} - {text}"));
+            let message = http_error_message(status, &text);
+            let error = LlmError::http(status, message);
             return Err(error.with_retry_after(retry_after));
         }
         Ok(Box::new(OpenAiStream::over(response)))
@@ -219,6 +222,26 @@ impl TextCompleter for OpenAiChatClient {
     }
 }
 
+/// Mensaje de error HTTP como el SDK de OpenAI: el cuerpo solo aporta detalle
+/// cuando trae un `message` utilizable.
+fn http_error_message(status: u16, body: &str) -> String {
+    let parsed = pyloads::loads(py_strip(body)).ok();
+    let message = parsed.as_ref().and_then(|value| {
+        let from_error = value
+            .get("error")
+            .and_then(Value::as_object)
+            .and_then(|error| error.get("message"));
+        from_error
+            .or_else(|| value.get("message"))
+            .filter(|message| truthy(message))
+            .map(python_str)
+    });
+    match message {
+        Some(detail) if !detail.is_empty() => format!("Error code: {status} - {detail}"),
+        _ => format!("Error code: {status}"),
+    }
+}
+
 /// Flujo de Chat Completions: eventos `data:` con JSON y `[DONE]` al final.
 pub struct OpenAiStream<R: BufRead> {
     reader: Option<SseReader<R>>,
@@ -228,7 +251,7 @@ pub struct OpenAiStream<R: BufRead> {
 impl<R: BufRead> OpenAiStream<R> {
     pub fn new(reader: R) -> Self {
         Self {
-            reader: Some(SseReader::new(reader)),
+            reader: Some(SseReader::new_strict(reader)),
             done: false,
         }
     }
@@ -267,8 +290,9 @@ impl<R: BufRead> Iterator for OpenAiStream<R> {
                 // DECISION: el SDK solo espera objetos; un JSON suelto se ignora.
                 Ok(_) => continue,
                 Err(error) => {
-                    let message = format!("No pude leer el evento SSE del proveedor: {error}");
-                    return Some(Err(self.fail(LlmError::other(message))));
+                    return Some(Err(
+                        self.fail(LlmError::new(ErrorKind::Protocol, error.to_string()))
+                    ));
                 }
             };
             if event.contains_key("error") {
@@ -297,7 +321,16 @@ impl<R: BufRead + Send> ChatStream for OpenAiStream<R> {
 }
 
 fn chunk_from_event(event: &Map<String, Value>) -> Option<Chunk> {
-    let choice = event.get("choices").and_then(Value::as_array)?.first()?;
+    let choices = event.get("choices").and_then(Value::as_array)?;
+    let usage = event.get("usage").filter(|value| !value.is_null()).cloned();
+    let Some(choice) = choices.first() else {
+        // `choices: []` con `usage`: el SDK entrega el trozo igualmente.
+        return Some(Chunk {
+            usage,
+            choices_empty: true,
+            ..Chunk::default()
+        });
+    };
     let delta = choice.get("delta").and_then(Value::as_object);
     let content = delta
         .and_then(|delta| delta.get("content"))
@@ -314,12 +347,12 @@ fn chunk_from_event(event: &Map<String, Value>) -> Option<Chunk> {
         .and_then(Value::as_str)
         .filter(|text| !text.is_empty())
         .map(str::to_string);
-    let usage = event.get("usage").filter(|value| !value.is_null()).cloned();
     Some(Chunk {
         content,
         tool_calls,
         finish_reason,
         usage,
+        choices_empty: false,
     })
 }
 
@@ -354,20 +387,16 @@ fn tool_call_delta(value: &Value) -> Option<ToolCallDelta> {
 }
 
 fn error_from_event(event: &Map<String, Value>) -> LlmError {
-    // DECISION: el SDK no documenta un texto para el error en mitad del flujo;
-    // se usa su mismo formato `Error code: …` para que la clasificación funcione.
+    // `APIError`: el texto es el `message` del error o el genérico del SDK.
     let error = event.get("error").cloned().unwrap_or(Value::Null);
-    let code = event
-        .get("code")
-        .or_else(|| error.get("code"))
-        .and_then(|value| u16::try_from(int_value(value, 0)).ok());
     let message = error
-        .get("message")
+        .as_object()
+        .and_then(|error| error.get("message"))
         .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
         .map(str::to_string)
-        .unwrap_or_else(|| python_str(&error));
-    let status = code.unwrap_or(500);
-    LlmError::http(status, format!("Error code: {status} - {message}"))
+        .unwrap_or_else(|| "An error occurred during streaming".to_string());
+    LlmError::new(ErrorKind::Api, message)
 }
 
 pub(crate) fn read_text(response: Response) -> Result<String, LlmError> {
@@ -452,11 +481,12 @@ mod tests {
     }
 
     #[test]
-    fn skips_events_without_choices_and_stops_at_done() {
+    fn yields_empty_choice_events_and_stops_at_done() {
         let body = "data: {\"choices\":[]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\ndata: [DONE]\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"ignorado\"}}]}\n\n";
         let result = chunks(body);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].content.as_deref(), Some("x"));
+        assert_eq!(result.len(), 2);
+        assert!(result[0].choices_empty);
+        assert_eq!(result[1].content.as_deref(), Some("x"));
     }
 
     #[test]

@@ -53,6 +53,33 @@ impl<'a> Condenser<'a> {
         Self { client, cfg }
     }
 
+    /// `conclusion_start` con la entrada tal como la pasa el fixture: una línea
+    /// que no es texto reproduce el `TypeError` de CPython.
+    pub fn conclusion_start_values(
+        &self,
+        lines: &[serde_json::Value],
+    ) -> Result<Option<usize>, String> {
+        let mut texts = Vec::with_capacity(lines.len());
+        for line in lines {
+            match line.as_str() {
+                Some(text) => texts.push(text.to_string()),
+                None => {
+                    let kind = match line {
+                        serde_json::Value::Null => "NoneType",
+                        serde_json::Value::Bool(_) => "bool",
+                        serde_json::Value::Number(number) if number.is_f64() => "float",
+                        serde_json::Value::Number(_) => "int",
+                        serde_json::Value::Array(_) => "list",
+                        serde_json::Value::Object(_) => "dict",
+                        serde_json::Value::String(_) => "str",
+                    };
+                    return Err(format!("'{kind}' object is not subscriptable"));
+                }
+            }
+        }
+        Ok(self.conclusion_start(&texts))
+    }
+
     /// Número de línea (base 1) donde empieza la conclusión, o `None`.
     pub fn conclusion_start(&self, lines: &[String]) -> Option<usize> {
         let offset = lines.len().saturating_sub(MAX_LINES);
