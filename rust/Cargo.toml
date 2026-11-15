@@ -16,6 +16,7 @@ members = [
     "crates/ez-parity",
     "crates/ez-fakes",
 ]
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.1.0"
@@ -81,6 +82,13 @@ dotenvy = "=0.15.7"
 ndarray = "=0.17.2"
 bytemuck = "=1.25.2"
 anyhow = "=1.0.104"
+
+# FreeType 2.14.3: la misma versión que enlaza Pillow 13 (la rueda del oráculo).
+# `freetype-sys 0.23` trae 2.13.2, cuyo intérprete de TrueType hintea distinto los
+# acentos compuestos (máscaras de texto de 1 px más altas). `vendor/freetype-sys`
+# es ese crate con `freetype2/` reemplazado por el código de 2.14.3.
+[patch.crates-io]
+freetype-sys = { path = "vendor/freetype-sys" }
 
 [profile.release]
 lto = "thin"
