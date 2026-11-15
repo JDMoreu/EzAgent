@@ -16,6 +16,7 @@ pub mod drop;
 pub mod frame_stats;
 pub mod keyboard;
 pub mod layered;
+pub mod menu_panel;
 pub mod monitor;
 pub mod peek;
 pub mod pointer;

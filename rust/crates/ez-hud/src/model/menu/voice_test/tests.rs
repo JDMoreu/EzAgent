@@ -1,5 +1,5 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 use crate::model::settings::{MenuSettings, SettingValue, SettingsValues};
 
@@ -34,12 +34,10 @@ fn speed(menu: &mut Menu, value: f64) {
 
 #[test]
 fn start_test_commits_the_edit_and_reports_the_snapshot() {
-    let snapshots = Rc::new(RefCell::new(Vec::<SettingsValues>::new()));
-    let recorded = Rc::clone(&snapshots);
+    let snapshots = Arc::new(Mutex::new(Vec::<SettingsValues>::new()));
+    let recorded = Arc::clone(&snapshots);
     let callbacks = MenuCallbacks {
-        test: Some(Box::new(move |values| {
-            recorded.borrow_mut().push(values.clone())
-        })),
+        test: Some(Box::new(move |values| recorded.lock().push(values.clone()))),
         ..MenuCallbacks::default()
     };
     let mut menu = menu(callbacks);
@@ -52,7 +50,7 @@ fn start_test_commits_the_edit_and_reports_the_snapshot() {
         Some(&SettingValue::Text("EzAgent, escúchame!".into()))
     );
     assert!(menu.testing_t.active());
-    let snapshots = snapshots.borrow();
+    let snapshots = snapshots.lock();
     assert_eq!(snapshots.len(), 1);
     assert_eq!(
         snapshots[0].get("wake_phrase"),
@@ -62,11 +60,11 @@ fn start_test_commits_the_edit_and_reports_the_snapshot() {
 
 #[test]
 fn a_successful_save_marks_the_settings_clean() {
-    let snapshots = Rc::new(RefCell::new(Vec::<SettingsValues>::new()));
-    let recorded = Rc::clone(&snapshots);
+    let snapshots = Arc::new(Mutex::new(Vec::<SettingsValues>::new()));
+    let recorded = Arc::clone(&snapshots);
     let callbacks = MenuCallbacks {
         save: Some(Box::new(move |values| {
-            recorded.borrow_mut().push(values.clone());
+            recorded.lock().push(values.clone());
             Some(true)
         })),
         ..MenuCallbacks::default()
@@ -82,7 +80,7 @@ fn a_successful_save_marks_the_settings_clean() {
     assert_eq!(menu.error_until, 0.0);
     assert!(menu.save_backup.is_some());
     assert_eq!(
-        snapshots.borrow()[0].get("speed"),
+        snapshots.lock()[0].get("speed"),
         Some(&SettingValue::Float(1.1))
     );
 }

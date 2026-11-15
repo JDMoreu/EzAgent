@@ -1,5 +1,5 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 use crate::model::settings::{MenuSettings, SettingValue};
 
@@ -45,10 +45,10 @@ fn with_ctrl(callbacks: MenuCallbacks) -> Menu {
 
 #[test]
 fn beginning_an_edit_loads_the_stored_text() {
-    let states = Rc::new(RefCell::new(Vec::new()));
-    let recorded = Rc::clone(&states);
+    let states = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&states);
     let callbacks = MenuCallbacks {
-        text_edit: Some(Box::new(move |active| recorded.borrow_mut().push(active))),
+        text_edit: Some(Box::new(move |active| recorded.lock().push(active))),
         ..MenuCallbacks::default()
     };
     let mut menu = menu(callbacks);
@@ -60,7 +60,7 @@ fn beginning_an_edit_loads_the_stored_text() {
     assert_eq!(menu.text_buffer(), "Hola");
     assert_eq!(menu.edit_cursor, 4);
     assert_eq!(menu.edit_t0, 1.0);
-    assert_eq!(states.borrow().as_slice(), &[true]);
+    assert_eq!(states.lock().as_slice(), &[true]);
 }
 
 #[test]
@@ -109,10 +109,10 @@ fn ctrl_a_then_typing_replaces_everything() {
 
 #[test]
 fn enter_commits_and_escape_discards() {
-    let states = Rc::new(RefCell::new(Vec::new()));
-    let recorded = Rc::clone(&states);
+    let states = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&states);
     let callbacks = MenuCallbacks {
-        text_edit: Some(Box::new(move |active| recorded.borrow_mut().push(active))),
+        text_edit: Some(Box::new(move |active| recorded.lock().push(active))),
         ..MenuCallbacks::default()
     };
     let mut menu = menu(callbacks);
@@ -135,7 +135,7 @@ fn enter_commits_and_escape_discards() {
         menu.settings.get("wake_phrase"),
         Some(&SettingValue::Text("Hola mundo".into()))
     );
-    assert_eq!(states.borrow().as_slice(), &[true, false, true, false]);
+    assert_eq!(states.lock().as_slice(), &[true, false, true, false]);
 }
 
 #[test]
@@ -155,21 +155,21 @@ fn paste_flattens_lines_except_the_dictionary() {
 
 #[test]
 fn a_hotkey_row_captures_the_combination() {
-    let events = Rc::new(RefCell::new(Vec::new()));
-    let texts = Rc::new(RefCell::new(Vec::new()));
-    let captures = Rc::new(RefCell::new(Vec::new()));
-    let recorded = Rc::clone(&events);
-    let recorded_text = Rc::clone(&texts);
-    let recorded_capture = Rc::clone(&captures);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let texts = Arc::new(Mutex::new(Vec::new()));
+    let captures = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&events);
+    let recorded_text = Arc::clone(&texts);
+    let recorded_capture = Arc::clone(&captures);
     let callbacks = MenuCallbacks {
         live_change: Some(Box::new(move |key, value| {
-            recorded.borrow_mut().push((key.to_string(), value.clone()));
+            recorded.lock().push((key.to_string(), value.clone()));
         })),
         text_edit: Some(Box::new(move |active| {
-            recorded_text.borrow_mut().push(active);
+            recorded_text.lock().push(active);
         })),
         hotkey_capture: Some(Box::new(move |active| {
-            recorded_capture.borrow_mut().push(active);
+            recorded_capture.lock().push(active);
         })),
         ..MenuCallbacks::default()
     };
@@ -185,11 +185,11 @@ fn a_hotkey_row_captures_the_combination() {
         Some(&SettingValue::Text("ctrl+e".into()))
     );
     assert_eq!(
-        events.borrow().as_slice(),
+        events.lock().as_slice(),
         &[("hotkey".to_string(), SettingValue::Text("ctrl+e".into()))]
     );
-    assert_eq!(texts.borrow().as_slice(), &[true, false]);
-    assert_eq!(captures.borrow().as_slice(), &[true, false]);
+    assert_eq!(texts.lock().as_slice(), &[true, false]);
+    assert_eq!(captures.lock().as_slice(), &[true, false]);
 }
 
 #[test]

@@ -70,6 +70,7 @@ impl VoiceApp {
 
     /// Lo que `__init__` hace después de construir los servicios.
     fn finish_start(&self, parts: AppParts) {
+        self.install_menu_provider();
         // El Python crea el detector de turno antes de tocar la barra.
         self.apply_start_audio();
         self.apply_start_hud(parts.whisper_ready);
@@ -79,6 +80,19 @@ impl VoiceApp {
         self.start_warm_workers(parts.background, parts.warm_stt);
         self.schedule_start_timers();
         self.inner.runtime.observer.step("iniciado");
+    }
+
+    /// `self.hud.menu_settings_provider = self._hud_menu_settings`.
+    ///
+    /// // DECISION: el `Weak` evita que la barra retenga la app; si ya no
+    /// // existe, el menú no se abre (el `None` del Python).
+    fn install_menu_provider(&self) {
+        let weak = Arc::downgrade(&self.inner);
+        let provider: ez_hud::win::drop::MenuSettingsProvider = Arc::new(move || {
+            weak.upgrade()
+                .and_then(|inner| VoiceApp { inner }.hud_menu_settings())
+        });
+        self.inner.ui.hud.set_menu_settings_provider(Some(provider));
     }
 
     /// Barra, tema y aviso de whisper ausente.

@@ -8,10 +8,11 @@ use parking_lot::Mutex;
 
 use crate::model::settings::MenuSettings;
 use crate::paint::settings_window as sw;
+use crate::win::menu_panel::LiveMenuFactory;
 use crate::win::monitor;
 use crate::win::settings_window::SettingsWindow;
 
-use super::traits::{MenuCallbacks, MenuPanel};
+use super::traits::{MenuCallbacks, MenuFactory, MenuPanel};
 use super::DropUI;
 
 impl DropUI {
@@ -102,7 +103,12 @@ impl DropUI {
         if let Some(menu) = self.menu_panel() {
             return Some(menu);
         }
-        let factory = self.menu_factory.clone()?;
+        // DECISION: `drop.py` construye `Menu` directamente; aquí, si nadie
+        // instala una fábrica (el caso de la app y de la demo), se usa la real.
+        let factory: Arc<dyn MenuFactory> = self
+            .menu_factory
+            .clone()
+            .unwrap_or_else(|| Arc::new(LiveMenuFactory));
         let scale = self.scale();
         let theme = self.theme_name();
         let screen_h = {

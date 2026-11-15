@@ -362,8 +362,8 @@ fn update_all(map: &mut BTreeMap<String, Tween>, now: f64) {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
-    use std::rc::Rc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     use crate::model::settings::{MenuSettings, SettingValue};
 
@@ -396,10 +396,12 @@ mod tests {
 
     #[test]
     fn close_notifies_once_and_leaves_zero_height() {
-        let count = Rc::new(Cell::new(0));
-        let counter = Rc::clone(&count);
+        let count = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&count);
         let callbacks = MenuCallbacks {
-            close: Some(Box::new(move || counter.set(counter.get() + 1))),
+            close: Some(Box::new(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+            })),
             ..MenuCallbacks::default()
         };
         let mut menu = Menu::new(MenuSettings::default(), MenuOptions::default(), callbacks)
@@ -411,11 +413,11 @@ mod tests {
         assert!(menu.is_animating(2.0));
         menu.update(3.0);
         assert!(!menu.is_animating(3.0));
-        assert_eq!(count.get(), 1);
+        assert_eq!(count.load(Ordering::SeqCst), 1);
         assert_eq!(menu.height(3.0), 0.0);
         menu.close(3.5);
         menu.update(4.0);
-        assert_eq!(count.get(), 1);
+        assert_eq!(count.load(Ordering::SeqCst), 1);
     }
 
     #[test]
