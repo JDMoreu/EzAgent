@@ -6,7 +6,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
 
 use ort::environment::Environment;
 use ort::session::Session;
@@ -96,24 +95,9 @@ pub fn onnxruntime_path() -> Option<PathBuf> {
     candidates.into_iter().find(|path| path.is_file())
 }
 
+/// `ort` solo admite un entorno por proceso: se comparte con Smart Turn.
 fn environment(library: &Path) -> Result<&'static Environment, String> {
-    static ENVIRONMENT: OnceLock<Environment> = OnceLock::new();
-    static INIT: Mutex<()> = Mutex::new(());
-    if let Some(environment) = ENVIRONMENT.get() {
-        return Ok(environment);
-    }
-    let _guard = INIT
-        .lock()
-        .map_err(|_| "el entorno de ONNX Runtime quedó envenenado".to_string())?;
-    if let Some(environment) = ENVIRONMENT.get() {
-        return Ok(environment);
-    }
-    let environment = ort::init_from(library)
-        .map_err(|error| error.to_string())?
-        .with_name("ezagent-tts")
-        .build()
-        .map_err(|error| error.to_string())?;
-    Ok(ENVIRONMENT.get_or_init(|| environment))
+    ez_audio::turn::shared_environment(library)
 }
 
 /// A real ONNX Runtime session.

@@ -5,9 +5,9 @@
 //! DLL se toma de `ORT_DYLIB_PATH`, junto al ejecutable o de la carpeta de
 //! datos, igual que `ez-tts` (`kokoro/session.rs`).
 //!
-//! DECISION: el entorno de `ort` y la búsqueda de la DLL se repiten aquí en vez
-//! de depender de `ez-tts` (añadir esa dependencia está fuera del brief y
-//! crearía un ciclo: `ez-tts` usa `ez-audio`).
+//! DECISION: `ort` solo admite un entorno por proceso; este crate lo crea y
+//! `ez-tts` lo reutiliza con [`shared_environment`] (`ez-tts` depende de
+//! `ez-audio`, no al revés).
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
@@ -35,7 +35,7 @@ impl OrtTurnModel {
             "onnxruntime.dll no está disponible; colócalo junto al ejecutable o define ORT_DYLIB_PATH"
                 .to_string()
         })?;
-        let environment = environment(&library)?;
+        let environment = shared_environment(&library)?;
         let session = Session::builder(environment)
             .map_err(ort_error)?
             .with_parallel_execution(false)
@@ -95,7 +95,9 @@ pub fn onnxruntime_path() -> Option<PathBuf> {
     candidates.into_iter().find(|path| path.is_file())
 }
 
-fn environment(library: &Path) -> Result<&'static Environment, String> {
+/// Entorno de ONNX Runtime **único del proceso**: `ort` solo admite uno, así que
+/// Smart Turn y el TTS (`ez-tts`) lo comparten desde aquí.
+pub fn shared_environment(library: &Path) -> Result<&'static Environment, String> {
     static ENVIRONMENT: OnceLock<Environment> = OnceLock::new();
     static INIT: Mutex<()> = Mutex::new(());
     if let Some(environment) = ENVIRONMENT.get() {
@@ -109,7 +111,7 @@ fn environment(library: &Path) -> Result<&'static Environment, String> {
     }
     let environment = ort::init_from(library)
         .map_err(|error| error.to_string())?
-        .with_name("ezagent-turn")
+        .with_name("ezagent")
         .build()
         .map_err(|error| error.to_string())?;
     Ok(ENVIRONMENT.get_or_init(|| environment))

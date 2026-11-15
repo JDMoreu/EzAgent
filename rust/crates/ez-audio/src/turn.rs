@@ -24,7 +24,7 @@ pub use features::{
     hann_window, hz_to_mel, log_mel, mel_filters, mel_to_hz, prepare, TurnFeatures, HOP, N_FFT,
     N_FRAMES, N_MELS, N_SAMPLES, SAMPLE_RATE, WINDOW_SECS,
 };
-pub use session::{onnxruntime_path, OrtTurnModel};
+pub use session::{onnxruntime_path, shared_environment, OrtTurnModel};
 
 pub const ASSET_ID: &str = "smart-turn-v3.2-cpu";
 
