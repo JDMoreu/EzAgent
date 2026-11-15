@@ -362,3 +362,8 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
 - Qué hace mal: el plazo solo se comprueba cuando la app ya está quieta pero no lleva 0,3 s estable; si nunca queda quieta, el bucle no vence y el escenario muere por el plazo global, no por el mensaje «la app no quedó quieta». En Rust `Driver::poll_drained` reproduce la misma rama (el mensaje sale solo en ese caso).
 - Cómo se reproduce en Rust: `replay::driver::Driver::poll_drained`; los escenarios 16-25 terminan dentro del plazo global.
 - Recomendación posterior: comprobar el plazo también cuando no está quieta, si se quiere un diagnóstico más preciso.
+
+## Q-P-FIX-SIDEBAR-01 — Ajustes: la sección anterior se queda marcada al cambiar de sección
+- **Archivo:** `src/ezagent/voice/hud/drop.py:2110-2111` (`_sidebar_hover` solo se actualiza al mover **con el botón pulsado**).
+- **Efecto en Python:** tras pulsar otra sección, la anterior conserva el fondo de hover y se ven dos filas marcadas (comprobado píxel a píxel contra el `.venv`).
+- **En Rust:** **desviación deliberada** pedida por el usuario: el hover de la barra lateral se refresca en cada movimiento (`card_input.rs::track_sidebar_hover`) y se limpia al abrir la tarjeta. Solo la sección actual queda marcada. No revertir por paridad.
