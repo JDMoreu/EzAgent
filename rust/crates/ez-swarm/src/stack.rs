@@ -16,7 +16,7 @@ use crate::db::{Clock, Db, DbResult};
 use crate::recovery::Recovery;
 use crate::server::SwarmServer;
 use crate::service::SwarmService;
-use crate::supervisor::{Announce, Supervisor, SupervisorConfig, SwarmHost};
+use crate::supervisor::{Announce, ProbeHost, Supervisor, SupervisorConfig, SwarmHost};
 
 /// Carpeta del ejecutable `ezs` (junto al programa o en el PATH), o «».
 ///
@@ -114,6 +114,13 @@ impl SwarmStack {
         supervisor_thread: bool,
     ) -> DbResult<Self> {
         let base_dir = base_dir.into();
+        // El arnés avanza el supervisor a mano y necesita ver cada cambio de
+        // `fake-hc`: sin listado, `probe` pregunta terminal por terminal.
+        let host: Arc<dyn SwarmHost> = if supervisor_thread {
+            host
+        } else {
+            Arc::new(ProbeHost::new(host))
+        };
         let store = Db::new(base_dir.join("board.db"), Arc::clone(&wall))?;
         let service = Arc::new(SwarmService::new(store, command, Arc::clone(&wall)));
         let server = SwarmServer::new(Arc::clone(&service), base_dir.join("endpoint.json"));

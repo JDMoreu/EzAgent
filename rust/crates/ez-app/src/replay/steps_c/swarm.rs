@@ -165,7 +165,8 @@ impl Step for SwarmAgent {
             json!({ "member": member, "argv": joined, "ok": ok, "text": output }),
         );
         if !ok {
-            return Err(format!("ezs {member} {joined}: {output}"));
+            let first = argv.first().map_or_else(String::new, Clone::clone);
+            return Err(format!("ezs {member} {first}: {output}"));
         }
         if argv
             .first()
@@ -245,13 +246,16 @@ impl Step for SwarmLost {
             "remove" => {
                 let stack = swarm_c::stack()?;
                 let address = swarm_c::address(&stack, &member)?;
-                let mut data = swarm_c::hc_state()?;
-                if let Some(terminals) = data.get_mut("terminals").and_then(Value::as_array_mut) {
-                    terminals.retain(|item| {
-                        python_str(item.get("address").unwrap_or(&Value::Null)) != address
-                    });
-                }
-                swarm_c::hc_save(&data)?;
+                swarm_c::with_hc_lock(|| {
+                    let mut data = swarm_c::hc_state()?;
+                    if let Some(terminals) = data.get_mut("terminals").and_then(Value::as_array_mut)
+                    {
+                        terminals.retain(|item| {
+                            python_str(item.get("address").unwrap_or(&Value::Null)) != address
+                        });
+                    }
+                    swarm_c::hc_save(&data)
+                })?;
             }
             "shell" => {
                 swarm_c::update_terminal(

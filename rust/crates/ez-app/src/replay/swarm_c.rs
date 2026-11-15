@@ -188,7 +188,40 @@ pub fn hc_save(data: &Value) -> Result<(), String> {
         .map_err(|error| format!("no pude escribir {}: {error}", path.display()))
 }
 
-/// Cerrojo compartido con `fake-hc` (`hc_lock` del Python).
+/// `find_terminal`: primero por `address`, después por `name`.
+#[cfg(test)]
+pub fn find_terminal<'a>(state: &'a Value, key: &str) -> Option<&'a Value> {
+    let terminals = state.get("terminals").and_then(Value::as_array)?;
+    terminals
+        .iter()
+        .find(|terminal| python_str(terminal.get("address").unwrap_or(&Value::Null)) == key)
+        .or_else(|| {
+            terminals
+                .iter()
+                .find(|terminal| python_str(terminal.get("name").unwrap_or(&Value::Null)) == key)
+        })
+}
+
+/// `_address`: terminal del miembro en el enjambre.
+pub fn address(stack: &SwarmStack, member: &str) -> Result<String, String> {
+    let swarm = swarm_id();
+    let found = stack
+        .store()
+        .members(&swarm)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .find(|item| item.name == member);
+    match found {
+        Some(item) if !item.address.is_empty() => Ok(item.address),
+        _ => Err(format!("{member} no tiene terminal en el enjambre")),
+    }
+}
+
+/// `hc_lock`: el mismo cerrojo `<estado>.lock` que usa `fake-hc`.
+///
+/// Sin él, una escritura del arnés puede perderse entre la lectura y la
+/// escritura de `fake-hc` (bajo carga, `swarm_lost: shell` desaparecía y el
+/// supervisor no veía salir al agente).
 pub fn with_hc_lock<T>(run: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
     let path = hc_path()?;
     let lock = path.with_file_name(format!(
@@ -222,52 +255,25 @@ pub fn with_hc_lock<T>(run: impl FnOnce() -> Result<T, String>) -> Result<T, Str
     result
 }
 
-/// `find_terminal`: primero por `address`, después por `name`.
-#[cfg(test)]
-pub fn find_terminal<'a>(state: &'a Value, key: &str) -> Option<&'a Value> {
-    let terminals = state.get("terminals").and_then(Value::as_array)?;
-    terminals
-        .iter()
-        .find(|terminal| python_str(terminal.get("address").unwrap_or(&Value::Null)) == key)
-        .or_else(|| {
-            terminals
-                .iter()
-                .find(|terminal| python_str(terminal.get("name").unwrap_or(&Value::Null)) == key)
-        })
-}
-
-/// `_address`: terminal del miembro en el enjambre.
-pub fn address(stack: &SwarmStack, member: &str) -> Result<String, String> {
-    let swarm = swarm_id();
-    let found = stack
-        .store()
-        .members(&swarm)
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .find(|item| item.name == member);
-    match found {
-        Some(item) if !item.address.is_empty() => Ok(item.address),
-        _ => Err(format!("{member} no tiene terminal en el enjambre")),
-    }
-}
-
 /// `_terminal(member, **fields)`: edita la terminal del miembro.
 pub fn update_terminal(member: &str, fields: &[(&str, Value)]) -> Result<(), String> {
-    let stack = stack()?;
-    let address = address(&stack, member)?;
-    let mut data = hc_state()?;
-    let terminals = data
-        .get_mut("terminals")
-        .and_then(Value::as_array_mut)
-        .ok_or_else(|| "fake-hc no tiene terminales".to_string())?;
-    let terminal = terminals
-        .iter_mut()
-        .find(|item| python_str(item.get("address").unwrap_or(&Value::Null)) == address)
-        .ok_or_else(|| format!("fake-hc no tiene la terminal {address}"))?;
-    for (key, value) in fields {
-        terminal[*key] = value.clone();
-    }
-    hc_save(&data)
+    with_hc_lock(|| {
+        let stack = stack()?;
+        let address = address(&stack, member)?;
+        let mut data = hc_state()?;
+        let terminals = data
+            .get_mut("terminals")
+            .and_then(Value::as_array_mut)
+            .ok_or_else(|| "fake-hc no tiene terminales".to_string())?;
+        let terminal = terminals
+            .iter_mut()
+            .find(|item| python_str(item.get("address").unwrap_or(&Value::Null)) == address)
+            .ok_or_else(|| format!("fake-hc no tiene la terminal {address}"))?;
+        for (key, value) in fields {
+            terminal[*key] = value.clone();
+        }
+        hc_save(&data)
+    })
 }
 
 /// `_swarm_view`: estado del enjambre para las aserciones.

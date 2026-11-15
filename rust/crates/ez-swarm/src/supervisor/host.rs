@@ -76,6 +76,66 @@ pub struct HerdrHost {
     driver: AgentDriver<Arc<Herdr>>,
 }
 
+/// Envoltorio del arnés: sin listado, el supervisor pregunta terminal por
+/// terminal (`probe`). El arnés avanza a mano y no puede depender de la caché
+/// de 3 s: con ella, una edición de `fake-hc` podía quedar tapada y el
+/// supervisor no veía salir al agente (escenario 20 bajo carga).
+pub(crate) struct ProbeHost(Arc<dyn SwarmHost>);
+
+impl ProbeHost {
+    /// Envuelve el adaptador real para forzar `get_agent` en cada pasada.
+    pub(crate) fn new(inner: Arc<dyn SwarmHost>) -> Self {
+        Self(inner)
+    }
+}
+
+impl SwarmHost for ProbeHost {
+    fn list_agents(&self) -> Result<Vec<Map<String, Value>>, String> {
+        Ok(Vec::new())
+    }
+
+    fn get_agent(&self, address: &str) -> Result<Map<String, Value>, String> {
+        self.0.get_agent(address)
+    }
+
+    fn read_agent(&self, address: &str, lines: i64) -> Result<String, String> {
+        self.0.read_agent(address, lines)
+    }
+
+    fn send_task(&self, address: &str, line: &str) -> Result<Map<String, Value>, String> {
+        self.0.send_task(address, line)
+    }
+
+    fn run_agent(
+        &self,
+        agent: &str,
+        task: &str,
+        request: LaunchRequest,
+    ) -> Result<Map<String, Value>, String> {
+        self.0.run_agent(agent, task, request)
+    }
+
+    fn resolve_agent(&self, name: &str) -> Option<String> {
+        self.0.resolve_agent(name)
+    }
+
+    fn swarm_args(&self, agent: &str) -> Vec<String> {
+        self.0.swarm_args(agent)
+    }
+
+    fn save_context(&self, text: &str) -> Option<String> {
+        self.0.save_context(text)
+    }
+
+    fn default_cwd(&self) -> String {
+        self.0.default_cwd()
+    }
+
+    fn agent_names(&self) -> Vec<String> {
+        self.0.agent_names()
+    }
+}
+
 impl HerdrHost {
     /// Empareja el adaptador de Herdr con el driver que sabe lanzar agentes.
     pub fn new(herdr: Arc<Herdr>) -> Self {

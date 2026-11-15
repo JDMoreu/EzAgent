@@ -10,8 +10,13 @@
 
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Mutex;
 
 use ez_app::replay::{causal_diff, Paths};
+
+/// Los tres bloques corren de uno en uno: cada escenario ya usa varios hilos y
+/// procesos, y en paralelo los avisos hablados cambian de orden en la traza.
+static SERIAL: Mutex<()> = Mutex::new(());
 
 /// Escenarios de esta tarea, en orden.
 const SCENARIOS: [&str; 6] = [
@@ -84,6 +89,9 @@ fn run_against_golden(stem: &str, paths: &Paths, out_dir: &std::path::Path) {
 
 #[test]
 fn scenarios_01_to_06_follow_the_golden_trace() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let paths = Paths::discover().expect("rutas del arnés");
     let out_dir =
         std::env::temp_dir().join(format!("ezagent-replay-parity-{}", std::process::id()));
@@ -95,6 +103,9 @@ fn scenarios_01_to_06_follow_the_golden_trace() {
 
 #[test]
 fn scenarios_07_to_15_follow_the_golden_trace() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let paths = Paths::discover().expect("rutas del arnés");
     let out_dir =
         std::env::temp_dir().join(format!("ezagent-replay-parity-b-{}", std::process::id()));
@@ -123,6 +134,9 @@ fn ensure_ezs(paths: &Paths) {
 
 #[test]
 fn scenarios_16_to_25_follow_the_golden_trace() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let paths = Paths::discover().expect("rutas del arnés");
     ensure_ezs(&paths);
     let out_dir =

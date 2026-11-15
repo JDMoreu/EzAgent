@@ -37,6 +37,7 @@ use crate::protocol;
 use crate::recovery::{Recovery, RecoveryOptions, ResetLaunches};
 use crate::service::SwarmService;
 
+pub(crate) use host::ProbeHost;
 pub use host::{HerdrHost, LaunchRequest, SwarmHost};
 
 /// Pasada con trabajo pendiente.
