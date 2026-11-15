@@ -1,0 +1,102 @@
+{"thread": "main#0", "seq": 1, "event": "hud.in_call", "value": false}
+{"thread": "main#0", "seq": 2, "event": "hud.show", "state": "idle"}
+{"thread": "main#0", "seq": 3, "event": "app.start", "scenario": "12"}
+{"thread": "main#0", "seq": 4, "event": "driver.step", "index": 1, "step": "wait_state:listening"}
+{"thread": "main#0", "seq": 5, "event": "hud.in_call", "value": true}
+{"thread": "main#0", "seq": 6, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 7, "event": "driver.step", "index": 2, "step": "audio:recuerda_color.wav"}
+{"thread": "main#0", "seq": 8, "event": "driver.step", "index": 3, "step": "wait_speech:¿Guardo que"}
+{"thread": "main#0", "seq": 9, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 10, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 11, "event": "chat.user", "text": "Recuerda que mi color favorito es el azul.", "source": "voice"}
+{"thread": "main#0", "seq": 12, "event": "chat.confirm", "summary": "¿Guardo que «Mi color favorito es el azul.»?", "strong": false}
+{"thread": "main#0", "seq": 13, "event": "hud.confirm", "summary": "¿Guardo que «Mi color favorito es el azul.»?", "strong": false}
+{"thread": "main#0", "seq": 14, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 15, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 16, "event": "driver.step", "index": 4, "step": "audio:si_confirmo.wav"}
+{"thread": "main#0", "seq": 17, "event": "driver.step", "index": 5, "step": "wait_quiet:20"}
+{"thread": "main#0", "seq": 18, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 19, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 20, "event": "driver.step", "index": 6, "step": "audio:que_color_tengo.wav"}
+{"thread": "main#0", "seq": 21, "event": "driver.step", "index": 7, "step": "wait_quiet:30"}
+{"thread": "main#0", "seq": 22, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 23, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 24, "event": "chat.user", "text": "¿Qué recuerdas de mi color favorito?", "source": "voice"}
+{"thread": "main#0", "seq": 25, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 26, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 27, "event": "driver.step", "index": 8, "step": "audio:olvida_color.wav"}
+{"thread": "main#0", "seq": 28, "event": "driver.step", "index": 9, "step": "wait_speech:¿Borro"}
+{"thread": "main#0", "seq": 29, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 30, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 31, "event": "chat.user", "text": "Olvida mi color favorito.", "source": "voice"}
+{"thread": "main#0", "seq": 32, "event": "chat.confirm", "summary": "¿Borro 1 línea(s) de USER.md (1) que coinciden con «color favorito»? Esta acción no se puede deshacer.", "strong": true}
+{"thread": "main#0", "seq": 33, "event": "hud.confirm", "summary": "¿Borro 1 línea(s) de USER.md (1) que coinciden con «color favorito»? Esta acción no se puede deshacer.", "strong": true}
+{"thread": "main#0", "seq": 34, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 35, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 36, "event": "driver.step", "index": 10, "step": "audio:si_confirmo.wav"}
+{"thread": "main#0", "seq": 37, "event": "driver.step", "index": 11, "step": "wait_quiet:20"}
+{"thread": "main#0", "seq": 38, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 39, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 40, "event": "driver.step", "index": 12, "step": "audio:compacta_memoria.wav"}
+{"thread": "main#0", "seq": 41, "event": "driver.step", "index": 13, "step": "wait_speech:¿Reescribo"}
+{"thread": "main#0", "seq": 42, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 43, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 44, "event": "chat.user", "text": "Compacta mi memoria.", "source": "voice"}
+{"thread": "main#0", "seq": 45, "event": "chat.confirm", "summary": "¿Reescribo MEMORY.md con 2 línea(s)? Se guardará una copia .bak de la versión anterior.", "strong": true}
+{"thread": "main#0", "seq": 46, "event": "hud.confirm", "summary": "¿Reescribo MEMORY.md con 2 línea(s)? Se guardará una copia .bak de la versión anterior.", "strong": true}
+{"thread": "main#0", "seq": 47, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 48, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 49, "event": "driver.step", "index": 14, "step": "audio:si_confirmo.wav"}
+{"thread": "main#0", "seq": 50, "event": "driver.step", "index": 15, "step": "wait_quiet:20"}
+{"thread": "main#0", "seq": 51, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 52, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 53, "event": "hud.close"}
+{"thread": "main#0", "seq": 54, "event": "app.end", "state": "listening", "in_call": true, "muted": false}
+{"thread": "main#0", "seq": 55, "event": "chat.snapshot", "role": "user", "text": "Recuerda que mi color favorito es el azul."}
+{"thread": "main#0", "seq": 56, "event": "chat.snapshot", "role": "user", "text": "¿Qué recuerdas de mi color favorito?"}
+{"thread": "main#0", "seq": 57, "event": "chat.snapshot", "role": "assistant", "text": "Tu color favorito es el azul."}
+{"thread": "main#0", "seq": 58, "event": "chat.snapshot", "role": "user", "text": "Olvida mi color favorito."}
+{"thread": "main#0", "seq": 59, "event": "chat.snapshot", "role": "user", "text": "Compacta mi memoria."}
+{"thread": "main#0", "seq": 60, "event": "audit.line", "tool": "remember", "level": 1, "decision": "allow", "ok": true, "taint": false, "args": {"kind": "user", "text_chars": 29}}
+{"thread": "main#0", "seq": 61, "event": "audit.line", "tool": "recall", "level": 0, "decision": "allow", "ok": true, "taint": false, "args": {"query": "color favorito", "limit": 3}}
+{"thread": "main#0", "seq": 62, "event": "audit.line", "tool": "forget", "level": 2, "decision": "allow", "ok": true, "taint": false, "args": {"query": "color favorito"}}
+{"thread": "main#0", "seq": 63, "event": "audit.line", "tool": "compact_memory", "level": 2, "decision": "allow", "ok": true, "taint": false, "args": {"kind": "memory", "text_chars": 49}}
+{"thread": "main#0", "seq": 64, "event": "llm.requests", "count": 8}
+{"thread": "ezagent-call#0", "seq": 1, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 2, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-call#0", "seq": 3, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 4, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-call#0", "seq": 5, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 6, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-call#0", "seq": 7, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 8, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-call#0", "seq": 9, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 10, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-call#0", "seq": 11, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 12, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-call#0", "seq": 13, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 14, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-stt#0", "seq": 1, "event": "stt.transcript", "text": "Recuerda que mi color favorito es el azul."}
+{"thread": "ezagent-stt#1", "seq": 1, "event": "stt.transcript", "text": "Sí, confirmo."}
+{"thread": "ezagent-stt#2", "seq": 1, "event": "stt.transcript", "text": "¿Qué recuerdas de mi color favorito?"}
+{"thread": "ezagent-stt#3", "seq": 1, "event": "stt.transcript", "text": "Olvida mi color favorito."}
+{"thread": "ezagent-stt#4", "seq": 1, "event": "stt.transcript", "text": "Sí, confirmo."}
+{"thread": "ezagent-stt#5", "seq": 1, "event": "stt.transcript", "text": "Compacta mi memoria."}
+{"thread": "ezagent-stt#6", "seq": 1, "event": "stt.transcript", "text": "Sí, confirmo."}
+{"thread": "ezagent-answer#0", "seq": 1, "event": "tool.call", "name": "remember", "args": "{\"kind\":\"user\",\"text\":\"Mi color favorito es el azul.\"}"}
+{"thread": "ezagent-answer#0", "seq": 2, "event": "tool.result", "name": "remember", "ok": true, "outcome": "completed"}
+{"thread": "ezagent-answer#0", "seq": 3, "event": "chat.cancel", "text": ""}
+{"thread": "ezagent-answer#1", "seq": 1, "event": "tool.call", "name": "recall", "args": "{\"query\":\"color favorito\",\"limit\":3}"}
+{"thread": "ezagent-answer#1", "seq": 2, "event": "tool.result", "name": "recall", "ok": true, "outcome": "completed"}
+{"thread": "ezagent-answer#1", "seq": 3, "event": "file.write", "name": "chat.jsonl", "role": "assistant"}
+{"thread": "ezagent-answer#1", "seq": 4, "event": "chat.assistant", "text": "Tu color favorito es el azul."}
+{"thread": "ezagent-answer#2", "seq": 1, "event": "tool.call", "name": "forget", "args": "{\"query\":\"color favorito\"}"}
+{"thread": "ezagent-answer#2", "seq": 2, "event": "tool.result", "name": "forget", "ok": true, "outcome": "completed"}
+{"thread": "ezagent-answer#2", "seq": 3, "event": "chat.cancel", "text": ""}
+{"thread": "ezagent-answer#3", "seq": 1, "event": "tool.call", "name": "compact_memory", "args": "{\"kind\":\"memory\",\"text\":\"- trabaja en EzAgent\\n- prefiere respuestas cortas\"}"}
+{"thread": "ezagent-answer#3", "seq": 2, "event": "tool.result", "name": "compact_memory", "ok": true, "outcome": "completed"}
+{"thread": "ezagent-answer#3", "seq": 3, "event": "chat.cancel", "text": ""}
+{"thread": "ezagent-speech#0", "seq": 1, "event": "speech.say", "text": "Tu color favorito es el azul."}
+{"thread": "ezagent-tts#0", "seq": 1, "event": "speech.say", "text": "¿Guardo que «Mi color favorito es el azul.»? ¿Confirmas?"}
+{"thread": "ezagent-tts#1", "seq": 1, "event": "speech.say", "text": "¿Borro 1 línea(s) de USER.md (1) que coinciden con «color favorito»? Esta acción no se puede deshacer. Di «confirmo» y el número para aceptar."}
+{"thread": "ezagent-tts#2", "seq": 1, "event": "speech.say", "text": "¿Reescribo MEMORY.md con 2 línea(s)? Se guardará una copia .bak de la versión anterior. Di «confirmo» y el número para aceptar."}

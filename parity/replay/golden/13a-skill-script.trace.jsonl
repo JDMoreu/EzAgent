@@ -1,0 +1,39 @@
+{"thread": "main#0", "seq": 1, "event": "hud.in_call", "value": false}
+{"thread": "main#0", "seq": 2, "event": "hud.show", "state": "idle"}
+{"thread": "main#0", "seq": 3, "event": "app.start", "scenario": "13a"}
+{"thread": "main#0", "seq": 4, "event": "driver.step", "index": 1, "step": "wait_state:listening"}
+{"thread": "main#0", "seq": 5, "event": "hud.in_call", "value": true}
+{"thread": "main#0", "seq": 6, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 7, "event": "driver.step", "index": 2, "step": "audio:usa_la_skill.wav"}
+{"thread": "main#0", "seq": 8, "event": "driver.step", "index": 3, "step": "wait_speech:¿Confirmas?"}
+{"thread": "main#0", "seq": 9, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 10, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 11, "event": "chat.user", "text": "Usa la skill de saludo y ejecuta su script.", "source": "voice"}
+{"thread": "main#0", "seq": 12, "event": "chat.confirm", "summary": "Ejecutar el script «scripts/saludo.py» de la skill «saludo»", "strong": false}
+{"thread": "main#0", "seq": 13, "event": "hud.confirm", "summary": "Ejecutar el script «scripts/saludo.py» de la skill «saludo»", "strong": false}
+{"thread": "main#0", "seq": 14, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 15, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 16, "event": "driver.step", "index": 4, "step": "audio:si_confirmo.wav"}
+{"thread": "main#0", "seq": 17, "event": "driver.step", "index": 5, "step": "wait_quiet:30"}
+{"thread": "main#0", "seq": 18, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 19, "event": "chat.confirm_done"}
+{"thread": "main#0", "seq": 20, "event": "hud.confirm_done"}
+{"thread": "main#0", "seq": 21, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 22, "event": "hud.close"}
+{"thread": "main#0", "seq": 23, "event": "app.end", "state": "listening", "in_call": true, "muted": false}
+{"thread": "main#0", "seq": 24, "event": "chat.snapshot", "role": "user", "text": "Usa la skill de saludo y ejecuta su script."}
+{"thread": "main#0", "seq": 25, "event": "audit.line", "tool": "load_skill", "level": 0, "decision": "allow", "ok": true, "taint": true, "args": {"name": "saludo"}}
+{"thread": "main#0", "seq": 26, "event": "audit.line", "tool": "run_skill_script", "level": 2, "decision": "confirm_yes", "ok": true, "taint": true, "args": {"skill": "saludo", "script": "scripts/saludo.py"}}
+{"thread": "main#0", "seq": 27, "event": "llm.requests", "count": 3}
+{"thread": "ezagent-call#0", "seq": 1, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 2, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-call#0", "seq": 3, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 4, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-stt#0", "seq": 1, "event": "stt.transcript", "text": "Usa la skill de saludo y ejecuta su script."}
+{"thread": "ezagent-stt#1", "seq": 1, "event": "stt.transcript", "text": "Sí, confirmo."}
+{"thread": "ezagent-answer#0", "seq": 1, "event": "tool.call", "name": "load_skill", "args": "{\"name\":\"saludo\"}"}
+{"thread": "ezagent-answer#0", "seq": 2, "event": "tool.result", "name": "load_skill", "ok": true, "outcome": "completed"}
+{"thread": "ezagent-answer#0", "seq": 3, "event": "tool.call", "name": "run_skill_script", "args": "{\"skill\":\"saludo\",\"script\":\"scripts/saludo.py\"}"}
+{"thread": "ezagent-answer#0", "seq": 4, "event": "tool.result", "name": "run_skill_script", "ok": true, "outcome": "completed"}
+{"thread": "ezagent-answer#0", "seq": 5, "event": "chat.cancel", "text": ""}
+{"thread": "ezagent-tts#0", "seq": 1, "event": "speech.say", "text": "Ejecutar el script «scripts/saludo.py» de la skill «saludo» ¿Confirmas?"}

@@ -1,0 +1,44 @@
+id: "15"
+name: "Proveedor estilo Anthropic con herramientas"
+notes: >
+  Con `LLM_API_STYLE=anthropic`, el cliente mínimo traduce Chat Completions a
+  Messages, convierte las herramientas al esquema de Anthropic y vuelve a
+  traducir el SSE. `get_datetime` real y respuesta hablada.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.8
+  llm_api_style: anthropic
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: toolu_hora
+          name: get_datetime
+          arguments: "{}"
+    - content: "Son las nueve y media de la mañana."
+whisper:
+  transcripts:
+    - "¿Qué hora es?"
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: que_hora_es.wav
+  - wait_quiet: 30
+expect:
+  states: [listening, thinking, speaking, listening]
+  user:
+    - "¿Qué hora es?"
+  assistant:
+    - "Son las nueve y media de la mañana."
+  speech_contains:
+    - "Son las nueve y media de la mañana."
+  tool_names: [get_datetime]
+  llm_requests: 2
+  llm_routes: [anthropic, anthropic]
+  audit:
+    - {tool: get_datetime, decision: allow, taint: false, ok: true}
+  final:
+    state: listening
+    in_call: true

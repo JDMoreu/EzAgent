@@ -1,0 +1,55 @@
+id: "10a"
+name: "Borrado con confirmación por voz: aceptar"
+notes: >
+  El LLM pide borrar un archivo de prueba. La política de nivel 2 obliga a
+  confirmar: EzAgent lee el resumen generado por código y espera un sí. Al
+  aceptar, el archivo va a la Papelera. El texto final del LLM no llega a
+  oírse: el TTS de la pregunta corta el stop del turno y el turno se cancela
+  (quirk reproducido del Python, ver python-quirks.md).
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.8
+setup:
+  files:
+    "{workspace}/nota.txt": "Nota de prueba que se puede borrar.\n"
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: call_borrar
+          name: delete_path
+          arguments: '{"path":"nota.txt"}'
+whisper:
+  transcripts:
+    - "Borra la nota de prueba."
+    - "Sí, confirmo."
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: borra_la_nota.wav
+  - wait_speech: "¿Confirmas?"
+  - audio: si_confirmo.wav
+  - wait_quiet: 30
+expect:
+  states: [listening, thinking, speaking, listening, thinking, listening]
+  user:
+    - "Borra la nota de prueba."
+  assistant: []
+  speech_any:
+    - "Voy a enviar a la Papelera el archivo"
+    - "¿Confirmas?"
+  confirms:
+    - "Voy a enviar a la Papelera el archivo"
+  confirm_count: 1
+  tool_names: [delete_path]
+  llm_requests: 2
+  audit:
+    - {tool: delete_path, decision: confirm_yes, taint: false, ok: true}
+  files:
+    "{workspace}/nota.txt":
+      exists: false
+  final:
+    state: listening
+    in_call: true

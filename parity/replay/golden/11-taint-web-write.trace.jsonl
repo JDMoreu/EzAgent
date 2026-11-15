@@ -1,0 +1,43 @@
+{"thread": "main#0", "seq": 1, "event": "hud.in_call", "value": false}
+{"thread": "main#0", "seq": 2, "event": "hud.show", "state": "idle"}
+{"thread": "main#0", "seq": 3, "event": "app.start", "scenario": "11"}
+{"thread": "main#0", "seq": 4, "event": "driver.step", "index": 1, "step": "wait_state:listening"}
+{"thread": "main#0", "seq": 5, "event": "hud.in_call", "value": true}
+{"thread": "main#0", "seq": 6, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 7, "event": "driver.step", "index": 2, "step": "audio:lee_pagina_guarda.wav"}
+{"thread": "main#0", "seq": 8, "event": "driver.step", "index": 3, "step": "wait_speech:¿Confirmas?"}
+{"thread": "main#0", "seq": 9, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 10, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 11, "event": "chat.user", "text": "Lee esta página y guarda un resumen en un archivo.", "source": "voice"}
+{"thread": "main#0", "seq": 12, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 13, "event": "chat.confirm", "summary": "Voy a crear el archivo «<tmp>\\EzAgentWorkspace\\resumen.txt» (23 caracteres).", "strong": false}
+{"thread": "main#0", "seq": 14, "event": "hud.confirm", "summary": "Voy a crear el archivo «<tmp>\\EzAgentWorkspace\\resumen.txt» (23 caracteres).", "strong": false}
+{"thread": "main#0", "seq": 15, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 16, "event": "driver.step", "index": 4, "step": "audio:si_confirmo.wav"}
+{"thread": "main#0", "seq": 17, "event": "driver.step", "index": 5, "step": "wait_quiet:30"}
+{"thread": "main#0", "seq": 18, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 19, "event": "chat.confirm_done"}
+{"thread": "main#0", "seq": 20, "event": "hud.confirm_done"}
+{"thread": "main#0", "seq": 21, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 22, "event": "hud.close"}
+{"thread": "main#0", "seq": 23, "event": "app.end", "state": "listening", "in_call": true, "muted": false}
+{"thread": "main#0", "seq": 24, "event": "chat.snapshot", "role": "user", "text": "Lee esta página y guarda un resumen en un archivo."}
+{"thread": "main#0", "seq": 25, "event": "chat.snapshot", "role": "assistant", "text": "Abro la página."}
+{"thread": "main#0", "seq": 26, "event": "audit.line", "tool": "fetch_page", "level": 0, "decision": "allow", "ok": true, "taint": true, "args": {"url": "http://127.0.0.1:<port>/pagina"}}
+{"thread": "main#0", "seq": 27, "event": "audit.line", "tool": "write_file", "level": 1, "decision": "confirm_yes", "ok": true, "taint": true, "args": {"path": "resumen.txt", "content_chars": 23}}
+{"thread": "main#0", "seq": 28, "event": "llm.requests", "count": 3}
+{"thread": "ezagent-call#0", "seq": 1, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 2, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-call#0", "seq": 3, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 4, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-stt#0", "seq": 1, "event": "stt.transcript", "text": "Lee esta página y guarda un resumen en un archivo."}
+{"thread": "ezagent-stt#1", "seq": 1, "event": "stt.transcript", "text": "Sí, confirmo."}
+{"thread": "ezagent-answer#0", "seq": 1, "event": "tool.call", "name": "fetch_page", "args": "{\"url\":\"http://127.0.0.1:<port>/pagina\"}"}
+{"thread": "ezagent-answer#0", "seq": 2, "event": "tool.result", "name": "fetch_page", "ok": true, "outcome": "completed"}
+{"thread": "ezagent-answer#0", "seq": 3, "event": "tool.call", "name": "write_file", "args": "{\"path\":\"resumen.txt\",\"content\":\"El proyecto está listo.\"}"}
+{"thread": "ezagent-answer#0", "seq": 4, "event": "tool.result", "name": "write_file", "ok": true, "outcome": "completed"}
+{"thread": "ezagent-answer#0", "seq": 5, "event": "file.write", "name": "chat.jsonl", "role": "assistant"}
+{"thread": "ezagent-answer#0", "seq": 6, "event": "chat.cancel", "text": "Abro la página."}
+{"thread": "ezagent-speech#0", "seq": 1, "event": "speech.say", "text": "Abro la página."}
+{"thread": "ezagent-speech#0", "seq": 2, "event": "speech.cut", "text": "Abro la página."}
+{"thread": "ezagent-tts#0", "seq": 1, "event": "speech.say", "text": "Voy a crear el archivo «<tmp>\\EzAgentWorkspace\\resumen.txt» (23 caracteres). ¿Confirmas?"}

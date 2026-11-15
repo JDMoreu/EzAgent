@@ -1,0 +1,72 @@
+id: "08"
+name: "Cadena planificador a desarrollador con traspaso"
+notes: >
+  Un solo `run` abre al planificador y deja encadenado al desarrollador con
+  `then`. Cuando el planificador termina, EzAgent le pasa su respuesta limpia
+  al desarrollador, avisa del cambio de etapa y, al final, pregunta por el
+  resultado de todo el flujo.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.8
+  announce_all: false
+  default_cwd: "{workspace}"
+  agents:
+    planificador:
+      - "{home}/bin/claude.exe"
+      - "--scenario"
+      - "{home}/agent.json"
+      - "--agent"
+      - "claude"
+    desarrollo:
+      - "{home}/bin/opencode.exe"
+      - "--scenario"
+      - "{home}/agent.json"
+      - "--agent"
+      - "opencode"
+setup:
+  agent_bins: [opencode, claude]
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: call_cadena
+          name: delegate_to_agent
+          arguments: '{"action":"run","agent":"planificador","name":"planificador","task":"Planifica una landing sencilla.","then":[{"agent":"desarrollo","name":"desarrollo","task":"Este es el plan:\n{output}\n\nImplementa el plan."}]}'
+    - content: "Planificador y desarrollo están en marcha. Te aviso al cerrar el flujo."
+whisper:
+  transcripts:
+    - "Planifica la tarea y luego pásala a desarrollo."
+  repeat_last: false
+agent:
+  scenes: [working, done]
+  delay_ms: 6000
+  conclusion: "Plan aprobado: tres secciones."
+steps:
+  - wait_state: listening
+  - audio: planifica_y_pasa.wav
+  - wait_speech: "¿Quieres que te lo resuma"
+  - wait_quiet: 40
+expect:
+  states: [listening, thinking, speaking, listening, speaking, listening, speaking, listening]
+  user:
+    - "Planifica la tarea y luego pásala a desarrollo."
+  tool_names: [delegate_to_agent]
+  llm_requests: 2
+  speech_any:
+    - "Terminó «planificador». Ahora empieza «desarrollo»."
+    - "terminó todo el flujo: planificador → desarrollo"
+  audit:
+    - {tool: delegate_to_agent, decision: allow, taint: false, ok: true}
+  hc:
+    planificador:
+      state: idle
+      screen_contains: ["Plan aprobado: tres secciones."]
+    desarrollo:
+      state: idle
+      screen_contains: ["Implementa el plan.", "Plan aprobado: tres secciones."]
+  no_confirm: true
+  final:
+    state: listening
+    in_call: true

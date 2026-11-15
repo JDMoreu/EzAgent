@@ -179,3 +179,9 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
   `limit: 0` y `limit: -1`.
 - Recomendación posterior: devolver `[]` con `limit <= 0` y regenerar
   `chat_store/recent`; no hay otro consumidor que dependa del valor actual.
+
+## Q-P-REPLAY-01
+- Archivo y líneas: `src/ezagent/voice/app.py:1791-1808` (`_speak_same_turn`) y `:1761-1769` (`_new_tts_stop`), alcanzado desde `:1810-1829` (`_show_confirmation`).
+- Qué hace mal: la pregunta de confirmación se dice con `_speak_same_turn` para no invalidar el turno, pero esa función llama a `_new_tts_stop`, que activa el `stop_event` del turno en curso. En cuanto el usuario responde, la herramienta se ejecuta y después `_answer_worker` ve el stop activo, cancela el turno y tira la respuesta final del LLM (`chat.cancel` con texto vacío). La operación sí ocurre; lo que no se oye ni se ve es el texto que el modelo había preparado para después de la confirmación.
+- Cómo se reproduce en Rust: los escenarios `10a`, `10b`, `11`, `12`, `13a` y `13b` esperan `assistant: []` y `llm_requests` = una petición más que turnos visibles; el `tool.result` y la auditoría demuestran que la herramienta se ejecutó. No hay fixture de Rust para este flujo (es el arnés de reproducción).
+- Recomendación posterior: separar el evento de parada del TTS de la pregunta del `stop_event` del turno (por ejemplo, un `stop` propio como el de `_speak_busy`) y, al terminar de responder, dejar que `_answer_worker` continúe con el siguiente turno del LLM. Si se corrige, hay que actualizar los seis escenarios de confirmación y sus aserciones `assistant`/`llm_requests`.

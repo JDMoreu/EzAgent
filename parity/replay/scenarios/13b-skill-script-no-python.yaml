@@ -1,0 +1,69 @@
+id: "13b"
+name: "Skill con script sin Python disponible"
+notes: >
+  Misma skill que 13a, pero el arnés simula el ejecutable empaquetado sin un
+  intérprete de Python. Tras la confirmación, `run_skill_script` devuelve el
+  error de la app y no se ejecuta nada; el turno se cancela después.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.7
+  ack_tools: false
+  python_available: false
+setup:
+  permissions: |
+    [skills]
+    allow_scripts = true
+  skills:
+    saludo:
+      description: "Saluda y ejecuta un script de prueba"
+      body: "Devuelve un saludo breve."
+      scripts:
+        scripts/saludo.py: |
+          print("Hola desde la skill.")
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: call_cargar
+          name: load_skill
+          arguments: '{"name":"saludo"}'
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: call_script
+          name: run_skill_script
+          arguments: '{"skill":"saludo","script":"scripts/saludo.py"}'
+    - content: "No pude ejecutar el script: falta un intérprete de Python."
+whisper:
+  transcripts:
+    - "Usa la skill de saludo y ejecuta su script."
+    - "Sí, confirmo."
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: usa_la_skill.wav
+  - wait_speech: "¿Confirmas?"
+  - audio: si_confirmo.wav
+  - wait_quiet: 30
+expect:
+  states: [listening, thinking, speaking, listening, thinking, listening]
+  user:
+    - "Usa la skill de saludo y ejecuta su script."
+  assistant: []
+  speech_any:
+    - "¿Confirmas?"
+  confirms:
+    - "Ejecutar el script «scripts/saludo.py» de la skill «saludo»"
+  confirm_count: 1
+  tool_names: [load_skill, run_skill_script]
+  llm_requests: 3
+  audit:
+    - {tool: load_skill, decision: allow, taint: true, ok: true}
+    - {tool: run_skill_script, decision: confirm_yes, taint: true, ok: false}
+  files:
+    "{workspace}/skill_out.txt":
+      exists: false
+  final:
+    state: listening
+    in_call: true

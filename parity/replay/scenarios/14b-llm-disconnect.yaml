@@ -1,0 +1,33 @@
+id: "14b"
+name: "Error del LLM: desconexión"
+notes: >
+  El proveedor no escucha en la dirección configurada. La app no reintenta ni
+  espera el turno entero: avisa de que no pudo conectar y vuelve a escuchar.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.6
+  llm_base_url: "http://127.0.0.1:9/v1"
+  llm_timeout_secs: 3.0
+llm:
+  model: fake-model
+  turns: []
+whisper:
+  transcripts:
+    - "¿Qué hora es?"
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: que_hora_es.wav
+  - wait_speech: "No pude conectar con Personalizado"
+  - wait_quiet: 20
+expect:
+  user:
+    - "¿Qué hora es?"
+  assistant:
+    - "No pude conectar con Personalizado. Revisa la conexión o la dirección de la API."
+  speech_contains:
+    - "No pude conectar con Personalizado. Revisa la conexión o la dirección de la API."
+  llm_requests: 0
+  final:
+    state: listening
+    in_call: true
