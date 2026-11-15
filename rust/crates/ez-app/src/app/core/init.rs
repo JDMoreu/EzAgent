@@ -250,9 +250,9 @@ fn build_hud(
         cfg: Arc::clone(cfg),
         config_file: config_file.to_path_buf(),
     });
-    // DECISION: sin pintor de iconos; `ez-app` no depende de `ez-gfx` y el
-    // cableado de iconos es de la tarea que monte el HUD completo (F6-07).
-    create_ui(host, Some(hud_config), None)
+    // F6-07 conecta el rasterizador real de iconos (F2-11).
+    let icons = Arc::new(crate::app::live::LiveIcons) as Arc<dyn ez_hud::paint::peek::IconPainter>;
+    create_ui(host, Some(hud_config), Some(icons))
 }
 
 fn build_chat(parts: &mut AppParts, cfg: &VoiceConfig) -> Arc<ChatModel> {

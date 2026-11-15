@@ -6,6 +6,7 @@ pub mod chat;
 pub mod core;
 pub mod demo;
 pub mod events;
+pub mod live;
 pub mod main;
 pub mod menu_wiring;
 pub mod pause;

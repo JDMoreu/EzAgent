@@ -20,7 +20,6 @@ use parking_lot::Mutex;
 use serde_json::{Map, Value};
 
 use super::core::{cfg_float, cfg_text, cfg_truthy, log, AppEvent, VoiceApp};
-use super::events::PauseApi;
 
 /// Lo que `_on_watcher_event` y `_resume_pending_tasks` piden a F6-07.
 ///
