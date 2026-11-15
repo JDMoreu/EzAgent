@@ -35,6 +35,16 @@ pub enum Pending {
     Speech(String),
     /// `wait_transcript`.
     Transcript(String),
+    /// `wait_hc`: terminales creadas en `fake-hc`.
+    Hc(usize),
+    /// `wait_confirm_settled`.
+    ConfirmSettled,
+    /// `wait_drained`: plazo, segundos del plazo y desde cuándo está quieta.
+    Drained {
+        deadline: Instant,
+        timeout: f64,
+        since: Option<Instant>,
+    },
     /// `sleep`.
     Sleep(Instant),
     /// `wait_quiet`: plazo y desde cuándo está en calma.
@@ -51,6 +61,8 @@ pub struct Driver {
     pub speaker: Arc<ReplaySpeaker>,
     pub trace: Arc<Trace>,
     pub requests_path: PathBuf,
+    /// Estado de `fake-hc` para `hc_set`, `wait_hc` y `wait_confirm_settled`.
+    pub hc_path: Option<PathBuf>,
     steps: Vec<Value>,
     index: usize,
     pending: Option<Pending>,
@@ -65,6 +77,7 @@ impl Driver {
         speaker: Arc<ReplaySpeaker>,
         trace: Arc<Trace>,
         requests_path: PathBuf,
+        hc_path: Option<PathBuf>,
         scenario: &Value,
     ) -> Self {
         let steps = scenario
@@ -78,6 +91,7 @@ impl Driver {
             speaker,
             trace,
             requests_path,
+            hc_path,
             steps,
             index: 0,
             pending: None,
@@ -137,6 +151,13 @@ impl Driver {
                 .with_event("stt.transcript")
                 .iter()
                 .any(|item| item.get("text").and_then(Value::as_str) == Some(wanted))),
+            Pending::Hc(wanted) => Ok(self.hc_terminals() >= *wanted),
+            Pending::ConfirmSettled => Ok(self.confirm_settled()),
+            Pending::Drained {
+                deadline,
+                timeout,
+                since,
+            } => self.poll_drained(*deadline, *timeout, since),
             Pending::Sleep(deadline) => Ok(Instant::now() >= *deadline),
             Pending::Quiet { deadline, since } => self.poll_quiet(*deadline, since),
         }
@@ -185,20 +206,83 @@ impl Driver {
 
     /// Hilos de turno aún vivos (`threading.enumerate` del Python).
     fn busy_workers(&self) -> bool {
-        const BUSY: [&str; 5] = [
+        self.busy_named(&[
             "ezagent-answer",
             "ezagent-stt",
             "ezagent-tts",
             "ezagent-speech",
             "ezagent-wake",
-        ];
+        ])
+    }
+
+    /// ¿Hay algún hilo propio cuyo nombre empieza por alguno de `prefixes`?
+    fn busy_named(&self, prefixes: &[&str]) -> bool {
         self.app.inner.runtime.workers.lock().iter().any(|handle| {
             !handle.is_finished()
                 && handle
                     .thread()
                     .name()
-                    .is_some_and(|name| BUSY.iter().any(|prefix| name.starts_with(prefix)))
+                    .is_some_and(|name| prefixes.iter().any(|prefix| name.starts_with(prefix)))
         })
+    }
+
+    /// `wait_hc`: terminales del estado de `fake-hc`.
+    fn hc_terminals(&self) -> usize {
+        self.hc_path.as_deref().map_or(0, |path| {
+            super::hc_b::read_hc(path)
+                .get("terminals")
+                .and_then(Value::as_array)
+                .map_or(0, Vec::len)
+        })
+    }
+
+    /// `wait_confirm_settled`: sin confirmación pendiente y fuera de turno.
+    fn confirm_settled(&self) -> bool {
+        let pending = self
+            .app
+            .inner
+            .agents
+            .agent
+            .lock()
+            .as_ref()
+            .is_some_and(|agent| agent.confirm_pending());
+        !pending && !matches!(self.app.state().as_str(), "thinking" | "speaking")
+    }
+
+    /// `wait_drained`: sin eventos ni avisos y sin hilos de voz o turno.
+    ///
+    // DECISION: además de los hilos propios se mira el altavoz: el hilo
+    // `ezagent-speech` de `ez-tts` no está en `workers`, y `threading.enumerate`
+    // del Python sí lo veía.
+    fn poll_drained(
+        &self,
+        deadline: Instant,
+        timeout: f64,
+        since: &mut Option<Instant>,
+    ) -> Result<bool, String> {
+        let now = Instant::now();
+        let quiet = self.app.events().is_empty()
+            && self.app.inner.ui.menu_events.is_empty()
+            && self.app.inner.agents.announce_queue.lock().is_empty()
+            && !self.busy_named(&[
+                "ezagent-speech",
+                "ezagent-answer",
+                "ezagent-chat",
+                "ezagent-tts",
+                "ezagent-stt",
+                "ezagent-swarm-launch",
+            ])
+            && !self.speaker.busy()
+            && !matches!(self.app.state().as_str(), "thinking" | "speaking");
+        if !quiet {
+            *since = None;
+            return Ok(false);
+        }
+        if now > deadline {
+            return Err(format!("la app no quedó quieta en {timeout:.0} s"));
+        }
+        let began = *since.get_or_insert(now);
+        Ok(now.duration_since(began).as_secs_f64() >= 0.3)
     }
 
     /// Líneas de `requests.jsonl` del falso LLM.

@@ -15,7 +15,7 @@ use crate::app::states::tests::support::{
 
 use super::super::core::state::PendingStt;
 use super::super::core::AppEvent;
-use super::{final_outcome, llm_label, turn_error_name};
+use super::{final_outcome, is_tool_ack, llm_label, turn_error_name};
 
 fn timing() -> Arc<TurnTimings> {
     Arc::new(TurnTimings::new(0.0, 0.0))
@@ -271,4 +271,20 @@ fn turn_error_names_match_the_python_exceptions() {
         turn_error_name(&TurnError::Llm(LlmError::other("x"))),
         "LlmError"
     );
+}
+
+#[test]
+fn tool_ack_phrases_are_recognised_without_real_answers() {
+    for text in [
+        "Busco en la web. ",
+        "Abro la página.",
+        "Ejecuto el script.",
+        "Le escribo al agente.",
+        "Se lo paso a un agente.",
+        "Se lo paso a OpenCode. ",
+    ] {
+        assert!(is_tool_ack(text), "{text}");
+    }
+    assert!(!is_tool_ack("Abro la página y te cuento."));
+    assert!(!is_tool_ack("Se lo paso a OpenCode y sigo."));
 }

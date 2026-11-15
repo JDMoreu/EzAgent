@@ -32,6 +32,10 @@ pub fn handlers() -> Vec<Box<dyn Step>> {
         Box::new(WaitQuiet),
         Box::new(WaitSpeech),
         Box::new(WaitTranscript),
+        Box::new(crate::replay::steps_b::WaitHc),
+        Box::new(crate::replay::steps_b::WaitConfirmSettled),
+        Box::new(crate::replay::steps_b::WaitDrained),
+        Box::new(crate::replay::steps_b::HcSet),
         Box::new(Sleep),
     ]
 }
