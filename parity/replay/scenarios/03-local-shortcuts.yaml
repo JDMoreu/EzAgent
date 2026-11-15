@@ -1,0 +1,54 @@
+id: "03"
+name: "Atajos locales: repetir, silenciar, reactivar, colgar"
+notes: >
+  Un turno real al LLM y después los atajos que no pasan por el modelo:
+  «Repite», «Ok, gracias. Mutéate» (la cortesía se descarta), la frase de
+  reactivación, «Cuelga» y los atajos globales de llamada y corte.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 1.8
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - content: "Puedo ayudarte con la hora."
+whisper:
+  transcripts:
+    - "¿Qué puedes hacer?"
+    - "Repite."
+    - "Ok, gracias. Mutéate."
+    - "EzAgent, escúchame."
+    - "Cuelga."
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: que_puedes_hacer.wav
+  - wait_quiet: 25
+  - audio: repite.wav
+  - wait_quiet: 25
+  - audio: ok_gracias_muteate.wav
+  - wait_quiet: 25
+  - audio: ezagent_escuchame.wav
+  - wait_quiet: 25
+  - audio: cuelga.wav
+  - wait_state: idle
+  - hotkey: toggle
+  - wait_state: listening
+  - hotkey: cancel
+  - wait_state: idle
+expect:
+  states: [thinking, speaking, idle, listening, idle]
+  user: ["¿Qué puedes hacer?"]
+  assistant: ["Puedo ayudarte con la hora."]
+  speech_contains:
+    - "Puedo ayudarte con la hora."
+    - "En pausa. Di «EzAgent, escúchame» cuando me necesites."
+    - "Dime."
+    - "Listo, cierro."
+  speech_count:
+    "Puedo ayudarte con la hora.": 2
+    "No hay nada que repetir todavía.": 0
+  llm_requests: 1
+  final:
+    state: idle
+    in_call: false

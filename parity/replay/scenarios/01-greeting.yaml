@@ -1,0 +1,38 @@
+id: "01"
+name: "Saludo y respuesta sin herramientas"
+notes: >
+  Una frase al LLM, una respuesta hablada y un ruido de sala que no debe
+  despertar al VAD ni llegar a Whisper.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 1.8
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - content: "Claro, aquí estoy."
+whisper:
+  transcripts:
+    - "Hola, ¿cómo estás?"
+    - "RUIDO."
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: hola_como_estas.wav
+  - wait_quiet: 25
+  - noise: 1.0
+  - wait_quiet: 25
+expect:
+  states: [listening, thinking, speaking, listening]
+  user: ["Hola, ¿cómo estás?"]
+  assistant: ["Claro, aquí estoy."]
+  speech_contains: ["Claro, aquí estoy."]
+  speech_count:
+    "Claro, aquí estoy.": 1
+  tool_calls: []
+  llm_requests: 1
+  never: ["RUIDO."]
+  final:
+    state: listening
+    in_call: true
+    muted: false

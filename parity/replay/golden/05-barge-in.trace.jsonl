@@ -1,0 +1,42 @@
+{"thread": "main#0", "seq": 1, "event": "hud.in_call", "value": false}
+{"thread": "main#0", "seq": 2, "event": "hud.show", "state": "idle"}
+{"thread": "main#0", "seq": 3, "event": "app.start", "scenario": "05"}
+{"thread": "main#0", "seq": 4, "event": "driver.step", "index": 1, "step": "wait_state:listening"}
+{"thread": "main#0", "seq": 5, "event": "hud.in_call", "value": true}
+{"thread": "main#0", "seq": 6, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 7, "event": "driver.step", "index": 2, "step": "audio:cuentame_algo_largo.wav"}
+{"thread": "main#0", "seq": 8, "event": "driver.step", "index": 3, "step": "wait_state:speaking"}
+{"thread": "main#0", "seq": 9, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 10, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 11, "event": "chat.user", "text": "Cuéntame algo largo.", "source": "voice"}
+{"thread": "main#0", "seq": 12, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 13, "event": "driver.step", "index": 4, "step": "audio:espera_para.wav"}
+{"thread": "main#0", "seq": 14, "event": "driver.step", "index": 5, "step": "wait_quiet:30"}
+{"thread": "main#0", "seq": 15, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 16, "event": "hud.show", "state": "thinking"}
+{"thread": "main#0", "seq": 17, "event": "file.write", "name": "chat.jsonl", "role": "user"}
+{"thread": "main#0", "seq": 18, "event": "chat.user", "text": "Espera, para.", "source": "voice"}
+{"thread": "main#0", "seq": 19, "event": "hud.show", "state": "speaking"}
+{"thread": "main#0", "seq": 20, "event": "hud.show", "state": "listening"}
+{"thread": "main#0", "seq": 21, "event": "hud.close"}
+{"thread": "main#0", "seq": 22, "event": "app.end", "state": "listening", "in_call": true, "muted": false}
+{"thread": "main#0", "seq": 23, "event": "chat.snapshot", "role": "user", "text": "Cuéntame algo largo."}
+{"thread": "main#0", "seq": 24, "event": "chat.snapshot", "role": "assistant", "text": "Te cuento algo largo. Primero una cosa. Luego otra."}
+{"thread": "main#0", "seq": 25, "event": "chat.snapshot", "role": "user", "text": "Espera, para."}
+{"thread": "main#0", "seq": 26, "event": "chat.snapshot", "role": "assistant", "text": "Vale, paro."}
+{"thread": "main#0", "seq": 27, "event": "llm.requests", "count": 2}
+{"thread": "ezagent-call#0", "seq": 1, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 2, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-call#0", "seq": 3, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 4, "event": "vad.barge_in"}
+{"thread": "ezagent-call#0", "seq": 5, "event": "vad.speech_start"}
+{"thread": "ezagent-call#0", "seq": 6, "event": "vad.utterance", "reason": "silence"}
+{"thread": "ezagent-stt#0", "seq": 1, "event": "stt.transcript", "text": "Cuéntame algo largo."}
+{"thread": "ezagent-stt#1", "seq": 1, "event": "stt.transcript", "text": "Espera, para."}
+{"thread": "ezagent-answer#0", "seq": 1, "event": "file.write", "name": "chat.jsonl", "role": "assistant"}
+{"thread": "ezagent-answer#0", "seq": 2, "event": "chat.assistant", "text": "Te cuento algo largo. Primero una cosa. Luego otra."}
+{"thread": "ezagent-answer#1", "seq": 1, "event": "file.write", "name": "chat.jsonl", "role": "assistant"}
+{"thread": "ezagent-answer#1", "seq": 2, "event": "chat.assistant", "text": "Vale, paro."}
+{"thread": "ezagent-speech#0", "seq": 1, "event": "speech.say", "text": "Te cuento algo largo."}
+{"thread": "ezagent-speech#0", "seq": 2, "event": "speech.cut", "text": "Te cuento algo largo."}
+{"thread": "ezagent-speech#1", "seq": 1, "event": "speech.say", "text": "Vale, paro."}

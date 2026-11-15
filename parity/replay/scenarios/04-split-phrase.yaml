@@ -1,0 +1,39 @@
+id: "04"
+name: "Frase partida en dos: unión dentro de 3 s"
+notes: >
+  La primera mitad cierra un turno por la pausa; la segunda llega mientras el
+  modelo piensa y se transcribe junto con la anterior. El primer turno del LLM
+  queda cancelado (por eso su guion lleva retardo).
+settings:
+  silence_secs: 0.9
+  speech_secs_min: 1.8
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - content: "Descartado."
+      delay_ms: 2000
+    - content: "Son las nueve y media."
+whisper:
+  transcripts:
+    - "Quiero que"
+    - "Quiero que me digas qué hora es."
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: quiero_que.wav
+  - wait_state: thinking
+  - wait_requests: 1
+  - audio: me_digas_que_hora_es.wav
+  - wait_quiet: 30
+expect:
+  states: [thinking, listening, thinking, speaking, listening]
+  user: ["Quiero que me digas qué hora es."]
+  assistant: ["Son las nueve y media."]
+  speech_contains: ["Son las nueve y media."]
+  speech_count:
+    "Descartado.": 0
+  llm_requests: 2
+  final:
+    state: listening
+    in_call: true

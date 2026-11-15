@@ -1,0 +1,36 @@
+id: "02"
+name: "Pregunta de hora con herramienta local"
+notes: >
+  El LLM pide `get_datetime` (herramienta local), recibe el resultado y
+  responde en voz alta. La petición pasa por el núcleo agéntico real.
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 1.8
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - finish_reason: tool_calls
+      tool_calls:
+        - id: call_hora
+          name: get_datetime
+          arguments: "{}"
+    - content: "Son las nueve y media de la mañana."
+whisper:
+  transcripts:
+    - "¿Qué hora es?"
+  repeat_last: false
+steps:
+  - wait_state: listening
+  - audio: que_hora_es.wav
+  - wait_quiet: 25
+expect:
+  states: [thinking, speaking, listening]
+  user: ["¿Qué hora es?"]
+  assistant: ["Son las nueve y media de la mañana."]
+  speech_contains: ["Son las nueve y media de la mañana."]
+  tool_calls: ["get_datetime {}"]
+  llm_requests: 2
+  final:
+    state: listening
+    in_call: true
