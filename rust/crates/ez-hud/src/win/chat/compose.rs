@@ -4,6 +4,12 @@
 //! the content appears row by row, and the live orb and status line sit on top.
 //! Everything is painted in the window canvas in logical pixels and scaled at
 //! the physical size, like the rest of the HUD.
+//!
+//! The Python let numpy broadcast each pass over the whole canvas; here every
+//! pass walks contiguous rows and premultiplies as it writes, so a morph frame
+//! allocates nothing but the frame itself: no full-size temporaries, no
+//! re-rasterized content, and the canvas is borrowed from a thread pool
+//! (`MORPH_SECS = 0.28` leaves room for ~17 frames at 60 fps).
 
 use ez_gfx::raster::Image;
 use ez_gfx::resample::Resampling;

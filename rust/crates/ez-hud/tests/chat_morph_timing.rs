@@ -359,7 +359,7 @@ fn best<F: FnMut()>(runs: usize, mut frame: F) -> f64 {
     floor
 }
 
-fn measure(scale: f64, p: f64, closing: bool, runs: usize) -> f64 {
+fn measure(scale: f64, p: f64, closing: bool, live: bool, runs: usize) -> f64 {
     let ui = FakeUi::new(scale);
     let (mut view, window, form) = scene_for(scale);
     let anim = if closing {
@@ -377,7 +377,7 @@ fn measure(scale: f64, p: f64, closing: bool, runs: usize) -> f64 {
             act: 0.0,
             now: 0.0,
         };
-        compose_cached(&mut scene, p, false, window, cache);
+        compose_cached(&mut scene, p, live, window, cache);
     };
     once(&mut content);
     best(runs, || once(&mut content))
@@ -391,12 +391,12 @@ fn chat_morph_frames_fit_the_budget() {
     let progress = [0.0, 0.25, 0.5, 0.75, 1.0];
     let mut slowest: f64 = 0.0;
     for scale in [1.0, 1.25, 1.5] {
-        let closing = measure(scale, 0.5, true, 15);
+        let closing = measure(scale, 0.5, true, true, 15);
         eprintln!("scale {scale:.2}: closing p=0.50 {closing:6.2} ms");
         slowest = slowest.max(closing);
         let mut row = String::new();
         for p in progress {
-            let ms = measure(scale, p, false, 15);
+            let ms = measure(scale, p, false, true, 15);
             slowest = slowest.max(ms);
             row.push_str(&format!(" p={p:.2}: {ms:6.2} ms |"));
         }

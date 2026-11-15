@@ -118,10 +118,9 @@ impl ChatUi for HudChatUi {
         let buffer = self.hud.upgrade()?.chat_fluid(width, height, now)?;
         let columns = buffer.width;
         let rows = buffer.height;
-        Some(Array3::from_shape_fn(
-            (rows, columns, 3),
-            |(row, column, channel)| buffer.data[(row * columns + column) * 3 + channel],
-        ))
+        // The buffer is already row-major `(rows, columns, 3)`: wrapping it
+        // avoids rebuilding 1.9 M values per frame (the morph repaints).
+        Array3::from_shape_vec((rows, columns, 3), buffer.data).ok()
     }
 
     fn set_form_hidden(&self, hidden: bool) {

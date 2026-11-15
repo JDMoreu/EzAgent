@@ -119,7 +119,7 @@ pub(super) fn paint_shape(
         None
     };
     shadow_under(canvas, rect, radius, shadow_k * alpha_k, scene.ui.scale());
-    paint_body_for_tests(
+    paint_body(
         canvas,
         body,
         fluid.as_ref(),
@@ -137,7 +137,7 @@ pub(super) fn paint_shape(
 /// Body colour or fluid, premultiplied by coverage and alpha, written straight
 /// onto the canvas (`rgb * alpha` then `_composite_over` in the Python).
 #[allow(clippy::too_many_arguments)]
-pub(super) fn paint_body_for_tests(
+fn paint_body(
     canvas: &mut Array3<f32>,
     body: [f32; 3],
     fluid: Option<&Array3<f32>>,
@@ -173,7 +173,7 @@ pub(super) fn paint_body_for_tests(
         {
             let alpha = mate * alpha_k;
             let keep = 1.0 - alpha;
-            for (channel, value) in bottom.iter_mut().take(3).enumerate() {
+            for channel in 0..3 {
                 let color = match fluid_row {
                     None => body[channel] * alpha,
                     Some(values) => {
@@ -181,7 +181,7 @@ pub(super) fn paint_body_for_tests(
                             * alpha
                     }
                 };
-                *value = *value * keep + color;
+                bottom[channel] = bottom[channel] * keep + color;
             }
             bottom[3] = bottom[3] * keep + alpha;
         }

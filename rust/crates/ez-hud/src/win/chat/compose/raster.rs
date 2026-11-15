@@ -168,24 +168,7 @@ pub(super) fn span(
 /// `_composite`: premultiplied `src` over the canvas.
 pub(super) fn composite(canvas: &mut Array3<f32>, src: &Array3<f32>, x0: i32, y0: i32) {
     let (height, width, _) = src.dim();
-    composite_rows(canvas, src, width, 0, width, 0, height, x0, y0);
-}
-
-/// Composits the source rectangle `[x_from, x_to)`×`[y_from, y_to)` over the
-/// canvas, clipped to its bounds.
-#[allow(clippy::too_many_arguments)]
-fn composite_rows(
-    canvas: &mut Array3<f32>,
-    src: &Array3<f32>,
-    width: usize,
-    x_from: usize,
-    x_to: usize,
-    y_from: usize,
-    y_to: usize,
-    x0: i32,
-    y0: i32,
-) {
-    let Some(clip) = span(canvas, x0, y0, x_from, x_to, y_from, y_to) else {
+    let Some(clip) = span(canvas, x0, y0, 0, width, 0, height) else {
         return;
     };
     let canvas_w = canvas_width(canvas);
