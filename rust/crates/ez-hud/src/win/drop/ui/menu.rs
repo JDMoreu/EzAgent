@@ -88,6 +88,8 @@ impl DropUI {
             menu.set_groups(&groups, &title, now);
             menu.open(now);
         }
+        // La tarjeta nace con el puntero en la barra, no en la lista de secciones.
+        *self.sidebar_hover.lock() = None;
         self.bar.lock().menu_open = true;
         self.place_card(true);
     }
