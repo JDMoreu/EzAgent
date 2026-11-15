@@ -83,8 +83,20 @@ fn model_callbacks(callbacks: MenuCallbacks) -> ModelCallbacks {
         action: Some(Box::new(move |key| action(key))),
         copy: Some(Box::new(move |text| copy(text))),
         hotkey_capture: Some(Box::new(move |active| hotkey_capture(active))),
-        ..ModelCallbacks::default()
+        // `Menu(modifier_source=hk.os_modifiers)`: `_ensure_menu` no lo pasa
+        // porque es el valor por defecto del constructor del Python.
+        modifier_source: Some(Box::new(os_modifiers)),
     }
+}
+
+/// `hk.os_modifiers()` como los nombres que usa el menú.
+fn os_modifiers() -> std::collections::BTreeSet<String> {
+    let mods = crate::win::settings_window::os_modifiers();
+    ["ctrl", "alt", "shift", "win"]
+        .into_iter()
+        .filter(|name| mods.contains(name))
+        .map(str::to_string)
+        .collect()
 }
 
 /// Valor del modelo → `ConfigValue` de la barra: `_live_setting` del Python
