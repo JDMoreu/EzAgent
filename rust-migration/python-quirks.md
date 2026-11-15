@@ -318,3 +318,23 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
 - Qué hace mal (dependencia no declarada): la máscara depende del FreeType que empaquete la rueda de Pillow, que no está fijado por el proyecto. El `.venv` trae Pillow 13.0.0 con FreeType 2.14.3; `freetype-sys 0.23.0` (lo único que admite el workspace) compila FreeType 2.13.2. El intérprete de 2.13.2 desplaza y engorda los acentos compuestos: U+00B4 a 13 px sale `(3×2, top 10, [0,164,83] [48,202,2])` frente a `(3×2, top 9, [17,192,49] [10,15,0])` de Pillow, y `"Automático"` mide 10 px de alto en vez de 9.
 - Cómo se reproduce en Rust: `ez-gfx::text` produce esas mismas máscaras de 2.13.2; `tests/text_mask_parity.rs` sondea U+00B4 para distinguir los dos rasterizadores. Con 2.14.3 las 181 máscaras de la tabla coinciden byte a byte.
 - Recomendación posterior: fijar la versión de Pillow/FreeType con la que se generan los PNG dorados y actualizar `freetype-sys` a una versión con FreeType ≥ 2.14.0; mientras tanto, cualquier prueba de texto byte a byte queda atada a 2.13.2.
+
+## Hallazgos de P-HUD-E (cuadros del chat: texto enriquecido)
+
+### Q-PHUDE-01
+- Archivo y líneas: `src/ezagent/voice/chat/render_base.py:171-210` (`draw_text_at`) sobre Pillow 13.0.0.
+- Qué hace mal (dependencia): `ImageDraw.text` sobre un `RGBA` usa `bitmap_alpha_blend` de `Draw.c`, que **no** es «source-over» en alfa directo. Con el destino transparente copia el color de la tinta y solo escala la cobertura por el alfa de la tinta; con cualquier otro destino mezcla los cuatro canales como si el fondo estuviera premultiplicado: `(src*mask + dst*(255-mask) + 127) / 255`. Componer con `Image.alpha_composite` da hasta 28 niveles de diferencia sobre el fondo del chip de código.
+- Cómo se reproduce en Rust: `paint::chat::base::blend_mask` aplica esa fórmula canal a canal (el caso «destino con alfa 0» copia la tinta), y `text_blend_matches_pillow` la fija contra los valores medidos.
+- Recomendación: ninguna en el Python; es comportamiento de Pillow que el puerto debe copiar. Si algún día se cambia de motor de dibujo, revisar esta mezcla antes que nada.
+
+### Q-PHUDE-02
+- Archivo y líneas: `src/ezagent/voice/chat/render_base.py:196-204` (la cursiva) sobre Pillow 13.0.0.
+- Qué hace mal (dependencia): `Image.transform(size, AFFINE, (1, 0.2, -0.2*ascent, 0, 1, 0), BICUBIC)` no usa el mismo filtro que `Image.resize`: el muestreo es en el **centro** del píxel de destino (`y + 0.5`) y el núcleo cúbico (`|t|³ - 2t² + 1` para `|t|<1`, `-t³ + 5t² - 8t + 4` para el resto) **no se renormaliza**, así que a medio píxel la cobertura suma 1,25 (159+159 de 255).
+- Cómo se reproduce en Rust: `paint::chat::base::shear_rows`/`cubic_kernel` replican ese muestreo y truncan el acumulado; `the_italic_shear_matches_pillow_affine_bicubic` fija una máscara 10x3 contra la transformación real.
+- Recomendación: ninguna en el Python; al portar cualquier otra `Image.transform` del HUD, no reutilizar el resampleo de `Image.resize`.
+
+### Q-PHUDE-03
+- Archivo y líneas: `src/ezagent/voice/chat/render_base.py:185` (`ImageDraw.text((px, py), ..., anchor="ls")`).
+- Qué hace mal (dependencia): el ancla «ls» pega la máscara del **bbox del contorno** (no la tinta recortada), que puede llevar una fila o columna vacía delante (`*` y los acentos), y redondea primero el ancla (`ctx.px`) para luego desplazar por un número entero de píxeles físicos. Un puerto que ancle la tinta recortada se desvía 1 px en las palabras que empiezan por un glifo con «bearing» (`ñ`, `*`, `Abrir`) y al sumar el redondeo de la línea base.
+- Cómo se reproduce en Rust: `paint::chat::base::{ink_bearing, ink_top}` recuperan el «bearing» y la primera fila de tinta comparando anchos/altos contra un glifo sonda (`T`, `Á`), y el ancla se redondea antes de aplicar el desplazamiento entero; `text_offset_matches_pillow_pen_and_baseline` fija los valores medidos.
+- Recomendación: ninguna en el Python. Cuando `ez-gfx` exponga el bbox del contorno (`ink_left`/`ink_top` de `draw_text`), sustituir las sondas por esas métricas.

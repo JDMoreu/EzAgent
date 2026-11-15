@@ -183,3 +183,75 @@ fn mask_math_matches_pillow() {
     let image = Image::from_rgba(2, 1, vec![1, 2, 3, 0, 4, 5, 6, 0]).expect("image");
     assert_eq!(crop(&image, 1, 0, 2, 1).as_raw(), &[4, 5, 6, 0]);
 }
+
+#[test]
+fn text_offset_matches_pillow_pen_and_baseline() {
+    let body = style("body");
+    let code = style("code");
+    // Pillow pastes the mask at the pen: the ink starts at the glyph's bearing.
+    assert_eq!(super::base::ink_bearing("ñandúes,", body, "body", 1.0), 1);
+    assert_eq!(super::base::ink_bearing("y", body, "body", 1.0), 0);
+    assert_eq!(super::base::ink_bearing("código", code, "code", 1.0), 0);
+    // Rows: the outline box of `*` sits one row above its raster.
+    assert_eq!(super::base::ink_top("*literal*.", body, 1.0), -11);
+    assert_eq!(super::base::ink_top("cursiva", body, 1.0), -10);
+    assert_eq!(super::base::ink_top("También", body, 1.0), -11);
+    assert_eq!(super::base::ink_top("y", body, 1.0), -8);
+}
+
+#[test]
+fn the_italic_shear_matches_pillow_affine_bicubic() {
+    let mut data = vec![0u8; 30];
+    for (x, y, value) in [
+        (2, 0, 255),
+        (3, 1, 255),
+        (4, 2, 255),
+        (2, 1, 200),
+        (6, 0, 120),
+    ] {
+        data[y * 10 + x] = value;
+    }
+    let mask = Mask::from_raw(10, 3, data).expect("mask");
+    // Pillow: `mask.transform(size, AFFINE, (1, 0.2, -0.4, 0, 1, 0), BICUBIC)`
+    // with the baseline on row 2; the outer columns stay empty so the taps are
+    // never clipped at the mask border.
+    let expected = [
+        [0, 0, 215, 92, 0, 0],
+        [0, 0, 175, 255, 25, 0],
+        [0, 0, 0, 27, 250, 0],
+    ];
+    let sheared = super::base::shear_rows(&mask, 2.0, 2);
+    assert_eq!((sheared.width(), sheared.height()), (14, 3));
+    for (y, row) in expected.iter().enumerate() {
+        let produced = &sheared.row(y as u32)[2..8];
+        assert_eq!(produced, row, "row {y}");
+    }
+    // The kernel is Pillow's unnormalised cubic: a half pixel keeps 1.25.
+    assert_eq!(super::base::cubic_kernel(0.0), 1.0);
+    assert_eq!(super::base::cubic_kernel(0.5), 0.625);
+    assert_eq!(super::base::cubic_kernel(1.0), 0.0);
+}
+
+#[test]
+fn text_over_a_transparent_pixel_copies_the_ink() {
+    let pal = palette();
+    let host = EmptyHost;
+    let ctx = Ctx::new(1.0, &pal, 300.0, &host);
+    let mint = Rgba::opaque(94, 226, 196);
+    let mut img = Image::new(40, 40, Rgba::TRANSPARENT);
+    draw_text_at(&mut img, &ctx, 2.0, 20.0, "H", "body", mint, false);
+    let ink = img
+        .pixels()
+        .find(|pixel| pixel.a > 0)
+        .expect("the letter has ink");
+    assert_eq!([ink.r, ink.g, ink.b], [94, 226, 196]);
+    // A half-covered pixel over the chat body blends with Pillow's text ink.
+    let mut chip = Image::new(40, 40, Rgba::opaque(40, 70, 80));
+    super::base::blend_mask(
+        &mut chip,
+        &Mask::from_raw(1, 1, vec![128]).expect("mask"),
+        (0, 0),
+        mint,
+    );
+    assert_eq!(chip.pixel(0, 0), Rgba::new(67, 148, 138, 255));
+}
