@@ -17,14 +17,22 @@ mod tests;
 use std::sync::{Arc, OnceLock};
 
 use ez_core::agent_config::AgentConfig;
-use ez_core::pyvalue::{char_len, head_chars, py_strip, python_str};
+use ez_core::pyvalue::{char_len, head_chars, py_strip, python_str, truthy};
 use regex::Regex;
 use serde_json::{json, Map, Value};
 
 use crate::registry::{ToolInfo, ToolResult, ToolSpec};
 use crate::search::{DdgsSearchProvider, SearchProvider, SearchResult};
 
-pub use url::{is_blocked_ip, validate_public_target, validate_public_url, PublicTarget};
+pub use fetch::{
+    extract_text, FetchClock, FetchHooks, HostResolver, SystemClock, SystemResolver,
+    TransportError, WebRequest, WebResponse, WebTransport,
+};
+pub use url::{
+    is_blocked_ip, pinned_request_target, pinned_request_target_json, pinned_request_target_with,
+    validate_public_target, validate_public_target_json, validate_public_target_with,
+    validate_public_url, PublicTarget,
+};
 
 pub const DEFAULT_MAX_CHARS: i64 = 8000;
 pub const MAX_SEARCH_RESULTS: i64 = 10;
@@ -140,6 +148,15 @@ pub fn run_web_search(provider: &dyn SearchProvider, query: &str, max_results: i
     )
 }
 
+/// `run_web_search` con los argumentos crudos del fixture.
+pub fn run_web_search_json(
+    provider: &dyn SearchProvider,
+    query: &Value,
+    max_results: &Value,
+) -> ToolResult {
+    run_web_search_values(provider, Some(query), Some(max_results))
+}
+
 fn run_web_search_values(
     provider: &dyn SearchProvider,
     query: Option<&Value>,
@@ -153,7 +170,7 @@ fn run_web_search_values(
         Ok(limit) => limit,
         Err(error) => return ToolResult::err(error.message),
     };
-    let raw_results = match provider.search(&normalized_query, limit) {
+    let raw_results = match provider.search_raw(&normalized_query, limit) {
         Ok(results) => results,
         Err(error) => {
             return ToolResult {
@@ -165,7 +182,10 @@ fn run_web_search_values(
             };
         }
     };
-    let results = clean_results(raw_results, limit);
+    let results = match clean_results(&raw_results, limit) {
+        Ok(results) => results,
+        Err(error) => return ToolResult::err(error.message),
+    };
     let body = format_search_results(&normalized_query, &results);
     ToolResult {
         ok: true,
@@ -228,23 +248,38 @@ fn validated_max_results(value: Option<&Value>) -> Result<i64, WebToolError> {
     Ok(limit)
 }
 
-fn clean_results(raw_results: Vec<SearchResult>, max_results: i64) -> Vec<SearchResult> {
-    raw_results
-        .into_iter()
-        .take(max_results as usize)
-        .map(|item| {
-            let title = if item.title.is_empty() {
-                "(sin título)"
-            } else {
-                item.title.as_str()
-            };
-            SearchResult {
-                title: py_strip(title).to_string(),
-                url: py_strip(&item.url).to_string(),
-                snippet: py_strip(&item.snippet).to_string(),
-            }
-        })
-        .collect()
+/// Port de `_clean_results`: acepta `href`/`url` y `body`/`snippet`.
+fn clean_results(raw_results: &Value, max_results: i64) -> Result<Vec<SearchResult>, WebToolError> {
+    let Value::Array(items) = raw_results else {
+        return Err(WebToolError::new(
+            "El proveedor de búsqueda devolvió un resultado con formato no válido.",
+        ));
+    };
+    let mut results = Vec::new();
+    for item in items {
+        let Value::Object(item) = item else {
+            continue;
+        };
+        let pick = |first: &str, second: &str| {
+            item.get(first)
+                .filter(|value| truthy(value))
+                .or_else(|| item.get(second).filter(|value| truthy(value)))
+                .map_or_else(String::new, python_str)
+        };
+        let title = item
+            .get("title")
+            .filter(|value| truthy(value))
+            .map_or_else(|| "(sin título)".to_string(), python_str);
+        results.push(SearchResult {
+            title: py_strip(&title).to_string(),
+            url: py_strip(&pick("url", "href")).to_string(),
+            snippet: py_strip(&pick("snippet", "body")).to_string(),
+        });
+        if results.len() as i64 >= max_results {
+            break;
+        }
+    }
+    Ok(results)
 }
 
 fn format_search_results(query: &str, results: &[SearchResult]) -> String {
@@ -300,14 +335,28 @@ pub fn run_fetch_page(config: &AgentConfig, url: &str, max_chars: i64) -> ToolRe
         config,
         Some(&Value::String(url.to_string())),
         Some(&json!(max_chars)),
+        &FetchHooks::default(),
     )
+}
+
+/// `run_fetch_page` con los argumentos crudos y costuras de pruebas.
+pub fn run_fetch_page_json(
+    config: &AgentConfig,
+    url: &Value,
+    max_chars: &Value,
+    hooks: &FetchHooks,
+) -> ToolResult {
+    run_fetch_page_values(config, Some(url), Some(max_chars), hooks)
 }
 
 fn run_fetch_page_values(
     config: &AgentConfig,
     url: Option<&Value>,
     max_chars: Option<&Value>,
+    hooks: &FetchHooks,
 ) -> ToolResult {
+    // DECISION: `max_chars=None` no es un entero; el Python lo rechaza con el
+    // mensaje de tipo, así que se conserva el `Value` nulo en vez de omitirlo.
     let limit = match validated_max_chars(config, max_chars) {
         Ok(limit) => limit,
         Err(error) => return ToolResult::err(error.message),
@@ -317,7 +366,7 @@ fn run_fetch_page_values(
         Some(Value::String(text)) => text.as_str(),
         Some(_) => return ToolResult::err("La URL debe ser una cadena de texto."),
     };
-    match fetch::download_page_text(config, url) {
+    match fetch::download_page_text_with(config, url, hooks) {
         Err(error) => ToolResult::err(error.message),
         Ok((final_url, page_text)) => ToolResult::ok(Value::String(wrap_untrusted(
             &final_url,
@@ -331,11 +380,20 @@ pub fn build_web_tools(
     config: &AgentConfig,
     provider: Option<Arc<dyn SearchProvider>>,
 ) -> Vec<ToolSpec> {
+    build_web_tools_with_hooks(config, provider, &FetchHooks::default())
+}
+
+/// Igual que [`build_web_tools`], con costuras de descarga para las pruebas.
+pub fn build_web_tools_with_hooks(
+    config: &AgentConfig,
+    provider: Option<Arc<dyn SearchProvider>>,
+    hooks: &FetchHooks,
+) -> Vec<ToolSpec> {
     let active_provider = provider.unwrap_or_else(|| Arc::new(DdgsSearchProvider::new()));
     let default_max_chars = configured_max_chars(config);
     vec![
         search_tool(active_provider),
-        fetch_tool(config, default_max_chars),
+        fetch_tool(config, default_max_chars, hooks.clone()),
     ]
 }
 
@@ -385,7 +443,7 @@ fn search_tool(provider: Arc<dyn SearchProvider>) -> ToolSpec {
     search
 }
 
-fn fetch_tool(config: &AgentConfig, default_max_chars: i64) -> ToolSpec {
+fn fetch_tool(config: &AgentConfig, default_max_chars: i64, hooks: FetchHooks) -> ToolSpec {
     let config = config.clone();
     let mut fetch = ToolSpec::new(
         "fetch_page",
@@ -412,7 +470,7 @@ fn fetch_tool(config: &AgentConfig, default_max_chars: i64) -> ToolSpec {
         Arc::new(move |args| {
             let default_max = json!(default_max_chars);
             let max_chars = args.get("max_chars").unwrap_or(&default_max);
-            Ok(run_fetch_page_values(&config, args.get("url"), Some(max_chars)).into())
+            Ok(run_fetch_page_values(&config, args.get("url"), Some(max_chars), &hooks).into())
         }),
     );
     fetch.untrusted_output = true;

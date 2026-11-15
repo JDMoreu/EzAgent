@@ -15,7 +15,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use ez_core::dirs;
 use ez_core::pyjson::{dumps_with, DumpOptions};
@@ -46,6 +46,19 @@ fn send_to_trash(path: &Path) -> Result<(), String> {
     trash::delete(path).map_err(|error| error.to_string())
 }
 
+/// Reloj inyectable del diario.
+pub type NowHook = Arc<dyn Fn() -> String + Send + Sync>;
+/// Envío a la Papelera inyectable.
+pub type TrashHook = Arc<dyn Fn(&Path) -> Result<(), String> + Send + Sync>;
+
+/// Reloj y Papelera inyectables (el oráculo congela el reloj y sustituye el
+/// envío a la Papelera por un movimiento a una carpeta propia).
+#[derive(Clone, Default)]
+pub struct JournalHooks {
+    pub now_iso: Option<NowHook>,
+    pub trash: Option<TrashHook>,
+}
+
 /// Resultado de revertir una entrada del diario.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UndoOutcome {
@@ -72,6 +85,7 @@ impl UndoOutcome {
 pub struct Journal {
     dir: PathBuf,
     state: Mutex<u64>,
+    hooks: JournalHooks,
 }
 
 fn step(pairs: &[(&str, &Path)], action: &str) -> Value {
@@ -85,12 +99,32 @@ fn step(pairs: &[(&str, &Path)], action: &str) -> Value {
 
 impl Journal {
     pub fn new(directory: Option<&Path>) -> Result<Self, String> {
+        Self::with_hooks(directory, JournalHooks::default())
+    }
+
+    /// Igual que [`Journal::new`], con reloj y Papelera inyectados.
+    pub fn with_hooks(directory: Option<&Path>, hooks: JournalHooks) -> Result<Self, String> {
         let dir = directory.map_or_else(default_journal_dir, Path::to_path_buf);
         std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
         Ok(Self {
             dir,
             state: Mutex::new(0),
+            hooks,
         })
+    }
+
+    fn now(&self) -> String {
+        self.hooks
+            .now_iso
+            .as_deref()
+            .map_or_else(now_iso, |clock| clock())
+    }
+
+    fn trash(&self, path: &Path) -> Result<(), String> {
+        match self.hooks.trash.as_deref() {
+            Some(to_trash) => to_trash(path),
+            None => send_to_trash(path),
+        }
     }
 
     pub fn directory(&self) -> &Path {
@@ -116,7 +150,7 @@ impl Journal {
         let mut entry = Map::new();
         entry.insert("version".into(), json!(1));
         entry.insert("id".into(), json!(entry_id));
-        entry.insert("ts".into(), json!(now_iso()));
+        entry.insert("ts".into(), json!(self.now()));
         entry.insert("kind".into(), json!(kind));
         entry.insert("summary".into(), json!(summary));
         entry.insert("steps".into(), Value::Array(steps));
@@ -216,11 +250,17 @@ impl Journal {
             .collect();
         let mut outcomes = Vec::new();
         for mut entry in entries {
-            let outcome = undo_entry(&entry, validate);
+            let trash = |path: &Path| self.trash(path);
+            let outcome = undo_entry(&entry, validate, &trash);
             self.mark_undone(&mut entry, outcome.error.as_deref());
             outcomes.push(outcome);
         }
         Ok(outcomes)
+    }
+
+    /// Entradas válidas del diario, de la más reciente a la más antigua.
+    pub fn load_entries_value(&self) -> Vec<Value> {
+        self.load_entries().into_iter().map(Value::Object).collect()
     }
 
     fn load_entries(&self) -> Vec<Map<String, Value>> {
@@ -249,6 +289,12 @@ impl Journal {
         entries
     }
 
+    /// `_write_entry` con un valor JSON crudo (para pruebas y herramientas).
+    pub fn write_entry_value(&self, entry: &Value) -> Result<(), String> {
+        let map = entry.as_object().cloned().unwrap_or_default();
+        self.write_entry(&map)
+    }
+
     fn write_entry(&self, entry: &Map<String, Value>) -> Result<(), String> {
         let id = entry.get("id").map(python_str).unwrap_or_default();
         let safe = !id.is_empty()
@@ -273,7 +319,7 @@ impl Journal {
         };
         write().map_err(|error| {
             if tmp.exists() {
-                let _ = send_to_trash(&tmp);
+                let _ = self.trash(&tmp);
             }
             error.to_string()
         })
@@ -281,7 +327,7 @@ impl Journal {
 
     fn mark_undone(&self, entry: &mut Map<String, Value>, error: Option<&str>) {
         entry.insert("undone".into(), json!(true));
-        entry.insert("undone_at".into(), json!(now_iso()));
+        entry.insert("undone_at".into(), json!(self.now()));
         entry.insert("undo_error".into(), json!(error));
         // DECISION (del Python): si no se puede reescribir la entrada, el
         // resultado de la reversión ya se devolvió; no se oculta con un error.
@@ -289,7 +335,11 @@ impl Journal {
     }
 }
 
-fn undo_entry(entry: &Map<String, Value>, validate: Option<Validate<'_>>) -> UndoOutcome {
+fn undo_entry(
+    entry: &Map<String, Value>,
+    validate: Option<Validate<'_>>,
+    trash: &dyn Fn(&Path) -> Result<(), String>,
+) -> UndoOutcome {
     let text = |key: &str| entry.get(key).map(python_str).unwrap_or_default();
     let (entry_id, kind, summary) = (text("id"), text("kind"), text("summary"));
     let steps = match entry.get("steps") {
@@ -305,7 +355,9 @@ fn undo_entry(entry: &Map<String, Value>, validate: Option<Validate<'_>>) -> Und
             };
         }
     };
-    let result = steps.iter().try_for_each(|step| run_step(step, validate));
+    let result = steps
+        .iter()
+        .try_for_each(|step| run_step(step, validate, trash));
     let (ok, error) = match result {
         Ok(()) => (true, None),
         Err(message) => (false, Some(message)),
@@ -339,7 +391,11 @@ fn exists_or_link(path: &Path) -> bool {
     path.symlink_metadata().is_ok()
 }
 
-fn run_step(step: &Value, validate: Option<Validate<'_>>) -> Result<(), String> {
+fn run_step(
+    step: &Value,
+    validate: Option<Validate<'_>>,
+    trash: &dyn Fn(&Path) -> Result<(), String>,
+) -> Result<(), String> {
     let Value::Object(step) = step else {
         return Err("Paso inverso inválido.".into());
     };
@@ -350,7 +406,7 @@ fn run_step(step: &Value, validate: Option<Validate<'_>>) -> Result<(), String> 
             if !exists_or_link(&path) {
                 return Ok(());
             }
-            send_to_trash(&path)
+            trash(&path)
         }
         "move" => {
             let src = validated(step, "src", validate)?;

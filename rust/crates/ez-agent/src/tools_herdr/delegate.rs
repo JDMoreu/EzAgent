@@ -24,15 +24,17 @@ use crate::handoff_packet::{build_packet, packet_text};
 use crate::orchestration::{chain_spec, load_guide, parse_steps, ChainOptions, Step};
 use crate::registry::ToolResult;
 
+use super::port::HerdrPort;
+
 /// `Herdr` + perfiles de agente: el Python hereda `AgentDriver` dentro de
 /// `Herdr`; aquí se construye con la configuración viva en cada uso (F4-11).
-fn driver(herdr: &Arc<Herdr>) -> AgentDriver<Arc<Herdr>> {
+pub(super) fn driver(herdr: &Arc<Herdr>) -> AgentDriver<Arc<Herdr>> {
     AgentDriver::new(Arc::clone(herdr), herdr.config())
 }
 
 /// `delegate_to_agent`, con los errores ya convertidos a `ToolResult`.
 pub fn handle_delegate(
-    herdr: &Arc<Herdr>,
+    herdr: &dyn HerdrPort,
     callbacks: &HerdrCallbacks,
     state: &SharedState,
     args: &Map<String, Value>,
@@ -44,7 +46,7 @@ pub fn handle_delegate(
 }
 
 fn delegate_action(
-    herdr: &Arc<Herdr>,
+    herdr: &dyn HerdrPort,
     callbacks: &HerdrCallbacks,
     state: &SharedState,
     args: &Map<String, Value>,
@@ -52,7 +54,7 @@ fn delegate_action(
     let action = checked_action(args, &DELEGATE_ACTIONS, "delegate_to_agent")?;
     match action.as_str() {
         "list" => {
-            let agents = herdr.list_agents(20.0)?;
+            let agents = herdr.list_agents()?;
             Ok(ToolResult::ok(Value::Array(
                 agents.into_iter().map(Value::Object).collect(),
             )))
@@ -71,7 +73,7 @@ fn delegate_action(
         "run" => handle_run(herdr, callbacks, state, args),
         "open_terminal" => open_terminal_action(herdr, args, &action),
         "agents" => {
-            let catalog = driver(herdr).agents_catalog();
+            let catalog = herdr.agents_catalog();
             Ok(ToolResult::ok(Value::Array(
                 catalog.into_iter().map(Value::Object).collect(),
             )))
@@ -89,18 +91,18 @@ fn delegate_action(
 }
 
 fn read_action(
-    herdr: &Herdr,
+    herdr: &dyn HerdrPort,
     args: &Map<String, Value>,
     action: &str,
 ) -> Result<ToolResult, DelegateError> {
     let address = required_text(args, "address", action)?;
     let lines = optional_lines(args, action)?;
-    let text = herdr.read_agent(&address, lines, 6000)?;
+    let text = herdr.read_agent(&address, lines)?;
     Ok(ToolResult::ok(json!({"address": address, "text": text})))
 }
 
 fn open_terminal_action(
-    herdr: &Herdr,
+    herdr: &dyn HerdrPort,
     args: &Map<String, Value>,
     action: &str,
 ) -> Result<ToolResult, DelegateError> {
@@ -117,7 +119,7 @@ fn open_terminal_action(
 }
 
 fn guide_action(
-    herdr: &Herdr,
+    herdr: &dyn HerdrPort,
     args: &Map<String, Value>,
     action: &str,
 ) -> Result<ToolResult, DelegateError> {
@@ -132,11 +134,13 @@ fn guide_action(
         ))
         .into());
     };
-    Ok(ToolResult::ok(json!({"agent": key, "guide": text})))
+    // Python lee los manuales en modo texto: CRLF se convierte en LF.
+    let guide = text.replace("\r\n", "\n").replace('\r', "\n");
+    Ok(ToolResult::ok(json!({"agent": key, "guide": guide})))
 }
 
 fn keys_action(
-    herdr: &Herdr,
+    herdr: &dyn HerdrPort,
     args: &Map<String, Value>,
     action: &str,
 ) -> Result<ToolResult, DelegateError> {
@@ -155,7 +159,7 @@ fn keys_action(
 }
 
 fn configure_action(
-    herdr: &Arc<Herdr>,
+    herdr: &dyn HerdrPort,
     args: &Map<String, Value>,
     action: &str,
 ) -> Result<ToolResult, DelegateError> {
@@ -167,7 +171,7 @@ fn configure_action(
             ArgumentError::new("Para la acción «configure» indica «model» o «effort».").into(),
         );
     }
-    Ok(wrapped(driver(herdr).configure_agent(
+    Ok(wrapped(herdr.configure_agent(
         &address,
         model.as_deref(),
         effort.as_deref(),
@@ -175,7 +179,7 @@ fn configure_action(
 }
 
 fn kill_action(
-    herdr: &Herdr,
+    herdr: &dyn HerdrPort,
     state: &SharedState,
     args: &Map<String, Value>,
     action: &str,
@@ -226,7 +230,7 @@ struct RunArgs {
 }
 
 fn parse_run_args(
-    herdr: &Herdr,
+    herdr: &dyn HerdrPort,
     callbacks: &HerdrCallbacks,
     args: &Map<String, Value>,
 ) -> Result<RunArgs, DelegateError> {
@@ -291,10 +295,21 @@ fn parse_run_args(
 
 /// `_handle_run`: lanza el agente y, con `then`, encadena el resto del flujo.
 fn handle_run(
-    herdr: &Arc<Herdr>,
+    herdr: &dyn HerdrPort,
     callbacks: &HerdrCallbacks,
     state: &SharedState,
     args: &Map<String, Value>,
+) -> Result<ToolResult, DelegateError> {
+    handle_run_with_ids(herdr, callbacks, state, args, &new_chain_id)
+}
+
+/// Igual que `_handle_run`, con el generador de ids de cadena inyectado.
+pub fn handle_run_with_ids(
+    herdr: &dyn HerdrPort,
+    callbacks: &HerdrCallbacks,
+    state: &SharedState,
+    args: &Map<String, Value>,
+    new_id: &dyn Fn() -> String,
 ) -> Result<ToolResult, DelegateError> {
     let run = parse_run_args(herdr, callbacks, args)?;
     let effective_task = match run.input_from.clone() {
@@ -304,7 +319,11 @@ fn handle_run(
         },
         None => run.task.clone(),
     };
-    launch(herdr, callbacks, state, &run, &effective_task)
+    launch(herdr, callbacks, state, &run, &effective_task, new_id)
+}
+
+fn new_chain_id() -> String {
+    Uuid::new_v4().simple().to_string()
 }
 
 enum RunStart {
@@ -314,7 +333,7 @@ enum RunStart {
 
 /// `input_from`: la salida de otro agente como contexto, o la cadena si sigue trabajando.
 fn apply_input_from(
-    herdr: &Herdr,
+    herdr: &dyn HerdrPort,
     callbacks: &HerdrCallbacks,
     run: &RunArgs,
     source: &str,
@@ -419,16 +438,17 @@ fn chain_options<'a>(
 }
 
 fn launch(
-    herdr: &Arc<Herdr>,
+    herdr: &dyn HerdrPort,
     callbacks: &HerdrCallbacks,
     state: &SharedState,
     run: &RunArgs,
     task: &str,
+    new_id: &dyn Fn() -> String,
 ) -> Result<ToolResult, DelegateError> {
     let chain_id = if run.steps.is_empty() {
         String::new()
     } else {
-        Uuid::new_v4().simple().to_string()
+        new_id()
     };
     if !run.steps.is_empty() {
         // El siguiente agente arranca ya, en paralelo, no al terminar este.
@@ -468,7 +488,7 @@ fn launch(
         let ready = context.clone();
         params.on_ready = Some(Box::new(move |outcome| after_ready(&ready, &outcome)));
     }
-    let result = herdr.run_agent(driver(herdr), params)?;
+    let result = herdr.run_agent(params)?;
     let outcome = wrapped(result.clone());
     if !outcome.ok {
         return Ok(outcome);
@@ -546,7 +566,7 @@ fn after_ready(context: &LaunchContext, outcome: &Map<String, Value>) {
 }
 
 /// `_agent_state`: estado del agente, o «missing» si no se puede leer.
-fn agent_state(herdr: &Herdr, address: &str) -> String {
+fn agent_state(herdr: &dyn HerdrPort, address: &str) -> String {
     match herdr.get_agent(address) {
         Ok(agent) => py_strip(&text_or_empty(agent.get("state")))
             .to_lowercase()
@@ -556,8 +576,9 @@ fn agent_state(herdr: &Herdr, address: &str) -> String {
 }
 
 /// `_read_output`: `read_full` no recorta a 6000 caracteres.
-fn read_output(herdr: &Herdr, address: &str) -> Option<String> {
-    herdr.read_full(address, 1500).ok()
+/// `_read_output`: `read_full` no recorta a 6000 caracteres.
+pub fn read_output(herdr: &dyn HerdrPort, address: &str) -> Option<String> {
+    herdr.read_full(address).ok()
 }
 
 #[cfg(test)]

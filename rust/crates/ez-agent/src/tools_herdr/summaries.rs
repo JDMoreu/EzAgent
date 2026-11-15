@@ -4,7 +4,7 @@
 //! riesgo de cada acción y nombres visibles de los agentes.
 
 use ez_core::config::{python_str, truthy};
-use ez_herdr::herdr::{visible_name, Herdr};
+use ez_herdr::herdr::visible_name;
 use serde_json::{Map, Value};
 
 use super::args::{action, delegate_level, shown, text_field};
@@ -248,12 +248,12 @@ pub fn voice_info(args: &Map<String, Value>, label_for: &dyn Fn(&str) -> String)
 const RAW_NAME_FIELDS: [&str; 4] = ["where", "name", "labels", "title"];
 
 /// `_labelled`: `item` con su `label` (nombre visible) y sin los campos crudos.
-pub fn labelled(herdr: &Herdr, item: &mut Map<String, Value>) {
+pub fn labelled(label_for: &dyn Fn(&str) -> String, item: &mut Map<String, Value>) {
     let address = item.get("address").is_some_and(truthy);
     let has_label = item.get("label").is_some_and(truthy);
     if address && !has_label {
         let key = python_str(item.get("address").unwrap_or(&Value::Null));
-        let label = herdr.label_for(&key);
+        let label = label_for(&key);
         let label = if label.is_empty() {
             visible_name(item)
         } else {
@@ -269,13 +269,13 @@ pub fn labelled(herdr: &Herdr, item: &mut Map<String, Value>) {
 }
 
 /// `_with_labels`: cada agente del resultado lleva su `label` y solo ese nombre.
-pub fn with_labels(herdr: &Herdr, mut result: ToolResult) -> ToolResult {
+pub fn with_labels(label_for: &dyn Fn(&str) -> String, mut result: ToolResult) -> ToolResult {
     match &mut result.data {
-        Value::Object(item) => labelled(herdr, item),
+        Value::Object(item) => labelled(label_for, item),
         Value::Array(items) => {
             for item in items {
                 if let Value::Object(map) = item {
-                    labelled(herdr, map);
+                    labelled(label_for, map);
                 }
             }
         }

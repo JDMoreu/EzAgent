@@ -40,3 +40,35 @@ Reproducidos tal cual en el oráculo (`parity/fixtures/tts.jsonl`); Rust devuelv
   (el estado ya cambió en memoria) y decidir si el puerto debe exponer el fallo
   a quien llama; no afecta a fixtures de paridad.
 
+
+## Q-P-AGENT-C-01
+- Archivo y líneas: `src/ezagent/agent/tools_herdr.py:467-470`
+- Qué hace mal: `_delegate_summary` reutiliza la variable `shown` para las teclas
+  y para el destino; la confirmación de `keys` sale como «Pulsar enter esc en
+  enter esc.» (las teclas otra vez como nombre del agente).
+- Cómo se reproduce en Rust: `tools_herdr/summaries.rs::keys_summary` repite el
+  mismo texto; fixture `tools_herdr/summary/delegate/014-keys`.
+- Recomendación posterior: usar una variable distinta para el destino
+  (`shown(address, label_for)`); tocaría regenerar los fixtures de ese resumen.
+
+## Q-P-AGENT-C-02
+- Archivo y líneas: `src/ezagent/agent/tools_herdr.py:904-910`
+- Qué hace mal: `_handle_voice` con `close` evalúa `_user_text(callbacks)` dos
+  veces (una en `_wants_notify` y otra en `remember_task`); un callback con
+  efectos laterales se invoca dos veces.
+- Cómo se reproduce en Rust: `tools_herdr/voice.rs::close_action` consulta el
+  texto otra vez dentro del aviso para clonar la secuencia de llamadas
+  (`tools_herdr/voice/002-close-notify`).
+- Recomendación posterior: guardar el texto en una variable local; no cambia
+  el resultado visible, solo el número de llamadas al callback.
+
+## Q-P-AGENT-C-03
+- Archivo y líneas: `src/ezagent/agent/tools_swarm.py:188-198`
+- Qué hace mal: si el encargo supera `MAX_GOAL` y la ruta de contexto también
+  supera `MAX_REF`, `_goal` devuelve el encargo entero; el tablero lo recorta a
+  600 caracteres y la nota «[Encargo completo…]» desaparece sin aviso.
+- Cómo se reproduce en Rust: `tools_swarm.rs::goal` devuelve el original en ese
+  caso y `SwarmService::start` lo recorta; fixture
+  `tools_swarm/call/start-goal-long-path`.
+- Recomendación posterior: recortar antes de decidir o acortar la ruta; si se
+  corrige, hay que regenerar el tablero de ese fixture.

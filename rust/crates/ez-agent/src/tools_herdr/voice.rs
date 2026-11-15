@@ -3,6 +3,8 @@
 //! `voice_control`: cerrar la escucha, silenciar el micrófono, repetir el
 //! último resumen y silenciar los avisos. No habla con Herdr.
 
+use std::panic::{catch_unwind, AssertUnwindSafe};
+
 use serde_json::{json, Map, Value};
 
 use super::args::{
@@ -17,9 +19,19 @@ pub fn handle_voice(
     state: &SharedState,
     args: &Map<String, Value>,
 ) -> ToolResult {
-    match voice_action(callbacks, state, args) {
-        Ok(result) => result,
-        Err(error) => error.into_result(),
+    match catch_unwind(AssertUnwindSafe(|| voice_action(callbacks, state, args))) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error.into_result(),
+        Err(panic) => {
+            let detail = panic
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| panic.downcast_ref::<&str>().map(|text| (*text).to_string()))
+                .unwrap_or_default();
+            ToolResult::err(format!(
+                "Error inesperado al controlar la voz: ValueError: {detail}"
+            ))
+        }
     }
 }
 
@@ -39,14 +51,14 @@ fn voice_action(
 }
 
 fn close_action(callbacks: &HerdrCallbacks, state: &SharedState) -> ToolResult {
-    let text = user_text(callbacks);
-    let watched = if wants_notify(&text) {
+    // Python consulta el texto del usuario otra vez dentro del aviso.
+    let watched = if wants_notify(&user_text(callbacks)) {
         last_address(state)
     } else {
         None
     };
     if let Some(address) = &watched {
-        (callbacks.remember_task)(address, "", &text);
+        (callbacks.remember_task)(address, "", &user_text(callbacks));
         (callbacks.watch)(address);
     }
     (callbacks.request_close)();
