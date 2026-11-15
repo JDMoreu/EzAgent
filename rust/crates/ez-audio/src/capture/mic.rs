@@ -14,7 +14,7 @@ mod live;
 
 use self::live::Live;
 
-use super::{device_at, input_config, pcm_rms, pick_input_device_named, to_mono_i16, CaptureError};
+use super::{choose_mic, device_at, input_config, pcm_rms, to_mono_i16, CaptureError};
 use crate::barge_in::{BargeInDetector, BARGE_IN_SECS};
 use crate::segmenter::{EndProbe, Segmenter, SegmenterConfig};
 use crate::CHUNK_SECS;
@@ -206,33 +206,47 @@ impl MicCapture {
     /// Como [`Self::new`], pero con el nombre guardado del micrófono: manda
     /// sobre el índice, que cambia de dueño cuando la enumeración cambia de
     /// orden (o cuando el `voice.json` lo escribió la app de Python).
+    ///
+    /// `device_index` es un índice de PortAudio, el mismo número que entiende
+    /// Python; el dispositivo de cpal se busca por su nombre.
     pub fn new_named(
         device_index: Option<usize>,
         device_name: Option<&str>,
         settings: VadSettings,
     ) -> Self {
-        let device_index = pick_input_device_named(device_index, device_name);
+        let chosen = choose_mic(device_index, device_name);
         let mut name = "ninguno".to_string();
         let mut rate = 16_000;
-        if let Some(index) = device_index {
-            match device_at(index) {
+        match chosen.cpal {
+            Some(index) => match device_at(index) {
                 Some(device) => {
                     let found = device
                         .default_input_config()
                         .map_or(16_000, |config| config.sample_rate());
                     rate = if found == 0 { 16_000 } else { found };
-                    name = super::device_name(&device.to_string());
+                    name = chosen.name;
                 }
                 None => name = "desconocido".to_string(),
-            }
+            },
+            // El índice existe en PortAudio pero cpal no tiene ese dispositivo.
+            None if chosen.portaudio.is_some() => name = "desconocido".to_string(),
+            None => {}
         }
-        Self::build(device_index, name, rate, settings, Source::Device)
+        Self::build(
+            chosen.portaudio,
+            chosen.cpal,
+            name,
+            rate,
+            settings,
+            Source::Device,
+        )
     }
 
     /// Captura de prueba: `stream` no toca el hardware y se queda esperando el
     /// `stop`, para comprobar que la interfaz no depende de la llamada.
     pub fn silent(settings: VadSettings) -> Self {
         Self::build(
+            Some(0),
             Some(0),
             "micrófono de prueba".to_string(),
             16_000,
@@ -242,6 +256,7 @@ impl MicCapture {
     }
 
     fn build(
+        portaudio_index: Option<usize>,
         device_index: Option<usize>,
         device_name: String,
         rate: u32,
@@ -252,7 +267,7 @@ impl MicCapture {
             inner: Arc::new(Inner {
                 device_name,
                 rate,
-                live: Live::new(device_index, settings),
+                live: Live::new(device_index, portaudio_index, settings),
                 source,
                 capturing: AtomicBool::new(false),
             }),
@@ -299,7 +314,7 @@ impl MicCapture {
         is_speaking: Option<&dyn Fn() -> bool>,
         barge_in_rms: f64,
     ) -> Result<(), CaptureError> {
-        let index = self.device_index().ok_or(CaptureError::NoMicrophone)?;
+        let index = self.cpal_index().ok_or(CaptureError::NoMicrophone)?;
         let device = device_at(index).ok_or(CaptureError::NoMicrophone)?;
         let rate = self.rate();
         let (stream, receiver) = open_stream(&device, rate)?;
@@ -432,148 +447,4 @@ fn dispatch(hooks: &mut StreamHooks<'_>, events: Vec<CaptureEvent>, level: f64, 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn chunk(value: i16) -> Vec<u8> {
-        value.to_le_bytes().to_vec()
-    }
-
-    fn pipeline() -> CapturePipeline {
-        let settings = VadSettings::default();
-        let mut pipeline = CapturePipeline::new(&settings, 16_000, None);
-        pipeline.feed(&settings, &chunk(0), 0.0001, false, false); // calibra
-        pipeline
-    }
-
-    #[test]
-    fn speech_then_silence_emits_a_start_and_an_utterance() {
-        let settings = VadSettings::default();
-        let mut pipeline = pipeline();
-        let mut events = Vec::new();
-        for _ in 0..5 {
-            events.extend(pipeline.feed(&settings, &chunk(8000), 0.2, false, false));
-        }
-        assert!(events.contains(&CaptureEvent::SpeechStart(0.2)));
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| matches!(event, CaptureEvent::SpeechStart(_)))
-                .count(),
-            1
-        );
-        for _ in 0..200 {
-            events.extend(pipeline.feed(&settings, &chunk(0), 0.0, false, false));
-        }
-        let utterance = events
-            .iter()
-            .find_map(|event| match event {
-                CaptureEvent::Utterance(pcm) if !pcm.is_empty() => Some(pcm.clone()),
-                _ => None,
-            })
-            .expect("hay utterance");
-        assert!(!utterance.is_empty());
-        assert!(pipeline.last_speech_end.is_some());
-    }
-
-    #[test]
-    fn reset_forgets_the_turn_in_progress() {
-        let settings = VadSettings::default();
-        let mut pipeline = pipeline();
-        for _ in 0..5 {
-            pipeline.feed(&settings, &chunk(8000), 0.2, false, false);
-        }
-        let events = pipeline.feed(&settings, &chunk(8000), 0.2, false, true);
-        assert!(events.is_empty());
-        assert!(pipeline.segmenter.flush().is_none());
-    }
-
-    #[test]
-    fn barge_in_needs_sustained_voice_and_replays_the_run() {
-        let settings = VadSettings {
-            barge_in_rms: 0.008,
-            barge_in_secs: 0.09, // 3 chunks
-            ..VadSettings::default()
-        };
-        let mut pipeline = CapturePipeline::new(&settings, 16_000, None);
-        pipeline.feed(&settings, &chunk(0), 0.0001, false, false); // calibra
-        assert!(pipeline
-            .feed(&settings, &chunk(8000), 0.2, true, false)
-            .is_empty());
-        assert!(pipeline
-            .feed(&settings, &chunk(8000), 0.2, true, false)
-            .is_empty());
-        let third = pipeline.feed(&settings, &chunk(8000), 0.2, true, false);
-        assert_eq!(third.first(), Some(&CaptureEvent::BargeIn(0.2)));
-        assert!(third
-            .iter()
-            .any(|event| matches!(event, CaptureEvent::SpeechStart(_))));
-    }
-
-    #[test]
-    fn no_barge_in_while_the_assistant_is_silent() {
-        let settings = VadSettings {
-            barge_in_rms: 0.008,
-            barge_in_secs: 0.06,
-            ..VadSettings::default()
-        };
-        let mut pipeline = CapturePipeline::new(&settings, 16_000, None);
-        for _ in 0..5 {
-            let events = pipeline.feed(&settings, &chunk(8000), 0.2, false, false);
-            assert!(events
-                .iter()
-                .all(|event| !matches!(event, CaptureEvent::BargeIn(_))));
-        }
-    }
-
-    #[test]
-    fn live_settings_reach_the_segmenter() {
-        let settings = VadSettings {
-            min_rms: 0.05,
-            silence_secs: 9.0,
-            ..VadSettings::default()
-        };
-        let mut pipeline = CapturePipeline::new(&VadSettings::default(), 16_000, None);
-        pipeline.feed(&settings, &chunk(0), 0.0, false, false);
-        assert_eq!(pipeline.segmenter.min_rms, 0.05);
-        assert_eq!(pipeline.segmenter.silence_secs, 9.0);
-    }
-
-    #[test]
-    fn silent_capture_stays_in_stream_and_applies_live_changes() {
-        let mic = MicCapture::silent(VadSettings::default());
-        let stop = Arc::new(AtomicBool::new(false));
-        let worker = {
-            let mic = mic.clone();
-            let stop = Arc::clone(&stop);
-            std::thread::spawn(move || mic.stream(&stop, StreamHooks::default(), None, None, 0.0))
-        };
-        while !mic.capturing() {
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        // El menú cambia el VAD en vivo: no espera a que termine la llamada.
-        let started = std::time::Instant::now();
-        mic.set_min_rms(0.05);
-        mic.set_barge_in_rms(0.008);
-        assert!(started.elapsed() < Duration::from_secs(1));
-        assert_eq!(mic.min_rms(), 0.05);
-        // El bloque siguiente de `stream` lee esa instantánea.
-        let live = mic.live_settings(0.0);
-        assert_eq!(live.min_rms, 0.05);
-        assert_eq!(live.barge_in_rms, 0.008);
-        stop.store(true, Ordering::SeqCst);
-        worker
-            .join()
-            .expect("hilo de captura")
-            .expect("captura sin error");
-        assert!(!mic.capturing());
-    }
-
-    #[test]
-    fn the_turn_detector_is_read_on_every_probe() {
-        let mic = MicCapture::silent(VadSettings::default());
-        // Siempre hay sonda, como `Segmenter(end_probe=self._end_probe)`.
-        assert!(mic.end_probe().is_some());
-        assert!(mic.turn_detector().is_none());
-    }
-}
+mod tests;

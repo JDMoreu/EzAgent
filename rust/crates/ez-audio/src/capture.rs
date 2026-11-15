@@ -1,26 +1,32 @@
 //! Port of `src/ezagent/voice/audio.py` (captura) (F4-01).
 //!
 //! PyAudio se sustituye por `cpal`: el micrófono no se cierra entre turnos y los
-//! chunks de 30 ms se recortan del flujo continuo del dispositivo.
+//! chunks de 30 ms se recortan del flujo continuo del dispositivo. Los índices
+//! de dispositivo siguen la numeración de PortAudio (ver `portaudio`), que es la
+//! que guarda `voice.json`.
 
+mod choice;
 mod mic;
+mod portaudio;
 
 use std::fmt;
-use std::time::Duration;
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, HostTrait};
 
 use crate::CHUNK_SECS;
 
+pub use choice::{
+    choose_input_device, choose_mic, pick_input_device, pick_input_device_named, ChosenMic,
+};
 pub use mic::{CaptureEvent, CapturePipeline, MicCapture, StreamHooks, VadSettings};
+pub use portaudio::PortAudioDevice;
 
 /// Nombres que nunca son un micrófono útil (monitores de mezcla, etc.).
-const SKIP_NAMES: [&str; 6] = [
+pub(crate) const SKIP_NAMES: [&str; 5] = [
     "controlador primario",
     "mezcla estéreo",
     "mezcla estereo",
     "steam",
-    "asignador de sonido",
     "wave",
 ];
 
@@ -28,7 +34,7 @@ const SKIP_NAMES: [&str; 6] = [
 pub const WEAK_PEAK_RMS: f64 = 0.005;
 pub const WEAK_VOICED_SECS: f64 = 0.3;
 /// Tasa mínima de lectura para considerar que un dispositivo responde.
-const MIN_TIMING_SECS: f64 = 0.005;
+pub(crate) const MIN_TIMING_SECS: f64 = 0.005;
 
 /// Fallo al abrir el micrófono. `NoMicrophone` reproduce el `RuntimeError`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,10 +57,19 @@ impl std::error::Error for CaptureError {}
 /// Un dispositivo de entrada, como los dicts de `list_input_devices`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InputDevice {
-    /// Índice en la enumeración completa del host (los de salida incluidos).
+    /// Índice global de PortAudio: el mismo número que imprime la app Python.
     pub index: usize,
     pub name: String,
     pub rate: u32,
+    pub channels: u16,
+}
+
+/// Un dispositivo de entrada del host por omisión de cpal (WASAPI en Windows).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct HostDevice {
+    /// Índice en la enumeración completa del host (las salidas incluidas).
+    pub index: usize,
+    pub name: String,
     pub channels: u16,
 }
 
@@ -169,7 +184,8 @@ fn device_at(index: usize) -> Option<cpal::Device> {
     cpal::default_host().devices().ok()?.nth(index)
 }
 
-pub fn list_input_devices() -> Vec<InputDevice> {
+/// Los dispositivos de entrada del host por omisión de cpal.
+pub(crate) fn host_devices() -> Vec<HostDevice> {
     let host = cpal::default_host();
     let Ok(devices) = host.devices() else {
         return Vec::new();
@@ -180,144 +196,41 @@ pub fn list_input_devices() -> Vec<InputDevice> {
             continue;
         }
         let config = device.default_input_config().ok();
-        inputs.push(InputDevice {
+        inputs.push(HostDevice {
             index,
             name: device_name(&device.to_string()),
-            rate: config.as_ref().map_or(0, |value| value.sample_rate()),
             channels: config.as_ref().map_or(0, |value| value.channels()),
         });
     }
     inputs
 }
 
-fn default_input_index() -> Option<usize> {
-    let host = cpal::default_host();
-    let default = host.default_input_device()?;
-    host.devices()
-        .ok()?
-        .enumerate()
-        .find(|(_, device)| *device == default)
-        .map(|(index, _)| index)
+/// Enumera el bloque de MME de PortAudio, que es el que numera `voice.json`.
+pub fn list_portaudio_devices() -> Vec<PortAudioDevice> {
+    let host = host_devices();
+    portaudio::list_devices(|name| {
+        host.iter()
+            .find(|device| portaudio::names_match(&device.name, name))
+            .map(|device| device.channels)
+    })
 }
 
-/// `_read_timing`: media de tres lecturas de un chunk, en segundos.
-fn read_timing(index: usize, rate: u32) -> Option<f64> {
-    let device = device_at(index)?;
-    let config = device.default_input_config().ok()?;
-    let frames = ((f64::from(rate) * CHUNK_SECS) as usize).max(160);
-    let (sender, receiver) = crossbeam_channel::bounded::<usize>(32);
-    let stream = device
-        .build_input_stream_raw(
-            cpal::StreamConfig {
-                channels: config.channels(),
-                sample_rate: rate,
-                buffer_size: cpal::BufferSize::Default,
-            },
-            config.sample_format(),
-            move |data, _| {
-                let _ = sender.try_send(data.len());
-            },
-            |error| tracing::warn!("Audio: {error}"),
-            Some(Duration::from_secs(2)),
-        )
-        .ok()?;
-    stream.play().ok()?;
-    let start = std::time::Instant::now();
-    let target = frames * usize::from(config.channels()) * 3;
-    let mut received = 0_usize;
-    while received < target {
-        received += receiver.recv_timeout(Duration::from_secs(2)).ok()?;
-    }
-    Some(start.elapsed().as_secs_f64() / 3.0)
-}
-
-fn is_usable(device: &InputDevice, timing: &mut impl FnMut(usize, u32) -> Option<f64>) -> bool {
-    let name = device.name.to_lowercase();
-    if SKIP_NAMES.iter().any(|skip| name.contains(skip)) {
-        return false;
-    }
-    let rate = if device.rate == 0 {
-        16_000
-    } else {
-        device.rate
-    };
-    timing(device.index, rate).is_some_and(|value| value >= MIN_TIMING_SECS)
-}
-
-/// Elige el índice de entrada como `pick_input_device`, sin tocar el hardware:
-/// `timing` devuelve la latencia de lectura medida para `(índice, tasa)`.
-pub fn choose_input_device(
-    infos: &[InputDevice],
-    preferred: Option<usize>,
-    default_index: Option<usize>,
-    mut timing: impl FnMut(usize, u32) -> Option<f64>,
-) -> Option<usize> {
-    if let Some(index) = preferred {
-        if let Some(device) = infos.iter().find(|device| device.index == index) {
-            if is_usable(device, &mut timing) {
-                return Some(index);
-            }
-        }
-    }
-    let mut candidates: Vec<&InputDevice> = infos
+/// La vista de `list_input_devices` del Python: solo las entradas.
+pub fn input_devices(devices: &[PortAudioDevice]) -> Vec<InputDevice> {
+    devices
         .iter()
-        .filter(|device| is_usable(device, &mut timing))
-        .collect();
-    candidates.sort_by_key(|device| {
-        let name = device.name.to_lowercase();
-        (
-            if name.contains("micrófono") { 0 } else { 1 },
-            if name.contains("webcam") { 0 } else { 1 },
-            device.index,
-        )
-    });
-    if let Some(first) = candidates.first() {
-        return Some(first.index);
-    }
-    default_index.filter(|index| infos.iter().any(|device| device.index == *index))
+        .filter(|device| device.input)
+        .map(|device| InputDevice {
+            index: device.index,
+            name: device.name.clone(),
+            rate: device.rate,
+            channels: device.channels,
+        })
+        .collect()
 }
 
-pub fn pick_input_device(preferred: Option<usize>) -> Option<usize> {
-    choose_input_device(
-        &list_input_devices(),
-        preferred,
-        default_input_index(),
-        read_timing,
-    )
-}
-
-/// Índice del dispositivo de entrada con ese nombre, entre los de `infos`.
-///
-/// El nombre se compara exacto y, si no aparece, sin distinguir mayúsculas.
-fn find_by_name(infos: &[InputDevice], name: &str) -> Option<usize> {
-    if name.is_empty() {
-        return None;
-    }
-    if let Some(device) = infos.iter().find(|device| device.name == name) {
-        return Some(device.index);
-    }
-    let wanted = name.to_lowercase();
-    infos
-        .iter()
-        .find(|device| device.name.to_lowercase() == wanted)
-        .map(|device| device.index)
-}
-
-/// `pick_input_device` con el nombre guardado del micrófono.
-///
-/// El nombre manda sobre el índice: los índices de PortAudio (Python), de cpal
-/// y los de una enumeración anterior apuntan a dispositivos distintos, así que
-/// «el mismo `voice.json`» sonaba por micrófonos distintos en cada app. Si el
-/// nombre ya no existe, el índice sigue siendo la pista y, si nada vale, se
-/// elige como siempre.
-// DECISION: paridad con Python añadiendo el nombre; si no hay nombre, la
-// elección es exactamente `pick_input_device`.
-pub fn pick_input_device_named(preferred: Option<usize>, name: Option<&str>) -> Option<usize> {
-    let infos = list_input_devices();
-    let hint = name
-        .and_then(|name| find_by_name(&infos, name))
-        .or(preferred);
-    choose_input_device(&infos, hint, default_input_index(), read_timing)
+pub fn list_input_devices() -> Vec<InputDevice> {
+    input_devices(&list_portaudio_devices())
 }
 
 /// Configuración de entrada: prefiere int16 a la tasa pedida.
@@ -507,95 +420,5 @@ mod tests {
         assert_eq!(device_name("Micrófono"), "Micrófono");
         // Con un carácter fuera de Latin-1 no se puede reparar.
         assert_eq!(device_name("Ã😀"), "Ã😀");
-    }
-
-    fn device(index: usize, name: &str, rate: u32) -> InputDevice {
-        InputDevice {
-            index,
-            name: name.to_string(),
-            rate,
-            channels: 2,
-        }
-    }
-
-    #[test]
-    fn preferred_device_wins_when_usable() {
-        let infos = [
-            device(0, "Micrófono (USB)", 48_000),
-            device(1, "Webcam", 16_000),
-        ];
-        let picked = choose_input_device(&infos, Some(1), None, |_, _| Some(0.01));
-        assert_eq!(picked, Some(1));
-    }
-
-    #[test]
-    fn microphone_beats_webcam_and_skipped_names() {
-        let infos = [
-            device(0, "Mezcla estéreo", 48_000),
-            device(1, "Webcam", 16_000),
-            device(2, "Micrófono interno", 48_000),
-        ];
-        let picked = choose_input_device(&infos, None, None, |_, _| Some(0.01));
-        assert_eq!(picked, Some(2));
-    }
-
-    #[test]
-    fn devices_that_do_not_answer_are_skipped() {
-        let infos = [
-            device(0, "Micrófono roto", 48_000),
-            device(1, "Webcam", 16_000),
-        ];
-        let picked = choose_input_device(&infos, Some(0), None, |index, _| {
-            if index == 0 {
-                None
-            } else {
-                Some(0.01)
-            }
-        });
-        assert_eq!(picked, Some(1));
-    }
-
-    #[test]
-    fn slow_reads_fall_back_to_the_default_device() {
-        let infos = [device(0, "Micrófono lento", 48_000)];
-        let picked = choose_input_device(&infos, None, Some(0), |_, _| Some(0.001));
-        assert_eq!(picked, Some(0));
-        let none = choose_input_device(&infos, None, None, |_, _| Some(0.001));
-        assert_eq!(none, None);
-    }
-
-    #[test]
-    fn zero_rate_uses_16k_for_the_timing_probe() {
-        let infos = [device(7, "Micrófono", 0)];
-        let mut seen = None;
-        let picked = choose_input_device(&infos, None, None, |index, rate| {
-            seen = Some((index, rate));
-            Some(0.01)
-        });
-        assert_eq!(picked, Some(7));
-        assert_eq!(seen, Some((7, 16_000)));
-    }
-
-    #[test]
-    fn the_saved_name_wins_over_the_index() {
-        let infos = [
-            device(4, "Micrófono (TA82)", 48_000),
-            device(5, "Micrófono (Webcam AC410)", 48_000),
-        ];
-        // El índice 4 es el de cpal hoy; el nombre guardado manda.
-        assert_eq!(find_by_name(&infos, "Micrófono (Webcam AC410)"), Some(5));
-        assert_eq!(find_by_name(&infos, "micrófono (webcam ac410)"), Some(5));
-    }
-
-    #[test]
-    fn a_missing_or_empty_name_falls_back_to_the_index() {
-        let infos = [device(4, "Micrófono (TA82)", 48_000)];
-        assert_eq!(find_by_name(&infos, ""), None);
-        assert_eq!(find_by_name(&infos, "Micrófono (otro)"), None);
-        // Sin coincidencia, `pick_input_device_named` usa el índice.
-        assert_eq!(
-            find_by_name(&infos, "Micrófono (otro)").or(Some(4)),
-            Some(4)
-        );
     }
 }

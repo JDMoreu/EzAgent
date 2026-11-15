@@ -73,7 +73,35 @@ fn cli_matches_python() {
         &run_rust(&["--list-agents"]),
         &run_python(&["--list-agents"]),
     );
+    compare_list_mics();
     compare_write_config();
+}
+
+/// `--list-mics`: mismo formato de línea y mismas cifras de PortAudio.
+///
+/// Rust reproduce el bloque de MME, que es el que numera `voice.json` y el que
+/// encabeza la lista del Python; las otras APIs de host (DirectSound, WASAPI y
+/// WDM-KS) repiten los mismos micrófonos con otros índices y no se pueden
+/// enumerar con las dependencias del worktree, así que se comparan las líneas
+/// que Rust sí enumera.
+fn compare_list_mics() {
+    let rust = run_rust(&["--list-mics"]);
+    let python = run_python(&["--list-mics"]);
+    assert_eq!(rust.code, python.code, "--list-mics: código de salida");
+    let rust_lines = lines(&rust.stdout);
+    let python_lines = lines(&python.stdout);
+    assert!(!rust_lines.is_empty(), "--list-mics: sin micrófonos");
+    let comparable = python_lines
+        .get(..rust_lines.len())
+        .unwrap_or(&python_lines);
+    assert_eq!(rust_lines.as_slice(), comparable, "--list-mics: listado");
+}
+
+fn lines(text: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(text)
+        .lines()
+        .map(str::to_string)
+        .collect()
 }
 
 /// `--write-config` con el destino en `--config`: misma ruta para los dos,
