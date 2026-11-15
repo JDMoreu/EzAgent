@@ -25,22 +25,32 @@ use raster::{blend, composite, frame_from_canvas};
 use shapes::{content_lift, content_mask, paint_shape, shape_geometry};
 
 /// Everything that composes one panel frame.
-pub(crate) struct Scene<'a> {
-    pub(crate) ui: &'a dyn ChatUi,
-    pub(crate) view: &'a mut ChatView,
-    pub(crate) anim: AnimState,
-    pub(crate) form: Rect,
-    pub(crate) act: f64,
-    pub(crate) now: f64,
+pub struct Scene<'a> {
+    /// Bar state the panel reads.
+    pub ui: &'a dyn ChatUi,
+    /// Chat view with its model, parser and input.
+    pub view: &'a mut ChatView,
+    /// Lifecycle state of the morph.
+    pub anim: AnimState,
+    /// Bar shape on screen (physical pixels).
+    pub form: Rect,
+    /// Smoothed orb activity, 0 to 1.
+    pub act: f64,
+    /// Instant of the frame.
+    pub now: f64,
 }
 
 /// Physical rectangle of the window that owns the canvas.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct WindowRect {
-    pub(crate) x: i32,
-    pub(crate) y: i32,
-    pub(crate) width: usize,
-    pub(crate) height: usize,
+pub struct WindowRect {
+    /// Left edge on screen.
+    pub x: i32,
+    /// Top edge on screen.
+    pub y: i32,
+    /// Width in pixels.
+    pub width: usize,
+    /// Height in pixels.
+    pub height: usize,
 }
 
 /// Fingerprint of everything the content cache depends on (`_sig`).
@@ -151,6 +161,12 @@ pub fn fluid_array(rgb: Option<&Array3<u8>>, width: usize, height: usize) -> Opt
         (height as usize, width as usize, 3),
         |(row, column, channel)| raw[(row * width as usize + column) * 4 + channel] as f32 / 255.0,
     ))
+}
+
+/// `_compose` without a warm content cache: paints one frame from scratch.
+pub fn compose_frame(scene: &mut Scene<'_>, p: f64, live: bool, window: WindowRect) -> Frame {
+    let mut content = None;
+    compose(scene, p, live, window, &mut content)
 }
 
 /// `_compose`: paints one frame of the panel (BGRA premultiplied).

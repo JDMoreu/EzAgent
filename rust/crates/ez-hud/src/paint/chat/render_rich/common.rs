@@ -36,7 +36,7 @@ const FAMILY: [(&str, [u8; 3]); 11] = [
     (".odp", [222, 120, 50]),
 ];
 
-pub(super) fn family_color(ext: &str) -> [u8; 3] {
+pub fn family_color(ext: &str) -> [u8; 3] {
     FAMILY
         .iter()
         .find(|(suffix, _)| *suffix == ext)

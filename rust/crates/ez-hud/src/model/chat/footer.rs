@@ -26,7 +26,7 @@ pub const INPUT_MAX_LINES: usize = 6;
 /// Height of the hint strip under the input box.
 pub const HINT_H: f64 = 0.0;
 /// Width taken by the mic and speaker buttons.
-const AUDIO_W: f64 = BTN * 2.0 + 16.0;
+pub const AUDIO_W: f64 = BTN * 2.0 + 16.0;
 
 /// Height of the box: one line measures [`INPUT_MIN`] and each further line
 /// adds [`INPUT_LINE`].

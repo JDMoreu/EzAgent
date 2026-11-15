@@ -6,7 +6,7 @@ use crate::model::chat::view::ChatView;
 use super::{status_text, Anim, AnimState, ChatUi, ACTIVE_POSES, CLOSE_SECS};
 
 /// `_duration`: the animation length for the current motion setting.
-pub(super) fn duration(reduced: bool, closing: bool) -> f64 {
+pub fn duration(reduced: bool, closing: bool) -> f64 {
     if reduced {
         FADE_SECS
     } else if closing {
@@ -17,7 +17,7 @@ pub(super) fn duration(reduced: bool, closing: bool) -> f64 {
 }
 
 /// `_elapsed_for`: time that corresponds to an eased progress `p`.
-pub(super) fn elapsed_for(reduced: bool, p: f64, duration: f64) -> f64 {
+pub fn elapsed_for(reduced: bool, p: f64, duration: f64) -> f64 {
     let duration = if reduced { FADE_SECS } else { duration };
     let (mut low, mut high) = (0.0, 1.0);
     for _ in 0..24 {
@@ -32,7 +32,7 @@ pub(super) fn elapsed_for(reduced: bool, p: f64, duration: f64) -> f64 {
 }
 
 /// `_step`: advances the animation and returns the current progress.
-pub(super) fn step(anim: &mut Anim, now: f64, reduced: bool, finished: &mut bool) -> f64 {
+pub fn step(anim: &mut Anim, now: f64, reduced: bool, finished: &mut bool) -> f64 {
     if !matches!(anim.state, AnimState::Opening | AnimState::Closing) {
         return if anim.state == AnimState::Open {
             1.0
