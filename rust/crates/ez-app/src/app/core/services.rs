@@ -161,6 +161,9 @@ pub struct AppParts {
     /// `true` arranca la captura real al empezar la llamada (F7-01a la apaga
     /// para alimentar el micrófono desde el arnés).
     pub mic_capture: bool,
+    /// `false` no deja pasar los acuses hablados de herramienta (costura del
+    /// arnés equivalente a `llm.tool_ack = None` del Python).
+    pub tool_acks: bool,
     /// Observador de la traza de reproducción (F7-01a).
     pub trace: Option<Arc<dyn AppTrace>>,
     /// Envoltorio del runtime para la traza de herramientas (F7-01a).
@@ -190,6 +193,7 @@ impl AppParts {
             background: false,
             warm_stt: true,
             mic_capture: true,
+            tool_acks: true,
             trace: None,
             runtime_wrap: None,
             observer: None,

@@ -7,8 +7,8 @@
 //! de `ez-fakes`. Produce `trace.jsonl` con los mismos eventos y etiquetas de
 //! hilo que la traza dorada de Python.
 //!
-//! Esta entrega cubre los escenarios 01-06; los pasos y las aserciones nuevas
-//! de 07-25 se añaden a la tabla de [`driver::Step`] sin tocar el bucle.
+//! Cubre los escenarios 01-15; F7-01c añade los pasos de 16-25 a la misma tabla
+//! de [`driver::Step`] sin tocar el bucle.
 
 pub mod compare;
 pub mod driver;
@@ -25,6 +25,11 @@ pub mod steps_c;
 mod swarm_c;
 pub mod trace;
 pub mod traced_runtime;
+
+mod hc_b;
+mod scripter;
+mod steps_b;
+mod web;
 
 use std::path::{Path, PathBuf};
 

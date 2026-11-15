@@ -14,7 +14,7 @@ use ez_chat::session::ChatModel;
 use ez_chat::store::ChatStore;
 use ez_core::config::VoiceConfig;
 use ez_core::pyloads::loads;
-use ez_core::pyvalue::py_splitlines;
+use ez_core::pyvalue::{py_splitlines, python_str};
 use ez_hud::win::ui_loop::UiLoop;
 use ez_llm::messenger::AgentRuntimeApi;
 use parking_lot::Mutex;
@@ -103,9 +103,26 @@ fn prepare_and_run(
     );
     tokens.insert("fakes".to_string(), slash(&paths.fakes));
     scenario.substitute(&tokens);
+    let body = scenario
+        .data
+        .get("setup")
+        .and_then(|setup| setup.get("web"))
+        .and_then(Value::as_object)
+        .map(|page| page.get("body").map(python_str).unwrap_or_default());
+    let mut web = match body {
+        Some(body) => Some(super::web::LocalPage::start(&body)?),
+        None => None,
+    };
+    if let Some(page) = &web {
+        tokens.insert("web_url".to_string(), page.url().to_string());
+        scenario.substitute(&tokens);
+    }
     let mut services = Services::new(&paths.fakes);
     let result = start_and_script(scenario, paths, home, &mut services);
     services.stop();
+    if let Some(page) = web.as_mut() {
+        page.stop();
+    }
     result
 }
 
@@ -120,8 +137,8 @@ fn start_and_script(
     let whisper_port = services.start("fake-whisper", &scenario.block("whisper"), home)?;
     let settings = scenario.settings(llm_port, whisper_port, &paths.fakes);
     let config_path = scenario.prepare_home(home, &settings)?;
-    scenario.setup_environment(home)?;
-    run_app(scenario, paths, home, &config_path)
+    scenario.setup_environment(home, &paths.fakes)?;
+    run_app(scenario, paths, home, &config_path, &settings)
 }
 
 /// Piezas falsas de la corrida, compartidas por la app y el guion.
@@ -139,8 +156,9 @@ fn run_app(
     paths: &Paths,
     home: &Path,
     config_path: &Path,
+    settings: &serde_json::Map<String, Value>,
 ) -> Result<RunOutput, String> {
-    let rig = build_rig(scenario, paths, home, config_path)?;
+    let rig = build_rig(scenario, paths, home, config_path, settings)?;
     let trace = Arc::clone(&rig.trace);
     trace.record("app.start", json!({"scenario": scenario.id}));
     let driver = Arc::new(Mutex::new(Driver::new(
@@ -149,27 +167,32 @@ fn run_app(
         Arc::clone(&rig.speaker),
         Arc::clone(&trace),
         home.join("requests.jsonl"),
+        Some(home.join("hc.json")),
         &scenario.data,
     )));
     let failure = Arc::new(Mutex::new(None::<String>));
+    let mut scripter = start_scripter(scenario, home, &trace);
     let mic_handle = drive(&rig, &driver, &failure, scenario)?;
     // La instantánea es del final del guion, antes de colgar (como `root.final`).
-    let snapshot = {
+    let running = {
         let driver = driver.lock();
-        if !driver.done() {
-            return Err(format!(
-                "escenario sin terminar en {:.0} s",
-                scenario.timeout
-            ));
-        }
-        driver.snapshot()
+        driver.done().then(|| driver.snapshot())
     };
     rig.mic.stop();
     let _ = mic_handle.join();
+    if let Some(scripter) = scripter.as_mut() {
+        scripter.stop();
+    }
     rig.app.shutdown();
     if let Some(error) = failure.lock().clone() {
         return Err(error);
     }
+    let Some(snapshot) = running else {
+        return Err(format!(
+            "escenario sin terminar en {:.0} s",
+            scenario.timeout
+        ));
+    };
     let requests = count_lines(&home.join("requests.jsonl"));
     let audit = rig
         .audit
@@ -190,10 +213,39 @@ fn drive(
         .spawn(rig.app.clone())
         .map_err(|error| format!("no pude arrancar ezagent-call: {error}"))?;
     let ui = rig.app.inner.ui.ui.clone();
-    arm(&ui, driver, failure, scenario.timeout, Arc::new(handlers()));
+    let deadline = Instant::now() + Duration::from_secs_f64(scenario.timeout.max(0.0));
+    arm(
+        &ui,
+        driver,
+        failure,
+        scenario.timeout,
+        deadline,
+        Arc::new(handlers()),
+    );
     rig.app.start();
     ui.run()?;
     Ok(mic_handle)
+}
+
+/// Guion `agent.scenes` del escenario, si lo declara y no es de enjambre.
+fn start_scripter(
+    scenario: &Scenario,
+    home: &Path,
+    trace: &Arc<Trace>,
+) -> Option<super::scripter::AgentScripter> {
+    let spec = scenario.data.get("agent")?;
+    if !ez_core::config::truthy(spec)
+        || scenario
+            .data
+            .get("swarm")
+            .is_some_and(ez_core::config::truthy)
+    {
+        return None;
+    }
+    let mut scripter =
+        super::scripter::AgentScripter::new(&home.join("hc.json"), spec, Arc::clone(trace));
+    scripter.start();
+    Some(scripter)
 }
 
 /// Servicios ya construidos: chat, HUD sin ventana y envoltorio del runtime.
@@ -202,6 +254,7 @@ fn build_rig(
     paths: &Paths,
     home: &Path,
     config_path: &Path,
+    settings: &serde_json::Map<String, Value>,
 ) -> Result<Rig, String> {
     let cfg = VoiceConfig::load(Some(config_path))?;
     let trace = Trace::new(home);
@@ -255,6 +308,7 @@ fn build_rig(
     parts.background = true;
     parts.mic_capture = false;
     parts.warm_stt = false;
+    parts.tool_acks = settings.get("ack_tools") != Some(&Value::Bool(false));
     parts.hud_factory = Some(Arc::new(NoWindows));
     parts.trace = Some(Arc::clone(&recorder) as Arc<dyn AppTrace>);
     let wrap_recorder = Arc::clone(&recorder);
@@ -265,6 +319,23 @@ fn build_rig(
         )) as Arc<dyn AgentRuntimeApi>
     }));
     let app = VoiceApp::with_services(cfg, Some(home.join("tasks.json")), parts);
+    if settings.get("python_available") == Some(&Value::Bool(false)) {
+        use ez_agent::tools_skills::{build_skill_tools_with_hooks, SkillHooks};
+        let agent = app.inner.agents.agent.lock();
+        if let Some(runtime) = agent.as_ref() {
+            let config = runtime.config();
+            let skills = runtime.skills();
+            let hooks = SkillHooks {
+                interpreter: Some(None),
+                ..SkillHooks::default()
+            };
+            runtime.add_tool_group(std::sync::Arc::new(
+                move |_: &ez_agent::runtime::AgentRuntime| {
+                    build_skill_tools_with_hooks(&config, std::sync::Arc::clone(&skills), &hooks)
+                },
+            ));
+        }
+    }
     app.set_hooks(Arc::new(super::hooks::ReplayHooks::new(
         &app,
         Arc::clone(&recorder),
@@ -334,12 +405,12 @@ fn arm(
     driver: &Arc<Mutex<Driver>>,
     failure: &Arc<Mutex<Option<String>>>,
     timeout: f64,
+    deadline: Instant,
     handlers: Arc<Vec<Box<dyn Step>>>,
 ) {
     let ui_next = ui.clone();
     let driver_next = Arc::clone(driver);
     let failure_next = Arc::clone(failure);
-    let deadline = Instant::now() + Duration::from_secs_f64(timeout.max(0.0));
     ui.schedule(Duration::from_millis(5), move || {
         if Instant::now() > deadline && !driver_next.lock().done() {
             *failure_next.lock() = Some(format!("escenario sin terminar en {timeout:.0} s"));
@@ -358,6 +429,7 @@ fn arm(
                 &driver_next,
                 &failure_next,
                 timeout,
+                deadline,
                 Arc::clone(&handlers),
             ),
         }

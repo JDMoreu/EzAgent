@@ -161,6 +161,7 @@ impl VoiceApp {
             Arc::new(AgentHerdr(Arc::clone(&self.inner.agents.herdr)));
         match AgentRuntime::new(cfg.clone(), Some(herdr), callbacks, None) {
             Ok(runtime) => {
+                self.install_extra_tools(&runtime, &weak);
                 log("Núcleo agéntico disponible.");
                 Some(runtime)
             }
@@ -168,6 +169,51 @@ impl VoiceApp {
                 log(format!("Núcleo agéntico no disponible: {error}"));
                 None
             }
+        }
+    }
+
+    /// Grupos de herramientas que dependen de la app: Herdr y enjambre.
+    ///
+    /// `AgentRuntime::new` deja fuera los grupos que necesitan `ez-herdr` y
+    /// `ez-swarm` (F4-09); el Python los construye dentro del runtime con los
+    /// mismos callbacks de la app.
+    fn install_extra_tools(&self, runtime: &AgentRuntime, weak: &Weak<Inner>) {
+        let enqueue = weak.clone();
+        let prewarm = weak.clone();
+        let failed = weak.clone();
+        let callbacks = ez_agent::tools_herdr::HerdrCallbacks {
+            watch: text_hook(weak, |hooks, text| hooks.watch(text)),
+            request_close: void_hook(weak, |hooks| hooks.request_close()),
+            mic_mute: bool_hook(weak, |hooks, muted| hooks.mic_mute(muted)),
+            last_summary: text_producer(weak, |app| app.last_summary()),
+            mute: mute_hook(weak),
+            get_last_user_text: text_producer(weak, |app| app.hooks().last_user_text()),
+            remember_task: remember_hook(weak),
+            enqueue_chain: Arc::new(move |value: Value| {
+                super::callbacks::upgrade(&enqueue, |app| app.hooks().enqueue_chain(&value));
+            }),
+            deliver_answer: text_hook(weak, |hooks, text| hooks.deliver_answer(text)),
+            prewarm_chain: Arc::new(move |value: Value| {
+                super::callbacks::upgrade(&prewarm, |app| app.hooks().prewarm_chain(&value));
+            }),
+            async_launch: true,
+            launch_failed: Arc::new(move |address: &str, agent: &str, error: &str| {
+                super::callbacks::upgrade(&failed, |app| {
+                    if let Some(runtime) = app.inner.agents.agent.lock().as_ref() {
+                        runtime.launch_failed(address, agent, error);
+                    }
+                });
+            }),
+        };
+        let herdr = Arc::clone(&self.inner.agents.herdr);
+        runtime.add_tool_group(Arc::new(move |_: &AgentRuntime| {
+            ez_agent::tools_herdr::build_herdr_tools(Arc::clone(&herdr), callbacks.clone())
+        }));
+        let swarm = self.inner.agents.swarm.lock().clone();
+        if let Some(stack) = swarm {
+            runtime.add_tool_group(Arc::new(move |_: &AgentRuntime| {
+                ez_agent::tools_swarm::build_swarm_tools(Some(Arc::clone(&stack)))
+            }));
         }
     }
 

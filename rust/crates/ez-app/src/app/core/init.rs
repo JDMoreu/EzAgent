@@ -465,5 +465,6 @@ fn runtime_state(
             .unwrap_or_else(|| Arc::new(NullObserver)),
         background: parts.background,
         mic_capture: parts.mic_capture,
+        tool_acks: parts.tool_acks,
     }
 }

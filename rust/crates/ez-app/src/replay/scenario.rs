@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use ez_core::pyjson::{dumps_with, DumpOptions};
+use ez_core::pyvalue::{py_strip, python_str, truthy};
 use serde_json::{json, Map, Value};
 
 /// Raíz de datos del repo (`parity/replay/...`) y binarios falsos.
@@ -204,30 +205,58 @@ impl Scenario {
         Ok(config_path)
     }
 
-    /// `setup_environment`: permisos y archivos del escenario.
+    /// `setup_environment`: permisos, archivos, agentes falsos y skills.
     ///
-    /// `web`, `agent_bins` y `skills` son de F7-01b/F7-01c: si aparecen aquí se
-    /// falla con un mensaje claro en vez de ignorarlos en silencio.
-    pub fn setup_environment(&self, home: &Path) -> Result<(), String> {
+    /// `web` se levanta antes de arrancar los servicios (ver `run.rs`).
+    pub fn setup_environment(&self, home: &Path, fakes: &Path) -> Result<(), String> {
         let Some(setup) = self.data.get("setup") else {
             return Ok(());
         };
-        // DECISION: solo `permissions` y `files` son de esta tarea; el resto de
-        // `setup` (F7-01b/F7-01c) falla claro en vez de ignorarse.
-        for key in ["web", "agent_bins", "skills"] {
-            if setup.get(key).is_some_and(|value| !is_empty(value)) {
-                return Err(format!(
-                    "setup.{key} no está soportado todavía (F7-01b/F7-01c)"
-                ));
-            }
-        }
-        if let Some(permissions) = setup.get("permissions").map(scalar_text) {
+        if let Some(permissions) = setup.get("permissions").filter(|value| truthy(value)) {
             let path = home.join("EzAgent").join("permissions.toml");
-            write_text(&path, &format!("{}\n", permissions.trim()))?;
+            write_text(&path, &format!("{}\n", py_strip(&python_str(permissions))))?;
         }
         if let Some(files) = setup.get("files").and_then(Value::as_object) {
             for (raw_path, content) in files {
-                write_text(Path::new(raw_path), &scalar_text(content))?;
+                write_text(Path::new(raw_path), &python_str(content))?;
+            }
+        }
+        if let Some(bins) = setup.get("agent_bins").and_then(Value::as_array) {
+            let source = fakes.join("fake-agent.exe");
+            let bytes = std::fs::read(&source)
+                .map_err(|error| format!("no pude leer {}: {error}", source.display()))?;
+            for name in bins.iter().map(python_str) {
+                let target = home.join("bin").join(format!("{name}.exe"));
+                write_bytes(&target, &bytes)?;
+            }
+        }
+        let skills_dir = home.join("EzAgent").join("skills");
+        if let Some(skills) = setup.get("skills").and_then(Value::as_object) {
+            for (name, spec) in skills {
+                let folder = skills_dir.join(name);
+                std::fs::create_dir_all(&folder)
+                    .map_err(|error| format!("no pude crear {}: {error}", folder.display()))?;
+                let description = spec
+                    .get("description")
+                    .filter(|value| truthy(value))
+                    .map_or_else(String::new, |value| {
+                        py_strip(&python_str(value)).to_string()
+                    });
+                let body = spec
+                    .get("body")
+                    .filter(|value| truthy(value))
+                    .map_or_else(String::new, |value| {
+                        py_strip(&python_str(value)).to_string()
+                    });
+                write_text(
+                    &folder.join("SKILL.md"),
+                    &format!("---\nname: {name}\ndescription: {description}\n---\n\n{body}\n"),
+                )?;
+                if let Some(scripts) = spec.get("scripts").and_then(Value::as_object) {
+                    for (raw_script, source) in scripts {
+                        write_text(&folder.join(raw_script), &python_str(source))?;
+                    }
+                }
             }
         }
         Ok(())
@@ -284,14 +313,14 @@ pub fn scalar_text(value: &Value) -> String {
     }
 }
 
-fn is_empty(value: &Value) -> bool {
-    match value {
-        Value::Null => true,
-        Value::Array(items) => items.is_empty(),
-        Value::Object(map) => map.is_empty(),
-        Value::String(text) => text.is_empty(),
-        _ => false,
+/// `Path.write_bytes`: crea la carpeta y escribe los bytes tal cual.
+fn write_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("no pude crear {}: {error}", parent.display()))?;
     }
+    std::fs::write(path, bytes)
+        .map_err(|error| format!("no pude escribir {}: {error}", path.display()))
 }
 
 /// `Path.write_text(text, newline="\n")`: crea la carpeta y no traduce saltos.
@@ -329,6 +358,68 @@ mod tests {
         );
         assert_eq!(settings["chat_voice"], json!(true));
         assert_eq!(settings["hud_hidden"], json!(false));
+    }
+
+    #[test]
+    fn setup_writes_skills_permissions_and_fake_agent_bins() {
+        let base = std::env::temp_dir().join(format!("ez-replay-setup-{}", std::process::id()));
+        let home = base.join("home");
+        let fakes = base.join("fakes");
+        std::fs::create_dir_all(&fakes).expect("fakes");
+        std::fs::write(fakes.join("fake-agent.exe"), b"exe").expect("fake-agent");
+        let data = json!({
+            "setup": {
+                "permissions": "[web]
+block_private_ips = false
+",
+                "files": {home.join("nota.txt").display().to_string(): "hola"},
+                "agent_bins": ["opencode"],
+                "skills": {
+                    "saludo": {
+                        "description": "Saluda",
+                        "body": "Devuelve un saludo.",
+                        "scripts": {"scripts/saludo.py": "print('Hola')"}
+                    }
+                }
+            }
+        });
+        let scenario = Scenario {
+            id: "x".to_string(),
+            stem: "x".to_string(),
+            name: String::new(),
+            timeout: 60.0,
+            data,
+        };
+        scenario.setup_environment(&home, &fakes).expect("setup");
+        assert_eq!(
+            std::fs::read_to_string(home.join("EzAgent").join("permissions.toml")).expect("perm"),
+            "[web]
+block_private_ips = false
+"
+        );
+        assert_eq!(
+            std::fs::read_to_string(home.join("nota.txt")).expect("nota"),
+            "hola"
+        );
+        assert_eq!(
+            std::fs::read(home.join("bin").join("opencode.exe")).expect("bin"),
+            b"exe"
+        );
+        let skill = home.join("EzAgent").join("skills").join("saludo");
+        assert_eq!(
+            std::fs::read_to_string(skill.join("SKILL.md")).expect("skill"),
+            "---
+name: saludo
+description: Saluda
+---
+
+Devuelve un saludo.
+"
+        );
+        assert_eq!(
+            std::fs::read_to_string(skill.join("scripts").join("saludo.py")).expect("script"),
+            "print('Hola')"
+        );
     }
 
     #[test]

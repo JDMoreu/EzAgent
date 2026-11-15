@@ -301,6 +301,8 @@ pub struct RuntimeState {
     pub background: bool,
     /// `false` cuando el arnés alimenta la captura desde fuera (F7-01a).
     pub mic_capture: bool,
+    /// `false` filtra los acuses hablados de herramienta (costura del arnés).
+    pub tool_acks: bool,
 }
 
 /// Estado completo compartido por todas las copias de [`super::VoiceApp`].
