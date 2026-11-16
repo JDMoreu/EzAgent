@@ -89,6 +89,10 @@ impl AgentRuntime {
                 let config = config.clone();
                 Arc::new(move |_: &AgentRuntime| crate::tools_d::load_tools_d(&config))
             },
+            // El bucle del modo autónomo lo instala la app (A3) con
+            // `autonomous::tools::install_host`; mientras no exista, no aporta
+            // herramientas (mismo criterio que `build_swarm_tools(None)`).
+            Arc::new(|runtime: &AgentRuntime| crate::autonomous::tools::build_for_runtime(runtime)),
         ];
         let mut all = groups;
         all.extend(read(&self.inner.tool_groups).iter().cloned());
