@@ -32,8 +32,8 @@ Rama de trabajo: `rust/main`, último commit `de8d108`. No hay workers en marcha
 2. ~~AUTO-A3~~ **Hecho e integrado** (bucle del modo autónomo, modo A completo); verificado: 101 binarios + reproducción 3/3; `release` recompilada.
    - Brief: `rust-migration/briefs/AUTO-A3.md`; *prompt*: `rust-migration/tools/orquestacion/prompt-AUTO-A3.txt`.
    - Su rama `work/AUTO-A3` no tiene avance (se detuvo nada más empezar).
-3. **Modo B** (multiagente sobre el enjambre, sección 10.18): **en curso** (`AUTO-B`, árbol `../EzAgent-wt/AUTO-B`).
-4. **UI** (sección 10.19): fila y marca en la barra y la vista rápida: **en curso** (`AUTO-UI`, árbol `../EzAgent-wt/AUTO-UI`).
+3. ~~Modo B~~ **Hecho e integrado** (equipo sobre el enjambre, sin `--yolo`, verificador aparte, tareas `fix`). Limitación: el diálogo de confianza al abrir un miembro en carpeta nueva no se aprueba solo.
+4. ~~UI~~ **Hecho e integrado** (fila «Autónomo · ronda N» en la vista rápida, marca en la órbita, parar desde la fila). Verificado todo: 101 binarios + reproducción 3/3; `release` recompilada.
 5. **Recompilar `release`** (`cargo build --release -p ez-app --bin ezagent-voice`) para que el usuario pruebe con `rust\run-dev.cmd`:
    - la interrupción por voz;
    - los nombres dictados;
