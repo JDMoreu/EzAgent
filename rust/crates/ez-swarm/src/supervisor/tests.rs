@@ -1,6 +1,7 @@
 //! Tests of the swarm supervisor.
 
 mod autonomous;
+mod gaps;
 mod launch;
 
 use std::sync::{Arc, Mutex};

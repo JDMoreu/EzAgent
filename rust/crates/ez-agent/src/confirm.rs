@@ -509,6 +509,31 @@ mod tests {
     }
 
     #[test]
+    fn a_stale_arm_does_not_start_the_deadline() {
+        let accept = vec!["sí".to_string()];
+        let reject = vec!["no".to_string()];
+        let on_ask: OnAsk = Box::new(|_, _| {});
+        let manager = Arc::new(ConfirmationManager::new(
+            &accept,
+            &reject,
+            0.05,
+            Some(on_ask),
+        ));
+        let worker = Arc::clone(&manager);
+        let handle = std::thread::spawn(move || worker.ask("¿Borro?", false, None));
+        while !manager.pending() {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        manager.arm(Some(&"0".repeat(32)));
+        std::thread::sleep(Duration::from_millis(120));
+        assert!(manager.pending(), "el armado ajeno no debe abrir el plazo");
+        let token = manager.pending_token().unwrap_or_default();
+        manager.arm(Some(&token));
+        assert!(!handle.join().unwrap_or(true));
+        assert_eq!(manager.last_outcome(), Some("timeout"));
+    }
+
+    #[test]
     fn click_and_cancel_resolve() {
         let manager = Arc::new(manager());
         let worker = Arc::clone(&manager);

@@ -175,6 +175,9 @@ mod tests {
         let said = spoken_version(&long, MAX_SPOKEN_CHARS);
         assert!(char_len(&said) <= MAX_SPOKEN_CHARS + char_len(SCREEN_NOTE) + 1);
         assert!(said.ends_with(SCREEN_NOTE));
+        let body = said.strip_suffix(SCREEN_NOTE).unwrap_or(&said).trim();
+        assert!(body.ends_with("resumen."));
+        assert!(body.contains("frase número 0"));
     }
 
     #[test]
