@@ -156,7 +156,22 @@ fn with_library<T>(callback: impl FnOnce(&Library) -> T) -> Option<T> {
 }
 
 fn font_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/ezagent/voice/assets/fonts")
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf));
+    font_dir_in(exe_dir.as_deref())
+}
+
+// DECISION: el instalador copia `assets/fonts` junto al ejecutable (F8-01b);
+// `ez-gfx` no puede depender de `ez-hud` (la dependencia va al revés), así que
+// la búsqueda se repite aquí en vez de compartir un helper.
+fn font_dir_in(exe_dir: Option<&Path>) -> PathBuf {
+    exe_dir
+        .map(|dir| dir.join("assets").join("fonts"))
+        .filter(|dir| dir.is_dir())
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/ezagent/voice/assets/fonts")
+        })
 }
 
 fn project_font(family: &str, weight: i32) -> Option<PathBuf> {
@@ -260,4 +275,25 @@ pub(crate) fn ink_span(style: FontStyle, scale: f64, text: &str) -> Option<(i32,
 pub(crate) fn clear_font_cache() {
     FONTS.with(|fonts| fonts.borrow_mut().clear());
     PATHS.with(|paths| paths.borrow_mut().clear());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fonts_come_from_beside_the_executable_when_present() {
+        let base = std::env::temp_dir().join(format!("ez-gfx-fonts-{}", std::process::id()));
+        let fonts = base.join("assets").join("fonts");
+        std::fs::create_dir_all(&fonts).expect("carpeta temporal");
+        assert_eq!(font_dir_in(Some(&base)), fonts);
+        let empty = base.join("empty");
+        std::fs::create_dir_all(&empty).expect("carpeta temporal");
+        assert_eq!(font_dir_in(Some(&empty)), font_dir_in(None));
+        assert!(font_dir_in(None).ends_with("voice/assets/fonts"));
+        let _ = std::fs::remove_dir(&fonts);
+        let _ = std::fs::remove_dir(base.join("assets"));
+        let _ = std::fs::remove_dir(&empty);
+        let _ = std::fs::remove_dir(&base);
+    }
 }
