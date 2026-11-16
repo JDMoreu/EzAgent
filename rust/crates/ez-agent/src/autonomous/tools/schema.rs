@@ -84,6 +84,10 @@ pub fn task_parameters() -> Value {
                 "type": "string",
                 "description": texts::VERIFIER_DESCRIPTION
             },
+            "verifier_model": {
+                "type": "string",
+                "description": texts::VERIFIER_MODEL_DESCRIPTION
+            },
             "max_rounds": rounds_field(),
             "max_minutes": minutes_field()
         },
@@ -114,6 +118,14 @@ pub fn team_parameters() -> Value {
             },
             "space": {"type": "string", "description": texts::SPACE_DESCRIPTION},
             "workdir": workdir_field(),
+            "verifier_agent": {
+                "type": "string",
+                "description": texts::TEAM_VERIFIER_DESCRIPTION
+            },
+            "verifier_model": {
+                "type": "string",
+                "description": texts::VERIFIER_MODEL_DESCRIPTION
+            },
             "max_rounds": rounds_field(),
             "max_minutes": minutes_field()
         },

@@ -75,6 +75,8 @@ pub struct StartSpec {
     pub workdir: String,
     pub terminal: Option<String>,
     pub verifier_agent: String,
+    /// Modelo del verificador; `None` deja el del perfil (B-F05).
+    pub verifier_model: Option<String>,
     pub max_rounds: i64,
     pub max_minutes: i64,
     pub max_approvals: i64,
@@ -88,6 +90,10 @@ pub struct TeamSpec {
     pub roles: Vec<RoleSpec>,
     pub space: String,
     pub workdir: String,
+    /// Agente del verificador; vacío, el primer papel del equipo.
+    pub verifier_agent: String,
+    /// Modelo del verificador; `None` deja el del perfil (B-F05).
+    pub verifier_model: Option<String>,
     pub max_rounds: i64,
     pub max_minutes: i64,
     pub max_approvals: i64,

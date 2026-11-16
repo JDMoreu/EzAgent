@@ -414,6 +414,7 @@ fn optional_values_reach_the_spec() {
         "workdir": "C:/proyecto",
         "terminal": "t1",
         "verifier_agent": "claude",
+        "verifier_model": "opus",
         "max_rounds": 3,
         "max_minutes": 30
     });
@@ -422,6 +423,7 @@ fn optional_values_reach_the_spec() {
     let started = lock(&host.started);
     assert_eq!(started[0].terminal.as_deref(), Some("t1"));
     assert_eq!(started[0].verifier_agent, "claude");
+    assert_eq!(started[0].verifier_model.as_deref(), Some("opus"));
     assert_eq!(started[0].max_rounds, 3);
     assert_eq!(started[0].max_minutes, 30);
 }
@@ -462,7 +464,9 @@ fn team_tool_starts_the_team_and_enumerates_its_roles() {
             {"role": "dev", "agent": "opencode", "model": "big"}
         ],
         "space": "proyecto",
-        "workdir": "C:/proyecto"
+        "workdir": "C:/proyecto",
+        "verifier_agent": "claude",
+        "verifier_model": "sonnet"
     });
     let result = run(&build(Arc::clone(&host), Arc::clone(&guards))[1], args);
     assert!(result.ok, "{:?}", result.error);
@@ -471,6 +475,9 @@ fn team_tool_starts_the_team_and_enumerates_its_roles() {
     assert_eq!(teams[0].roles.len(), 2);
     assert_eq!(teams[0].roles[1].model.as_deref(), Some("big"));
     assert_eq!(teams[0].workdir, "C:/proyecto");
+    assert_eq!(teams[0].verifier_agent, "claude");
+    assert_eq!(teams[0].verifier_model.as_deref(), Some("sonnet"));
+    assert_eq!(teams[0].max_approvals, 200);
     let asked = lock(&guards.asked);
     assert!(asked[0]
         .0
