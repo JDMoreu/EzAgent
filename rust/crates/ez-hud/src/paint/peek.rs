@@ -102,6 +102,7 @@ pub(crate) fn toast_secs(state: &str) -> f64 {
 pub struct PeekItem {
     pub key: String,
     pub title: String,
+    /// Agente de la fila; la fila `autonomous` lleva aquí su estado o motivo.
     pub agent: String,
     pub state: String,
     pub since: f64,
@@ -124,9 +125,10 @@ impl PeekItem {
     }
 }
 
-/// `dismissible(item)`: todo menos un enjambre en marcha.
+/// `dismissible(item)`: todo menos un enjambre en marcha y la fila del modo
+/// autónomo, que solo se quita deteniendo la tarea (10.19).
 pub fn dismissible(item: &PeekItem) -> bool {
-    !(item.live && item.key.starts_with("swarm:"))
+    !(item.live && item.key.starts_with("swarm:")) && item.state != marks::AUTONOMOUS
 }
 
 /// Búfer RGBA premultiplicado en `float32` (el `np.ndarray` del Python).

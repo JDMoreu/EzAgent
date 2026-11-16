@@ -119,6 +119,34 @@ fn dismissible_keeps_a_running_swarm() {
 }
 
 #[test]
+fn the_autonomous_row_is_not_dismissible_and_has_no_age() {
+    let mut row = item(
+        "autonomous",
+        "Autónomo · ronda 2",
+        "verificando",
+        "autonomous",
+        100.0,
+    );
+    row.live = true;
+    assert!(
+        !dismissible(&row),
+        "la fila solo se quita deteniendo la tarea"
+    );
+    assert_eq!(meta_line(&row, 500.0), "verificando");
+    let paused = item(
+        "autonomous",
+        "Autónomo · ronda 2",
+        "en pausa: el mismo problema vuelve",
+        "autonomous",
+        100.0,
+    );
+    assert_eq!(
+        meta_line(&paused, 500.0),
+        "en pausa: el mismo problema vuelve"
+    );
+}
+
+#[test]
 fn toast_secs_uses_the_table_and_the_default() {
     assert_eq!(toast_secs("done"), 3.2);
     assert_eq!(toast_secs("needs_you"), 6.0);
@@ -240,11 +268,12 @@ fn paint_marks_uses_the_state_icon() {
         item("c", "Tarea", "opencode", "waiting", 100.0),
         item("d", "Tarea", "opencode", "stale", 100.0),
         item("e", "Tarea", "opencode", "done", 100.0),
+        item("f", "Tarea", "", "autonomous", 100.0),
     ];
-    let mut buf = PeekBuffer::new(12, 5 * 48);
+    let mut buf = PeekBuffer::new(12, 6 * 48);
     paint_marks(&mut buf, &rows, 1.0, "dark", 0.0, true, &recorder);
     let calls = recorder.calls.lock();
-    assert_eq!(calls.len(), 5);
+    assert_eq!(calls.len(), 6);
     assert_eq!(calls[0].0, "alert");
     assert_eq!(calls[0].1, [255, 192, 82, 255]);
     assert_eq!(calls[1].0, "close");
@@ -254,6 +283,8 @@ fn paint_marks_uses_the_state_icon() {
     assert_eq!(calls[3].0, "minus");
     assert_eq!(calls[4].0, "check");
     assert_eq!(calls[4].1, [94, 226, 196, 255]);
+    assert_eq!(calls[5].0, "sparkle");
+    assert_eq!(calls[5].1, [94, 226, 196, 255]);
     assert_eq!(calls[0].2, 32.0);
     assert_eq!(calls[0].3, 33.0);
     assert_eq!(calls[0].4, 15.0);

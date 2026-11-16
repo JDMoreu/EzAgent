@@ -271,6 +271,22 @@ fn click_opens_the_clicked_row() {
 }
 
 #[test]
+fn the_autonomous_row_has_no_close_zone_and_still_opens() {
+    let ui = ui(1.0);
+    let peek = Arc::new(Peek::new(ui.clone(), Arc::new(crate::paint::peek::NoIcons)));
+    peek.refresh(vec![item("autonomous", "autonomous", true, false)]);
+    {
+        let mut state = peek.lock.lock();
+        state.rows = (state.items.clone(), 0);
+    }
+    // Sin ×: pulsar el extremo de la fila abre la fila (que pide confirmación).
+    assert_eq!(peek.dismiss_at(240.0, 20.0), None);
+    peek.click(240.0, 20.0);
+    assert_eq!(ui.opened.lock().as_slice(), ["autonomous"]);
+    assert!(ui.dismissed.lock().is_empty());
+}
+
+#[test]
 fn frames_round_trip_premultiplied_pixels() {
     let mut buf = PeekBuffer::new(2, 1);
     buf.data[0..4].copy_from_slice(&[0.1, 0.2, 0.3, 0.5]);

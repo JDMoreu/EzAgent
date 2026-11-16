@@ -7,11 +7,14 @@
 
 use std::sync::{Arc, OnceLock, Weak};
 
+use ez_core::pytime::timestamp;
 use ez_herdr::activity::{chain_key, snapshot, ActivityItem, ActivityLog, ActivitySource};
+use ez_hud::paint::marks;
 use ez_hud::win::drop::ActivityItem as PeekItem;
 use parking_lot::Mutex;
 use serde_json::{Map, Value};
 
+use super::super::autonomous::{peek_row, AUTONOMOUS_KEY};
 use super::super::core::state::Inner;
 use super::super::core::{log, VoiceApp};
 
@@ -82,12 +85,37 @@ impl ActivitySource for VoiceApp {
     }
 }
 
+/// Las filas que ve la barra: la actividad y, delante, la tarea autónoma
+/// mientras exista (10.19). Se compone sin ningún cerrojo retenido.
+pub(crate) fn activity_rows(app: &VoiceApp) -> Vec<PeekItem> {
+    let log = activity_log(app);
+    let mut rows: Vec<PeekItem> = snapshot(app, Some(&log)).iter().map(peek_item).collect();
+    if let Some(loop_) = app.autonomous_loop() {
+        if let Some(row) = loop_.status().as_ref().and_then(autonomous_item) {
+            rows.insert(0, row);
+        }
+    }
+    rows
+}
+
+/// La fila fija del modo autónomo (9.8); el detalle va en `agent` y la vista
+/// rápida lo pinta en su segunda línea.
+fn autonomous_item(summary: &ez_agent::autonomous::Summary) -> Option<PeekItem> {
+    let (title, detail, active) = peek_row(summary)?;
+    Some(PeekItem {
+        key: AUTONOMOUS_KEY.to_string(),
+        title,
+        agent: detail,
+        state: marks::AUTONOMOUS.to_string(),
+        since: timestamp(),
+        unseen: false,
+        live: active,
+    })
+}
+
 /// `_refresh_activity(app)`: publica la foto de la actividad en la barra.
 pub fn refresh_activity(app: &VoiceApp) {
-    let log = activity_log(app);
-    let items = snapshot(app, Some(&log));
-    app.hud()
-        .set_activity(items.iter().map(peek_item).collect());
+    app.hud().set_activity(activity_rows(app));
 }
 
 /// `_news_arrived(app, key, agent, title, reason)`: desenlace sin ver + aviso.
@@ -110,9 +138,32 @@ pub fn open_activity(app: &VoiceApp, key: &str) {
     if key.is_empty() || key.starts_with("chain:") || key.starts_with("swarm:") {
         return;
     }
+    if key == AUTONOMOUS_KEY {
+        ask_stop_autonomous(app);
+        return;
+    }
     let worker = app.clone();
     let address = key.to_string();
     app.start_worker("ezagent-focus", move || focus_quietly(&worker, &address));
+}
+
+/// 10.19: la fila autónoma pide la confirmación del código y, con «sí»,
+/// detiene el bucle. Nunca en el hilo de la barra ni con un cerrojo tomado.
+fn ask_stop_autonomous(app: &VoiceApp) {
+    let worker = app.clone();
+    app.start_worker("ezagent-autonomo-stop", move || {
+        let gate = worker
+            .inner
+            .agents
+            .agent
+            .lock()
+            .as_ref()
+            .and_then(|runtime| runtime.confirm_gate());
+        let Some(gate) = gate else {
+            return;
+        };
+        worker.stop_autonomous_from_row(|question| gate.ask(question, false, None));
+    });
 }
 
 /// `_dismiss_activity(app, key)`: la fila sale de la actividad y de pendientes.

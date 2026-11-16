@@ -43,6 +43,8 @@ pub const FAILED: &str = "failed";
 pub const WAITING: &str = "waiting";
 pub const STALE: &str = "stale";
 pub const DONE: &str = "done";
+/// Modo autónomo en marcha (9.8): un punto del color de acento.
+pub const AUTONOMOUS: &str = "autonomous";
 
 /// Tintas de las marcas para un tema.
 // DECISION: el `dict` de Python se porta como struct con campos nombrados;
@@ -116,7 +118,7 @@ struct Style {
     alpha: f64,
 }
 
-const STYLES: [(&str, Style); 6] = [
+const STYLES: [(&str, Style); 7] = [
     (
         WORKING,
         Style {
@@ -168,6 +170,17 @@ const STYLES: [(&str, Style); 6] = [
             shape: Shape::Dot,
             tone: Tone::Mint,
             weight: 1.5,
+            alpha: 1.0,
+        },
+    ),
+    // DECISION: 9.8 admite «un anillo o un punto»; el punto de acento es el
+    // mínimo dibujo y se distingue de `done` por su tamaño (1.2 contra 1.5).
+    (
+        AUTONOMOUS,
+        Style {
+            shape: Shape::Dot,
+            tone: Tone::Mint,
+            weight: 1.2,
             alpha: 1.0,
         },
     ),
@@ -440,6 +453,26 @@ mod tests {
     fn an_empty_or_unknown_orbit_draws_nothing() {
         assert!(orbit_tile("pill", &[], 96.0, 41.0, 1.0, "dark", 1.0).is_none());
         assert!(orbit_tile("pill", &["nope"], 96.0, 41.0, 1.0, "dark", 1.0).is_none());
+    }
+
+    #[test]
+    fn the_autonomous_mark_is_an_accent_dot() {
+        // Un punto en el centro del hueco, del color de acento (MINT).
+        let tile = orbit_tile("pill", &[AUTONOMOUS], 96.0, 41.0, 1.0, "dark", 1.0)
+            .expect("el estado autónomo tiene estilo");
+        assert_eq!((tile.width(), tile.height()), (120, 65));
+        let center = tile.pixel(60, 58);
+        assert_eq!(center.to_array(), [94, 226, 196, 255]);
+        // Más discreto que el punto de «terminada» (peso 1.2 contra 1.5).
+        let done = orbit_tile("pill", &[DONE], 96.0, 41.0, 1.0, "dark", 1.0)
+            .expect("terminada tiene estilo");
+        let lit = |image: &Image| {
+            (0..image.height())
+                .flat_map(|y| (0..image.width()).map(move |x| (x, y)))
+                .filter(|&(x, y)| image.pixel(x, y).to_array()[3] > 0)
+                .count()
+        };
+        assert!(lit(&tile) < lit(&done));
     }
 
     #[test]

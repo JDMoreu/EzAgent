@@ -21,6 +21,10 @@ pub fn age(seconds: f64) -> String {
 
 /// «Estado · Agente · tiempo»: lo vivo cuenta desde que empezó; lo demás, «hace».
 pub fn meta_line(item: &super::PeekItem, now: f64) -> String {
+    // La fila del modo autónomo ya trae su detalle en `agent`, sin tiempo (9.8).
+    if item.state == crate::paint::marks::AUTONOMOUS {
+        return item.agent.clone();
+    }
     let mut parts = vec![String::from(item.label())];
     if !item.agent.is_empty() {
         let agent = ez_core::pyvalue::py_strip(&item.agent);

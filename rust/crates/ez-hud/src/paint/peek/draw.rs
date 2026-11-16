@@ -285,6 +285,7 @@ pub fn paint_marks(
 
 fn mark_for(state: &str) -> (&'static str, &'static str) {
     match state {
+        marks::AUTONOMOUS => ("sparkle", "mint"),
         marks::NEEDS_YOU => ("alert", "amber"),
         marks::FAILED => ("close", "red"),
         marks::WAITING => ("clock", "muted"),
