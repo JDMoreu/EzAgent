@@ -133,6 +133,10 @@ fn render_message_reports_plain_text_and_copy_hits() {
         rendered.hits[0].kind,
         crate::paint::chat::hit_kind::COPY_CODE
     );
+    assert!(
+        rendered.hits[0].rect.x1 - rendered.hits[0].rect.x0 <= 40.0,
+        "la zona de copiar es la de un icono"
+    );
     assert_eq!(
         rendered.hits[0].data,
         Some(HitData::Text("fn main() {}".to_string()))

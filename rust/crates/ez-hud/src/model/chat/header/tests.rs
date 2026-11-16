@@ -66,6 +66,18 @@ fn the_header_registers_one_hit_per_control() {
             "{expected} missing from {kinds:?}"
         );
     }
+    let settings = view
+        .hits
+        .iter()
+        .find(|zone| zone.kind == "settings")
+        .expect("settings")
+        .rect
+        .center();
+    assert_eq!(
+        view.pointer_down(settings.0, settings.1)
+            .map(|action| action.kind),
+        Some("settings")
+    );
 }
 
 #[test]

@@ -127,6 +127,45 @@ fn column_widths_share_the_available_width() {
 }
 
 #[test]
+fn a_table_header_is_never_split_by_a_rounding_error() {
+    let pal = palette();
+    let host = EmptyHost;
+    let table = Table {
+        header: vec![
+            vec![Span::plain("Región")],
+            vec![Span::plain("Q2")],
+            vec![Span::plain("Q3")],
+            vec![Span::plain("Cambio")],
+        ],
+        rows: vec![vec![
+            vec![Span::plain("Norte")],
+            vec![Span::plain("1")],
+            vec![Span::plain("2")],
+            vec![Span::plain("+18 %")],
+        ]],
+        aligns: vec![
+            TableAlign::Left,
+            TableAlign::Right,
+            TableAlign::Right,
+            TableAlign::Center,
+        ],
+    };
+    for scale in [1.0, 1.25, 1.5, 1.75, 2.0, 2.5] {
+        let ctx = Ctx::new(scale, &pal, 408.0, &host);
+        let widths = tables::column_widths(&ctx, &table);
+        for (index, cell) in table.header.iter().enumerate() {
+            let lines = crate::paint::chat::base::wrap_spans(
+                cell,
+                "cellbold",
+                widths[index] - 2.0 * CELL_PAD_X,
+                scale,
+            );
+            assert_eq!(lines.len(), 1, "escala {scale}, columna {index}");
+        }
+    }
+}
+
+#[test]
 fn table_height_sums_its_rows() {
     let pal = palette();
     let host = EmptyHost;

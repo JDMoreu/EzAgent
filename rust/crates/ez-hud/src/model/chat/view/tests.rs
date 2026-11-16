@@ -135,10 +135,41 @@ fn pointer_moves_switch_the_hover_only_when_it_changes() {
     let (x, y) = text.rect.center();
     assert!(view.pointer_move(x, y));
     assert_eq!(view.hover.as_deref(), Some("send"));
+    assert!(view.cursor_is_hand(x, y));
     assert!(!view.pointer_move(x, y));
     assert!(view.pointer_move(1.0, 1.0));
     assert_eq!(view.hover, None);
     assert!(!view.cursor_is_hand(1.0, 1.0));
+}
+
+#[test]
+fn navigation_and_audio_controls_are_separated_at_every_width() {
+    for width in [340.0, 440.0, 760.0] {
+        let mut view = sample_view();
+        view.configure(width, 600.0, 1.0, "dark", dark());
+        view.status = "Esperando tu respuesta".to_string();
+        let _ = view.render(0.0);
+        let zone = |kind: &str| {
+            view.hits
+                .iter()
+                .find(|candidate| candidate.kind == kind)
+                .unwrap_or_else(|| panic!("{kind}"))
+                .rect
+        };
+        for kind in ["settings", "history", "close"] {
+            assert!(zone(kind).y1 <= HEADER_H, "{kind} a {width}");
+        }
+        let input = view.input_box;
+        let (mic, voice) = (zone("mic"), zone("voice"));
+        for rect in [mic, voice] {
+            assert!(rect.x1 < input.x0, "dentro del ancho a {width}");
+            assert!(input.y0 <= rect.y0 && rect.y1 <= input.y1 && rect.y1 <= 600.0);
+        }
+        assert!(mic.x1 < voice.x0, "mic antes que voice a {width}");
+        for rect in [zone("settings"), zone("history"), zone("close"), mic, voice] {
+            assert!(0.0 <= rect.x0 && rect.x0 < rect.x1 && rect.x1 <= width);
+        }
+    }
 }
 
 #[test]
@@ -289,6 +320,39 @@ fn deleting_a_history_row_asks_then_confirms() {
 }
 
 #[test]
+fn leaving_the_history_cancels_a_pending_delete() {
+    let mut view = view_with(
+        Vec::new(),
+        vec![SessionInfo {
+            session: 2,
+            title: "Otra".to_string(),
+            started: 1_735_689_612.0,
+            messages: 3,
+        }],
+    );
+    view.mode = Mode::History;
+    let _ = view.render(0.0);
+    let ask = view
+        .hits
+        .iter()
+        .find(|zone| zone.kind == "delete_ask")
+        .expect("delete_ask")
+        .rect
+        .center();
+    assert_eq!(view.pointer_down(ask.0, ask.1), None);
+    assert_eq!(view.pending_delete(), Some(2));
+    let history = view
+        .hits
+        .iter()
+        .find(|zone| zone.kind == "history")
+        .expect("history")
+        .rect
+        .center();
+    assert_eq!(view.pointer_down(history.0, history.1), None);
+    assert_eq!(view.pending_delete(), None);
+}
+
+#[test]
 fn animating_follows_busy_confirm_flash_and_fade() {
     let (mut view, model) = shared_view();
     assert!(!view.animating(10.0));
@@ -313,6 +377,15 @@ fn the_flash_token_truncates_to_twenty_characters() {
     view.flash_copied("0123456789abcdefghij más", Some(monotonic() + 10.0));
     assert_eq!(view.flash_token().0, "0123456789abcdefghij");
     assert!(view.flash_token().1);
+}
+
+#[test]
+fn a_note_that_wraps_stays_inside_the_column() {
+    let mut view = view_with(Vec::new(), Vec::new());
+    let note = ChatMessage::new(1, Role::System, "Conversación compactada. ".repeat(12));
+    let entry = view.entry(&note, 0.0);
+    assert!(entry.height > 30.0);
+    assert!(entry.x + f64::from(entry.image.width()) <= 440.0);
 }
 
 #[test]
@@ -359,6 +432,9 @@ fn assistant_and_user_messages_both_produce_copy_zones() {
         .collect();
     assert_eq!(copies.len(), 2);
     assert_eq!(copies[0].data, Some(ZoneData::Text("hola".to_string())));
+    assert!(copies
+        .iter()
+        .all(|zone| zone.rect.x1 - zone.rect.x0 <= 32.0));
 }
 
 #[test]
@@ -405,6 +481,61 @@ fn a_streaming_message_reuses_its_tile_for_fifty_milliseconds() {
     assert!(std::rc::Rc::ptr_eq(&first, &batched));
     let fresh = view.entry(&grown, 10.1);
     assert!(!std::rc::Rc::ptr_eq(&first, &fresh));
+}
+
+#[test]
+fn editing_keys_match_the_python_sequence() {
+    let mut view = sample_view();
+    view.input.insert("uno dos");
+    assert_eq!(view.key(37, false, false), None);
+    assert_eq!(view.key(8, false, false), None);
+    assert_eq!(view.input.text(), "uno ds");
+    assert_eq!(view.key(36, false, false), None);
+    assert_eq!(view.key(46, false, false), None);
+    assert_eq!(view.input.text(), "no ds");
+    assert_eq!(view.key(8, true, false), None);
+    assert_eq!(view.key(35, false, true), None);
+    assert_eq!(view.input.selected_text(), "no ds");
+}
+
+#[test]
+fn page_keys_scroll_the_messages() {
+    let (mut view, model) = shared_view();
+    for index in 0..20 {
+        model.borrow_mut().messages.push(ChatMessage::new(
+            index + 1,
+            Role::Assistant,
+            format!("mensaje {index}"),
+        ));
+    }
+    let _ = view.render(0.0);
+    assert_eq!(view.key(33, false, false), None);
+    assert!(view.scroll.offset() > 0.0);
+    assert_eq!(view.key(34, false, false), None);
+    assert_eq!(view.scroll.offset(), 0.0);
+}
+
+#[test]
+fn close_new_and_voice_buttons_return_their_actions() {
+    let mut view = view_with(vec![ChatMessage::new(1, Role::User, "hola")], Vec::new());
+    let _ = view.render(0.0);
+    let click = |view: &mut ChatView, kind: &str| {
+        let rect = view
+            .hits
+            .iter()
+            .find(|zone| zone.kind == kind)
+            .unwrap_or_else(|| panic!("{kind}"))
+            .rect;
+        let (x, y) = rect.center();
+        view.pointer_down(x, y)
+    };
+    assert_eq!(action_kind(&click(&mut view, "close")), Some("close"));
+    assert_eq!(action_kind(&click(&mut view, "history")), None);
+    assert_eq!(action_kind(&click(&mut view, "new")), Some("new"));
+    assert_eq!(view.mode, Mode::Chat);
+    let voice = click(&mut view, "voice").expect("voice");
+    assert_eq!(voice.kind, "voice");
+    assert_eq!(voice.data, Some(ActionData::Flag(true)));
 }
 
 #[test]
