@@ -1,7 +1,8 @@
 # Modo autónomo y bucle multiagente (elefante y pez dorado)
 
-Estado: **borrador para revisión y aprobación**. No se implementa nada hasta que el
-usuario lo apruebe.
+Estado: **aprobado por el usuario el 2026-11-16** («declara el plan … ejecútalo»), con las
+recomendaciones de la sección 8 como decisiones. La sección 9 fija los detalles de
+implementación (regla de cero decisiones).
 
 ## 1. Pedido
 
@@ -219,7 +220,7 @@ punta.
 - **Una ronda limpia para dar por cumplido:** el modelo de Google demuestra que no
   basta.
 
-## 8. Decisiones del usuario (con recomendación)
+## 8. Decisiones del usuario (tomadas: las recomendaciones)
 
 1. **¿La autorización cubre también las herramientas propias de EzAgent?**
    Recomendado: **no**; solo los permisos de los agentes.
@@ -229,6 +230,95 @@ punta.
    llegar al tope se pausa y se pregunta.
 4. **Verificador.** Recomendado: el mismo CLI que el ejecutor pero en sesión nueva, o
    el agente que el usuario nombre como auditor o tester.
+
+## 9. Especificación de implementación (cero decisiones abiertas)
+
+### 9.1 Dónde vive cada pieza
+| Pieza | Ubicación |
+|---|---|
+| Clasificador de diálogos de permiso y lista de denegación | `rust/crates/ez-herdr/src/permission.rs` (+ `permission/` si pasa de 600 líneas) |
+| Estado, artefactos, reglas de parada, veredicto y textos | `rust/crates/ez-agent/src/autonomous/` (`mod.rs`, `state.rs`, `artifacts.rs`, `verdict.rs`, `texts.rs`, `tools.rs`) |
+| Bucle (el motor que observa, aprueba, verifica y corrige) | `rust/crates/ez-app/src/app/autonomous/` (`mod.rs`, `driver.rs`, `wiring.rs`) |
+| Modo multiagente sobre el enjambre | `rust/crates/ez-app/src/app/autonomous/team.rs` + lo mínimo en `rust/crates/ez-swarm/src/**` |
+| Marca en la barra y filas en la vista rápida | `rust/crates/ez-hud/src/**` (mínimo) |
+
+**Regla de hilos (obligatoria):** el bucle corre en su propio hilo `ezagent-autonomo`. **Ningún lock se retiene mientras se llama a Herdr, a la barra, al mensajero o al gestor de confirmaciones**: se copia el estado, se suelta el lock y luego se llama. Ya hubo tres interbloqueos por esto.
+
+### 9.2 Herramientas nuevas (registro de `ez-agent`, nivel de riesgo 2)
+- `start_autonomous_task`: `{task: string (1..2000), done_criteria: [string] (1..10, cada uno 1..300), agent: string (perfil de agent_profiles), space: string, terminal?: string, verifier_agent?: string (por omisión = agent), max_rounds?: int 1..20 (5), max_minutes?: int 5..480 (120)}`.
+- `start_autonomous_team`: `{task, done_criteria[], roles: [{role: string, agent: string, model?: string}] (1..8), space: string, max_rounds?, max_minutes?}`.
+- `autonomous_status`: `{}` → resumen del estado actual (o «no hay tarea autónoma»).
+- `stop_autonomous_task`: `{reason?: string}`.
+- **Guardas de activación** (en el código de la herramienta, antes de preguntar): (1) se rechaza si `session.tainted` es verdadero en ese turno; (2) se rechaza si el último mensaje del usuario no contiene una autorización explícita según `AUTHORIZE_RE` = `(?i)(aut[oó]nom|autorizo|yolo|sin pedirme permiso|sin preguntarme)`; (3) se rechaza si ya hay una tarea autónoma activa (solo una a la vez); (4) se pide la confirmación única con `ConfirmationManager::ask` y el texto de 9.6; «no» o sin respuesta → no se activa.
+
+### 9.3 Artefactos
+Carpeta `%APPDATA%/EzAgent/autonomo/<id>/`, con `id = AAAAMMDD-HHMMSS-<4 hex>`.
+- `encargo.md`: la tarea, el espacio y las rutas de trabajo.
+- `criterios.md`: lista numerada de `done_criteria`.
+- `estado.json`: `{id, mode: "single"|"team", state: "preparing"|"running"|"verifying"|"done"|"paused"|"stopped", round, started_at, deadline, max_rounds, approvals, scope: [direcciones], executor: {address, agent} | null, team: {swarm, roles} | null, clean_streak, last_findings: [texto], pause_reason}`. Se escribe de forma atómica (temporal + renombrado).
+- `bitacora.jsonl`: una línea por evento `{ts, event, detail}` con `event` ∈ `start|approve|deny|verify_start|verdict|correction|pause|resume|stop|done|incident`.
+- `ronda-N/veredicto.json`: el veredicto del verificador. `correccion-N.md`: los hallazgos que se mandan a corregir.
+- Al arrancar la app, una tarea con `state` en `running` o `verifying` se retoma en `paused` («la app se reinició») y se avisa: nunca se reanuda sola.
+
+### 9.4 Permisos (`ez-herdr::permission`)
+- `classify(screen: &str) -> Dialog`, con `Dialog { kind: Exec|Edit|Trust|Other|None, command: Option<String>, folder: Option<String>, options: Vec<(String /*tecla*/, String /*texto*/)> , approve_once: Option<String> }`.
+  - Las opciones se leen de las líneas numeradas o con flecha del diálogo.
+  - `approve_once` es la tecla de la opción que dice sí, yes, allow, permitir o aprobar **y no** contiene always, siempre, don't ask, no volver, for this session ni all.
+  - Si no hay una única opción así → `None` y se pregunta al usuario.
+- `denied(command) -> Option<&'static str>`: lista de patrones en el código.
+  - Borrado recursivo de `/`, `~`, `%USERPROFILE%`, `C:\` o una unidad.
+  - `format` y `diskpart`; `mkfs` y `dd of=/dev/`.
+  - `git push --force` o `-f` hacia `main`, `master` o `release`.
+  - `| sh`, `| bash`, `| iex` o `Invoke-Expression` con una URL.
+  - `shutdown`, `Restart-Computer` y `Stop-Computer`.
+  - Cambios en `reg add HKLM`; credenciales (`.ssh`, `credential`, `.aws`, `.env` fuera del proyecto).
+  - Si coincide, devuelve el motivo en español.
+- **Aprobar:** solo si la dirección está en `scope`, `kind ∈ {Exec, Edit}` (o `Trust` con `folder` dentro del espacio de la tarea), `approve_once` es `Some` y `denied` es `None`. Se envía `keys_agent(address, [approve_once])` y se registra en auditoría (`autonomous.approve`, extracto de pantalla saneado de 400 caracteres como máximo) y en `bitacora.jsonl`. Cualquier otro caso → `paused` con el motivo.
+- **Antirrebote:** no se aprueba dos veces el mismo diálogo. Se usa la huella de las últimas 20 líneas de pantalla y se espera 1,5 s sin cambios antes de aprobar.
+
+### 9.5 Bucle y verificación
+- **Ejecución:** al activarse se lanza el ejecutor (`run_agent` con `encargo.md` como tarea, con la ruta), salvo que `terminal` apunte a uno ya abierto (entonces `send`). Su dirección entra en `scope`.
+- **Fin de ejecución:** el ejecutor ha terminado cuando el vigía informa `done` o `idle` después de haber estado en `working`.
+- **Verificación:** se lanza un **verificador nuevo** (`run_agent` en una terminal nueva del mismo espacio, con `verifier_agent`); su dirección entra en `scope`. Su tarea es el texto fijo `VERIFIER_PROMPT` (en `texts.rs`): «Eres un verificador independiente. Lee {encargo} y {criterios}. No modifiques ningún archivo del proyecto ni hagas commits. Comprueba cada criterio con evidencia (ejecuta pruebas o comandos de solo lectura). Escribe únicamente el archivo {veredicto} con este JSON: `{\"cumple\": bool, \"criterios\": [{\"n\": int, \"cumple\": bool, \"evidencia\": string}], \"hallazgos\": [{\"severidad\": \"bloqueante\"|\"mayor\"|\"menor\", \"criterio\": int|null, \"problema\": string, \"evidencia\": string}]}` y termina.»
+- **Lectura del veredicto:** se espera a que el verificador termine y exista el archivo (plazo de 20 min). Se valida el esquema. Después se **cierra la terminal del verificador** (`kill_agent`) y se saca de `scope`.
+  - Si el JSON no es válido o no llega → la ronda no es limpia y se repite con otro verificador nuevo una vez; si vuelve a fallar → `paused`.
+- **Ronda limpia:** `cumple == true` y ningún hallazgo bloqueante o mayor.
+  - `clean_streak += 1`. Si llega a 2 → `done`. Si es 1 → se lanza otra verificación con un verificador nuevo, sin tocar el código.
+- **Ronda no limpia:** `clean_streak = 0`. Se escribe `correccion-N.md` con los hallazgos bloqueantes y mayores (texto del verificador, tratado como dato) y se manda al ejecutor (`send`): «Corrige estos hallazgos y avisa al terminar: ver {correccion}». Se vuelve a `running` y `round += 1`.
+- **Churn:** un hallazgo nuevo cuyo `problema` normalizado coincide (≥ 0,85 de similitud) con uno de la ronda anterior ya «corregido» → `paused` («el mismo problema vuelve»).
+- **Topes:**
+  - `round > max_rounds` o `now > deadline` → `paused`.
+  - Incidentes de cuota, contexto lleno o ventana cerrada en una terminal de `scope` → `paused` (se reutilizan `incidents`/`recovery` de `ez-swarm` para clasificar).
+  - Ejecutor en `error` dos veces → `paused`.
+- **Pausa:** se avisa por voz con el motivo. El usuario puede decir «sigue» (`autonomous_status` y `resume` vía la herramienta) o «para» (`stop_autonomous_task`). Mientras está en pausa **no se aprueba nada**.
+
+### 9.6 Textos (en `texts.rs`, español neutro, generados por el código)
+- **Confirmación (`CONFIRM`):** «Modo autónomo: haré «{tarea}» con {agente} en el espacio «{espacio}». Aprobaré yo los permisos que pidan los agentes de esta tarea hasta que se cumpla lo que pediste, como máximo {rondas} rondas o {minutos} minutos. ¿Lo activo?».
+- **Inicio:** «Empiezo en modo autónomo.»
+- **Ronda:** «Ronda {n}: verificando.»
+- **Pausa:** «Pausé el modo autónomo: {motivo}. Di «sigue» o «para».»
+- **Fin:** «Terminé «{tarea}»: se cumple lo que pediste. Aprobé {n} permisos.»
+- **Parada:** «Detuve el modo autónomo.»
+
+### 9.7 Modo multiagente (`team.rs`)
+1. `start_autonomous_team` crea un enjambre con `goal = task` y los papeles y agentes declarados, con el mismo flujo del modo enjambre actual (plan → ejecución → qa).
+2. Las direcciones de los miembros entran en `scope`.
+3. Cuando el tablero del enjambre no tiene tareas pendientes ni en curso, se lanza la verificación de 9.5.
+4. Si la ronda no es limpia, se crea en el tablero una tarea `fix` por cada hallazgo bloqueante o mayor, asignada al papel `dev`. Si no existe, al primer papel que no sea `plan` ni `qa`. Luego se vuelve a esperar.
+5. Las reglas de parada son las de 9.5.
+
+### 9.8 Interfaz
+- **Barra:** mientras hay tarea autónoma en `running` o `verifying`, una marca discreta (un anillo o un punto del color de acento) en la órbita, y una fila fija en la vista rápida con «Autónomo · ronda {n} · {estado}». En `paused`, la fila dice el motivo.
+- **Configuración:** el mismo `voice.json`, con las claves `autonomous_max_rounds` (5) y `autonomous_max_minutes` (120).
+
+### 9.9 Fases de ejecución
+| Fase | Contenido | Depende de |
+|---|---|---|
+| A2 | `ez-herdr::permission` (9.4), con pruebas sobre pantallas reales de Claude Code, OpenCode y Codex | — |
+| A1 | `ez-agent::autonomous`: estado, artefactos, veredicto, textos, herramientas con sus guardas (9.2, 9.3, 9.6) | — |
+| A3 | `ez-app::autonomous`: bucle, permisos, verificación, corrección, topes, reinicio (9.5), y escenario de reproducción nuevo | A1, A2 |
+| B | Modo multiagente sobre el enjambre (9.7) | A3 |
+| UI | Barra y vista rápida (9.8) | A3 |
 
 ## Fuentes
 
