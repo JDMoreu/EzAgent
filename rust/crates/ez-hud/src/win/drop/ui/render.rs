@@ -176,7 +176,14 @@ impl DropUI {
                 || bar.model.form_hidden
                 || dragging;
             self.update_peek_view(&bar, window.as_deref());
+            // DECISION: la vista rápida mueve y muestra su ventana dentro de
+            // `tick` (llamadas Win32 síncronas a otro hilo). Mientras este hilo
+            // espera, Windows le entrega mensajes de la barra (ratón sobre el
+            // hub) y su WndProc pide `bar`: con el lock tomado aquí, la barra se
+            // bloqueaba a sí misma («No responde», fondo negro al pasar el ratón).
+            drop(bar);
             self.peek.tick(now, over_form, blocked);
+            let mut bar = self.bar.lock();
             let hover = now < bar.hover_until;
             let shown = pose_of(self.ui.update(Some(now)));
             let pose = if bar.asking {
