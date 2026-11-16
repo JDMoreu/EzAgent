@@ -12,7 +12,7 @@ $norm = ($Dir -replace '/', '\').TrimEnd('\')
 $escaped = [regex]::Escape($norm)
 $slash = [regex]::Escape(($norm -replace '\\', '/'))
 $pattern = "(?i)($escaped|$slash)([\\/`"\s]|$)"
-$keep = '(?i)supervise\.sh|--soak|run_robustness|cleanup_worker\.ps1'
+$keep = '(?i)supervise2?\.sh|--soak|run_robustness|cleanup_worker\.ps1'
 
 $all = Get-CimInstance Win32_Process
 $byId = @{}
