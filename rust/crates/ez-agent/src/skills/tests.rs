@@ -90,3 +90,28 @@ fn splits_frontmatter() {
     assert_eq!(split_frontmatter("hola"), None);
     assert_eq!(split_frontmatter("---\na: 1\n"), None);
 }
+
+#[test]
+fn refresh_reloads_only_when_the_tree_changes() {
+    let root = scratch("refresh");
+    let (local, global) = (root.join("local"), root.join("global"));
+    write_skill(&local, "pdf", "name: pdf\ndescription: primera", "cuerpo");
+    let library = SkillLibrary::new(&local, &global, None, MAX_CATALOG);
+    assert_eq!(
+        library.get("pdf").expect("skill").description.as_str(),
+        "primera"
+    );
+    assert!(!library.refresh(false));
+
+    write_skill(&local, "pdf", "name: pdf\ndescription: segunda", "cuerpo");
+    assert!(library.refresh(false));
+    assert_eq!(
+        library.get("pdf").expect("skill").description.as_str(),
+        "segunda"
+    );
+
+    write_skill(&local, "otra", "name: otra\ndescription: nueva", "cuerpo");
+    assert!(library.refresh(false));
+    assert!(library.refresh(true));
+    assert_eq!(library.names().len(), 2);
+}

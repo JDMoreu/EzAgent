@@ -576,3 +576,110 @@ fn fetch_arguments_are_validated_in_python_order() {
         Some("La URL no puede estar vacía.")
     );
 }
+
+struct FixedResolver(Vec<std::net::IpAddr>);
+
+impl HostResolver for FixedResolver {
+    fn resolve(&self, _host: &str, _port: u16) -> Option<Vec<std::net::IpAddr>> {
+        Some(self.0.clone())
+    }
+}
+
+#[test]
+fn pinned_target_keeps_the_host_header_and_sni() {
+    let (_dir, config) = config(true, 8000);
+    let public: std::net::IpAddr = "93.184.216.34".parse().expect("IP pública");
+    let resolver = FixedResolver(vec![public]);
+    let (connect, headers, extensions) =
+        pinned_request_target_with("https://example.test:8443/a?b=1#frag", &config, &resolver)
+            .expect("destino fijado");
+    assert_eq!(connect, "https://93.184.216.34:8443/a?b=1");
+    assert_eq!(
+        headers,
+        vec![("Host".to_string(), "example.test:8443".to_string())]
+    );
+    assert_eq!(
+        extensions,
+        vec![("sni_hostname".to_string(), "example.test".to_string())]
+    );
+
+    let (connect, headers, extensions) =
+        pinned_request_target_with("https://example.test/a", &config, &resolver).expect("destino");
+    assert_eq!(connect, "https://93.184.216.34/a");
+    assert_eq!(
+        headers,
+        vec![("Host".to_string(), "example.test".to_string())]
+    );
+    assert_eq!(
+        extensions,
+        vec![("sni_hostname".to_string(), "example.test".to_string())]
+    );
+
+    let (connect, headers, extensions) =
+        pinned_request_target_with("http://example.test/a", &config, &resolver).expect("destino");
+    assert_eq!(connect, "http://93.184.216.34/a");
+    assert_eq!(
+        headers,
+        vec![("Host".to_string(), "example.test".to_string())]
+    );
+    assert!(extensions.is_empty());
+
+    let (_connect, headers, extensions) =
+        pinned_request_target_with("https://españa.test/a", &config, &resolver).expect("destino");
+    assert_eq!(
+        headers,
+        vec![("Host".to_string(), "xn--espaa-rta.test".to_string())]
+    );
+    assert_eq!(
+        extensions,
+        vec![("sni_hostname".to_string(), "xn--espaa-rta.test".to_string())]
+    );
+}
+
+#[test]
+fn pinned_target_blocks_a_private_resolution() {
+    let (_dir, config) = config(true, 8000);
+    let resolver = FixedResolver(vec!["10.0.0.5".parse().expect("IP privada")]);
+    let error = pinned_request_target_with("https://interno.test/", &config, &resolver)
+        .expect_err("la IP privada no se permite");
+    assert_eq!(error.kind, WebToolErrorKind::UnsafeUrl);
+}
+
+struct CapturingTransport {
+    seen: std::sync::Mutex<Vec<WebRequest>>,
+}
+
+impl WebTransport for CapturingTransport {
+    fn request(&self, request: &WebRequest) -> Result<WebResponse, TransportError> {
+        self.seen.lock().expect("peticiones").push(request.clone());
+        Ok(WebResponse {
+            status: 200,
+            headers: vec![("content-type".to_string(), "text/html".to_string())],
+            body: b"<p>hola</p>".to_vec(),
+        })
+    }
+}
+
+#[test]
+fn injected_transport_sees_the_original_url() {
+    let (_dir, config) = config(true, 8000);
+    let transport = Arc::new(CapturingTransport {
+        seen: std::sync::Mutex::new(Vec::new()),
+    });
+    let public: std::net::IpAddr = "93.184.216.34".parse().expect("IP pública");
+    let hooks = FetchHooks {
+        transport: Some(transport.clone() as Arc<dyn WebTransport>),
+        resolver: Some(Arc::new(FixedResolver(vec![public]))),
+        ..FetchHooks::default()
+    };
+    let result = run_fetch_page_json(
+        &config,
+        &json!("http://example.test/p"),
+        &json!(8000),
+        &hooks,
+    );
+    assert!(result.ok, "{result:?}");
+    let seen = transport.seen.lock().expect("peticiones");
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].url, "http://example.test/p");
+}

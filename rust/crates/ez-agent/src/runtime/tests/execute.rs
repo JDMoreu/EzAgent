@@ -13,7 +13,7 @@ use crate::registry::{ToolInfo, ToolResult, ToolSpec};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-fn fixture(label: &str) -> (PathBuf, AgentRuntime) {
+fn fixture_with(label: &str, callbacks: RuntimeCallbacks) -> (PathBuf, AgentRuntime) {
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     let root = std::env::temp_dir().join(format!("ez-runtime-{}-{id}-{label}", std::process::id()));
     let work = root.join("work");
@@ -33,9 +33,35 @@ fn fixture(label: &str) -> (PathBuf, AgentRuntime) {
     .expect("permissions.toml");
     let mut voice = VoiceConfig::new();
     voice.set("confirm_actions", json!(false));
-    let runtime = AgentRuntime::new(voice, None, RuntimeCallbacks::default(), Some(&permissions))
-        .expect("runtime");
+    let runtime = AgentRuntime::new(voice, None, callbacks, Some(&permissions)).expect("runtime");
     (work, runtime)
+}
+
+fn fixture(label: &str) -> (PathBuf, AgentRuntime) {
+    fixture_with(label, RuntimeCallbacks::default())
+}
+
+fn rewrite_permissions(runtime: &AgentRuntime, text: &str) {
+    let path = runtime.config().permissions_path;
+    std::fs::write(&path, text).expect("permissions.toml");
+    // El mtime del sistema puede no cambiar si todo ocurre en el mismo tick.
+    let file = std::fs::File::options()
+        .write(true)
+        .open(&path)
+        .expect("abrir permissions.toml");
+    let future = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+    file.set_modified(future)
+        .expect("mtime de permissions.toml");
+}
+
+fn write_skill(root: &std::path::Path, name: &str, description: &str) {
+    let folder = root.join(name);
+    std::fs::create_dir_all(&folder).expect("carpeta de skill");
+    std::fs::write(
+        folder.join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: {description}\n---\nCuerpo.\n"),
+    )
+    .expect("SKILL.md");
 }
 
 fn function_names(schemas: &[Value]) -> Vec<String> {
@@ -553,4 +579,121 @@ fn the_messenger_uses_the_runtime_as_its_agent_core() {
         .system_prompt()
         .starts_with(crate::system_prompt::SAFETY_PREAMBLE_TEXT));
     assert_eq!(messenger.messages()[0]["role"], "system");
+}
+
+#[test]
+fn refresh_applies_permissions_and_skills_only_when_they_change() {
+    let (_work, runtime) = fixture("refresh");
+    let skills_dir = runtime.config().skills_dir;
+    // Sin cambios en disco no se rehace nada.
+    runtime.refresh();
+    assert_eq!(runtime.remaining_tool_calls(), 100);
+    let marker = format!("tmap3-skill-{}", std::process::id());
+    assert!(!runtime.skills().names().contains(&marker));
+
+    let text = std::fs::read_to_string(runtime.config().permissions_path).expect("permisos");
+    rewrite_permissions(
+        &runtime,
+        &text.replace(
+            "max_tool_calls_per_turn = 100",
+            "max_tool_calls_per_turn = 7",
+        ),
+    );
+    runtime.refresh();
+    assert_eq!(runtime.remaining_tool_calls(), 7);
+
+    write_skill(&skills_dir, &marker, "primera");
+    runtime.refresh();
+    assert!(runtime.skills().names().contains(&marker));
+}
+
+#[test]
+fn changing_read_roots_warns_and_keeps_the_old_roots() {
+    let (work, runtime) = fixture("read-roots");
+    let old_roots = runtime.config().paths.read_roots.clone();
+    let other = work.parent().expect("raíz").join("nuevo");
+    std::fs::create_dir_all(&other).expect("carpeta nueva");
+    let text = std::fs::read_to_string(runtime.config().permissions_path).expect("permisos");
+    rewrite_permissions(
+        &runtime,
+        &text.replace(
+            &old_roots[0].replace('\\', "/"),
+            &other.display().to_string().replace('\\', "/"),
+        ),
+    );
+    runtime.refresh();
+    assert_eq!(runtime.config().paths.read_roots, old_roots);
+    let audit = std::fs::read_to_string(runtime.config().audit_path).unwrap_or_default();
+    assert!(audit.to_lowercase().contains("reinicia"));
+}
+
+#[test]
+fn the_audit_records_a_known_error_kind() {
+    let (_work, runtime) = fixture("audit-kind");
+    let handler: crate::registry::Handler = Arc::new(|_| {
+        Ok(ToolResult {
+            ok: false,
+            data: Value::Null,
+            error: Some("x".to_string()),
+            outcome: "completed".to_string(),
+            error_kind: Some("timeout".to_string()),
+        }
+        .into())
+    });
+    runtime.registry().register(ToolSpec::new(
+        "falla",
+        "d",
+        json!({"type": "object", "properties": {}}),
+        0,
+        handler,
+    ));
+    runtime.begin_turn("prueba");
+    assert_eq!(
+        runtime.execute("falla", &json!({})).error_kind.as_deref(),
+        Some("timeout")
+    );
+    let audit = std::fs::read_to_string(runtime.config().audit_path).expect("auditoría");
+    let record = audit
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .find(|row| row["tool"] == "falla")
+        .expect("registro de la herramienta");
+    assert_eq!(record["error_kind"], "timeout");
+}
+
+#[test]
+fn the_real_confirmation_token_reaches_the_callback() {
+    let tokens: Arc<Mutex<Vec<Option<String>>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&tokens);
+    let callbacks = RuntimeCallbacks {
+        on_confirm_ask: Some(Arc::new(move |_summary, _strong, token| {
+            seen.lock().expect("tokens").push(token.map(str::to_string));
+        })),
+        ..RuntimeCallbacks::default()
+    };
+    let (_work, runtime) = fixture_with("confirm-token", callbacks);
+    let mut config = runtime.config();
+    config.general.confirm_timeout_s = 5.0;
+    runtime.set_config(config);
+    runtime.rebuild_confirm();
+    let gate = runtime.confirm_gate().expect("gestor de confirmación");
+    let answer = Arc::new(Mutex::new(None));
+    let result = Arc::clone(&answer);
+    let thread = std::thread::spawn(move || {
+        *result.lock().expect("respuesta") = Some(gate.ask("¿Sigo?", false, None));
+    });
+    let mut token = None;
+    for _ in 0..200 {
+        token = runtime.pending_confirmation_token();
+        if token.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let token = token.expect("token pendiente");
+    assert_eq!(*tokens.lock().expect("tokens"), vec![Some(token.clone())]);
+    assert_eq!(runtime.submit_confirmation("sí", Some(&token)), Some(true));
+    thread.join().expect("hilo de confirmación");
+    assert_eq!(*answer.lock().expect("respuesta"), Some(true));
+    assert_eq!(runtime.pending_confirmation_token(), None);
 }

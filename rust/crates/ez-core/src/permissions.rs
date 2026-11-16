@@ -499,6 +499,9 @@ mod tests {
         assert!(warnings
             .iter()
             .any(|item| item.contains("destructive_always_confirm")));
+        assert!(warnings
+            .iter()
+            .any(|item| item.contains("siempre pide confirmación")));
         assert!(warnings.iter().any(|item| item.contains("borrar")));
     }
 

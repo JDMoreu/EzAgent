@@ -260,6 +260,7 @@ fn http_errors_use_the_python_text() {
         error.message,
         "La API compatible con Anthropic respondió 401: nope"
     );
+    assert!(!error.message.contains("clave"));
     assert!(crate::errors::friendly_llm_error(&error, "Anthropic", "m")
         .contains("La clave de Anthropic"));
 }
@@ -280,4 +281,57 @@ fn condenser_reads_a_short_streamed_reply() {
             .expect("respuesta del condensador"),
         "3"
     );
+}
+
+#[test]
+fn two_streams_reuse_one_http_client_and_close_is_idempotent() {
+    let listened: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = std::sync::Arc::clone(&listened);
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("puerto libre");
+    let address = listener.local_addr().expect("dirección");
+    let body = concat!(
+        "event: content_block_start\n",
+        "data: {\"type\":\"content_block_start\",\"index\":0,",
+        "\"content_block\":{\"type\":\"text\",\"text\":\"ok\"}}\n\n",
+        "event: message_stop\n",
+        "data: {\"type\":\"message_stop\"}\n\n",
+    );
+    std::thread::spawn(move || {
+        for _ in 0..2 {
+            let Ok((mut socket, _)) = listener.accept() else {
+                return;
+            };
+            let mut buffer = [0_u8; 4096];
+            let read = std::io::Read::read(&mut socket, &mut buffer).unwrap_or(0);
+            captured
+                .lock()
+                .expect("peticiones")
+                .push(String::from_utf8_lossy(&buffer[..read]).into_owned());
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\
+                 Content-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = std::io::Write::write_all(&mut socket, head.as_bytes());
+            let _ = std::io::Write::write_all(&mut socket, body.as_bytes());
+        }
+    });
+    let client = AnthropicChatClient::new("clave", &format!("http://{address}"), &[], 5.0, false);
+    let request = json!({"model": "m", "messages": [{"role": "user", "content": "x"}]});
+    for _ in 0..2 {
+        let chunks = match client.stream(&request) {
+            Ok(stream) => stream.collect::<Result<Vec<_>, _>>().expect("flujo válido"),
+            Err(error) => panic!("no debía fallar: {}", error.message),
+        };
+        assert_eq!(chunks[0].content.as_deref(), Some("ok"));
+        assert!(client.client.lock().expect("cliente").is_some());
+    }
+    let requests = listened.lock().expect("peticiones");
+    assert!(requests[0].contains("x-api-key: clave"));
+    assert!(requests[0].contains("anthropic-version: 2023-06-01"));
+    assert!(requests[0].starts_with("POST /v1/messages HTTP/1.1"));
+    client.close();
+    client.close();
+    assert!(client.client.lock().expect("cliente").is_none());
 }
