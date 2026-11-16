@@ -148,7 +148,7 @@ fn library_lookup_prefers_the_first_folder_with_the_dll() {
     std::fs::write(&dll, b"x").expect("dll temporal");
     let found = library_in(&[empty.0.clone(), packed.0.clone()]);
     assert_eq!(found, Some(dll));
-    assert_eq!(library_in(&[empty.0.clone()]), None);
+    assert_eq!(library_in(std::slice::from_ref(&empty.0)), None);
 }
 
 #[test]

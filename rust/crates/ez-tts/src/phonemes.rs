@@ -8,7 +8,7 @@
 mod ffi;
 mod text;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use std::sync::OnceLock;
 

@@ -61,7 +61,12 @@ fn main() {
         data: version_info(),
     });
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("cargo sets it")).join("ezagent.res");
-    match std::fs::write(&out, write_res(&resources)) {
+    let bytes = write_res(&resources);
+    // Autocomprobación: un `.res` con tamaños incoherentes hace fallar el enlace.
+    if let Err(error) = validate_res(&bytes) {
+        panic!("el .res generado no cuadra: {error}");
+    }
+    match std::fs::write(&out, bytes) {
         Ok(()) => {}
         Err(error) => panic!("no pude escribir {}: {error}", out.display()),
     }
@@ -71,8 +76,13 @@ fn main() {
 
 /// `packaging/icon.ico` (el mismo del instalador), si existe.
 fn icon_path(manifest: &Path) -> Option<PathBuf> {
-    let path = manifest.join("..").join("..").join("..").join("packaging").join("icon.ico");
-    path.is_file().then(|| path)
+    let path = manifest
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("packaging")
+        .join("icon.ico");
+    path.is_file().then_some(path)
 }
 
 fn emit_rerun(manifest: &Path, icon: &Option<PathBuf>) {
@@ -121,13 +131,39 @@ fn write_res(resources: &[Resource]) -> Vec<u8> {
     out
 }
 
+/// Recorre el `.res` y comprueba que cada registro (cabecera y datos) cabe.
+fn validate_res(bytes: &[u8]) -> Result<(), String> {
+    let mut offset = 0_usize;
+    let mut records = 0_usize;
+    while offset < bytes.len() {
+        let size = read_u32(bytes, offset)? as usize;
+        let header = read_u32(bytes, offset + 4)? as usize;
+        if header < 24 {
+            return Err(format!("cabecera de {header} bytes en {offset}"));
+        }
+        let end = offset + header + size;
+        if end > bytes.len() {
+            return Err(format!("registro en {offset} se pasa del archivo"));
+        }
+        records += 1;
+        offset = end.div_ceil(4) * 4;
+    }
+    if offset > bytes.len() || bytes.len() - offset > 3 {
+        return Err(format!("cierre en {offset} de {} bytes", bytes.len()));
+    }
+    if records < 2 {
+        return Err("faltan recursos en el archivo".to_string());
+    }
+    Ok(())
+}
+
 fn push_name(out: &mut Vec<u8>, name: u16) {
     out.extend_from_slice(&0xFFFF_u16.to_le_bytes());
     out.extend_from_slice(&name.to_le_bytes());
 }
 
 fn align4(out: &mut Vec<u8>) {
-    while out.len() % 4 != 0 {
+    while !out.len().is_multiple_of(4) {
         out.push(0);
     }
 }
@@ -162,7 +198,10 @@ fn block(key: &str, value: &[u8], value_len: u16, kind: u16, children: &[Vec<u8>
 
 /// `VS_FIXEDFILEINFO` con la versión del producto.
 fn fixed_file_info() -> Vec<u8> {
-    let parts: Vec<u32> = VERSION.split('.').filter_map(|part| part.parse().ok()).collect();
+    let parts: Vec<u32> = VERSION
+        .split('.')
+        .filter_map(|part| part.parse().ok())
+        .collect();
     let major = parts.first().copied().unwrap_or(0);
     let minor = parts.get(1).copied().unwrap_or(0);
     let build = parts.get(2).copied().unwrap_or(0);
@@ -176,13 +215,13 @@ fn fixed_file_info() -> Vec<u8> {
         version_ls,
         version_ms, // dwProductVersionMS
         version_ls,
-        0x3F,       // dwFileFlagsMask
-        0,          // dwFileFlags
+        0x3F,        // dwFileFlagsMask
+        0,           // dwFileFlags
         0x0004_0004, // dwFileOS = VOS_NT_WINDOWS32
-        1,          // dwFileType = VFT_APP
-        0,          // dwFileSubtype
-        0,          // dwFileDateMS
-        0,          // dwFileDateLS
+        1,           // dwFileType = VFT_APP
+        0,           // dwFileSubtype
+        0,           // dwFileDateMS
+        0,           // dwFileDateLS
     ];
     let mut out = Vec::with_capacity(52);
     for field in fields {
@@ -203,7 +242,13 @@ fn string_table(entries: &[(&str, &str)]) -> Vec<u8> {
         .iter()
         .map(|(key, value)| version_string(key, value))
         .collect();
-    block(&format!("{LANGUAGE:04X}{CODEPAGE:04X}"), &[], 0, 1, &children)
+    block(
+        &format!("{LANGUAGE:04X}{CODEPAGE:04X}"),
+        &[],
+        0,
+        1,
+        &children,
+    )
 }
 
 fn var_file_info() -> Vec<u8> {
@@ -227,7 +272,13 @@ fn version_info() -> Vec<u8> {
         ("ProductVersion", VERSION),
     ];
     let strings = block("StringFileInfo", &[], 0, 1, &[string_table(&entries)]);
-    block("VS_VERSION_INFO", &fixed_file_info(), 52, 0, &[strings, var_file_info()])
+    block(
+        "VS_VERSION_INFO",
+        &fixed_file_info(),
+        52,
+        0,
+        &[strings, var_file_info()],
+    )
 }
 
 /// Un `(ancho, alto, colores, reservado, planos, bits, bytes, offset)` del `.ico`.

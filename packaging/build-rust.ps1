@@ -4,6 +4,8 @@
 #
 # Requisitos: Rust estable (x86_64-pc-windows-msvc), uv sync (para las DLL de
 # ONNX Runtime y espeak-ng, igual que rust\run-dev.cmd) e Inno Setup 6.
+# Las DLL se toman de .venv\Lib\site-packages; con -SitePackages se puede
+# apuntar a otro entorno (por ejemplo, el del repo principal desde un worktree).
 #
 # Entorno de compilación: el CRT se enlaza estáticamente
 # (-C target-feature=+crt-static) para que el .exe no necesite el redistribuible
@@ -20,7 +22,8 @@
 param(
     [switch]$SkipTests,
     [switch]$SkipInstaller,
-    [switch]$DynamicCrt
+    [switch]$DynamicCrt,
+    [string]$SitePackages = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,7 +31,7 @@ $root = Split-Path $PSScriptRoot -Parent
 $rust = Join-Path $root "rust"
 $dist = Join-Path $root "dist"
 $stage = Join-Path $dist "rust-stage"
-$pkg = Join-Path $root ".venv\Lib\site-packages"
+$pkg = if ($SitePackages) { $SitePackages } else { Join-Path $root ".venv\Lib\site-packages" }
 $version = "0.2.0"
 $zip = Join-Path $dist "EzAgent-portable-$version.zip"
 $iss = Join-Path $PSScriptRoot "EzAgent-rust.iss"
@@ -36,7 +39,7 @@ $setup = Join-Path $dist "EzAgent-Setup-$version.exe"
 
 function Copy-Required([string]$From, [string]$To) {
     if (-not (Test-Path $From)) {
-        throw "No encuentro $From. Ejecuta 'uv sync' en $root."
+        throw "No encuentro $From. Ejecuta 'uv sync' en $root o pasa -SitePackages."
     }
     Copy-Item $From $To -Recurse -Force
 }
@@ -89,6 +92,12 @@ try {
         $source = Join-Path $root $extra
         if (Test-Path $source) { Copy-Item $source $stage -Force }
     }
+    # Recursos que la app busca junto a la raíz del repo en desarrollo: el icono
+    # de la bandeja, el script de whisper, las fuentes del HUD y las skills.
+    Copy-Required (Join-Path $root "assets") $stage
+    Copy-Required (Join-Path $root "scripts") $stage
+    Copy-Required (Join-Path $root "src\ezagent\voice\assets\fonts") (Join-Path $stage "assets\fonts")
+    Copy-Required (Join-Path $root "src\ezagent\agent\default_skills") (Join-Path $stage "default_skills")
 
     # Licencias de lo que se redistribuye (obligación de onnxruntime MIT y
     # espeak-ng GPL-3: se ofrece el código fuente de espeak-ng).
