@@ -70,8 +70,8 @@ fn delegate_action(
         }
         "read" => read_action(herdr, names, args, &action),
         "send" => {
-            let address = pick_address(names, args, &action)?;
             let task = required_text(args, "task", &action)?;
+            let address = pick_address(names, args, &action)?;
             // DECISION: la tarea llega tal cual al agente, sin preámbulo.
             Ok(wrapped(herdr.send_agent(&address, &task, true)?))
         }
@@ -111,8 +111,8 @@ fn read_action(
     args: &Map<String, Value>,
     action: &str,
 ) -> Result<ToolResult, DelegateError> {
-    let address = pick_address(names, args, action)?;
     let lines = optional_lines(args, action)?;
+    let address = pick_address(names, args, action)?;
     let text = herdr.read_agent(&address, lines)?;
     Ok(ToolResult::ok(json!({"address": address, "text": text})))
 }

@@ -43,11 +43,11 @@ fn parse_run_args(
 ) -> Result<RunArgs, DelegateError> {
     let action = "run";
     let spoken_agent = required_text(args, "agent", action)?;
-    let agent = names.pick(NameKind::Agent, &spoken_agent)?;
     // DECISION: la tarea es opcional; sin ella solo se abre el agente.
     let task = optional_text(args, "task", action)?.unwrap_or_default();
     let mut steps =
         parse_steps(args.get("then").unwrap_or(&Value::Null)).map_err(ArgumentError::new)?;
+    let agent = names.pick(NameKind::Agent, &spoken_agent)?;
     for step in steps.iter_mut() {
         if let Some(wanted) = step.get("agent").cloned() {
             let resolved = names.pick(NameKind::Agent, &wanted)?;

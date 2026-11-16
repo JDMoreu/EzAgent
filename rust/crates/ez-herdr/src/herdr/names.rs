@@ -358,7 +358,9 @@ impl Herdr {
                 let agents = if fresh {
                     self.live_agents()
                 } else {
-                    self.cached_agents(1.5).unwrap_or_default()
+                    // La misma antigüedad que el refresco del contexto del
+                    // prompt: la caché casi siempre sirve para el atajo exacto.
+                    self.cached_agents(3.0).unwrap_or_default()
                 };
                 match kind {
                     NameKind::Space => space_candidates(&agents),
