@@ -12,7 +12,7 @@ use ez_agent::handoff_packet::{packet_text, Packet};
 use ez_agent::orchestration::{chain_spec, flow_task, parse_steps, ChainOptions};
 use ez_core::pyvalue::{head_chars, py_strip, python_str, text_or_empty, truthy};
 use ez_herdr::driver::AgentDriver;
-use ez_herdr::herdr::RunAgent;
+use ez_herdr::herdr::{NameKind, RunAgent};
 use serde_json::{Map, Value};
 
 use super::super::core::{log, AppEvent, VoiceApp};
@@ -111,12 +111,21 @@ impl VoiceApp {
 
     /// `run_agent(agent, "", **kwargs)`: `Ok(address)` o el texto del error.
     fn open_prelaunched(&self, spec: &Map<String, Value>, agent: &str) -> Result<String, String> {
+        let herdr = &self.inner.agents.herdr;
+        // DECISION: el lanzamiento previo corre en segundo plano y no puede
+        // preguntar; con un espacio dudoso no se abre nada y lo resolverá la
+        // herramienta con su confirmación.
+        let space = match optional(spec.get("space")) {
+            Some(spoken) => match herdr.resolve_safely(NameKind::Space, &spoken) {
+                Some(value) => Some(value),
+                None => return Ok(String::new()),
+            },
+            None => None,
+        };
         let cwd = optional(spec.get("cwd"));
         let name = optional(spec.get("name"));
-        let space = optional(spec.get("space"));
         let model = optional(spec.get("model"));
         let effort = optional(spec.get("effort"));
-        let herdr = &self.inner.agents.herdr;
         let driver = AgentDriver::new(std::sync::Arc::clone(herdr), herdr.config());
         let result = herdr
             .run_agent(
@@ -358,7 +367,13 @@ impl VoiceApp {
         let herdr = &self.inner.agents.herdr;
         let cwd = optional(spec.get("cwd"));
         let name = optional(spec.get("name"));
-        let space = optional(spec.get("space"));
+        // Con un espacio dudoso la cadena no puede preguntar: se usa el texto
+        // tal cual, como el Python, y Herdr responderá si no existe.
+        let space = optional(spec.get("space")).map(|spoken| {
+            herdr
+                .resolve_safely(NameKind::Space, &spoken)
+                .unwrap_or(spoken)
+        });
         let model = optional(spec.get("model"));
         let effort = optional(spec.get("effort"));
         let driver = AgentDriver::new(std::sync::Arc::clone(herdr), herdr.config());
