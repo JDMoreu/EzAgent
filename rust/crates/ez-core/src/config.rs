@@ -249,6 +249,7 @@ impl VoiceConfig {
     /// `save`: escritura atómica y con merge de claves desconocidas.
     pub fn save(&self, path: Option<&Path>) -> Result<(), String> {
         let path = path.map(Path::to_path_buf).unwrap_or_else(config_path);
+        let _writing = file_writes();
         let mut data = read_json_object(&path);
         for (key, value) in &self.values {
             data.insert(key.clone(), value.clone());
@@ -262,6 +263,7 @@ impl VoiceConfig {
     /// `save_key`: persiste una sola clave instantánea (`hud_hidden` o `theme`).
     pub fn save_key(&self, key: &str, value: Value, path: Option<&Path>) -> Result<(), String> {
         let path = path.map(Path::to_path_buf).unwrap_or_else(config_path);
+        let _writing = file_writes();
         let mut data = read_json_object(&path);
         data.insert(key.to_string(), value);
         write_json(&path, &data)
@@ -459,6 +461,18 @@ fn python_type_name(value: &Value) -> &'static str {
 fn read_json_value(path: &Path) -> Option<Value> {
     let text = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&text).ok()
+}
+
+/// Serializa las escrituras de `voice.json` del proceso. `save` (Ajustes) y
+/// `save_key` (la cola del HUD, en su propio hilo) leen, mezclan y reescriben
+/// el archivo: sin este cerrojo una podía pisar los cambios de la otra. Solo se
+/// retiene durante la lectura y la escritura del archivo.
+static FILE_WRITES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn file_writes() -> std::sync::MutexGuard<'static, ()> {
+    FILE_WRITES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn read_json_object(path: &Path) -> Map<String, Value> {

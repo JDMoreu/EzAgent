@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::thread;
+use std::time::Duration;
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use ez_core::config::VoiceConfig;
@@ -51,9 +52,16 @@ struct SaveJob {
 /// Destino de un guardado (el archivo `voice.json` en producción).
 type Sink = Arc<dyn Fn(&Path, &str, Value) + Send + Sync>;
 
+/// Lo que recibe el escritor: un guardado, o la petición de avisar cuando todo
+/// lo anterior esté en disco.
+enum Job {
+    Save(SaveJob),
+    Flush(Sender<()>),
+}
+
 /// Cola del escritor: una escritura a disco nunca ocurre en el hilo que llama.
 pub struct SaveQueue {
-    jobs: Sender<SaveJob>,
+    jobs: Sender<Job>,
 }
 
 impl SaveQueue {
@@ -77,30 +85,51 @@ impl SaveQueue {
             key: key.to_string(),
             value,
         };
-        if self.jobs.send(job).is_err() {
+        if self.jobs.send(Job::Save(job)).is_err() {
             tracing::debug!("No pude encolar el guardado de {key}");
         }
+    }
+
+    /// Espera (hasta `timeout`) a que todo lo encolado antes esté en disco.
+    /// Solo para el cierre de la app; nunca desde el hilo de pintura.
+    pub fn flush(&self, timeout: Duration) -> bool {
+        let (reply, done) = crossbeam_channel::bounded(1);
+        if self.jobs.send(Job::Flush(reply)).is_err() {
+            return false;
+        }
+        done.recv_timeout(timeout).is_ok()
     }
 }
 
 /// Atiende la cola por lotes: el último valor por clave, en orden de llegada.
-fn drain(queue: Receiver<SaveJob>, sink: Sink) {
+/// Una petición de vaciado se contesta después de escribir todo lo anterior.
+fn drain(queue: Receiver<Job>, sink: Sink) {
     while let Ok(first) = queue.recv() {
         let mut batch = vec![first];
         batch.extend(queue.try_iter());
         let mut pending: Vec<SaveJob> = Vec::new();
         for job in batch {
-            match pending
-                .iter_mut()
-                .find(|old| old.path == job.path && old.key == job.key)
-            {
-                Some(old) => old.value = job.value,
-                None => pending.push(job),
+            match job {
+                Job::Save(job) => match pending
+                    .iter_mut()
+                    .find(|old| old.path == job.path && old.key == job.key)
+                {
+                    Some(old) => old.value = job.value,
+                    None => pending.push(job),
+                },
+                Job::Flush(reply) => {
+                    write_all(&sink, std::mem::take(&mut pending));
+                    let _ = reply.send(());
+                }
             }
         }
-        for job in pending {
-            sink(&job.path, &job.key, job.value);
-        }
+        write_all(&sink, pending);
+    }
+}
+
+fn write_all(sink: &Sink, jobs: Vec<SaveJob>) {
+    for job in jobs {
+        sink(&job.path, &job.key, job.value);
     }
 }
 
@@ -113,12 +142,20 @@ fn write_key(path: &Path, key: &str, value: Value) {
     }
 }
 
+// DECISION: hay un solo HUD y un solo `voice.json`; la cola vive en el
+// proceso para no cambiar los campos públicos de `HudConfig` (los usa la app al
+// arrancar).
+static QUEUE: OnceLock<SaveQueue> = OnceLock::new();
+
 fn queue() -> &'static SaveQueue {
-    // DECISION: hay un solo HUD y un solo `voice.json`; la cola vive en el
-    // proceso para no cambiar los campos públicos de `HudConfig` (los usa la
-    // app al arrancar).
-    static QUEUE: OnceLock<SaveQueue> = OnceLock::new();
     QUEUE.get_or_init(|| SaveQueue::start(Arc::new(write_key)))
+}
+
+/// Al cerrar la app: espera a que los guardados pendientes del HUD (posición
+/// de la barra, tema…) lleguen a disco. Sin cola arrancada, no hay nada que
+/// esperar.
+pub fn flush_config_saves(timeout: Duration) -> bool {
+    QUEUE.get().is_none_or(|queue| queue.flush(timeout))
 }
 
 /// `cfg`/`cfg.save_key` vistos por el HUD.
@@ -300,6 +337,21 @@ mod tests {
             .expect("la escritura llegó");
         assert_eq!(key, "drop_x");
         assert_eq!(value, Value::from(12));
+    }
+
+    #[test]
+    fn flush_waits_until_everything_queued_before_is_on_disk() {
+        let written = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let sink = Arc::clone(&written);
+        let queue = SaveQueue::start(Arc::new(move |_: &Path, key: &str, value: Value| {
+            thread::sleep(std::time::Duration::from_millis(150));
+            sink.lock().push((key.to_string(), value));
+        }));
+        queue.push(Path::new("voice.json"), "drop_x", Value::from(3));
+        queue.push(Path::new("voice.json"), "theme", Value::from("light"));
+        assert!(queue.flush(std::time::Duration::from_secs(5)));
+        let keys: Vec<String> = written.lock().iter().map(|(key, _)| key.clone()).collect();
+        assert_eq!(keys, ["drop_x", "theme"]);
     }
 
     #[test]
