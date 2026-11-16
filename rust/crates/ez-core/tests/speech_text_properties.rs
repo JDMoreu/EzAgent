@@ -78,3 +78,17 @@ fn fuzzed_text_never_leaves_markdown() {
         assert_eq!(spoken.trim(), spoken, "{raw:?}");
     }
 }
+
+/// `test_numeros_unidades_y_abreviaturas_se_leen_en_voz_alta[1,5|2,05]`:
+/// la coma decimal se lee «coma» y el cero a la izquierda no se pierde.
+#[test]
+fn decimal_commas_are_read_aloud() {
+    assert_eq!(
+        ez_core::speech_text::normalize_for_speech("1,5"),
+        "uno coma cinco"
+    );
+    assert_eq!(
+        ez_core::speech_text::normalize_for_speech("2,05"),
+        "dos coma cero cinco"
+    );
+}
