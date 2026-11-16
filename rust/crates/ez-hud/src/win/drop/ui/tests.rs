@@ -302,6 +302,18 @@ fn activity_becomes_the_orbit_in_priority_order() {
 }
 
 #[test]
+fn the_autonomous_mark_is_never_cut_from_a_full_orbit() {
+    let harness = Harness::new();
+    let mut rows: Vec<PeekItem> = (0..6)
+        .map(|k| item(&format!("w{k}"), "working", f64::from(k), false, true))
+        .collect();
+    rows.push(item("autonomo", "autonomous", 0.0, false, true));
+    harness.ui.set_activity(rows);
+    let states = super::render::orbit_states(&harness.ui.activity.read());
+    assert_eq!(states.first().map(String::as_str), Some("autonomous"));
+}
+
+#[test]
 fn chat_is_optional_but_respects_asking_and_mute() {
     let harness = Harness::new();
     harness.ui.toggle_chat();

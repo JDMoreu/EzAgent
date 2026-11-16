@@ -34,7 +34,8 @@ fn pose_of(state: &str) -> &'static str {
 
 fn state_order(state: &str) -> u8 {
     match state {
-        "needs_you" => 0,
+        // El modo autónomo va primero: su marca nunca debe quedar recortada por ORBIT_LIMIT.
+        "autonomous" | "needs_you" => 0,
         "failed" => 1,
         "working" => 2,
         "waiting" => 3,
