@@ -14,6 +14,7 @@ ez-core = { path = "../ez-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 regex = { workspace = true }
+sha2 = { workspace = true }
 chrono = { workspace = true }
 tracing = { workspace = true }
 
