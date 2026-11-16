@@ -23,7 +23,13 @@ for attempt in $(seq 1 $MAX); do
   START=$(date +%s)
   while kill -0 $PID 2>/dev/null; do
     sleep 15
-    [ -f "$REPORT" ] && { sleep 60; kill $PID 2>/dev/null; echo "[$ID] informe presente en el intento $attempt"; exit 0; }
+    if [ -f "$REPORT" ]; then
+      # El worker suele seguir ajustando tras escribir el informe: se le deja
+      # terminar por su cuenta (hasta 15 min) en vez de cortarlo a medias.
+      for _ in $(seq 1 60); do kill -0 $PID 2>/dev/null || break; sleep 15; done
+      kill $PID 2>/dev/null
+      echo "[$ID] informe presente en el intento $attempt"; exit 0
+    fi
     NOW=$(date +%s)
     SIZE=$(stat -c %s "$LOG" 2>/dev/null || echo 0)
     if [ "$SIZE" -eq 0 ] && [ $((NOW-START)) -gt 180 ]; then
