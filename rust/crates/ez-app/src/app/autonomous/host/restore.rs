@@ -37,14 +37,26 @@ impl AutonomousLoop {
             .executor
             .as_ref()
             .map_or_else(String::new, |executor| executor.agent.clone());
+        // El verificador no va en `estado.json`: al reanudar se usa el del
+        // ejecutor o, en un equipo, el de su primer papel (decisión de AUTO-B).
+        let verifier_agent = if state.mode == ez_agent::autonomous::Mode::Team {
+            state
+                .team
+                .as_ref()
+                .and_then(|team| team.roles.first())
+                .map_or_else(|| executor_agent.clone(), |role| role.agent.clone())
+        } else {
+            executor_agent.clone()
+        };
         let session = Session {
             state,
             dir: dir.clone(),
             task: task.0,
             criteria,
             space: task.1,
-            verifier_agent: executor_agent.clone(),
+            verifier_agent,
             executor_agent,
+            verifier_model: None,
             sent_at: 0.0,
             idle_since: None,
             verification: None,
@@ -52,6 +64,7 @@ impl AutonomousLoop {
             last_clean: None,
             fingerprints: Vec::new(),
             announced_round: 0,
+            seen_incidents: Default::default(),
         };
         if restarted {
             let reason = ez_agent::autonomous::texts::REASON_RESTART;

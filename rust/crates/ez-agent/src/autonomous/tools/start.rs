@@ -147,6 +147,7 @@ pub fn start_task(
         MAX_MINUTES,
     );
     let verifier = text(args, "verifier_agent");
+    let verifier_model = text(args, "verifier_model");
     let summary = texts::confirm(
         &task,
         &agent,
@@ -170,6 +171,7 @@ pub fn start_task(
         workdir,
         terminal: Some(text(args, "terminal")).filter(|value| !value.is_empty()),
         verifier_agent: if verifier.is_empty() { agent } else { verifier },
+        verifier_model: (!verifier_model.is_empty()).then_some(verifier_model),
         max_rounds,
         max_minutes,
         max_approvals: defaults.max_approvals,
@@ -239,12 +241,16 @@ pub fn start_team(
     if !still_current(started) {
         return ToolResult::err(texts::TIMED_OUT);
     }
+    let verifier = text(args, "verifier_agent");
+    let verifier_model = text(args, "verifier_model");
     let spec = TeamSpec {
         task,
         done_criteria,
         roles,
         space,
         workdir,
+        verifier_agent: verifier,
+        verifier_model: (!verifier_model.is_empty()).then_some(verifier_model),
         max_rounds,
         max_minutes,
         max_approvals: defaults.max_approvals,

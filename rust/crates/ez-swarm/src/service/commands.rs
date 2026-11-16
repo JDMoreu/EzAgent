@@ -351,6 +351,12 @@ fn describe_task(task: &Task, tasks: &[Task], me: &Member) -> String {
             task.rounds, task.result
         ));
     }
+    // DECISION: el tablero no tiene columna de cuerpo; la nota de una tarea del
+    // modo autónomo (la ruta de `correccion-N.md`) viaja en `result` y se le
+    // muestra a quien la toma, porque solo se fija antes de empezar.
+    if task.rounds == 0 && !task.result.is_empty() {
+        text.push_str(&format!(" · {}", task.result));
+    }
     for after in tasks
         .iter()
         .filter(|after| after.deps.contains(&task.id))

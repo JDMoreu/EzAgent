@@ -15,7 +15,7 @@ use ez_core::pyvalue::{collapse_spaces, head_chars};
 use crate::db::{Clock, Db, DbResult};
 use crate::recovery::Recovery;
 use crate::server::SwarmServer;
-use crate::service::SwarmService;
+use crate::service::{MemberSpec, SwarmService};
 use crate::supervisor::{Announce, ProbeHost, Supervisor, SupervisorConfig, SwarmHost};
 
 /// Carpeta del ejecutable `ezs` (junto al programa o en el PATH), o «».
@@ -171,6 +171,25 @@ impl SwarmStack {
         self.server.stop();
     }
 
+    /// Crea el enjambre de una tarea autónoma (10.18): lo marca antes de
+    /// activarlo, para que su primer lanzamiento ya no salte permisos y su
+    /// recuperación no pregunte.
+    pub fn start_autonomous_team(
+        &self,
+        goal: &str,
+        workdir: &str,
+        members: &[MemberSpec],
+    ) -> DbResult<String> {
+        let supervisor = Arc::clone(&self.supervisor);
+        let swarm = self
+            .service
+            .start_autonomous(goal, members, workdir, &move |swarm| {
+                supervisor.mark_autonomous(swarm);
+            })?;
+        self.supervisor.poke();
+        Ok(swarm)
+    }
+
     /// Incidentes y decisiones del supervisor.
     pub fn recovery(&self) -> &Recovery {
         &self.supervisor.recovery
@@ -321,6 +340,25 @@ mod tests {
         stack.start().unwrap_or_else(|error| panic!("{error}"));
         stack.stop();
         assert_eq!(stack.server.url(), "");
+        clean(&base);
+    }
+
+    #[test]
+    fn an_autonomous_team_is_marked_before_it_starts() {
+        let (stack, base, _) = stack();
+        let members = [MemberSpec::new("dev", "dev", "claude")];
+        let swarm = stack
+            .start_autonomous_team("Migrar", "C:/t", &members)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert!(stack.supervisor.is_autonomous(&swarm));
+        assert_eq!(
+            stack
+                .store()
+                .members(&swarm)
+                .unwrap_or_else(|error| panic!("{error}"))
+                .len(),
+            1
+        );
         clean(&base);
     }
 

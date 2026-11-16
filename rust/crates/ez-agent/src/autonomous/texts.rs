@@ -157,9 +157,17 @@ pub const REASON_VERIFIER: &str = "el verificador falló";
 pub const REASON_DIALOG_CHANGED: &str = "el diálogo cambió mientras lo leía";
 pub const REASON_KEYS: &str = "no pude enviar las teclas del permiso";
 pub const REASON_READ: &str = "no pude leer la pantalla del agente";
+/// Un miembro del equipo se quedó sin cuota, contexto, sesión o ventana (10.18).
+pub const REASON_TEAM_INCIDENT: &str =
+    "un miembro del equipo se quedó sin cuota, contexto o ventana";
+/// El enjambre se detuvo o se pausó por fuera del modo autónomo (10.18).
+pub const REASON_TEAM_STOPPED: &str = "el equipo se detuvo antes de terminar";
+/// No hay a quién mandar la corrección (10.18).
+pub const REASON_TEAM_ROLE: &str = "el equipo no tiene un papel al que mandar la corrección";
 
-/// El modo con equipo llega en la fase B (10.18); A3 solo hace el de una tarea.
-pub const TEAM_UNAVAILABLE: &str = "El modo autónomo con equipo todavía no está disponible.";
+/// El modo con equipo necesita el modo enjambre montado (10.18).
+pub const TEAM_UNAVAILABLE: &str =
+    "El modo autónomo con equipo no está disponible en esta instalación.";
 
 /// Tarea fija del verificador (9.5 y 10.10).
 ///
@@ -231,6 +239,10 @@ pub const CRITERION_CHECK_DESCRIPTION: &str =
 pub const AGENT_DESCRIPTION: &str = "start_autonomous_task: agente del catálogo que ejecuta.";
 pub const VERIFIER_DESCRIPTION: &str = "start_autonomous_task: agente que verifica; por omisión, \
                                         el mismo del ejecutor.";
+pub const VERIFIER_MODEL_DESCRIPTION: &str =
+    "Modelo del verificador; sin él, el del perfil del agente.";
+pub const TEAM_VERIFIER_DESCRIPTION: &str =
+    "start_autonomous_team: agente que verifica; por omisión, el primero del equipo.";
 pub const SPACE_DESCRIPTION: &str = "start_autonomous_task: espacio de Herdr donde trabaja.";
 pub const WORKDIR_DESCRIPTION: &str =
     "Carpeta de trabajo de la tarea; sin ella se usa «default_cwd» de voice.json.";

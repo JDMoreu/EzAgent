@@ -29,7 +29,7 @@ use ez_core::metrics::monotonic;
 use ez_core::pytime::timestamp;
 use ez_core::pyvalue::{py_strip, python_str, text_or_empty, truthy};
 use serde_json::Value;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 use crate::db::{Clock, DbResult};
 use crate::progress::Progress;
@@ -240,6 +240,10 @@ pub struct Supervisor {
     pub progress: Progress,
     /// Incidentes y decisiones.
     pub recovery: Recovery,
+    /// Enjambres que lleva el modo autónomo (10.18).
+    autonomous: Mutex<HashSet<String>>,
+    /// Dónde se apuntan, para que un reinicio no los devuelva a `--yolo`.
+    autonomous_file: Option<PathBuf>,
     clock: Clock,
     book: Arc<Book>,
     launch: Arc<launch::LaunchContext>,
@@ -281,6 +285,10 @@ impl Supervisor {
                 clock: Arc::clone(&config.clock),
             },
         );
+        let autonomous_file = config
+            .seat_dir
+            .parent()
+            .map(|parent| parent.join("autonomous.txt"));
         let launch = Arc::new(launch::LaunchContext {
             service: Arc::clone(&service),
             host: Arc::clone(&host),
@@ -290,6 +298,10 @@ impl Supervisor {
             clock: Arc::clone(&config.clock),
             book: Arc::clone(&book),
         });
+        let marked = load_marked(autonomous_file.as_ref());
+        for swarm in &marked {
+            recovery.mark_autonomous(swarm);
+        }
         Self {
             service,
             host,
@@ -300,6 +312,8 @@ impl Supervisor {
             view: RwLock::new(Vec::new()),
             progress: Progress::new(),
             recovery,
+            autonomous: Mutex::new(marked),
+            autonomous_file,
             clock: config.clock,
             book,
             launch,
@@ -350,6 +364,36 @@ impl Supervisor {
     /// Adelanta la próxima pasada (hay novedades en el tablero).
     pub fn poke(&self) {
         self.book.wake.set();
+    }
+
+    /// Marca un enjambre del modo autónomo (10.18). Hay que hacerlo antes de
+    /// activarlo: sus miembros no reciben los argumentos que saltan permisos y
+    /// su recuperación no pregunta. Se apunta en disco para que un reinicio de
+    /// la app no devuelva el enjambre a `--yolo`.
+    pub fn mark_autonomous(&self, swarm: &str) {
+        let fresh = {
+            let mut known = self
+                .autonomous
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            known.insert(swarm.to_string())
+        };
+        if fresh {
+            if let Some(path) = &self.autonomous_file {
+                if let Err(error) = append_line(path, swarm) {
+                    warn!("No pude apuntar el enjambre autónomo {swarm}: {error}");
+                }
+            }
+        }
+        self.recovery.mark_autonomous(swarm);
+    }
+
+    /// ¿El enjambre lo lanzó el modo autónomo?
+    pub fn is_autonomous(&self, swarm: &str) -> bool {
+        self.autonomous
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains(swarm)
     }
 
     fn run(&self) {
@@ -459,4 +503,33 @@ fn agent_state(raw: Option<&Value>) -> &'static str {
         ERROR => ERROR,
         _ => UNKNOWN,
     }
+}
+
+/// Enjambres autónomos apuntados en disco (`autonomous.txt`), si existe.
+fn load_marked(path: Option<&PathBuf>) -> HashSet<String> {
+    let Some(path) = path else {
+        return HashSet::new();
+    };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return HashSet::new();
+    };
+    text.lines()
+        .map(py_strip)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Apunta un enjambre sin tocar los que ya estaban.
+fn append_line(path: &PathBuf, swarm: &str) -> std::io::Result<()> {
+    use std::io::Write;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    writeln!(file, "{swarm}")
 }

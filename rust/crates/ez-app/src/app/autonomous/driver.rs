@@ -85,6 +85,10 @@ impl AutonomousLoop {
 
     /// Un tic en ejecución: topes, ejecutor y demás terminales de `scope`.
     fn tick_running(&self, session: &mut Session) {
+        if session.state.mode == ez_agent::autonomous::Mode::Team {
+            self.tick_team(session);
+            return;
+        }
         let now = self.now();
         let action = session.state.on_deadline(now);
         if matches!(action, Action::Pause(_)) {
@@ -219,7 +223,7 @@ impl AutonomousLoop {
         }
     }
 
-    fn poll_other(&self, session: &mut Session, address: &str) {
+    pub(super) fn poll_other(&self, session: &mut Session, address: &str) {
         let row = match self.port.get_agent(address) {
             Ok(row) => row,
             Err(_) => return,
@@ -300,7 +304,12 @@ impl AutonomousLoop {
                 }
             }
             Action::SendCorrection(path) => {
-                if let Err(reason) = verify::send_correction(self, session, &path) {
+                let result = if session.state.mode == ez_agent::autonomous::Mode::Team {
+                    self.team_correction(session, &path)
+                } else {
+                    verify::send_correction(self, session, &path)
+                };
+                if let Err(reason) = result {
                     self.pause(session, &reason);
                 }
             }

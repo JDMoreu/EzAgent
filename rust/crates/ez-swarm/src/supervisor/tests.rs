@@ -1,5 +1,7 @@
 //! Tests of the swarm supervisor.
 
+mod autonomous;
+
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 

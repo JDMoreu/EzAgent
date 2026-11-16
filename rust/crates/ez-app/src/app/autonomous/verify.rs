@@ -24,7 +24,14 @@ pub fn launch_verifier(
     let criterios = session.criteria_path().to_string_lossy().to_string();
     let prompt = texts::verifier_prompt(&encargo, &criterios, &verdict_path, &verification.token);
     let agent = verifier_agent(session);
-    let result = start::run(loop_.port.as_ref(), session, &agent, &prompt)?;
+    let model = session.verifier_model.clone();
+    let result = start::run(
+        loop_.port.as_ref(),
+        session,
+        &agent,
+        &prompt,
+        model.as_deref(),
+    )?;
     let Some(address) = address_of(&result) else {
         return Err(texts::launch_failed(
             "el verificador",
@@ -109,9 +116,7 @@ pub fn send_correction(
     path: &str,
 ) -> Result<(), String> {
     let failed = (session.state.round - 1).max(1);
-    if let Some(verdict) = session.last_verdict.take() {
-        session.dir.write_correction(failed, &verdict)?;
-    }
+    write_correction(session)?;
     let fin = session.dir.fin_path(session.state.round);
     let text = texts::correction(path, &fin.to_string_lossy());
     let Some(executor) = session.state.executor.as_ref() else {
@@ -132,6 +137,19 @@ pub fn send_correction(
         json!({"round": failed, "path": path}),
     );
     Ok(())
+}
+
+/// Escribe `compartido/correccion-N.md` con el veredicto de la ronda.
+///
+/// Devuelve el veredicto usado para que el modo con equipo cuente los
+/// hallazgos; `None` si no había ninguno.
+pub fn write_correction(session: &mut Session) -> Result<Option<Verdict>, String> {
+    let failed = (session.state.round - 1).max(1);
+    let Some(verdict) = session.last_verdict.take() else {
+        return Ok(None);
+    };
+    session.dir.write_correction(failed, &verdict)?;
+    Ok(Some(verdict))
 }
 
 /// `privado/resumen.md` con la evidencia del último veredicto limpio (10.16).
