@@ -19,6 +19,7 @@
 - `rust/crates/ez-herdr/src/herdr/tests/context.rs` (nuevo, declarado en `tests.rs`): contexto acotado sin esperar el primer snapshot, refresco en vuelo sin hilos duplicados y fallo que descarta el contexto y espera 3 s.
 - `rust/crates/ez-hud/src/layout.rs`: orden de los grupos de «system», filas de «files» y pertenencia a `ACTION_KEYS`/`LABELS`.
 - `rust/crates/ez-llm/src/anthropic/tests.rs`: dos streams reutilizan un solo `reqwest::Client`, cabeceras `x-api-key`/`anthropic-version` y `close` idempotente.
+- `rust/crates/ez-swarm/src/service/tests.rs`: el token solo se guarda como SHA-256 (también en el WAL) y un enjambre en `setup` o un `start` fallido no aparecen como activos.
 
 ## Decisiones
 - El mapa va por conducta, no por nombre: las filas `paridad` citan el caso de fixture concreto que ejerce la misma función y entrada, y la prueba que lo consume.
@@ -30,8 +31,8 @@
 
 ## Verificación
 - `cargo fmt --all`: ok.
-- `cargo clippy -p ez-core -p ez-agent -p ez-llm -p ez-chat -p ez-hud -p ez-herdr --all-targets -- -D warnings`: ok.
-- `cargo test -p ez-core -p ez-agent -p ez-llm -p ez-chat -p ez-hud -p ez-herdr`: PENDING.
+- `cargo clippy -p ez-core -p ez-agent -p ez-llm -p ez-chat -p ez-hud -p ez-herdr -p ez-swarm --all-targets -- -D warnings`: ok.
+- `cargo test -p ez-core -p ez-agent -p ez-llm -p ez-chat -p ez-hud -p ez-herdr -p ez-swarm`: 1169 pruebas aprobadas, 0 fallos, 0 ignoradas (51 suites).
 - pytest: no aplica; el Python es el oráculo de solo lectura.
 - Fixtures consumidos (filas del CSV / casos que ejercen):
   - `llm_providers.jsonl` 228 casos (75 filas).
@@ -40,13 +41,14 @@
   - `llm_request.jsonl` 82 casos (14 filas).
   - `paths_globs.jsonl` 34 casos (10 filas).
   - `llm_sse.jsonl` 138 casos (7 filas).
-  - `hud_settings.jsonl` 1175 casos (1 fila; caso `section_groups/system`).
+  - `hud_settings.jsonl` 1175 casos (1 fila; caso `window/groups/system`).
   - `swarm.jsonl` 644 casos (1 fila; 49 casos `service.handle`).
-- Conteos por estado: `paridad` 143, `portada` 101, `nueva` 67, `no_aplica` 4; total 315.
+- Conteos por estado: `paridad` 143, `portada` 100, `nueva` 68, `no_aplica` 4; total 315.
+- Las 68 filas `nueva` se apoyan en 27 funciones de prueba nuevas (las parametrizadas comparten función).
 - Por archivo Python (filas): advanced 6, agent_config 20, anthropic_client 30, audit_provider 24, audit_tools 53, chat_media 33, handoff_packet 16, herdr_context 3, llm_providers 78, paths 40, swarm_service 12.
 - El detalle de cada fila (prueba o fixture que la cubre) está en `parity/test-map/TMAP-3.csv`; no queda ninguna `pendiente`.
 
 ## Pendiente o riesgos
 - Las cuatro filas `no_aplica` son límites de las costuras de prueba (apertura con Explorer, spy de `Popen`, motor `ddgs`), no conducta sin portar.
-- La prueba del enlace simbólico se salta si Windows no permite crearlo (misma condición que el `pytest.skip` de Python); en esta máquina se creó y pasó.
+- La prueba del enlace simbólico se salta si Windows no permite crearlo (misma condición que el `pytest.skip` de Python); si no se pudo crear, termina sin fallar.
 - Las pruebas de `fetch_models` y de streams de Anthropic levantan un `TcpListener` en `127.0.0.1`; no usan red externa.
