@@ -4,6 +4,7 @@
 mod fake;
 mod flow;
 mod safety;
+mod team;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -17,7 +18,7 @@ use serde_json::{json, Value};
 
 use crate::app::core::{AppEvent, Queue};
 
-use super::{AutonomousLoop, TestClock};
+use super::{AutonomousLoop, TeamSwarm, TestClock};
 
 pub(crate) use fake::FakePort;
 
@@ -40,6 +41,15 @@ pub(crate) struct Harness {
 
 impl Harness {
     pub(crate) fn new() -> Self {
+        Self::build(None)
+    }
+
+    /// Arnés con el enjambre del modo con equipo (10.18).
+    pub(crate) fn with_team(team: Arc<dyn TeamSwarm>) -> Self {
+        Self::build(Some(team))
+    }
+
+    fn build(team: Option<Arc<dyn TeamSwarm>>) -> Self {
         let root = temp_path("auto-root");
         let workdir = temp_path("auto-work");
         std::fs::create_dir_all(&root).expect("carpeta raíz");
@@ -53,6 +63,7 @@ impl Harness {
             Arc::clone(&events),
             Arc::clone(&clock) as Arc<dyn super::Clock>,
             root.clone(),
+            team,
         );
         loop_.set_audit(Arc::new(AuditLog::new(&audit)));
         Self {
@@ -78,6 +89,7 @@ impl Harness {
             workdir: self.workdir.display().to_string(),
             terminal: None,
             verifier_agent: "claude".to_string(),
+            verifier_model: None,
             max_rounds: 5,
             max_minutes: 120,
             max_approvals: 50,

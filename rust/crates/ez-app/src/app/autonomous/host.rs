@@ -16,7 +16,7 @@ mod git;
 pub(crate) mod restore;
 pub(crate) mod start;
 
-pub use git::{diff_stat, log_oneline};
+pub use git::{base_commit, diff_stat, log_oneline};
 pub use start::launch_executor;
 
 impl AutonomousHost for AutonomousLoop {
@@ -24,8 +24,8 @@ impl AutonomousHost for AutonomousLoop {
         self.start_task(spec)
     }
 
-    fn start_team(&self, _spec: &TeamSpec) -> Result<String, String> {
-        Err(ez_agent::autonomous::texts::TEAM_UNAVAILABLE.to_string())
+    fn start_team(&self, spec: &TeamSpec) -> Result<String, String> {
+        self.start_team_task(spec)
     }
 
     fn status(&self) -> Option<Summary> {
@@ -157,7 +157,7 @@ impl AutonomousLoop {
 ///
 /// `TaskDir::create` (A1) escribe «fin-N.md (con la N de la ronda en curso)»;
 /// el agente debe ver un archivo concreto o escribiría literalmente `fin-N.md`.
-fn fix_encargo_fin(dir: &TaskDir, round: i64) -> Result<(), String> {
+pub(super) fn fix_encargo_fin(dir: &TaskDir, round: i64) -> Result<(), String> {
     let path = dir.shared().join("encargo.md");
     let text = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
     let fixed = text.replace(

@@ -14,12 +14,14 @@ pub(crate) fn run(
     session: &Session,
     agent: &str,
     task: &str,
+    model: Option<&str>,
 ) -> Result<Map<String, serde_json::Value>, String> {
     let params = RunAgent {
         agent,
         task,
         cwd: Some(&session.state.workdir),
         space: Some(&session.space),
+        model,
         confirmed: true,
         ..RunAgent::default()
     };
@@ -31,7 +33,7 @@ pub(crate) fn run(
 pub fn launch_executor(loop_: &AutonomousLoop, session: &mut Session) -> Result<(), String> {
     let agent = session.executor_agent.clone();
     let task = session.encargo_path().to_string_lossy().to_string();
-    let result = run(loop_.port.as_ref(), session, &agent, &task)?;
+    let result = run(loop_.port.as_ref(), session, &agent, &task, None)?;
     let Some(address) = address_of(&result) else {
         return Err(texts::launch_failed(
             "el ejecutor",

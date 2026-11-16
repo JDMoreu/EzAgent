@@ -15,6 +15,7 @@
 mod approve;
 mod driver;
 mod host;
+mod team;
 mod time;
 mod verify;
 mod wiring;
@@ -22,8 +23,10 @@ mod wiring;
 #[cfg(test)]
 mod tests;
 
+pub use team::{StackSwarm, TeamMember, TeamSwarm};
 pub use time::{Clock, RealClock, TestClock};
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
@@ -88,6 +91,8 @@ pub struct Session {
     pub space: String,
     pub executor_agent: String,
     pub verifier_agent: String,
+    /// Modelo del verificador (B-F05); `None` deja el del perfil.
+    pub verifier_model: Option<String>,
     /// Instante del último envío al ejecutor (ancla de `fin-N.md`).
     pub sent_at: f64,
     /// Primer instante en reposo del ejecutor, para el tope de 3 min.
@@ -99,6 +104,8 @@ pub struct Session {
     pub fingerprints: Vec<String>,
     /// Ronda cuyo aviso «Ronda {n}: verificando.» ya se dijo.
     pub announced_round: i64,
+    /// Incidentes del enjambre vistos en el tic anterior (10.18).
+    pub seen_incidents: HashSet<i64>,
 }
 
 impl Session {
@@ -116,6 +123,7 @@ impl Session {
             } else {
                 spec.verifier_agent.clone()
             },
+            verifier_model: spec.verifier_model.clone(),
             sent_at: now,
             idle_since: None,
             verification: None,
@@ -123,6 +131,7 @@ impl Session {
             last_clean: None,
             fingerprints: Vec::new(),
             announced_round: 0,
+            seen_incidents: HashSet::new(),
         }
     }
 
@@ -147,6 +156,8 @@ pub struct AutonomousLoop {
     events: Arc<Queue<AppEvent>>,
     clock: Arc<dyn Clock>,
     root: PathBuf,
+    /// El enjambre del modo con equipo (10.18); `None` si la app no lo montó.
+    team: Option<Arc<dyn TeamSwarm>>,
     audit: Mutex<Option<Arc<AuditLog>>>,
     shared: Mutex<Shared>,
     changed: Condvar,
@@ -162,12 +173,14 @@ impl AutonomousLoop {
         events: Arc<Queue<AppEvent>>,
         clock: Arc<dyn Clock>,
         root: PathBuf,
+        team: Option<Arc<dyn TeamSwarm>>,
     ) -> Arc<Self> {
         let this = Arc::new(Self {
             port,
             events,
             clock,
             root,
+            team,
             audit: Mutex::new(None),
             shared: Mutex::new(Shared::default()),
             changed: Condvar::new(),
@@ -176,6 +189,13 @@ impl AutonomousLoop {
         });
         let _ = this.me.set(Arc::downgrade(&this));
         this
+    }
+
+    /// El enjambre del equipo, copiado sin retener el cerrojo.
+    fn team_swarm(&self) -> Result<Arc<dyn TeamSwarm>, String> {
+        self.team
+            .clone()
+            .ok_or_else(|| ez_agent::autonomous::texts::TEAM_UNAVAILABLE.to_string())
     }
 
     /// Instala la auditoría del runtime, que existe después del bucle.

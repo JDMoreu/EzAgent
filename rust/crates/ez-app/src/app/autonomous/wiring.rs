@@ -9,10 +9,20 @@ use ez_agent::autonomous::AutonomousHost;
 use ez_agent::runtime::AgentRuntime;
 use ez_agent::tools_herdr::port::HerdrPort;
 
-use super::{AutonomousLoop, RealClock};
+use super::{AutonomousLoop, RealClock, StackSwarm, TeamSwarm};
 use crate::app::core::VoiceApp;
 
 impl VoiceApp {
+    /// El enjambre del modo con equipo, si la app lo montó (10.18).
+    fn team_swarm(&self) -> Option<Arc<dyn TeamSwarm>> {
+        self.inner
+            .agents
+            .swarm
+            .lock()
+            .clone()
+            .map(|stack| Arc::new(StackSwarm::new(stack)) as Arc<dyn TeamSwarm>)
+    }
+
     /// Crea el bucle y, en producción, lo instala antes del runtime.
     pub(crate) fn prepare_autonomous(&self) {
         // El arnés de reproducción envuelve el runtime: allí no se instala el
@@ -26,6 +36,7 @@ impl VoiceApp {
             Arc::clone(&self.inner.ui.events),
             Arc::new(RealClock),
             artifacts::root(),
+            self.team_swarm(),
         );
         *self.inner.agents.autonomous.lock() = Some(Arc::clone(&loop_));
         if self.inner.runtime.background {
