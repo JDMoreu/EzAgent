@@ -65,17 +65,18 @@ pub fn default_install_dir() -> PathBuf {
     ez_core::downloads::data_dir().join("espeak-ng")
 }
 
+/// Folder of the running executable: the packaging puts the DLLs there (F8-01).
+fn executable_dir() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+}
+
 /// Library escogida por configuración o por el entorno; `None` si no hay.
 pub fn default_library_path() -> Option<PathBuf> {
     env_path("EZAGENT_ESPEAK_LIBRARY")
         .or_else(|| env_path("PHONEMIZER_ESPEAK_LIBRARY"))
-        .or_else(|| {
-            let directory = default_install_dir();
-            ["espeak-ng.dll", "libespeak-ng.dll"]
-                .iter()
-                .map(|name| directory.join(name))
-                .find(|path| path.is_file())
-        })
+        .or_else(|| library_in(&[default_install_dir(), executable_dir()?]))
 }
 
 /// Data directory (`phontab` inside) elegida por configuración o entorno.
@@ -83,9 +84,25 @@ pub fn default_data_path() -> Option<PathBuf> {
     env_path("EZAGENT_ESPEAK_DATA_PATH")
         .or_else(|| env_path("PHONEMIZER_ESPEAK_DATA_PATH"))
         .or_else(|| {
-            let directory = default_install_dir().join("espeak-ng-data");
-            directory.is_dir().then_some(directory)
+            let mut folders = vec![default_install_dir()];
+            folders.extend(executable_dir());
+            folders
+                .into_iter()
+                .map(|folder| folder.join("espeak-ng-data"))
+                .find(|folder| folder.is_dir())
         })
+}
+
+/// Primera carpeta que contiene `espeak-ng.dll` o `libespeak-ng.dll`.
+fn library_in(folders: &[PathBuf]) -> Option<PathBuf> {
+    folders
+        .iter()
+        .flat_map(|folder| {
+            ["espeak-ng.dll", "libespeak-ng.dll"]
+                .iter()
+                .map(move |name| folder.join(name))
+        })
+        .find(|path| path.is_file())
 }
 
 /// `phonemizer.phonemize(text, lang, preserve_punctuation=True, with_stress=True)`.
