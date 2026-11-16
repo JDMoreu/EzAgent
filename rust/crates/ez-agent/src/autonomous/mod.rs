@@ -25,6 +25,22 @@ pub use state::{
 pub use tools::{build_autonomous_tools, AutonomousDefaults, ToolGuards};
 pub use verdict::{Finding, Severity, Verdict, VerdictError, VerdictSpec};
 
+// DECISION: A3 necesita reutilizar el clasificador de incidentes de
+// `ez-swarm` (9.5: cuota, contexto lleno o sesión perdida) y `ez-app` no
+// declara `chrono`, así que este puente de una función vive en `ez-agent`,
+// que ya depende de ambos. Es el único arreglo fuera de `texts.rs`.
+/// Motivo de pausa si la pantalla muestra cuota, contexto lleno o sesión
+/// perdida (9.5); `None` si no reconoce nada.
+pub fn screen_incident_reason(screen: &str) -> Option<&'static str> {
+    let signal = ez_swarm::incidents::classify(screen, chrono::Local::now().naive_local())?;
+    match signal.kind.as_str() {
+        "quota" => Some(texts::REASON_QUOTA),
+        "context" => Some(texts::REASON_CONTEXT),
+        "auth" => Some(texts::REASON_AUTH),
+        _ => None,
+    }
+}
+
 /// Lo que las herramientas piden al bucle (10.5).
 ///
 /// `start` lanza el ejecutor o crea el equipo y devuelve el id de la tarea;

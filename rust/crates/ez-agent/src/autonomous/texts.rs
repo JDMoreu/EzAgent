@@ -152,6 +152,61 @@ pub const REASON_QUOTA: &str = "se agotó la cuota del agente";
 pub const REASON_CONTEXT: &str = "el contexto del agente se llenó";
 pub const REASON_WINDOW: &str = "se cerró la ventana del agente";
 pub const REASON_RESTART: &str = "la app se reinició";
+pub const REASON_AUTH: &str = "el agente perdió la sesión con su proveedor";
+pub const REASON_VERIFIER: &str = "el verificador falló";
+pub const REASON_DIALOG_CHANGED: &str = "el diálogo cambió mientras lo leía";
+pub const REASON_KEYS: &str = "no pude enviar las teclas del permiso";
+pub const REASON_READ: &str = "no pude leer la pantalla del agente";
+
+/// El modo con equipo llega en la fase B (10.18); A3 solo hace el de una tarea.
+pub const TEAM_UNAVAILABLE: &str = "El modo autónomo con equipo todavía no está disponible.";
+
+/// Tarea fija del verificador (9.5 y 10.10).
+///
+/// Las rutas se rellenan con [`verifier_prompt`]; nunca se le dan al
+/// verificador rutas de otras verificaciones.
+pub const VERIFIER_PROMPT: &str = "Eres un verificador independiente. Lee {encargo} y \
+    {criterios}. No modifiques ningún archivo del proyecto ni hagas commits. Comprueba cada \
+    criterio con evidencia (ejecuta pruebas o comandos de solo lectura). Escribe únicamente el \
+    archivo {veredicto} con este JSON: `{\"cumple\": bool, \"criterios\": [{\"n\": int, \
+    \"cumple\": bool, \"evidencia\": string}], \"hallazgos\": [{\"severidad\": \
+    \"bloqueante\"|\"mayor\"|\"menor\", \"criterio\": int|null, \"problema\": string, \
+    \"evidencia\": string}]}` y termina. Tu token es {token}; inclúyelo como campo \"token\" del \
+    JSON.";
+
+/// La tarea del verificador con sus rutas y su nonce ya puestos.
+pub fn verifier_prompt(encargo: &str, criterios: &str, veredicto: &str, token: &str) -> String {
+    VERIFIER_PROMPT
+        .replace("{encargo}", encargo)
+        .replace("{criterios}", criterios)
+        .replace("{veredicto}", veredicto)
+        .replace("{token}", token)
+}
+
+/// «Corrige los hallazgos de {correccion} y escribe {fin} al terminar.» (10.10).
+pub fn correction(correccion: &str, fin: &str) -> String {
+    format!("Corrige los hallazgos de {correccion} y escribe {fin} al terminar.")
+}
+
+/// No se pudo lanzar una terminal del bucle (10.9).
+pub fn launch_failed(what: &str, error: &str) -> String {
+    format!("no pude lanzar {what}: {error}")
+}
+
+/// No se pudo enviar un texto a una terminal del bucle.
+pub fn send_failed(what: &str, error: &str) -> String {
+    format!("no pude enviar {what}: {error}")
+}
+
+/// La carpeta de trabajo no existe o no se puede resolver (10.2).
+pub fn workdir_not_found(path: &str) -> String {
+    format!("No encuentro la carpeta de trabajo: {path}.")
+}
+
+/// La terminal nombrada no está en el espacio de la tarea (10.1).
+pub fn terminal_not_found(terminal: &str, space: &str) -> String {
+    format!("No encuentro la terminal {terminal} en el espacio {space}.")
+}
 
 /// Palabra del estado para la fila de la vista rápida (9.8).
 pub fn state_label(state: TaskState) -> &'static str {
@@ -246,6 +301,27 @@ mod tests {
             120,
         );
         assert!(team.contains("con el equipo plan: codex, dev: opencode (big)"));
+    }
+
+    #[test]
+    fn verifier_prompt_fills_only_its_own_paths_and_token() {
+        let text = verifier_prompt(
+            "/t/compartido/encargo.md",
+            "/t/compartido/criterios.md",
+            "/t/verificacion-2/veredicto.json",
+            "0123456789abcdef",
+        );
+        assert!(text.starts_with("Eres un verificador independiente."));
+        assert!(text.contains("Lee /t/compartido/encargo.md y /t/compartido/criterios.md."));
+        assert!(text.contains("Escribe únicamente el archivo /t/verificacion-2/veredicto.json"));
+        assert!(text.contains("Tu token es 0123456789abcdef;"));
+        assert!(!text.contains("{token}"));
+        assert!(!text.contains("{veredicto}"));
+        assert_eq!(
+            correction("/t/compartido/correccion-1.md", "/t/compartido/fin-2.md"),
+            "Corrige los hallazgos de /t/compartido/correccion-1.md y escribe \
+             /t/compartido/fin-2.md al terminar."
+        );
     }
 
     #[test]

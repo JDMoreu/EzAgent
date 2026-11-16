@@ -61,6 +61,10 @@ fn task_of(info: &Map<String, Value>) -> String {
 impl VoiceApp {
     /// `_should_announce`: silencio vigente o dirección vigilada.
     pub fn should_announce(&self, address: &str) -> bool {
+        // 10.6: las direcciones de la tarea autónoma no se anuncian solas.
+        if self.autonomous_covers(address) {
+            return false;
+        }
         if timestamp() < *self.inner.session.mute_until.lock() {
             return false;
         }
@@ -71,6 +75,10 @@ impl VoiceApp {
 
     /// `_on_watcher_event`: decide aviso, cadena o entrega de la respuesta.
     pub fn on_watcher_event(&self, address: &str, agent: &str, _state: &str, reason: &str) {
+        // 10.6: las direcciones de `scope` no generan `DonePrompt`.
+        if self.autonomous_covers(address) {
+            return;
+        }
         if !self.inner.agents.watched.lock().contains(address) {
             return;
         }

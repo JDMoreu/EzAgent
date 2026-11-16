@@ -223,6 +223,7 @@ fn shutdown_follows_the_python_order_and_runs_once() {
             "llamada-parar",
             "vigilante",
             "enjambre",
+            "autonomo",
             "atajos",
             "hilos",
             "hilo-llamada",

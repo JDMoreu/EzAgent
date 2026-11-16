@@ -344,6 +344,10 @@ impl VoiceApp {
         if let Some(swarm) = self.inner.agents.swarm.lock().clone() {
             swarm.stop();
         }
+        observer.step("autonomo");
+        if let Some(autonomous) = self.inner.agents.autonomous.lock().clone() {
+            autonomous.shutdown();
+        }
         observer.step("atajos");
         let hotkeys = std::mem::take(&mut *self.inner.ui.hotkeys.lock());
         for hotkey in &hotkeys {

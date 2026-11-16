@@ -1,6 +1,7 @@
 //! Module group `app`: `src/ezagent/voice/app.py` (F6-01).
 
 pub mod activity;
+pub mod autonomous;
 pub mod call;
 pub mod chat;
 pub mod chat_wiring;

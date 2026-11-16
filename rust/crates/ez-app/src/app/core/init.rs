@@ -451,6 +451,7 @@ fn agents_state(
         sent: Mutex::new(std::collections::HashMap::new()),
         prelaunch: Mutex::new(std::collections::HashMap::new()),
         announce_queue: Mutex::new(Vec::new()),
+        autonomous: Mutex::new(None),
     }
 }
 
