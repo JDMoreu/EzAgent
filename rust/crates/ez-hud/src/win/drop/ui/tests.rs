@@ -3,6 +3,7 @@
 
 mod live_menu;
 mod locks;
+mod save;
 mod sidebar;
 mod support;
 

@@ -68,6 +68,12 @@ pub trait DropConfig: Send + Sync {
     /// `cfg.save_key(key, value)`.
     fn save(&self, _key: &str, _value: ConfigValue) {}
 
+    /// Pide el guardado sin bloquear al hilo que llama (la barra guarda su
+    /// posición desde el hilo de pintura). Por omisión, como [`Self::save`].
+    fn save_soon(&self, key: &str, value: ConfigValue) {
+        self.save(key, value);
+    }
+
     /// El atributo en memoria antes de un «Guardar» de Ajustes.
     fn remember(&self, _key: &str, _value: ConfigValue) {}
 }
