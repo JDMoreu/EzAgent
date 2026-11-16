@@ -62,6 +62,101 @@ fn validates_like_python() {
 }
 
 #[test]
+fn validates_nested_objects_and_lists() {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "filtro": {
+                "type": "object",
+                "properties": {
+                    "nombre": {"type": "string", "minLength": 2, "maxLength": 5},
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string", "minLength": 1},
+                        "minItems": 1,
+                        "maxItems": 2
+                    }
+                },
+                "required": ["nombre"],
+                "additionalProperties": false
+            },
+            "modo": {"type": "string", "enum": ["a", "b"]},
+            "n": {"type": "integer", "minimum": 1, "maximum": 3}
+        },
+        "required": ["filtro"],
+        "additionalProperties": false
+    });
+    let registry = ToolRegistry::new();
+    let handler: Handler = Arc::new(|args| Ok(json!(args).into()));
+    registry.register(ToolSpec::new("t", "", schema, 0, handler));
+    let valid = json!({"filtro": {"nombre": "ab", "tags": ["x"]}, "modo": "a", "n": 2});
+    assert_eq!(registry.validate("t", &valid), None);
+    let cases = [
+        (json!({}), "filtro", "obligatorio"),
+        (
+            json!({"filtro": {"tags": ["x"]}}),
+            "filtro.nombre",
+            "obligatorio",
+        ),
+        (
+            json!({"filtro": {"nombre": "a"}}),
+            "filtro.nombre",
+            "al menos 2",
+        ),
+        (
+            json!({"filtro": {"nombre": "abcdef"}}),
+            "filtro.nombre",
+            "como máximo 5",
+        ),
+        (
+            json!({"filtro": {"nombre": "ok", "tags": []}}),
+            "filtro.tags",
+            "al menos 1",
+        ),
+        (
+            json!({"filtro": {"nombre": "ok", "tags": ["a", "b", "c"]}}),
+            "filtro.tags",
+            "como máximo 2",
+        ),
+        (
+            json!({"filtro": {"nombre": "ok", "tags": ["a", 2]}}),
+            "filtro.tags[1]",
+            "texto",
+        ),
+        (
+            json!({"filtro": {"nombre": "ok", "extra": 1}}),
+            "filtro.extra",
+            "no está permitido",
+        ),
+        (
+            json!({"filtro": {"nombre": "ok"}, "extra": 1}),
+            "extra",
+            "no está permitido",
+        ),
+        (
+            json!({"filtro": {"nombre": "ok"}, "modo": "c"}),
+            "modo",
+            "uno de",
+        ),
+        (
+            json!({"filtro": {"nombre": "ok"}, "n": 0}),
+            "n",
+            "mayor o igual",
+        ),
+        (
+            json!({"filtro": {"nombre": "ok"}, "n": 4}),
+            "n",
+            "menor o igual",
+        ),
+    ];
+    for (args, where_, message) in cases {
+        let error = registry.validate("t", &args).expect("debía fallar");
+        assert!(error.contains(where_), "{args}: {error}");
+        assert!(error.contains(message), "{args}: {error}");
+    }
+}
+
+#[test]
 fn runs_normalizes_and_times_out() {
     let registry = ToolRegistry::new();
     registry.register(echo());
@@ -79,8 +174,22 @@ fn runs_normalizes_and_times_out() {
     assert_eq!(result.outcome, "unknown_outcome");
     assert!(result
         .error
+        .as_deref()
         .unwrap_or_default()
         .starts_with("La herramienta superó el tiempo límite de 0.05 s."));
+    assert!(result.to_dict().get("error_kind").is_none());
+    assert_eq!(
+        ToolResult::ok(json!(1)).to_dict()["outcome"],
+        json!("completed")
+    );
+    let timed = ToolResult {
+        ok: false,
+        data: Value::Null,
+        error: Some("x".into()),
+        outcome: "completed".into(),
+        error_kind: Some("timeout".into()),
+    };
+    assert_eq!(timed.to_dict()["error_kind"], json!("timeout"));
     let boom: Handler = Arc::new(|_| Err("ValueError: mal".into()));
     registry.register(ToolSpec::new("boom", "", json!({}), 0, boom));
     assert_eq!(
@@ -105,6 +214,15 @@ fn renders_within_budget_as_json() {
         ToolRegistry::render_for_llm(&ToolResult::ok(json!(1)), 2000).len(),
         62
     );
+    let small = ToolResult::ok(json!("x".repeat(40)));
+    let full = ToolRegistry::render_for_llm(&small, 10_000);
+    assert_eq!(
+        ToolRegistry::render_for_llm(&small, char_len(&full) as i64),
+        full
+    );
+    let parsed: Value = serde_json::from_str(&full).expect("JSON válido");
+    assert!(parsed.get("truncated").is_none());
+    assert!(parsed.get("original_chars").is_none());
 }
 
 #[test]

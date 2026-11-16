@@ -471,6 +471,40 @@ mod tests {
         );
         assert_eq!(group_label("llm"), Some("MODELO DE IA"));
         assert_eq!(group_label("nope"), None);
+        assert_eq!(
+            section_groups("system"),
+            Some(
+                &[
+                    "hotkeys",
+                    "advanced",
+                    "adv_listen",
+                    "adv_voice",
+                    "adv_stt",
+                    "adv_llm",
+                    "files"
+                ][..]
+            )
+        );
+        let files = GROUPS
+            .iter()
+            .find(|(name, _)| *name == "files")
+            .map(|(_, rows)| *rows)
+            .expect("grupo files");
+        let actions: Vec<&str> = files.iter().map(|(key, _kind)| *key).collect();
+        assert_eq!(
+            actions,
+            [
+                "open_config_dir",
+                "open_system_md",
+                "open_permissions",
+                "open_voice_json"
+            ]
+        );
+        for action in actions {
+            assert!(crate::model::menu::geometry::ACTION_KEYS.contains(&action));
+            assert!(crate::model::settings::LABELS.get(action).is_some());
+        }
+        assert!(group_label("files").is_some());
         assert_eq!(GROUPS.len(), 17);
         assert_eq!(row_height("palette"), Some(68));
         assert_eq!(row_height("nope"), None);

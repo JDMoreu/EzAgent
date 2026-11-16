@@ -350,7 +350,7 @@ fn wait_wakes_up_when_a_message_arrives() {
 
 #[test]
 fn options_and_tokens_match_the_python_contract() {
-    let (service, _board, swarm, _seats) = swarm_service();
+    let (service, board, swarm, _seats) = swarm_service();
     assert_eq!(
         parse(&args(&["--ref", "a.md", "--all", "x", "--ref=b", "--"]))
             .unwrap_or_else(|error| panic!("{error}")),
@@ -380,6 +380,20 @@ fn options_and_tokens_match_the_python_contract() {
         .unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(first.len(), 43);
     assert_ne!(first, second);
+    // El token nunca se guarda: solo su SHA-256 (también en el WAL).
+    for suffix in ["", "-wal"] {
+        let path = format!("{}{suffix}", board.path.display());
+        if let Ok(bytes) = std::fs::read(&path) {
+            for token in [&first, &second] {
+                assert!(
+                    !bytes
+                        .windows(token.len())
+                        .any(|window| window == token.as_bytes()),
+                    "el token aparece en {path}"
+                );
+            }
+        }
+    }
     assert!(service
         .authenticate(&first)
         .unwrap_or_else(|error| panic!("{error}"))
@@ -476,5 +490,44 @@ fn a_fix_task_carries_its_note_and_reopens_a_finished_board() {
         reply.text.contains("C:/t/compartido/correccion-1.md"),
         "{}",
         reply.text
+    );
+}
+
+#[test]
+fn a_half_created_swarm_stays_invisible_for_the_supervisor() {
+    let board = temp_board(0.0);
+    let db =
+        Db::new(board.path.clone(), Arc::new(|| 0.0)).unwrap_or_else(|error| panic!("{error}"));
+    let service = SwarmService::new(db, "ezs", Arc::new(|| 0.0));
+    let half = service
+        .store
+        .create("A medias", "", "setup")
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(service
+        .store
+        .active()
+        .unwrap_or_else(|error| panic!("{error}"))
+        .is_empty());
+    assert_eq!(
+        service.latest().unwrap_or_else(|error| panic!("{error}")),
+        ""
+    );
+    let members = [MemberSpec::new("Nombre Malo", "dev", "codex")];
+    assert!(service
+        .start("Con un miembro inválido", &members, "", None)
+        .is_err());
+    assert!(service
+        .store
+        .active()
+        .unwrap_or_else(|error| panic!("{error}"))
+        .is_empty());
+    assert_eq!(
+        service
+            .store
+            .get(&half)
+            .unwrap_or_else(|error| panic!("{error}"))
+            .unwrap_or_else(|| panic!("falta el enjambre"))
+            .status,
+        "setup"
     );
 }

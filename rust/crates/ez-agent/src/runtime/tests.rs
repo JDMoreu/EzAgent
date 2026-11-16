@@ -30,6 +30,13 @@ fn base_tools_are_five_and_each_intent_adds_without_removing() {
 fn documents_skills_memory_scripts_and_the_optional_recall() {
     let documents = names("convierte este informe a PDF", &SelectOptions::default());
     assert!(documents.contains(&"load_skill".to_string()));
+    let excel = names(
+        "haz una hoja de Excel con estos datos",
+        &SelectOptions::default(),
+    );
+    assert!(excel.contains(&"load_skill".to_string()));
+    let word = names("pásalo a Word", &SelectOptions::default());
+    assert!(word.contains(&"load_skill".to_string()));
     let manual = names("usa la skill pdf", &SelectOptions::default());
     assert!(manual.contains(&"load_skill".to_string()));
     assert!(manual.contains(&"run_skill_script".to_string()));
@@ -54,6 +61,30 @@ fn documents_skills_memory_scripts_and_the_optional_recall() {
     );
     assert!(scripts.contains(&"run_skill_script".to_string()));
     assert!(scripts.contains(&"fetch_page".to_string()));
+}
+
+#[test]
+fn file_and_undo_intents_offer_their_tool() {
+    let cases = [
+        ("escribe el resumen", "write_file"),
+        ("escribe el resumen", "create_dir"),
+        ("abre el documento", "open_path"),
+        ("borra la carpeta", "delete_path"),
+        ("lista la carpeta", "list_dir"),
+        ("muéstrame la carpeta", "list_dir"),
+        ("mueve el archivo a la carpeta X", "move_path"),
+        ("renombra el informe", "move_path"),
+        ("deshaz lo último", "undo_last"),
+        ("revierte el cambio", "undo_last"),
+    ];
+    for (text, expected) in cases {
+        let picked = names(text, &SelectOptions::default());
+        assert!(picked.contains(&expected.to_string()), "{text}: {picked:?}");
+        for base in BASE_TOOLS {
+            assert!(picked.contains(&base.to_string()), "{text}");
+        }
+        assert!(picked.len() <= 14, "{text}");
+    }
 }
 
 #[test]

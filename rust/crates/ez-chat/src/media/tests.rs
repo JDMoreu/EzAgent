@@ -157,13 +157,34 @@ fn oversized_and_forbidden_images_do_not_load() {
     let huge = dir.join("grande.png");
     fs::write(&huge, png_bytes(7000, 7000)).expect("imagen");
     assert!(load_image(file_info(Some(&huge), None).as_ref()).is_none());
+    let heavy = dir.join("pesa.png");
+    let mut bytes = png_bytes(40, 20);
+    bytes.resize(MAX_IMAGE_BYTES as usize + 1, 0);
+    fs::write(&heavy, bytes).expect("imagen grande");
+    assert!(load_image(file_info(Some(&heavy), None).as_ref()).is_none());
     let allowed = dir.join("ok");
     fs::create_dir_all(&allowed).expect("carpeta");
     let image = allowed.join("a.png");
     fs::write(&image, png_bytes(10, 10)).expect("imagen");
     let forbidden = file_info(Some(&image), Some(std::slice::from_ref(&dir.join("otra"))));
     assert!(load_image(forbidden.as_ref()).is_none());
+    let text = dir.join("a.txt");
+    fs::write(&text, "x").expect("archivo");
+    assert!(load_image(file_info(Some(&text), None).as_ref()).is_none());
     assert!(load_image(None).is_none());
+}
+
+#[test]
+fn a_gif_reports_only_its_first_frame_size() {
+    let dir = temp_dir("gif");
+    let path = dir.join("a.gif");
+    let mut bytes = b"GIF89a".to_vec();
+    bytes.extend_from_slice(&10_u16.to_le_bytes());
+    bytes.extend_from_slice(&10_u16.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    fs::write(&path, bytes).expect("gif");
+    let image = load_image(file_info(Some(&path), None).as_ref()).expect("gif válido");
+    assert_eq!((image.width, image.height, image.format), (10, 10, "gif"));
 }
 
 #[test]

@@ -1,5 +1,6 @@
 //! Pruebas del adaptador de Herdr: texto, lectura, lanzamiento y subprocesos.
 
+mod context;
 mod launch;
 mod parsing;
 mod subprocess;
