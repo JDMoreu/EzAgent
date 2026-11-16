@@ -45,7 +45,9 @@ los registros: viven en `%APPDATA%\EzAgent\logs\` (`engine.log`, `audit.jsonl` y
 
 ### Instalado, en otra cuenta o en otro equipo si puedes
 
-- [ ] Ejecuta `dist\EzAgent-Setup-0.2.0.exe`. No debe pedir administrador.
+- [ ] Consigue `dist\EzAgent-Setup-0.2.0.exe` (el instalador ya compilado o
+      generado con `packaging\build-rust.ps1`) y ejecútalo. No debe pedir
+      administrador.
 - [ ] Abre EzAgent desde el menú Inicio. Si Windows muestra SmartScreen, elige
       **Más información → Ejecutar de todas formas** (el ejecutable no está
       firmado).
