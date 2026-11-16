@@ -1,0 +1,7 @@
+ Permiso requerido
+ Ejecutar el siguiente comando
+ $ npm run deploy
+
+ ❯ 1. Permitir siempre
+   2. Permitir todo
+   3. No, volver atrás

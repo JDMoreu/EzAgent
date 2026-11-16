@@ -1,0 +1,17 @@
+ ! The fixture has no more to sa +
+
+  ┃
+  ┃  Write a file named agent-signals-write.txt that holds the word hello.
+  ┃
+
+     ← Write agent-signals-write.txt
+
+  ┃
+  ┃  △ Permission required
+  ┃    → Edit agent-signals-write.txt
+  ┃
+  ┃  1 + The fixture wrote this file.
+  ┃
+
+  ┃   Allow once   Always allow   Reject                                 ctrl+f fullscreen  ⇆ select  enter confirm
+  ┃

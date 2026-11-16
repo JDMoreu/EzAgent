@@ -1,0 +1,7 @@
+  △ Permission required
+
+  $ npm test
+
+┃  ❯ 1. Allow once
+┃    2. Always allow
+┃    3. Reject
