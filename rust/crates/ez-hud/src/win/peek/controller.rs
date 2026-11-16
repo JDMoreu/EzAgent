@@ -132,7 +132,9 @@ impl Peek {
             state.closing = None;
             state.toast = None;
         }
-        if let Some(window) = self.win.lock().as_ref() {
+        // Sin el lock: `hide` espera al hilo de la vista rápida (ver `place`).
+        let window = self.win.lock().clone();
+        if let Some(window) = window {
             window.hide();
         }
     }
@@ -275,7 +277,8 @@ impl Peek {
         let interval = match plan {
             None => return,
             Some(Plan::Hide) => {
-                if let Some(window) = self.win.lock().as_ref() {
+                let window = self.win.lock().clone();
+                if let Some(window) = window {
                     window.hide();
                 }
                 return;
@@ -324,7 +327,14 @@ impl Peek {
             }
             return;
         }
-        let window = slot.as_ref().expect("la ventana acaba de comprobarse");
+        let Some(window) = slot.clone() else {
+            return;
+        };
+        // DECISION: soltar `win` antes de mover la ventana. `resize`/`set_pos`/`show`
+        // esperan a que el hilo de la vista rápida atienda el mensaje, y ese hilo
+        // pide `win` en `render`: con el lock tomado, la barra y la vista rápida se
+        // esperaban para siempre (la app se congelaba al aparecer la actividad).
+        drop(slot);
         window.resize(width, height);
         window.set_pos(x, y);
         if !window.is_visible() {
