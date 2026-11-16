@@ -8,7 +8,9 @@
 //!
 //! Los umbrales están fijados por las pruebas de este módulo.
 
-use ez_core::pyvalue::{collapse_spaces, fold_accents, py_strip, python_str, text_or_empty, truthy};
+use ez_core::pyvalue::{
+    collapse_spaces, fold_accents, py_strip, python_str, text_or_empty, truthy,
+};
 use serde_json::{Map, Value};
 
 use super::{visible_name, Herdr};
@@ -45,7 +47,7 @@ impl NameKind {
         match self {
             Self::Space => "No encontré el espacio",
             Self::Terminal => "No encontré la terminal",
-            Self::Agent => "No conozco el agente",
+            Self::Agent => "No encontré el agente",
         }
     }
 
@@ -70,10 +72,7 @@ impl NameKind {
 
     /// Error que lista los nombres disponibles para que el asistente pregunte.
     pub fn unknown(self, spoken: &str, available: &[String]) -> String {
-        let names: Vec<String> = available
-            .iter()
-            .map(|label| format!("«{label}»"))
-            .collect();
+        let names: Vec<String> = available.iter().map(|label| format!("«{label}»")).collect();
         format!(
             "{} «{spoken}». {}: {}.",
             self.not_found(),
@@ -95,18 +94,15 @@ impl NameCandidate {
     pub fn new(value: impl Into<String>, label: impl Into<String>) -> Self {
         let value = value.into();
         let label = label.into();
-        let mut candidate = Self {
+        let mut names = vec![value.clone()];
+        if label != value {
+            names.push(label.clone());
+        }
+        Self {
             value,
             label,
-            names: Vec::new(),
-        };
-        candidate
-            .names
-            .push(candidate.value.clone());
-        if candidate.label != candidate.value {
-            candidate.names.push(candidate.label.clone());
+            names,
         }
-        candidate
     }
 
     pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
@@ -152,7 +148,8 @@ fn hit(candidate: &NameCandidate) -> NameHit {
     }
 }
 
-fn labels(candidates: &[NameCandidate]) -> Vec<String> {
+/// Nombres visibles de los candidatos, sin repetir y en orden alfabético.
+pub fn candidate_labels(candidates: &[NameCandidate]) -> Vec<String> {
     let mut available: Vec<String> = Vec::new();
     for candidate in candidates {
         if !available.contains(&candidate.label) {
@@ -218,7 +215,7 @@ fn phonetic_word(word: &str) -> String {
             'd' if index + 1 == characters.len() => 't',
             other => *other,
         };
-        if out.chars().last() != Some(&mapped) {
+        if !out.ends_with(mapped) {
             out.push(mapped);
         }
     }
@@ -231,8 +228,8 @@ fn distance(left: &[char], right: &[char]) -> usize {
     for (index, row) in table.iter_mut().enumerate() {
         row[0] = index;
     }
-    for index in 0..=right.len() {
-        table[0][index] = index;
+    for (index, cell) in table[0].iter_mut().enumerate() {
+        *cell = index;
     }
     for i in 1..=left.len() {
         for j in 1..=right.len() {
@@ -268,6 +265,8 @@ const CONFIDENT_SCORE: f64 = 0.86;
 const CONFIDENT_GAP: f64 = 0.10;
 /// Parecido que se asume por prefijo o contenido («plan» → «planner»).
 const CONTAINS_SCORE: f64 = 0.82;
+/// Clave fonética idéntica: cuenta como coincidencia muy alta.
+const PHONETIC_SCORE: f64 = 0.90;
 /// Con menos de tres letras solo vale la coincidencia exacta.
 const MIN_LEN: usize = 3;
 
@@ -282,11 +281,11 @@ fn candidate_score(spoken: &str, spoken_phonetic: &str, candidate: &NameCandidat
         let mut score = similarity(spoken, &compact_name);
         let candidate_phonetic = phonetic(name);
         if spoken_phonetic == candidate_phonetic {
-            score = score.max(0.90);
+            score = score.max(PHONETIC_SCORE);
         } else {
             score = score.max(similarity(spoken_phonetic, &candidate_phonetic));
         }
-        let shortest = spoken.len().min(compact_name.len());
+        let shortest = spoken.chars().count().min(compact_name.chars().count());
         if shortest >= MIN_LEN
             && (compact_name.starts_with(spoken) || spoken.starts_with(&compact_name))
         {
@@ -303,7 +302,7 @@ pub fn resolve_name(spoken: &str, candidates: &[NameCandidate]) -> NameMatch {
     let spoken_compact = compact(&normalized);
     if spoken_compact.is_empty() || candidates.is_empty() {
         return NameMatch::Unknown {
-            available: labels(candidates),
+            available: candidate_labels(candidates),
         };
     }
     let exact: Vec<&NameCandidate> = candidates
@@ -317,20 +316,25 @@ pub fn resolve_name(spoken: &str, candidates: &[NameCandidate]) -> NameMatch {
     }
     if spoken_compact.chars().count() < MIN_LEN {
         return NameMatch::Unknown {
-            available: labels(candidates),
+            available: candidate_labels(candidates),
         };
     }
     let spoken_phonetic = phonetic(spoken);
     let mut scored: Vec<(f64, &NameCandidate)> = candidates
         .iter()
-        .map(|candidate| (candidate_score(&spoken_compact, &spoken_phonetic, candidate), candidate))
+        .map(|candidate| {
+            (
+                candidate_score(&spoken_compact, &spoken_phonetic, candidate),
+                candidate,
+            )
+        })
         .collect();
     scored.sort_by(|left, right| right.0.total_cmp(&left.0));
     let (best, winner) = scored[0];
     let second = scored.get(1).map_or(0.0, |(score, _)| *score);
     if best < DOUBTFUL_SCORE {
         return NameMatch::Unknown {
-            available: labels(candidates),
+            available: candidate_labels(candidates),
         };
     }
     let confident =
@@ -343,20 +347,31 @@ pub fn resolve_name(spoken: &str, candidates: &[NameCandidate]) -> NameMatch {
 }
 
 impl Herdr {
-    /// Candidatos vivos de un tipo de nombre (consulta `hc ls` para espacios y
-    /// terminales; la lista es vacía si Herdr no responde).
-    pub fn name_candidates(&self, kind: NameKind) -> Vec<NameCandidate> {
+    /// Candidatos vivos de un tipo de nombre.
+    ///
+    /// Con `fresh` se consulta `hc ls`; sin él se reutiliza el último listado
+    /// cacheado (barato) y, si no hay, la lista sale vacía.
+    pub fn name_candidates(&self, kind: NameKind, fresh: bool) -> Vec<NameCandidate> {
         match kind {
-            NameKind::Space => self.space_candidates(),
-            NameKind::Terminal => self.terminal_candidates(),
             NameKind::Agent => self.agent_candidates(),
+            _ => {
+                let agents = if fresh {
+                    self.live_agents()
+                } else {
+                    self.cached_agents(1.5).unwrap_or_default()
+                };
+                match kind {
+                    NameKind::Space => space_candidates(&agents),
+                    _ => terminal_candidates(&agents),
+                }
+            }
         }
     }
 
     /// Resolución que no pregunta: `Some` solo con coincidencia exacta o muy
     /// probable, o con el texto tal cual si no hay candidatos que comparar.
     pub fn resolve_safely(&self, kind: NameKind, spoken: &str) -> Option<String> {
-        let candidates = self.name_candidates(kind);
+        let candidates = self.name_candidates(kind, true);
         if candidates.is_empty() {
             return Some(py_strip(spoken).to_string());
         }
@@ -374,42 +389,6 @@ impl Herdr {
                 Vec::new()
             }
         }
-    }
-
-    fn space_candidates(&self) -> Vec<NameCandidate> {
-        let mut spaces: Vec<String> = Vec::new();
-        for item in self.live_agents() {
-            if let Some(space) = space_of(&item) {
-                if !spaces.contains(&space) {
-                    spaces.push(space);
-                }
-            }
-        }
-        spaces
-            .into_iter()
-            .map(|space| NameCandidate::new(space.clone(), space))
-            .collect()
-    }
-
-    fn terminal_candidates(&self) -> Vec<NameCandidate> {
-        let mut terminals = Vec::new();
-        for item in self.live_agents() {
-            let address = py_strip(&text_or_empty(item.get("address"))).to_string();
-            if address.is_empty() {
-                continue;
-            }
-            let label = match item.get("label") {
-                Some(value) if truthy(value) => python_str(value),
-                _ => visible_name(&item),
-            };
-            let mut candidate = NameCandidate::new(address, label);
-            let name = py_strip(&text_or_empty(item.get("name"))).to_string();
-            if !name.is_empty() {
-                candidate = candidate.with_alias(name);
-            }
-            terminals.push(candidate);
-        }
-        terminals
     }
 
     fn agent_candidates(&self) -> Vec<NameCandidate> {
@@ -440,6 +419,42 @@ impl Herdr {
             })
             .collect()
     }
+}
+
+fn space_candidates(agents: &[Map<String, Value>]) -> Vec<NameCandidate> {
+    let mut spaces: Vec<String> = Vec::new();
+    for item in agents {
+        if let Some(space) = space_of(item) {
+            if !spaces.contains(&space) {
+                spaces.push(space);
+            }
+        }
+    }
+    spaces
+        .into_iter()
+        .map(|space| NameCandidate::new(space.clone(), space))
+        .collect()
+}
+
+fn terminal_candidates(agents: &[Map<String, Value>]) -> Vec<NameCandidate> {
+    let mut terminals = Vec::new();
+    for item in agents {
+        let address = py_strip(&text_or_empty(item.get("address"))).to_string();
+        if address.is_empty() {
+            continue;
+        }
+        let label = match item.get("label") {
+            Some(value) if truthy(value) => python_str(value),
+            _ => visible_name(item),
+        };
+        let mut candidate = NameCandidate::new(address, label);
+        let name = py_strip(&text_or_empty(item.get("name"))).to_string();
+        if !name.is_empty() {
+            candidate = candidate.with_alias(name);
+        }
+        terminals.push(candidate);
+    }
+    terminals
 }
 
 fn space_of(item: &Map<String, Value>) -> Option<String> {
