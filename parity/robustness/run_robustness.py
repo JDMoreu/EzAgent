@@ -43,10 +43,17 @@ SAMPLE_SECS = 60.0
 # Texto que solo depende del cliente HTTP (httpx vs reqwest): se compara la
 # conducta, no el detalle del error de red.
 DETAIL_RULES = (
-    (re.compile(r"whisper-server no respondió a tiempo \([^)]*\): .*"), "whisper-server no respondió a tiempo (<url>): <detalle>"),
+    (
+        re.compile(r"whisper-server no respondió a tiempo \([^)]*\): .*"),
+        "whisper-server no respondió a tiempo (<url>): <detalle>",
+    ),
     (re.compile(r"whisper-server: .*"), "whisper-server: <detalle>"),
-    (re.compile(r"No puedo conectar con whisper-server\. Arranca scripts\\start-whisper\.ps1\..*"),
-     "No puedo conectar con whisper-server. Arranca scripts\\start-whisper.ps1. <detalle>"),
+    (
+        re.compile(
+            r"No puedo conectar con whisper-server\. Arranca scripts\\start-whisper\.ps1\..*"
+        ),
+        "No puedo conectar con whisper-server. Arranca scripts\\start-whisper.ps1. <detalle>",
+    ),
 )
 
 
@@ -136,7 +143,14 @@ def patch_python_seams(run_py: Any) -> None:
 
 def python_case(stem: str, work: Path) -> dict[str, Any]:
     out = work / f"{stem}.py.json"
-    command = [sys.executable, str(Path(__file__).resolve()), "--python-case", stem, "--out", str(out)]
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--python-case",
+        stem,
+        "--out",
+        str(out),
+    ]
     try:
         result = subprocess.run(
             command,
@@ -177,9 +191,7 @@ def rust_case(stem: str, root: Path, work: Path) -> dict[str, Any]:
         return {"ok": False, "error": "sin traza: " + " | ".join(tail)}
     lines = trace.read_text(encoding="utf-8").splitlines()
     errors = [
-        line.strip()[2:]
-        for line in result.stdout.splitlines()
-        if line.strip().startswith("- ")
+        line.strip()[2:] for line in result.stdout.splitlines() if line.strip().startswith("- ")
     ]
     return {
         "ok": result.returncode == 0,
@@ -200,13 +212,21 @@ def behavior(lines: list[str], home: Path | None) -> dict[str, Any]:
             events.append(json.loads(line))
         except ValueError:
             continue
-    speech = [normalize(event.get("text", ""), home) for event in events if event.get("event") == "speech.say"]
+    speech = [
+        normalize(event.get("text", ""), home)
+        for event in events
+        if event.get("event") == "speech.say"
+    ]
     messages = [
         (str(event.get("role") or ""), normalize(str(event.get("text") or ""), home))
         for event in events
         if event.get("event") == "chat.snapshot"
     ]
-    transcripts = [normalize(str(event.get("text") or ""), home) for event in events if event.get("event") == "stt.transcript"]
+    transcripts = [
+        normalize(str(event.get("text") or ""), home)
+        for event in events
+        if event.get("event") == "stt.transcript"
+    ]
     end = next((event for event in events if event.get("event") == "app.end"), {})
     return {
         "state": end.get("state"),
@@ -257,7 +277,10 @@ def differences(python: dict[str, Any], rust: dict[str, Any]) -> list[str]:
 
 def python_behavior(payload: dict[str, Any]) -> dict[str, Any]:
     snapshot = payload.get("snapshot") or {}
-    messages = [(str(item.get("role") or ""), normalize(str(item.get("text") or ""), None)) for item in snapshot.get("messages") or []]
+    messages = [
+        (str(item.get("role") or ""), normalize(str(item.get("text") or ""), None))
+        for item in snapshot.get("messages") or []
+    ]
     speech = [normalize(str(item), None) for item in snapshot.get("speech") or []]
     transcripts = [normalize(str(item), None) for item in snapshot.get("transcripts") or []]
     return {
@@ -318,7 +341,11 @@ class Counters:
         self.psapi = ctypes.WinDLL("psapi", use_last_error=True)
         self.kernel32.OpenProcess.restype = wintypes.HANDLE
         self.kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
-        self.psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD]
+        self.psapi.GetProcessMemoryInfo.argtypes = [
+            wintypes.HANDLE,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+        ]
 
     def open(self, pid: int) -> Any:
         handle = self.kernel32.OpenProcess(0x0410, False, pid)  # QUERY_INFORMATION | VM_READ
@@ -382,34 +409,43 @@ def sample(counters: Counters, pid: int) -> dict[str, Any]:
 
 def soak(selection: list[str], minutes: float, warmup: float, work: Path, detach: bool) -> int:
     if not REPLAY_EXE.is_file():
-        raise SystemExit(f"falta {REPLAY_EXE}; compílalo con: cargo build -p ez-app --features replay --bin ezagent-replay")
-    if detach:
-        # Un proceso aparte sobrevive a la sesión que lo lanzó; el muestreo y el
-        # veredicto quedan en `soak.json`.
-        command = [
-            sys.executable,
-            str(Path(__file__).resolve()),
-            "soak",
-            "--minutes",
-            str(minutes),
-            "--warmup",
-            str(warmup),
-            "--work",
-            str(work),
-        ]
-        for case in selection:
-            command += ["--case", case]
-        handle = open(work / "sampler.log", "w", encoding="utf-8")
-        flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-        subprocess.Popen(
-            command,
-            cwd=str(ROOT),
-            stdout=handle,
-            stderr=subprocess.STDOUT,
-            creationflags=flags,
+        raise SystemExit(
+            f"falta {REPLAY_EXE}; compílalo con: cargo build -p ez-app --features replay --bin ezagent-replay"
         )
-        print(f"soak lanzado en segundo plano; verá el veredicto en {work / 'soak.json'}")
-        return 0
+    if detach:
+        return launch_detached(selection, minutes, warmup, work)
+    return run_soak(selection, minutes, warmup, work)
+
+
+def launch_detached(selection: list[str], minutes: float, warmup: float, work: Path) -> int:
+    """Un proceso aparte sobrevive a la sesión; el veredicto queda en `soak.json`."""
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "soak",
+        "--minutes",
+        str(minutes),
+        "--warmup",
+        str(warmup),
+        "--work",
+        str(work),
+    ]
+    for case in selection:
+        command += ["--case", case]
+    handle = open(work / "sampler.log", "w", encoding="utf-8")
+    flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    subprocess.Popen(
+        command,
+        cwd=str(ROOT),
+        stdout=handle,
+        stderr=subprocess.STDOUT,
+        creationflags=flags,
+    )
+    print(f"soak lanzado en segundo plano; verá el veredicto en {work / 'soak.json'}")
+    return 0
+
+
+def run_soak(selection: list[str], minutes: float, warmup: float, work: Path) -> int:
     paths = case_paths(selection)
     root = rust_root(work, paths)
     command = [str(REPLAY_EXE), "--soak", str(minutes)]
@@ -422,10 +458,32 @@ def soak(selection: list[str], minutes: float, warmup: float, work: Path, detach
     out = work / "soak.json"
     counters = Counters()
     print(f"soak de {minutes:.0f} min con {len(paths)} escenario(s); registro en {log}")
+    samples, code = follow_soak(command, env, counters, log, minutes)
+    payload = {
+        "code": code,
+        "minutes": minutes,
+        "warmup": warmup,
+        "samples": samples,
+        "scenarios": [path.stem for path in paths],
+    }
+    payload["verdict"] = judge(samples, warmup)
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"soak: {out}")
+    for line in payload["verdict"]["notes"]:
+        print("  " + line)
+    return 0 if code == 0 and payload["verdict"]["stable"] else 1
+
+
+def follow_soak(
+    command: list[str], env: dict[str, str], counters: "Counters", log: Path, minutes: float
+) -> tuple[list[dict[str, Any]], int]:
+    """Arranca el soak y muestrea el proceso hasta que termina."""
+    samples: list[dict[str, Any]] = []
+    deadline = time.monotonic() + minutes * 60.0 + 120.0
     with open(log, "w", encoding="utf-8") as handle:
-        proc = subprocess.Popen(command, cwd=str(RUST), env=env, stdout=handle, stderr=subprocess.STDOUT)
-        samples: list[dict[str, Any]] = []
-        deadline = time.monotonic() + minutes * 60.0 + 120.0
+        proc = subprocess.Popen(
+            command, cwd=str(RUST), env=env, stdout=handle, stderr=subprocess.STDOUT
+        )
         try:
             while proc.poll() is None:
                 try:
@@ -439,14 +497,7 @@ def soak(selection: list[str], minutes: float, warmup: float, work: Path, detach
                 _sleep_until_next()
         except KeyboardInterrupt:
             proc.terminate()
-        code = proc.wait(timeout=120)
-    payload = {"code": code, "minutes": minutes, "warmup": warmup, "samples": samples, "scenarios": [path.stem for path in paths]}
-    payload["verdict"] = judge(samples, warmup)
-    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"soak: {out}")
-    for line in payload["verdict"]["notes"]:
-        print("  " + line)
-    return 0 if code == 0 and payload["verdict"]["stable"] else 1
+        return samples, proc.wait(timeout=120)
 
 
 def _sleep_until_next() -> None:
