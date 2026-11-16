@@ -160,6 +160,8 @@ impl ToolGuards for RuntimeGuards {
 
     fn defaults(&self) -> AutonomousDefaults {
         let defaults = AutonomousDefaults::default();
+        // DECISION: 9.8 no nombra el tope de aprobaciones; 10.13 fija 200 y aquí
+        // se permite cambiarlo con «autonomous_max_approvals».
         AutonomousDefaults {
             max_rounds: voice_integer(&self.runtime, "autonomous_max_rounds", defaults.max_rounds)
                 .clamp(MIN_ROUNDS, MAX_ROUNDS),

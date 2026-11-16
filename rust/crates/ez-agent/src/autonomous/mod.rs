@@ -30,6 +30,8 @@ pub use verdict::{Finding, Severity, Verdict, VerdictError, VerdictSpec};
 /// `start` lanza el ejecutor o crea el equipo y devuelve el id de la tarea;
 /// `status` resume la tarea en curso; `resume` y `stop` son los dos verbos del
 /// usuario. Ningún método toca la UI: el bucle corre en `ezagent-autonomo`.
+// DECISION: `resume` lleva la prórroga y `stop` lleva `accept` porque 10.5 y
+// 10.13 los piden como argumentos de la herramienta y el bucle los aplica.
 pub trait AutonomousHost: Send + Sync {
     fn start(&self, spec: &StartSpec) -> Result<String, String>;
     fn start_team(&self, spec: &TeamSpec) -> Result<String, String>;
