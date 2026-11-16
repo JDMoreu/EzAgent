@@ -128,6 +128,8 @@ pub struct ToolSpec {
     pub untrusted_output: bool,
     pub timeout_s: f64,
     pub describe_fn: Option<DescribeFn>,
+    /// La herramienta ya pide su propia confirmación: la política no añade otra.
+    pub self_confirmed: bool,
 }
 
 impl ToolSpec {
@@ -147,6 +149,7 @@ impl ToolSpec {
             untrusted_output: false,
             timeout_s: 10.0,
             describe_fn: None,
+            self_confirmed: false,
         }
     }
 

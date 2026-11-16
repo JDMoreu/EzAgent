@@ -1,13 +1,14 @@
-//! Veredicto estructurado del pez verificador (9.3 y 9.5).
+//! Veredicto estructurado del pez verificador (10.11).
 //!
-//! El JSON lo escribe un agente en `ronda-N/veredicto.json`: es dato no
+//! El JSON lo escribe un agente en `verificacion-K/veredicto.json`: es dato no
 //! confiable. Se valida el esquema completo antes de usarlo; un texto inválido
-//! no cuenta como ronda limpia.
+//! no cuenta como ronda limpia. Se acepta el JSON solo o dentro de una cerca
+//! de Markdown, y las claves extra se ignoran.
 
 use std::collections::HashMap;
 use std::fmt;
 
-use ez_core::pyvalue::{collapse_spaces, fold_accents};
+use ez_core::pyvalue::{collapse_spaces, fold_accents, py_strip};
 use serde_json::Value;
 
 /// Umbral de churn: dos problemas con esta similitud son «el mismo problema».
@@ -64,6 +65,13 @@ pub struct Verdict {
     pub cumple: bool,
     pub criteria: Vec<Criterion>,
     pub findings: Vec<Finding>,
+}
+
+/// Lo que el verificador debía devolver: su nonce y cuántos criterios cubrir.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VerdictSpec<'a> {
+    pub token: &'a str,
+    pub criteria: usize,
 }
 
 /// Error de esquema con el texto que se le muestra al usuario.
@@ -144,17 +152,72 @@ fn list_of<T>(
     items.iter().map(parse).collect()
 }
 
+/// El JSON solo, o dentro de una cerca de Markdown (10.11).
+fn extract_json(text: &str) -> &str {
+    let trimmed = text.trim();
+    let Some(body) = trimmed.strip_prefix("```") else {
+        return trimmed;
+    };
+    let body = match body.find('\n') {
+        Some(index) => &body[index + 1..],
+        None => body,
+    };
+    body.trim_end().strip_suffix("```").unwrap_or(body).trim()
+}
+
+/// Una entrada por criterio, del 1 al total, sin repetir y con evidencia.
+fn check_criteria(criteria: &[Criterion], total: usize) -> Result<(), VerdictError> {
+    if criteria.len() != total {
+        return Err(invalid(&format!(
+            "«criterios» debe tener una entrada por criterio (1..{total})"
+        )));
+    }
+    let mut seen: Vec<i64> = Vec::with_capacity(total);
+    for criterion in criteria {
+        if criterion.n < 1 || criterion.n > total as i64 {
+            return Err(invalid(&format!(
+                "«criterios» tiene un número fuera de rango: {}",
+                criterion.n
+            )));
+        }
+        if seen.contains(&criterion.n) {
+            return Err(invalid(&format!(
+                "«criterios» repite el criterio {}",
+                criterion.n
+            )));
+        }
+        if py_strip(&criterion.evidencia).is_empty() {
+            return Err(invalid(&format!(
+                "la evidencia del criterio {} está vacía",
+                criterion.n
+            )));
+        }
+        seen.push(criterion.n);
+    }
+    Ok(())
+}
+
 impl Verdict {
-    /// Valida el esquema de 9.5; cualquier desviación es un veredicto inválido.
-    pub fn parse(text: &str) -> Result<Self, VerdictError> {
-        let value = ez_core::pyloads::loads(text)
+    /// Valida el esquema de 10.11; cualquier desviación es un veredicto inválido.
+    pub fn parse(text: &str, spec: &VerdictSpec<'_>) -> Result<Self, VerdictError> {
+        let value = ez_core::pyloads::loads(extract_json(text))
             .map_err(|_| VerdictError("El veredicto no es JSON válido.".to_string()))?;
         if !value.is_object() {
             return Err(invalid("debe ser un objeto JSON"));
         }
+        let token = text_of(&value, "token")?;
+        if token != spec.token {
+            return Err(invalid("el token no coincide con el de esta verificación"));
+        }
+        let cumple = bool_of(&value, "cumple")?;
+        let criteria = list_of(&value, "criterios", criterion_of)?;
+        check_criteria(&criteria, spec.criteria)?;
+        if cumple != criteria.iter().all(|criterion| criterion.cumple) {
+            return Err(invalid("«cumple» no coincide con los criterios"));
+        }
         Ok(Self {
-            cumple: bool_of(&value, "cumple")?,
-            criteria: list_of(&value, "criterios", criterion_of)?,
+            cumple,
+            criteria,
             findings: list_of(&value, "hallazgos", finding_of)?,
         })
     }
@@ -232,10 +295,10 @@ pub fn similarity(left: &str, right: &str) -> f64 {
     (2.0 * common as f64) / total as f64
 }
 
-/// Churn: algún problema nuevo repite uno de la ronda anterior ya corregido.
-pub fn is_churn(problems: &[String], previous: &[String]) -> bool {
+/// Churn: algún problema nuevo repite uno ya mandado a corregir en la tarea (10.14).
+pub fn is_churn(problems: &[String], corrected: &[String]) -> bool {
     problems.iter().any(|problem| {
-        previous
+        corrected
             .iter()
             .any(|old| similarity(problem, old) >= CHURN_SIMILARITY)
     })

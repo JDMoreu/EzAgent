@@ -114,6 +114,12 @@ impl AgentRuntime {
         let loaded = lock(&self.inner.session).loaded_skills.clone();
         let scripts = loaded.iter().any(|name| self.skill_has_scripts(name));
         let keywords = self.inner.skills.keywords();
+        // 10.5: la autorización se mira en los mensajes recientes; el estado de
+        // la tarea, en el bucle instalado. Ninguna llamada va bajo el cerrojo.
+        let autonomous_authorized = crate::autonomous::tools::authorized(
+            &self.recent_user_texts(),
+            ez_core::pytime::timestamp(),
+        );
         let selected = select_tool_names(
             text,
             &SelectOptions {
@@ -121,6 +127,8 @@ impl AgentRuntime {
                 has_memory: true,
                 skill_keywords: Some(keywords.as_ref()),
                 swarm_active: self.inner.swarm_active(),
+                autonomous_authorized,
+                autonomous_active: crate::autonomous::tools::task_active(),
             },
         );
         let mut names = selected.clone();

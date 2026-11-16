@@ -116,6 +116,27 @@ pub fn decide_with_threshold(
     }
 }
 
+/// La política no añade su confirmación a una herramienta que ya pide la suya.
+///
+/// Solo se usa con `self_confirmed` (10.5): las herramientas de arranque piden
+/// la confirmación única del modo autónomo y no deben preguntar dos veces.
+pub fn with_self_confirmed(decision: Decision, self_confirmed: bool) -> Decision {
+    if !self_confirmed {
+        return decision;
+    }
+    match decision.action {
+        Action::Confirm | Action::ConfirmStrong => Decision {
+            action: Action::Allow,
+            level: decision.level,
+            reason: "La herramienta pide su propia confirmación",
+        },
+        other => Decision {
+            action: other,
+            ..decision
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,6 +154,24 @@ mod tests {
         assert_eq!(
             decide(0, false, 6, false, false).action,
             Action::ConfirmStrong
+        );
+    }
+
+    #[test]
+    fn self_confirmed_skips_only_the_policy_confirmation() {
+        let confirm = decide(2, false, 0, false, true);
+        assert_eq!(confirm.action, Action::Confirm);
+        assert_eq!(
+            with_self_confirmed(confirm, true).action,
+            Action::Allow,
+            "la herramienta ya pide la suya"
+        );
+        assert_eq!(with_self_confirmed(confirm, false).action, Action::Confirm);
+        let denied = decide(3, false, 0, false, false);
+        assert_eq!(
+            with_self_confirmed(denied, true).action,
+            Action::Deny,
+            "el nivel 3 sigue prohibido"
         );
     }
 }

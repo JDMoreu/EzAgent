@@ -50,6 +50,8 @@ pub(crate) struct SessionState {
     pub level1_writes: i64,
     pub level1_times: Vec<Instant>,
     pub last_user_text: String,
+    /// Los tres últimos mensajes del usuario con su instante (10.4).
+    pub recent_user_texts: Vec<(String, f64)>,
 }
 
 /// Todo lo que comparten las copias de [`AgentRuntime`].
