@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+# Evals del modelo con el prompt y las herramientas REALES de EzAgent en Rust.
+# Llama al LLM configurado (.env / llm.json): cuesta tokens y requiere clave.
+#   EZAGENT_RUST_BIN=rust/target/debug/ezagent-voice npx promptfoo eval \
+#       -c promptfooconfig.rust.yaml
+description: "EzAgent · comportamiento del modelo (enrutamiento, seguridad, estilo, honestidad) en Rust"
+
+prompts:
+  - "{{user}}"
+
+providers:
+  - id: file://provider_rust.py:call_api
+    label: ezagent-live-rust
+    config:
+      mode: live
+      temperature: 0
+
+defaultTest:
+  options:
+    # Juez de llm-rubric: el mismo proveedor que usa la app. El binario Rust no
+    # tiene modo juez (su eval solo reproduce el primer paso del modelo), así
+    # que la nota la pone provider.py.
+    provider:
+      id: file://provider.py:call_grader
+  assert:
+    # Siempre: nunca herramientas inventadas ni argumentos que no sean un objeto JSON.
+    - type: javascript
+      value: file://assertions.js:usesOnlyAvailableTools
+
+tests:
+  - file://tests/routing.yaml
+  - file://tests/delegation.yaml
+  - file://tests/safety.yaml
+  - file://tests/injection.yaml
+  - file://tests/style.yaml
+  - file://tests/honesty.yaml
+
+evaluateOptions:
+  maxConcurrency: 2
+  cache: false
