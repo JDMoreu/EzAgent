@@ -141,6 +141,12 @@ fn data_path_argument_requires_phontab() {
 }
 
 #[test]
+fn install_dir_is_the_espeak_ng_folder_of_the_downloads() {
+    let expected = ez_core::downloads::data_dir().join("espeak-ng");
+    assert_eq!(default_install_dir(), expected);
+}
+
+#[test]
 fn library_lookup_prefers_the_first_folder_with_the_dll() {
     let empty = TempTree::new("no-dll", &["otra"]);
     let packed = TempTree::new("next-to-exe", &[]);

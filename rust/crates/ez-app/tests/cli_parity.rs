@@ -81,7 +81,11 @@ fn write_config_matches_the_frozen_python_output() {
     let actual = run(&["--config", path_text.as_str(), "--write-config"]);
     let written = std::fs::read(&path).expect("voice.json del binario");
     let _ = std::fs::remove_file(&path);
-    assert_eq!(actual.code, code(&expected), "--write-config: código de salida");
+    assert_eq!(
+        actual.code,
+        code(&expected),
+        "--write-config: código de salida"
+    );
     assert_eq!(
         String::from_utf8_lossy(&actual.stdout).replace(path_text.as_str(), "{config}"),
         text(&expected),
