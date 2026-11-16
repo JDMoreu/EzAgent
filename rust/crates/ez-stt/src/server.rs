@@ -34,6 +34,8 @@ pub fn resource_root() -> PathBuf {
 }
 
 /// `resource_root` con la carpeta del ejecutable recibida como parámetro.
+// DECISION: el Python usa `sys._MEIPASS`; aquí la carpeta del ejecutable se
+// reconoce por `scripts/start-whisper.ps1`, que es el recurso que necesita.
 fn resource_root_in(exe_dir: Option<&Path>) -> PathBuf {
     if let Some(dir) = exe_dir {
         if dir.join("scripts").join("start-whisper.ps1").is_file() {
