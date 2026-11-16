@@ -142,4 +142,19 @@ mod tests {
         }
         assert_eq!(stats.samples.len(), LIMIT);
     }
+
+    #[test]
+    fn the_report_counts_four_frames_and_one_slow_one() {
+        let (clock, now) = clock_at(0.0);
+        let mut stats = FrameStats::with_clock("drop", clock);
+        for ms in [4.0, 5.0, 30.0] {
+            assert_eq!(stats.add(ms), None);
+        }
+        *now.lock() = REPORT_SECS + 1.0;
+        let line = stats.add(6.0).expect("informe del periodo");
+        assert!(line.contains("Cuadros drop: 4"), "{line}");
+        assert!(line.contains("1 sobre"), "{line}");
+        assert!(line.contains(&format!("{BUDGET_MS:.1}")), "{line}");
+        assert_eq!(stats.summary(), "");
+    }
 }

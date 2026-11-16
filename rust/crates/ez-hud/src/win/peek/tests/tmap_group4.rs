@@ -124,3 +124,15 @@ fn window_operations_from_another_thread_only_touch_the_state() {
     assert!(window.is_visible());
     assert_eq!(window.position(), (5, 6));
 }
+
+#[test]
+fn a_toast_goes_away_after_its_time() {
+    let peek = Arc::new(Peek::new(ui(1.0), Arc::new(crate::paint::peek::NoIcons)));
+    let done = item("b", "done", false, true);
+    peek.refresh(vec![item("a", "working", true, false), done.clone()]);
+    peek.toast(&done, 0.0);
+    peek.tick(0.0, false, false);
+    assert!(peek.is_open());
+    peek.tick(crate::paint::peek::toast_secs("done") + 0.1, false, false);
+    assert!(!peek.is_open());
+}

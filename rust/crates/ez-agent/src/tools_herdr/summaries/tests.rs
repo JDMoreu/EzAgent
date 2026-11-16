@@ -327,4 +327,11 @@ fn a_result_with_an_address_carries_only_its_visible_name() {
         .as_object()
         .expect("objeto")
         .contains_key("where"));
+
+    // Sin etiqueta en el contexto, el nombre visible se compone de sus campos.
+    let fresh = with_labels(
+        &|_| String::new(),
+        ToolResult::ok(json!({"address": "t60", "name": "QA", "space": "EzAgent"})),
+    );
+    assert_eq!(fresh.data["label"], json!("QA de EzAgent"));
 }

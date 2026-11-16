@@ -396,3 +396,26 @@ fn fnv1a_f32(values: &[f32]) -> u64 {
     }
     hash
 }
+
+#[test]
+fn the_close_cross_only_shows_on_the_hovered_row() {
+    let rows = vec![
+        item("a", "Tarea a", "", "done", 0.0),
+        item("b", "Tarea b", "", "done", 0.0),
+    ];
+    let width = (PEEK_W + 2.0 * MARGIN).round_ties_even() as usize;
+    let height = (card_height(2, false) + 2.0 * MARGIN).round_ties_even() as usize;
+    let plain = Recorder::default();
+    paint_rows(&rows, 0, width, height, 1.0, "dark", None, 0.0, &plain);
+    assert!(plain.calls.lock().iter().all(|(name, ..)| name != "close"));
+    let hovered = Recorder::default();
+    paint_rows(&rows, 0, width, height, 1.0, "dark", Some(0), 0.0, &hovered);
+    let calls = hovered.calls.lock();
+    let close: Vec<_> = calls.iter().filter(|(name, ..)| name == "close").collect();
+    assert_eq!(
+        close.len(),
+        1,
+        "la × debe dibujarse solo en la fila del puntero"
+    );
+    assert!((close[0].2 - (MARGIN + PEEK_W - PAD_X - 6.0)).abs() < 1e-9);
+}

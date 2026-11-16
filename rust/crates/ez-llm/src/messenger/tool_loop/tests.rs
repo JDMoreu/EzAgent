@@ -9,3 +9,4 @@ mod budgets;
 mod lifecycle;
 mod text;
 mod tools;
+mod waits;

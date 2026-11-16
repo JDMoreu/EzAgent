@@ -299,6 +299,16 @@ mod tests {
         assert_eq!(budget_tokens(&json!(100)), MIN_BUDGET);
         assert_eq!(reserve_tokens(None, &json!(-5)), RESERVE_MARGIN);
         assert_eq!(describe(12_400, 32_000), "12 k de 32 k tokens");
+        let small = estimate_tokens(&conversation(2));
+        let big = estimate_tokens(&conversation(20));
+        assert!(0 < small && small < big && big > 8 * small);
+        let plain = [json!({"role": "assistant", "content": ""})];
+        let with_call = [json!({
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"function": {"name": "x", "arguments": "a".repeat(3200)}}],
+        })];
+        assert!(estimate_tokens(&with_call) > estimate_tokens(&plain) + 900);
     }
 
     #[test]
