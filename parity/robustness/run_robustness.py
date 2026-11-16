@@ -433,7 +433,9 @@ def launch_detached(selection: list[str], minutes: float, warmup: float, work: P
     for case in selection:
         command += ["--case", case]
     handle = open(work / "sampler.log", "w", encoding="utf-8")
-    flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP: con DETACHED_PROCESS, el python.exe
+    # del .venv (un lanzador) abría una consola nueva y visible para el intérprete real.
+    flags = 0x08000000 | 0x00000200
     subprocess.Popen(
         command,
         cwd=str(ROOT),
