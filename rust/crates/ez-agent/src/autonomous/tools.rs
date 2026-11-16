@@ -92,7 +92,13 @@ fn text(args: &Map<String, Value>, key: &str) -> String {
 }
 
 fn integer(args: &Map<String, Value>, key: &str, default: i64) -> i64 {
-    args.get(key).and_then(Value::as_i64).unwrap_or(default)
+    match args.get(key) {
+        Some(Value::Number(number)) => number
+            .as_i64()
+            .or_else(|| number.as_f64().map(|value| value.trunc() as i64))
+            .unwrap_or(default),
+        _ => default,
+    }
 }
 
 fn criteria(args: &Map<String, Value>) -> Result<Vec<String>, String> {
@@ -283,7 +289,10 @@ fn status(host: &dyn AutonomousHost) -> ToolResult {
 }
 
 fn stop(host: &dyn AutonomousHost, args: &Map<String, Value>) -> ToolResult {
-    if host.status().is_none() {
+    let Some(summary) = host.status() else {
+        return ToolResult::ok(json!({"stopped": false, "message": texts::NO_TASK}));
+    };
+    if !summary.state.unfinished() {
         return ToolResult::ok(json!({"stopped": false, "message": texts::NO_TASK}));
     }
     match host.stop(&text(args, "reason")) {

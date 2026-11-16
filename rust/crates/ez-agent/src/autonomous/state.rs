@@ -312,11 +312,11 @@ impl AutonomousState {
             return self.pause(texts::REASON_CHURN);
         }
         let failed_round = self.round;
+        self.last_findings = problems;
         self.round += 1;
         if self.round > self.max_rounds {
             return self.pause(texts::REASON_ROUNDS);
         }
-        self.last_findings = problems;
         self.state = TaskState::Running;
         let path = folder.join(format!("correccion-{failed_round}.md"));
         Action::SendCorrection(path.to_string_lossy().to_string())

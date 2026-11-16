@@ -319,6 +319,18 @@ fn stop_passes_the_reason_and_handles_the_empty_case() {
     assert_eq!(result.data["stopped"], true);
     assert_eq!(result.data["message"], texts::STOPPED);
     assert_eq!(lock(&host.stopped)[0], "por voz");
+
+    // Una tarea cumplida ya no se detiene.
+    let done = Arc::new(FakeHost {
+        summary: Mutex::new(Some(summary(TaskState::Done))),
+        ..FakeHost::default()
+    });
+    let result = run(
+        &build(Arc::clone(&done), FakeGuards::allowed("x"))[3],
+        json!({}),
+    );
+    assert_eq!(result.data["stopped"], false);
+    assert!(lock(&done.stopped).is_empty());
 }
 
 #[test]
