@@ -377,6 +377,11 @@ impl VoiceApp {
         self.kill_whisper();
         observer.step("hud");
         self.inner.ui.hud.close();
+        // Lo último que pidió guardar el HUD (p. ej. la posición de la barra)
+        // llega a disco antes de salir; el Python lo escribía en el acto.
+        if !super::core::flush_config_saves(Duration::from_secs(2)) {
+            tracing::warn!("No terminé de guardar la configuración del HUD al cerrar");
+        }
         observer.step("agente");
         if let Some(agent) = self.inner.agents.agent.lock().take() {
             agent.close();

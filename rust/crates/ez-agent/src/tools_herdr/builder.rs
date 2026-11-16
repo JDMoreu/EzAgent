@@ -70,7 +70,7 @@ pub fn build_herdr_tools_with_port(
         voice_parameters(),
         1,
         Arc::new(move |args: &Map<String, Value>| {
-            let result = handle_voice(&callbacks, &state, args);
+            let result = handle_voice(voice_herdr.as_ref(), &callbacks, &state, args);
             let label_for = |address: &str| voice_herdr.label_for(address);
             Ok(with_labels(&label_for, result).into())
         }),

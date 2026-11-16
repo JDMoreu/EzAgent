@@ -445,3 +445,45 @@ impl Drop for EnvGuard {
         }
     }
 }
+
+/// `save` (Ajustes) y `save_key` (cola del HUD) desde dos hilos no se pisan:
+/// el archivo final tiene la clave de Ajustes y el último valor de la cola.
+/// `save` conserva las claves que no conoce, así que sin el cerrojo de archivo
+/// podía devolver una de ellas a un valor viejo.
+#[test]
+fn concurrent_full_and_key_saves_never_lose_an_update() {
+    let dir = std::env::temp_dir().join(format!(
+        "ezagent-config-race-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_nanos())
+    ));
+    std::fs::create_dir_all(&dir).expect("temporal");
+    let path = dir.join("voice.json");
+    std::fs::write(&path, "{}").expect("archivo inicial");
+    let key_path = path.clone();
+    let keys = std::thread::spawn(move || {
+        let config = ez_core::config::VoiceConfig::new();
+        for index in 0..60 {
+            config
+                .save_key("hud_extra", serde_json::Value::from(index), Some(&key_path))
+                .expect("save_key");
+        }
+    });
+    let mut settings = ez_core::config::VoiceConfig::new();
+    settings.set("theme", serde_json::Value::from("light"));
+    for _ in 0..60 {
+        settings.save(Some(&path)).expect("save");
+    }
+    keys.join().expect("hilo de save_key");
+    let text = std::fs::read_to_string(&path).expect("voice.json");
+    let data: serde_json::Value = serde_json::from_str(&text).expect("json");
+    assert_eq!(data["theme"], "light");
+    assert_eq!(
+        data["hud_extra"], 59,
+        "se perdió la última escritura de la cola"
+    );
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_dir(&dir);
+}

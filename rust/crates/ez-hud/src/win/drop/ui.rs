@@ -471,6 +471,13 @@ impl DropUI {
         }
     }
 
+    /// `save_bar_position`: el adaptador persiste fuera del hilo de pintura.
+    pub(super) fn save_config_soon(&self, key: &str, value: ConfigValue) {
+        if let Some(config) = &self.config {
+            config.save_soon(key, value);
+        }
+    }
+
     /// `_live_setting` hacia la app.
     pub(super) fn live_setting(&self, key: &str, value: ConfigValue) {
         self.host.live_setting(key, value);

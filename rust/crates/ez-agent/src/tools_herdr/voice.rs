@@ -1,25 +1,33 @@
 //! Port of `src/ezagent/agent/tools_herdr.py` (F4-12).
 //!
 //! `voice_control`: cerrar la escucha, silenciar el micrófono, repetir el
-//! último resumen y silenciar los avisos. No habla con Herdr.
+//! último resumen y silenciar los avisos. El `address` de `close_and_watch`
+//! pasa por el mismo resolvedor de nombres que `delegate_to_agent`.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
+use ez_herdr::herdr::NameKind;
 use serde_json::{json, Map, Value};
 
 use super::args::{
     checked_action, last_address, optional_text, set_last_address, user_text, wants_notify,
     ArgumentError, DelegateError, HerdrCallbacks, SharedState, VOICE_ACTIONS,
 };
+use super::names::Names;
+use super::port::HerdrPort;
 use crate::registry::ToolResult;
 
 /// `voice_control`, con los errores ya convertidos a `ToolResult`.
 pub fn handle_voice(
+    herdr: &dyn HerdrPort,
     callbacks: &HerdrCallbacks,
     state: &SharedState,
     args: &Map<String, Value>,
 ) -> ToolResult {
-    match catch_unwind(AssertUnwindSafe(|| voice_action(callbacks, state, args))) {
+    let names = Names::new(herdr, callbacks.confirm_name.as_ref());
+    let mut result = match catch_unwind(AssertUnwindSafe(|| {
+        voice_action(&names, callbacks, state, args)
+    })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error.into_result(),
         Err(panic) => {
@@ -32,10 +40,13 @@ pub fn handle_voice(
                 "Error inesperado al controlar la voz: ValueError: {detail}"
             ))
         }
-    }
+    };
+    names.attach(&mut result);
+    result
 }
 
 fn voice_action(
+    names: &Names<'_>,
     callbacks: &HerdrCallbacks,
     state: &SharedState,
     args: &Map<String, Value>,
@@ -43,7 +54,7 @@ fn voice_action(
     let action = checked_action(args, &VOICE_ACTIONS, "voice_control")?;
     match action.as_str() {
         "close" => Ok(close_action(callbacks, state)),
-        "close_and_watch" => close_and_watch_action(callbacks, state, args, &action),
+        "close_and_watch" => close_and_watch_action(names, callbacks, state, args, &action),
         "mic_mute" => mic_mute_action(callbacks, args),
         "repeat_last" => Ok(ToolResult::ok(json!({"text": (callbacks.last_summary)()}))),
         _ => mute_action(callbacks, args),
@@ -71,12 +82,19 @@ fn close_action(callbacks: &HerdrCallbacks, state: &SharedState) -> ToolResult {
 }
 
 fn close_and_watch_action(
+    names: &Names<'_>,
     callbacks: &HerdrCallbacks,
     state: &SharedState,
     args: &Map<String, Value>,
     action: &str,
 ) -> Result<ToolResult, DelegateError> {
-    let address = optional_text(args, "address", action)?.or_else(|| last_address(state));
+    // El nombre dictado se resuelve como en `delegate_to_agent`; la dirección
+    // ya resuelta que guarda la sesión se usa tal cual.
+    let spoken = optional_text(args, "address", action)?;
+    let address = match spoken {
+        Some(spoken) => Some(names.pick(NameKind::Terminal, &spoken)?),
+        None => last_address(state),
+    };
     let Some(address) = address else {
         // DECISION: sin agente no se cierra, porque el usuario pidió
         // expresamente que se le avise al terminar.

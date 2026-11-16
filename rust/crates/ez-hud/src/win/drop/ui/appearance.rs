@@ -295,6 +295,9 @@ impl DropUI {
     }
 
     /// `_save_bar_position`: guarda posición, disposición y dock.
+    ///
+    /// Corre en el hilo de pintura: solo pide el guardado, que el adaptador
+    /// escribe en su hilo (nunca con un lock tomado).
     pub(super) fn save_bar_position(&self) {
         let Some(window) = self.window() else {
             return;
@@ -305,10 +308,10 @@ impl DropUI {
         let (x, y) = window.position();
         let layout = self.layout();
         let dock = self.dock();
-        self.save_config("drop_x", ConfigValue::Int(i64::from(x)));
-        self.save_config("drop_y", ConfigValue::Int(i64::from(y)));
-        self.save_config("drop_layout", ConfigValue::Text(layout.to_string()));
-        self.save_config("drop_dock", ConfigValue::Text(dock.to_string()));
+        self.save_config_soon("drop_x", ConfigValue::Int(i64::from(x)));
+        self.save_config_soon("drop_y", ConfigValue::Int(i64::from(y)));
+        self.save_config_soon("drop_layout", ConfigValue::Text(layout.to_string()));
+        self.save_config_soon("drop_dock", ConfigValue::Text(dock.to_string()));
     }
 
     /// `drag_end`: persiste la posición y avisa a la app.

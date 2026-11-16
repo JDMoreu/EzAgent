@@ -4,9 +4,12 @@
 //! intenciones con lambdas a `events`/`menu_events`. Aquí son [`DropConfig`] y
 //! [`DropHost`], los dos únicos puntos por donde el HUD toca la app.
 
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
+use std::thread;
+use std::time::Duration;
 
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use ez_core::config::VoiceConfig;
 use ez_hud::model::settings::SettingsValues;
 use ez_hud::win::drop::{ConfigValue, DropConfig, DropHost};
@@ -39,10 +42,138 @@ pub fn json_to_config(value: &Value) -> Option<ConfigValue> {
     }
 }
 
+/// Un guardado pendiente: la clave y su último valor en esa ruta.
+struct SaveJob {
+    path: PathBuf,
+    key: String,
+    value: Value,
+}
+
+/// Destino de un guardado (el archivo `voice.json` en producción).
+type Sink = Arc<dyn Fn(&Path, &str, Value) + Send + Sync>;
+
+/// Lo que recibe el escritor: un guardado, o la petición de avisar cuando todo
+/// lo anterior esté en disco.
+enum Job {
+    Save(SaveJob),
+    Flush(Sender<()>),
+}
+
+/// Cola del escritor: una escritura a disco nunca ocurre en el hilo que llama.
+pub struct SaveQueue {
+    jobs: Sender<Job>,
+}
+
+impl SaveQueue {
+    /// Arranca el hilo `ezagent-config-save` con este destino.
+    pub fn start(sink: Sink) -> Self {
+        let (jobs, queue) = unbounded();
+        let spawned = thread::Builder::new()
+            .name("ezagent-config-save".to_string())
+            .spawn(move || drain(queue, sink));
+        if let Err(error) = spawned {
+            tracing::error!("No pude lanzar el hilo que guarda la configuración: {error}");
+        }
+        Self { jobs }
+    }
+
+    /// Encola `key = value`; las escrituras de una misma clave se funden en la
+    /// última, sin perder el orden de llegada. No bloquea.
+    pub fn push(&self, path: &Path, key: &str, value: Value) {
+        let job = SaveJob {
+            path: path.to_path_buf(),
+            key: key.to_string(),
+            value,
+        };
+        if self.jobs.send(Job::Save(job)).is_err() {
+            tracing::debug!("No pude encolar el guardado de {key}");
+        }
+    }
+
+    /// Espera (hasta `timeout`) a que todo lo encolado antes esté en disco.
+    /// Solo para el cierre de la app; nunca desde el hilo de pintura.
+    pub fn flush(&self, timeout: Duration) -> bool {
+        let (reply, done) = crossbeam_channel::bounded(1);
+        if self.jobs.send(Job::Flush(reply)).is_err() {
+            return false;
+        }
+        done.recv_timeout(timeout).is_ok()
+    }
+}
+
+/// Atiende la cola por lotes: el último valor por clave, en orden de llegada.
+/// Una petición de vaciado se contesta después de escribir todo lo anterior.
+fn drain(queue: Receiver<Job>, sink: Sink) {
+    while let Ok(first) = queue.recv() {
+        let mut batch = vec![first];
+        batch.extend(queue.try_iter());
+        let mut pending: Vec<SaveJob> = Vec::new();
+        for job in batch {
+            match job {
+                Job::Save(job) => match pending
+                    .iter_mut()
+                    .find(|old| old.path == job.path && old.key == job.key)
+                {
+                    Some(old) => old.value = job.value,
+                    None => pending.push(job),
+                },
+                Job::Flush(reply) => {
+                    write_all(&sink, std::mem::take(&mut pending));
+                    let _ = reply.send(());
+                }
+            }
+        }
+        write_all(&sink, pending);
+    }
+}
+
+fn write_all(sink: &Sink, jobs: Vec<SaveJob>) {
+    for job in jobs {
+        sink(&job.path, &job.key, job.value);
+    }
+}
+
+/// `cfg.save_key(key, value)`: lee el archivo, cambia la clave y reescribe.
+fn write_key(path: &Path, key: &str, value: Value) {
+    let config = VoiceConfig::new();
+    if let Err(error) = config.save_key(key, value, Some(path)) {
+        // El Python envuelve estas escrituras en `except Exception: pass`.
+        tracing::debug!("No pude guardar {key}: {error}");
+    }
+}
+
+// DECISION: hay un solo HUD y un solo `voice.json`; la cola vive en el
+// proceso para no cambiar los campos públicos de `HudConfig` (los usa la app al
+// arrancar).
+static QUEUE: OnceLock<SaveQueue> = OnceLock::new();
+
+fn queue() -> &'static SaveQueue {
+    QUEUE.get_or_init(|| SaveQueue::start(Arc::new(write_key)))
+}
+
+/// Al cerrar la app: espera a que los guardados pendientes del HUD (posición
+/// de la barra, tema…) lleguen a disco. Sin cola arrancada, no hay nada que
+/// esperar.
+pub fn flush_config_saves(timeout: Duration) -> bool {
+    QUEUE.get().is_none_or(|queue| queue.flush(timeout))
+}
+
 /// `cfg`/`cfg.save_key` vistos por el HUD.
 pub struct HudConfig {
     pub cfg: Arc<RwLock<VoiceConfig>>,
     pub config_file: PathBuf,
+}
+
+impl HudConfig {
+    /// El valor en memoria (cerrojo corto) y el guardado a la cola.
+    fn store(&self, key: &str, value: ConfigValue) {
+        let json = config_to_json(&value);
+        {
+            let mut cfg = self.cfg.write();
+            cfg.set(key, json.clone());
+        }
+        queue().push(&self.config_file, key, json);
+    }
 }
 
 impl DropConfig for HudConfig {
@@ -52,13 +183,11 @@ impl DropConfig for HudConfig {
     }
 
     fn save(&self, key: &str, value: ConfigValue) {
-        let json = config_to_json(&value);
-        let mut cfg = self.cfg.write();
-        cfg.set(key, json.clone());
-        if let Err(error) = cfg.save_key(key, json, Some(&self.config_file)) {
-            // El Python envuelve estas escrituras en `except Exception: pass`.
-            tracing::debug!("No pude guardar {key}: {error}");
-        }
+        self.store(key, value);
+    }
+
+    fn save_soon(&self, key: &str, value: ConfigValue) {
+        self.store(key, value);
     }
 
     fn remember(&self, key: &str, value: ConfigValue) {
@@ -186,5 +315,103 @@ mod tests {
                 MenuEvent::Test(SettingsValues::new()),
             ]
         );
+    }
+
+    #[test]
+    fn a_slow_write_never_blocks_the_caller() {
+        let (calls, received) = crossbeam_channel::unbounded();
+        let slow = calls.clone();
+        let queue = SaveQueue::start(Arc::new(move |path: &Path, key: &str, value: Value| {
+            thread::sleep(std::time::Duration::from_secs(2));
+            let _ = slow.send((path.to_path_buf(), key.to_string(), value));
+        }));
+        let started = std::time::Instant::now();
+        queue.push(Path::new("voice.json"), "drop_x", Value::from(12));
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_millis(300),
+            "el guardado bloqueó {elapsed:?}"
+        );
+        let (_, key, value) = received
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("la escritura llegó");
+        assert_eq!(key, "drop_x");
+        assert_eq!(value, Value::from(12));
+    }
+
+    #[test]
+    fn flush_waits_until_everything_queued_before_is_on_disk() {
+        let written = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let sink = Arc::clone(&written);
+        let queue = SaveQueue::start(Arc::new(move |_: &Path, key: &str, value: Value| {
+            thread::sleep(std::time::Duration::from_millis(150));
+            sink.lock().push((key.to_string(), value));
+        }));
+        queue.push(Path::new("voice.json"), "drop_x", Value::from(3));
+        queue.push(Path::new("voice.json"), "theme", Value::from("light"));
+        assert!(queue.flush(std::time::Duration::from_secs(5)));
+        let keys: Vec<String> = written.lock().iter().map(|(key, _)| key.clone()).collect();
+        assert_eq!(keys, ["drop_x", "theme"]);
+    }
+
+    #[test]
+    fn the_writer_keeps_the_last_value_per_key_in_order() {
+        let (calls, received) = crossbeam_channel::unbounded();
+        let sink = calls.clone();
+        let queue = SaveQueue::start(Arc::new(move |_: &Path, key: &str, value: Value| {
+            let _ = sink.send((key.to_string(), value));
+        }));
+        let path = Path::new("voice.json");
+        for value in 0..100 {
+            queue.push(path, "drop_x", Value::from(value));
+        }
+        queue.push(path, "drop_dock", Value::String("left".to_string()));
+        let mut written = Vec::new();
+        while let Ok(item) = received.recv_timeout(std::time::Duration::from_millis(300)) {
+            written.push(item);
+        }
+        let xs: Vec<i64> = written
+            .iter()
+            .filter(|(key, _)| key == "drop_x")
+            .map(|(_, value)| value.as_i64().unwrap_or_default())
+            .collect();
+        assert!(!xs.is_empty(), "no se escribió drop_x");
+        assert_eq!(xs.last(), Some(&99), "el último valor de drop_x manda");
+        assert!(xs.windows(2).all(|pair| pair[0] <= pair[1]), "{xs:?}");
+        assert_eq!(
+            written.last(),
+            Some(&("drop_dock".to_string(), Value::String("left".to_string()))),
+            "drop_dock llegó al final"
+        );
+    }
+
+    #[test]
+    fn saving_the_hud_config_persists_other_keys() {
+        let file = std::env::temp_dir().join(format!(
+            "ezagent-hud-{}-{:?}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos())
+                .unwrap_or_default()
+        ));
+        std::fs::write(&file, "{\n  \"ajena\": 7\n}\n").expect("archivo previo");
+        let hud = HudConfig {
+            cfg: config(),
+            config_file: file.clone(),
+        };
+        hud.save("ui_scale", ConfigValue::Float(1.25));
+        assert_eq!(hud.value("ui_scale"), Some(ConfigValue::Float(1.25)));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let written = loop {
+            let text = std::fs::read_to_string(&file).unwrap_or_default();
+            if text.contains("ui_scale") || std::time::Instant::now() > deadline {
+                break text;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        assert!(written.contains("\"ui_scale\": 1.25"), "{written}");
+        assert!(written.contains("\"ajena\": 7"), "{written}");
+        let _ = std::fs::remove_file(&file);
     }
 }

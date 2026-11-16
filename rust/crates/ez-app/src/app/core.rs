@@ -57,7 +57,7 @@ pub use self::chat_model::AppChat;
 pub use self::events::{AppEvent, MenuEvent, Queue};
 pub use self::hooks::{AppHooks, NullHooks, NullObserver, ShutdownObserver};
 pub use self::hud::AppHud;
-pub use self::hud_bridge::{HudConfig, HudHost};
+pub use self::hud_bridge::{flush_config_saves, HudConfig, HudHost};
 pub use self::services::{AppParts, SpeakerApi, SwarmArgs, SwarmFactory};
 use self::state::{
     AgentsState, AudioState, ChatState, ConfigState, Flag, Inner, LlmModels, MessengerSlot,

@@ -25,7 +25,7 @@ use serde_json::json;
 
 use super::host::{base_commit, canonical_workdir, fix_encargo_fin};
 use super::verify;
-use super::{AutonomousLoop, Session};
+use super::{approve, AutonomousLoop, Session};
 
 /// Alias de los papeles, los mismos de `tools_swarm` (10.18).
 ///
@@ -68,6 +68,8 @@ pub struct TeamMember {
     pub name: String,
     pub role: String,
     pub address: String,
+    /// Estado del tablero: `idle`, `working`, `blocked` o `gone`.
+    pub state: String,
 }
 
 /// Lo que el bucle necesita del enjambre (10.18).
@@ -136,6 +138,7 @@ impl TeamSwarm for StackSwarm {
                 name: member.name,
                 role: member.role,
                 address: member.address,
+                state: member.state,
             })
             .collect())
     }
@@ -333,8 +336,26 @@ impl AutonomousLoop {
             }
         };
         for member in &members {
-            if !member.address.is_empty() && !covered(session, &member.address) {
+            if member.address.is_empty() {
+                continue;
+            }
+            let fresh = !covered(session, &member.address);
+            if fresh {
                 session.state.member_started(&member.address);
+            }
+            if fresh || member.state == "blocked" {
+                // 10.2/10.9: el miembro se abrió desde el enjambre y su CLI
+                // puede estar pidiendo confiar en la carpeta. Se aprueba con la
+                // misma transacción que el ejecutor único; fuera de `workdir`,
+                // se pausa.
+                // DECISION: se reintenta mientras el tablero lo dé por
+                // bloqueado (el supervisor lo marca al abrir con el diálogo).
+                if let approve::Approval::Paused(reason) =
+                    approve::approve_launch(self, session, &member.address)
+                {
+                    self.pause(session, &reason);
+                    return;
+                }
             }
         }
         let drained = match team.task_states(swarm) {

@@ -62,7 +62,7 @@ fn run_handler_case(case: &FixtureCase, kind: &str) {
                 }
             }
         }
-        _ => handle_voice(&callbacks, &session, &args),
+        _ => handle_voice(&port, &callbacks, &session, &args),
     };
     let value = json!({
         "result": result.to_dict(),
