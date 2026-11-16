@@ -27,6 +27,9 @@ struct Options {
     verify: bool,
     list: bool,
     trace_out: Option<PathBuf>,
+    /// Minutos de la prueba de fondo (F7-05): repite los escenarios en un
+    /// proceso y pinta el HUD fuera de pantalla.
+    soak: Option<f64>,
 }
 
 fn run() -> Result<u8, String> {
@@ -46,6 +49,9 @@ fn run() -> Result<u8, String> {
     let scenarios = select(&paths, &selection)?;
     if scenarios.is_empty() {
         return Err("no hay escenarios".to_string());
+    }
+    if let Some(minutes) = options.soak {
+        return ez_app::replay::soak::run(&paths, &scenarios, minutes);
     }
     if options.verify {
         return verify_all(&scenarios);
@@ -67,6 +73,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
         verify: false,
         list: false,
         trace_out: None,
+        soak: None,
     };
     let mut index = 0;
     while index < args.len() {
@@ -86,6 +93,14 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             "--verify" => {
                 options.verify = true;
                 index += 1;
+            }
+            "--soak" => {
+                let raw = value(args, index, "--soak")?;
+                options.soak = Some(
+                    raw.parse::<f64>()
+                        .map_err(|_| format!("--soak espera minutos: {raw}"))?,
+                );
+                index += 2;
             }
             "--list" => {
                 options.list = true;
@@ -208,4 +223,4 @@ fn verify_all(scenarios: &[PathBuf]) -> Result<u8, String> {
 }
 
 const USAGE: &str =
-    "Uso: ezagent-replay [--scenario <id>]... [--all] [--trace-out <ruta>] [--verify] [--list]";
+    "Uso: ezagent-replay [--scenario <id>]... [--all] [--trace-out <ruta>] [--verify] [--soak <minutos>] [--list]";

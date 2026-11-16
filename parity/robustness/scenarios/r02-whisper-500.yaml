@@ -1,0 +1,41 @@
+id: "R02"
+name: "whisper responde 500 y se recupera"
+notes: >
+  El primer turno de `fake-whisper` responde 500 con un cuerpo JSON; el
+  segundo vuelve a transcribir. La app dice el mensaje del servidor (código y
+  cuerpo recortado a 200 caracteres), no lanza el turno y sigue en la llamada.
+timeout: 180
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.6
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - content: "Hoy es lunes."
+whisper:
+  transcripts:
+    - "¿Qué día es hoy?"
+  faults:
+    - status: 500
+      error: "sin modelo cargado"
+steps:
+  - wait_state: listening
+  - audio: que_hora_es.wav
+  - wait_speech: "whisper-server respondió 500"
+  - wait_quiet: 25
+  - audio: que_hora_es.wav
+  - wait_speech: "Hoy es lunes"
+  - wait_quiet: 30
+expect:
+  user:
+    - "¿Qué día es hoy?"
+  assistant:
+    - "Hoy es lunes."
+  speech_any:
+    - "whisper-server respondió 500"
+    - "Hoy es lunes"
+  llm_requests: 1
+  final:
+    state: listening
+    in_call: true

@@ -1,0 +1,42 @@
+id: "R01"
+name: "whisper muere a mitad de turno"
+notes: >
+  `fake-whisper` muere con la primera petición en vuelo (corte simulado): el
+  turno no se transcribe, la app dice el error de whisper y sigue en la
+  llamada. El turno siguiente, con el puerto ya cerrado, recibe el aviso de que
+  no puede conectar. La app no se cuelga ni pierde la llamada.
+timeout: 180
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.6
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - content: "No debería llegar aquí."
+whisper:
+  transcripts:
+    - "¿Qué hora es?"
+  faults:
+    - drop: true
+      delay_ms: 200
+steps:
+  - wait_state: listening
+  - audio: que_hora_es.wav
+  - wait_speech: "whisper-server"
+  - wait_quiet: 25
+  - audio: que_hora_es.wav
+  - wait_speech: "No puedo conectar con whisper-server"
+  - wait_quiet: 30
+expect:
+  user: []
+  assistant: []
+  never:
+    - "No debería llegar aquí."
+  speech_any:
+    - "whisper-server"
+    - "No puedo conectar con whisper-server"
+  llm_requests: 0
+  final:
+    state: listening
+    in_call: true

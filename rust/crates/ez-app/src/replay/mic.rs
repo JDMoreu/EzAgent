@@ -33,6 +33,8 @@ pub struct ReplayMic {
     settings: VadSettings,
     segments: Mutex<VecDeque<Vec<i16>>>,
     buffer: Mutex<Vec<i16>>,
+    /// Motivo del fallo de captura pedido por el guion (`mic_fail`).
+    fail: Mutex<Option<String>>,
     speech_active: AtomicBool,
     stop: Arc<AtomicBool>,
 }
@@ -46,9 +48,16 @@ impl ReplayMic {
             settings,
             segments: Mutex::new(VecDeque::new()),
             buffer: Mutex::new(Vec::new()),
+            fail: Mutex::new(None),
             speech_active: AtomicBool::new(false),
             stop: Arc::new(AtomicBool::new(false)),
         })
+    }
+
+    /// `mic_fail`: la siguiente vuelta del hilo de captura termina con el error
+    /// de un dispositivo que se pierde (`_call_worker` del Python).
+    pub fn fail(&self, reason: &str) {
+        *self.fail.lock() = Some(reason.to_string());
     }
 
     /// Encola un WAV del arnés, con ganancia opcional.
@@ -123,6 +132,15 @@ impl ReplayMic {
         let mut pipeline = CapturePipeline::new(&self.settings, SAMPLE_RATE, None);
         let mut latched = false;
         while !self.stop.load(Ordering::SeqCst) {
+            if let Some(reason) = self.fail.lock().take() {
+                // Mismo efecto que `_call_worker` al capturar un error: la app
+                // cuelga y dice el motivo; aquí no hay `MicCapture` que falle.
+                app.events().put(AppEvent::Error(
+                    format!("No puedo usar el micrófono: {reason}"),
+                    None,
+                ));
+                return;
+            }
             let chunk = self.next_chunk();
             let level = pcm_rms(&chunk);
             let reset = app.inner.audio.reset_capture.is_set();

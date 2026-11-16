@@ -1,0 +1,37 @@
+id: "R04"
+name: "el LLM se corta a mitad del streaming"
+notes: >
+  `fake-llm` emite tres trozos del SSE y cierra sin `finish_reason` ni
+  `[DONE]`. La app dice lo que llegó, cierra el turno sin inventar error y el
+  siguiente turno responde entero.
+timeout: 180
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.6
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - content: "Te cuento una historia muy larga que se corta a la mitad."
+      max_chunks: 3
+    - content: "Sigo por aquí."
+whisper:
+  transcripts:
+    - "Cuéntame algo largo."
+    - "¿Sigues ahí?"
+steps:
+  - wait_state: listening
+  - audio: cuentame_algo_largo.wav
+  - wait_speech: "Te cuento una historia"
+  - wait_quiet: 25
+  - audio: que_hora_es.wav
+  - wait_speech: "Sigo por aquí"
+  - wait_quiet: 30
+expect:
+  speech_any:
+    - "Te cuento una historia"
+    - "Sigo por aquí"
+  llm_requests: 2
+  final:
+    state: listening
+    in_call: true
