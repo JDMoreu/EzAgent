@@ -141,6 +141,17 @@ fn data_path_argument_requires_phontab() {
 }
 
 #[test]
+fn library_lookup_prefers_the_first_folder_with_the_dll() {
+    let empty = TempTree::new("no-dll", &["otra"]);
+    let packed = TempTree::new("next-to-exe", &[]);
+    let dll = packed.0.join("espeak-ng.dll");
+    std::fs::write(&dll, b"x").expect("dll temporal");
+    let found = library_in(&[empty.0.clone(), packed.0.clone()]);
+    assert_eq!(found, Some(dll));
+    assert_eq!(library_in(std::slice::from_ref(&empty.0)), None);
+}
+
+#[test]
 fn real_espeak_matches_python_for_spanish() {
     if default_library_path().is_none() {
         return;
