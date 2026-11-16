@@ -55,3 +55,12 @@ Scripts en `rust-migration/tools/orquestacion/`:
 
 ## Autorizaciones del usuario
 - 2026-11-16: «sí, súbelo a GitHub al terminar» → al cerrar la auditoría F9, `git push -u origin rust/main` (solo la rama; no fusionar a `main` ni publicar release sin preguntar).
+
+## Tanda final «Termina todos los pendientes» (2026-11-16)
+Integrado en `rust/main`: PEND-IMG, PEND-MICS, F8-01 (instalador 0.2.0), F7-03 (compatibilidad), PEND-MENORES (+ cerrojo de `voice.json` y vaciado de la cola al cerrar), F8-02 (eval; limpieza sin seguir enlaces), F8-01b (recursos junto al exe, `EzAgent.bat` con Rust). Arreglos propios: Herdr 20 s en `list_agents`, fake-hc tolerante a carga, animaciones del chat, carril `swarm.*` en la reproducción.
+
+En curso (si se cierra Claude Code, comprobar con `git worktree list`, `opencode session list` y procesos `opencode`/`ezagent-replay`; retomar con `supervise.sh <ID> <wt> <prompt> resume`):
+- F7-05: código listo en `work/F7-05` (8/8 casos iguales a Python), **sin fusionar**; el soak de 2 h corre desacoplado desde `../EzAgent-wt/F7-05` y deja el veredicto en `../EzAgent-wt/soak-F7-05/soak.json`. Fusionar y borrar el worktree cuando termine.
+- F8-03: documentación en `rust-migration/docs-staging/` y lista `rust-migration/F7-06-prueba-en-vivo.md` (se activan tras F9).
+- TMAP-1..6: mapa de pruebas Python → Rust en `parity/test-map/TMAP-N.csv`; luego fusionar en `parity/test-map.csv` (columna `nota`) y revisar hallazgos (`#[ignore = "TMAP: ..."]`).
+Después: F7-04 (rendimiento, con el equipo tranquilo: después del soak y de TMAP), F9 (auditoría con veredicto), activar docs, y `git push -u origin rust/main` (autorizado).
