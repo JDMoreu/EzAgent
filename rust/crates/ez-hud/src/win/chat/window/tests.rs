@@ -5,6 +5,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use crate::geometry::{FADE_SECS, MORPH_SECS, SCREEN_PAD};
+use crate::model::chat::view::test_support::{FakeHost, FakeInput, FakeModel};
 use crate::model::chat::view::{Action, ActionData};
 use crate::win::chat::test_support::{empty_view, fake_ui, sample_view, FakeUi, Recorder};
 
@@ -131,6 +132,128 @@ fn a_closed_panel_swallows_pointer_and_keys() {
     assert!(panel.render().bgra.iter().all(|byte| *byte == 0));
 }
 
+/// Panel with a view already installed, in the given animation state.
+fn panel_with_view(state: AnimState, view: ChatView) -> (Arc<ChatPanel>, Arc<FakeUi>) {
+    let ui = Arc::new(FakeUi::default());
+    let panel = Arc::new(ChatPanel::new(
+        Arc::clone(&ui) as Arc<dyn ChatUi>,
+        Arc::new(Recorder::default()),
+    ));
+    {
+        let mut inner = panel.state.lock();
+        inner.view = Some(SendView(Box::new(view)));
+        inner.anim = Anim {
+            state,
+            t0: 0.0,
+            p: if state == AnimState::Open { 1.0 } else { 0.0 },
+        };
+        inner.last = 0.0;
+    }
+    let window = Arc::new(ChatWindow::new(&panel, 0, 0, 120, 120));
+    *panel.window.lock() = Some(Arc::clone(&window));
+    (panel, ui)
+}
+
+#[test]
+fn input_is_swallowed_while_the_panel_animates() {
+    let (panel, _ui) = panel_with_view(AnimState::Opening, empty_view());
+    assert!(panel.pointer_down(60, 60));
+    assert!(panel.key(13, false));
+    assert!(panel.char("a"));
+    assert!(panel.paste("b"));
+    assert_eq!(panel.cursor_ident(18, 60), 0);
+    let text = panel
+        .state
+        .lock()
+        .view
+        .as_ref()
+        .map(|view| view.input.text().to_string())
+        .unwrap_or_default();
+    assert!(text.is_empty());
+}
+
+#[test]
+fn hovering_a_border_does_not_light_up_the_controls() {
+    let (panel, _) = open_panel(empty_view());
+    assert!(!panel.hover(18, 60));
+    assert!(panel
+        .state
+        .lock()
+        .view
+        .as_ref()
+        .is_some_and(|view| view.hover.is_none()));
+}
+
+#[test]
+fn the_status_follows_the_bar_and_a_busy_chat_reads_as_thinking() {
+    let ui = FakeUi::default();
+    let mut view = sample_view();
+    let (mut act, mut last) = (0.0, 0.0);
+    for (pose, text) in [
+        ("listen", "Escuchando…"),
+        ("think", "Pensando…"),
+        ("speak", "Hablando…"),
+        ("idle", ""),
+    ] {
+        *ui.pose.lock() = pose.to_string();
+        update_live(&ui, &mut view, &mut act, &mut last, 0.0);
+        assert_eq!(view.status, text, "{pose}");
+    }
+    // En reposo la actividad se queda a cero.
+    *ui.pose.lock() = "idle".to_string();
+    for step in 1..=30 {
+        update_live(&ui, &mut view, &mut act, &mut last, f64::from(step) / 30.0);
+    }
+    assert_eq!(act, 0.0);
+    // Pensando, la actividad sube hasta el máximo.
+    *ui.pose.lock() = "think".to_string();
+    for step in 1..=30 {
+        update_live(&ui, &mut view, &mut act, &mut last, f64::from(step) / 30.0);
+    }
+    assert!(act > 0.95);
+    // Un chat ocupado se lee como «Pensando…» aunque la barra esté en reposo.
+    let mut busy = ChatView::new(
+        Box::new(FakeModel {
+            busy: true,
+            ..FakeModel::default()
+        }),
+        Box::new(FakeHost),
+        Box::new(FakeInput::default()),
+    );
+    *ui.pose.lock() = "idle".to_string();
+    update_live(&ui, &mut busy, &mut act, &mut last, 0.0);
+    assert_eq!(busy.status, "Pensando…");
+}
+
+#[test]
+fn the_form_hides_only_after_the_first_painted_frame() {
+    let (panel, ui) = panel_with_view(AnimState::Opening, sample_view());
+    assert!(!*ui.form_hidden.lock());
+    let _ = panel.render();
+    assert!(*ui.form_hidden.lock());
+}
+
+#[test]
+fn the_repaint_asks_for_sixty_fps_only_while_something_moves() {
+    let mut view = empty_view();
+    assert_eq!(
+        frame_interval(AnimState::Opening, &mut view, false, 0.0, 0.0),
+        1.0 / 60.0
+    );
+    assert_eq!(
+        frame_interval(AnimState::Open, &mut view, false, 0.0, 0.0),
+        1.0 / 30.0
+    );
+    assert_eq!(
+        frame_interval(AnimState::Open, &mut view, true, 0.0, 0.0),
+        1.0 / 60.0
+    );
+    assert_eq!(
+        frame_interval(AnimState::Open, &mut view, false, 1.0, 0.0),
+        1.0 / 60.0
+    );
+}
+
 #[test]
 fn an_empty_zone_lets_the_window_drag() {
     let (panel, _) = open_panel(empty_view());
@@ -160,6 +283,28 @@ fn dropped_files_enter_the_input_as_links() {
         .map(|view| view.input.text().to_string())
         .unwrap_or_default();
     assert_eq!(text, "[a b.txt](<C:\\a b.txt>)\n");
+}
+
+#[test]
+fn open_and_reveal_actions_are_forwarded() {
+    let (panel, recorder) = open_panel(empty_view());
+    let info = crate::paint::chat::FileInfo {
+        path: std::path::PathBuf::from("A"),
+        name: "A".to_string(),
+        ext: String::new(),
+        size: 0,
+        mtime: 0.0,
+        kind: crate::paint::chat::MediaKind::Other,
+        allowed: true,
+        openable: true,
+    };
+    panel.perform(Some(Action::with("open", ActionData::File(info.clone()))));
+    panel.perform(Some(Action::with("reveal", ActionData::File(info.clone()))));
+    panel.perform(None);
+    assert_eq!(
+        recorder.events.lock().clone(),
+        vec![ChatEvent::Open(info.clone()), ChatEvent::Reveal(info)]
+    );
 }
 
 #[test]

@@ -303,6 +303,19 @@ fn activity_becomes_the_orbit_in_priority_order() {
 }
 
 #[test]
+fn set_activity_keeps_the_snapshot_the_peek_shows() {
+    let harness = Harness::new();
+    let rows = vec![
+        item("t1", "working", 0.0, false, true),
+        item("t2", "needs_you", 1.0, true, false),
+    ];
+    harness.ui.set_activity(rows.clone());
+    assert_eq!(*harness.ui.activity.read(), rows);
+    harness.ui.set_activity(Vec::new());
+    assert!(harness.ui.activity.read().is_empty());
+}
+
+#[test]
 fn the_autonomous_mark_is_never_cut_from_a_full_orbit() {
     let harness = Harness::new();
     let mut rows: Vec<PeekItem> = (0..6)
@@ -317,6 +330,14 @@ fn the_autonomous_mark_is_never_cut_from_a_full_orbit() {
 #[test]
 fn chat_is_optional_but_respects_asking_and_mute() {
     let harness = Harness::new();
+    harness.ui.set_layout("circle");
+    // `CIRCLE_D` (58 px) del Python.
+    assert_eq!(harness.ui.form_size(), (58.0, 58.0));
+    harness.ui.set_chat_open(true);
+    assert!(harness.ui.bar.lock().chat_open);
+    harness.ui.set_form_hidden(true);
+    assert!(harness.ui.bar.lock().model.form_hidden);
+    harness.ui.set_form_hidden(false);
     harness.ui.toggle_chat();
     assert_eq!(harness.chat.toggles.load(Ordering::SeqCst), 1);
     assert!(harness.chat.is_open());
@@ -330,6 +351,19 @@ fn chat_is_optional_but_respects_asking_and_mute() {
     harness.ui.toggle_chat();
     assert_eq!(harness.chat.toggles.load(Ordering::SeqCst), 1);
     harness.ui.hide_confirmation();
+}
+
+#[test]
+fn toggle_chat_without_a_panel_does_not_fail() {
+    let harness = Harness::new();
+    harness
+        .ui
+        .set_chat_panel(std::sync::Arc::new(super::traits::NoChat));
+    assert!(!harness.ui.chat_is_open());
+    harness.ui.toggle_chat();
+    harness.ui.toggle_chat();
+    assert!(!harness.ui.chat_is_open());
+    harness.ui.hide();
 }
 
 #[test]

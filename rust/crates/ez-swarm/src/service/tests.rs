@@ -293,6 +293,17 @@ fn listeners_and_activity_are_isolated_from_panics() {
 }
 
 #[test]
+fn the_first_member_is_never_parallel() {
+    let specs = [MemberSpec {
+        parallel: true,
+        ..MemberSpec::new("ana", "plan", "claude")
+    }];
+    let stages = stages_for(&specs);
+    assert_eq!(stages.len(), 1);
+    assert_eq!(stages[0].len(), 1);
+}
+
+#[test]
 fn stages_share_a_stage_only_when_parallel_and_without_task() {
     let specs = [
         MemberSpec::new("ana", "plan", "claude"),

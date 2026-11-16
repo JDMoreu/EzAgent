@@ -210,6 +210,14 @@ fn starts_with_doubles_and_declares_every_group() {
 }
 
 #[test]
+fn chat_hotkey_and_voice_share_the_python_tables() {
+    assert_eq!(HOTKEY_KEYS.len(), 6);
+    assert!(HOTKEY_KEYS.contains(&"chat_hotkey"));
+    assert_eq!(INSTANT_SETTINGS.len(), 14);
+    assert!(INSTANT_SETTINGS.contains(&"chat_voice"));
+}
+
+#[test]
 fn shutdown_follows_the_python_order_and_runs_once() {
     let fixture = Fixture::new();
     let app = &fixture.app;

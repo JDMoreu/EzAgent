@@ -79,6 +79,15 @@ fn hotkey_menu_shows_the_hidden_bar_and_saves_it() {
 }
 
 #[test]
+fn the_chat_hotkey_shows_the_hidden_bar() {
+    let fixture = Fixture::new();
+    assert!(fixture.app.inner.config.hud_hidden.load(Ordering::SeqCst));
+    fixture.app.handle_hotkey("chat");
+    assert!(!fixture.app.inner.config.hud_hidden.load(Ordering::SeqCst));
+    assert!(fixture.saved_config().contains("hud_hidden"));
+}
+
+#[test]
 fn show_bar_if_hidden_is_a_noop_when_visible() {
     let fixture = Fixture::new();
     fixture
@@ -320,6 +329,24 @@ fn test_done_restores_barge_in() {
             .and_then(serde_json::Value::as_bool),
         Some(false)
     );
+}
+
+#[test]
+fn the_chat_microphone_starts_listening_and_then_toggles_mute() {
+    let fixture = Fixture::new();
+    let app = &fixture.app;
+    // Sin llamada y sin silencio, el botón del chat sólo pide reanudar la
+    // escucha (AppHooks::start_call del arnés no tiene efecto visible).
+    app.handle_event(AppEvent::ChatMute(false));
+    assert!(!in_call(app));
+    assert!(!app.inner.session.muted.load(Ordering::SeqCst));
+    // Dentro de la llamada silencia y desilencia el mismo micro de la barra.
+    app.start_call();
+    assert!(in_call(app));
+    app.handle_event(AppEvent::ChatMute(true));
+    assert!(app.inner.session.muted.load(Ordering::SeqCst));
+    app.handle_event(AppEvent::ChatMute(false));
+    assert!(!app.inner.session.muted.load(Ordering::SeqCst));
 }
 
 #[test]

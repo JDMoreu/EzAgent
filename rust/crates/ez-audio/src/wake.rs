@@ -200,6 +200,12 @@ mod tests {
         assert!(wake("E Z Agent, escúchame"));
         assert!(wake("easy agents despierta"));
         assert!(wake("isiagent escuchame"));
+        assert!(wake("easy agent escúchame"));
+        assert!(wake("Ez Agent, escúchame"));
+        assert!(wake("isi agent escuchame"));
+        assert!(wake("EzAgent vuelve"));
+        assert!(wake("EzAgent, abre la escucha"));
+        assert!(wake("  EZAGENT   ESCUCHAME  "));
     }
 
     #[test]
@@ -273,6 +279,7 @@ mod tests {
 
     #[test]
     fn los_limites_de_transcripcion_son_inclusivos() {
+        assert_eq!((MIN_WAKE_SECS, MAX_WAKE_SECS), (0.35, 3.0));
         assert!(!worth_transcribing(&[0; 11199], 16000));
         assert!(worth_transcribing(&[0; 11200], 16000));
         assert!(worth_transcribing(&[0; 96000], 16000));

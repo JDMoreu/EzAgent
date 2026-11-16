@@ -372,6 +372,54 @@ mod tests {
         field.insert("adiós");
         assert_eq!(field.text, "adiós");
         assert!(field.selection().is_none());
+        field.select_all();
+        field.backspace(false);
+        assert!(field.text.is_empty());
+        assert_eq!(field.cursor, 0);
+    }
+
+    #[test]
+    fn backspace_and_delete_at_the_edges() {
+        let mut field = TextInput::new("abcd");
+        field.move_cursor(Move::Left, false, false);
+        field.backspace(false);
+        assert_eq!(field.text, "abd");
+        assert_eq!(field.cursor, 2);
+        field.delete(false);
+        assert_eq!(field.text, "ab");
+        // Al final no hace nada; al principio tampoco.
+        field.delete(false);
+        assert_eq!(field.text, "ab");
+        let mut empty = TextInput::default();
+        empty.backspace(false);
+        assert!(empty.text.is_empty() && empty.cursor == 0);
+    }
+
+    #[test]
+    fn shift_movement_extends_the_selection() {
+        let mut field = TextInput::new("abcdef");
+        field.move_cursor(Move::Home, false, false);
+        field.move_cursor(Move::Right, true, false);
+        field.move_cursor(Move::Right, true, false);
+        assert_eq!(field.selected_text(), "ab");
+        field.move_cursor(Move::Left, true, false);
+        assert_eq!(field.selected_text(), "a");
+        // Sin Mayús, el cursor se colapsa al borde y la selección desaparece.
+        field.move_cursor(Move::Right, false, false);
+        assert!(field.selection().is_none());
+        assert_eq!(field.cursor, 1);
+    }
+
+    #[test]
+    fn enter_and_set_text() {
+        let mut field = TextInput::new("a");
+        field.newline();
+        field.insert("b");
+        assert_eq!(field.text, "a\nb");
+        let mut field = TextInput::new("viejo");
+        field.set_text("nuevo");
+        assert_eq!(field.text, "nuevo");
+        assert_eq!(field.cursor, 5);
     }
 
     #[test]

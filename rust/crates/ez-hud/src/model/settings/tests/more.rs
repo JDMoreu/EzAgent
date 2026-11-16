@@ -297,6 +297,69 @@ fn empty_voice_input_falls_back_to_the_engine_list() {
 }
 
 #[test]
+fn every_instant_key_activates_save_and_restoring_brings_it_back() {
+    let changes = [
+        ("ui_layout", SettingValue::Text("circle".into())),
+        ("ui_scale", SettingValue::Float(1.4)),
+        ("ui_motion", SettingValue::Text("reduced".into())),
+        ("theme", SettingValue::Text("dark".into())),
+        ("theme_base", SettingValue::Text("light".into())),
+        ("theme_primary", SettingValue::Text("#123456".into())),
+        ("theme_secondary", SettingValue::Text("#234567".into())),
+        ("theme_accent", SettingValue::Text("#345678".into())),
+        ("theme_background", SettingValue::Text("#456789".into())),
+        ("show_advanced", SettingValue::Bool(true)),
+        ("close_action", SettingValue::Text("hangup".into())),
+        ("voice_wake", SettingValue::Bool(false)),
+        ("wake_phrase", SettingValue::Text("Hola EzAgent".into())),
+        ("chat_voice", SettingValue::Bool(true)),
+    ];
+    assert_eq!(changes.len(), INSTANT_KEYS.len());
+    for (key, _) in &changes {
+        assert!(INSTANT_KEYS.contains(key), "{key} no es instantánea");
+        assert!(TRACKED_KEYS.contains(key), "{key} no se guarda");
+    }
+    for (key, value) in &changes {
+        let mut edited = settings();
+        assert!(!edited.dirty());
+        edited.set(key, value).expect(key);
+        assert!(edited.dirty(), "{key} no activa Guardar");
+        let before = edited.saved_snapshot();
+        let snapshot = edited.snapshot();
+        assert!(snapshot.contains_key(key), "el paquete no lleva {key}");
+        edited.mark_saved(Some(&snapshot));
+        assert!(!edited.dirty(), "{key} sigue sucio tras guardar");
+        edited.restore_saved(&before);
+        assert!(edited.dirty(), "{key} no vuelve a estar pendiente");
+    }
+    // Volver al valor original desactiva Guardar.
+    let mut edited = settings();
+    let original = edited.get("ui_scale").cloned().expect("ui_scale");
+    edited
+        .set("ui_scale", &SettingValue::Float(1.4))
+        .expect("ui_scale");
+    assert!(edited.dirty());
+    edited.set("ui_scale", &original).expect("ui_scale");
+    assert!(!edited.dirty());
+    // Selectores, textos y atajos también cuentan.
+    for (key, value) in [
+        ("tts_model_variant", SettingValue::Text("fp32".into())),
+        ("stt_engine", SettingValue::Text("cpu".into())),
+        ("llm_api_style", SettingValue::Text("anthropic".into())),
+        ("llm_reasoning_effort", SettingValue::Text("high".into())),
+        ("input_device_index", SettingValue::Int(1)),
+        ("voice", SettingValue::Text("ef_dora".into())),
+        ("llm_model", SettingValue::Text("otro-modelo".into())),
+        ("api_key", SettingValue::Text("clave".into())),
+        ("hotkey", SettingValue::Text("ctrl+alt+j".into())),
+    ] {
+        let mut edited = settings();
+        edited.set(key, &value).expect(key);
+        assert!(edited.dirty(), "{key} no activa Guardar");
+    }
+}
+
+#[test]
 fn dirty_compares_sliders_after_quantizing_and_mark_saved_copies() {
     let mut settings = settings();
     settings

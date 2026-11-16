@@ -265,6 +265,23 @@ fn activity_tick_is_safe_after_shutdown() {
 }
 
 #[test]
+fn a_saved_task_without_a_terminal_is_forgotten() {
+    let fixture = setup();
+    let app = &fixture.app;
+    app.inner
+        .agents
+        .tasks
+        .add("t41", "", "una tarea de hace días", None)
+        .expect("tarea");
+    app.inner.agents.watched.lock().insert("t41".to_string());
+    app.forget_gone("t41");
+    assert!(app.inner.agents.tasks.get("t41").is_none());
+    assert!(!app.inner.agents.watched.lock().contains("t41"));
+    // No se avisa de nada: no terminó.
+    assert!(app.events().is_empty());
+}
+
+#[test]
 fn take_prelaunched_returns_empty_for_an_unknown_chain() {
     let fixture = setup();
     assert_eq!(fixture.app.take_prelaunched(&chain("t1", "codex")), "");
