@@ -133,10 +133,12 @@ fn find_by_name(infos: &[InputDevice], name: &str) -> Option<usize> {
 
 /// El dispositivo de cpal que corresponde a un índice de PortAudio.
 ///
-/// Sin coincidencia de nombre (una salida, otra API de host o un índice fuera de
-/// la lista) devuelve `None`: ese índice cae a la elección automática, como en
-/// Python con un índice que no es un micrófono. El mapeador de sonido es el
-/// dispositivo por omisión del sistema, que es lo que abriría Python.
+/// Vale para los índices de cualquier API de host: se resuelve por nombre. Si
+/// el endpoint no está entre los de cpal (una salida, un índice fuera de la
+/// lista o un dispositivo KS que WASAPI no expone activo) devuelve `None`: ese
+/// índice cae a la elección automática, como en Python con un índice que no es
+/// un micrófono. El dispositivo primario de su API es el de por omisión del
+/// sistema, que es lo que abriría Python.
 fn resolve_in(
     devices: &[PortAudioDevice],
     host: &[HostDevice],
