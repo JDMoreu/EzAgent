@@ -52,3 +52,6 @@ Scripts en `rust-migration/tools/orquestacion/`:
 - **`stackdump.py <pid>` y `symbolize.py`:** diagnostican un cuelgue leyendo las pilas del proceso colgado, sin depurador.
 
 **Regla de disco:** un árbol por worker en `../EzAgent-wt/<ID>`, que se borra **en cuanto se integra** su rama. Cada `rust/target` pesa varios GB; llegaron a sumar 320 GB.
+
+## Autorizaciones del usuario
+- 2026-11-16: «sí, súbelo a GitHub al terminar» → al cerrar la auditoría F9, `git push -u origin rust/main` (solo la rama; no fusionar a `main` ni publicar release sin preguntar).
