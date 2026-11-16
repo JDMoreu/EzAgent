@@ -114,6 +114,11 @@ impl TeamSwarm for StackSwarm {
     }
 
     fn start(&self, goal: &str, workdir: &str, members: &[MemberSpec]) -> Result<String, String> {
+        if self.stack.command_dir.is_empty() {
+            return Err(
+                "No encuentro el comando ezs; reinstala EzAgent con «uv sync».".to_string(),
+            );
+        }
         let goal = long_goal(goal, self.stack.host().as_ref());
         self.stack
             .start_autonomous_team(&goal, workdir, members)
