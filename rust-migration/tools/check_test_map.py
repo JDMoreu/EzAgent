@@ -50,6 +50,10 @@ def check_references(root: Path, text: str) -> list[str]:
 def expand_case(case: str) -> list[str]:
     """`pref/0011-0012/0041` → `pref/0011`, `pref/0012`, `pref/0041` (extremos de cada rango)."""
     parts = case.split("/")
+    alpha = re.fullmatch(r"([A-Za-z_]+)(\d+)-(\d+)", parts[-1])
+    if alpha:
+        prefix = "/".join(parts[:-1] + [""])
+        return [f"{prefix}{alpha.group(1)}{alpha.group(2)}", f"{prefix}{alpha.group(1)}{alpha.group(3)}"]
     numeric = [bool(re.fullmatch(r"\d+(-\d+)?", part)) for part in parts]
     if not any(numeric):
         return [case]
