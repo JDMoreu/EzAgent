@@ -8,10 +8,13 @@
 //!
 //! `umbral = máx(piso de ruido × margen, acople × referencia × margen, mínimo)`
 //!
-//! El acople se estima con el percentil alto de `mic/ref` en los bloques del
-//! principio de cada frase, que casi seguro son solo eco. Sin referencia (el
-//! arnés de reproducción no suena) se usa el detector clásico.
+//! El acople se estima con la mediana de `mic/ref` de los bloques del principio
+//! de cada frase (casi seguro solo eco), emparejando el retardo altavoz→micrófono
+//! que mejor encaja: así la voz del usuario, que sube el cociente de algunos
+//! bloques, no infla el acople. Sin referencia (el arnés de reproducción no
+//! suena) se usa el detector clásico.
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use ez_core::metrics::monotonic;
@@ -22,6 +25,11 @@ use crate::CHUNK_SECS;
 pub const REFERENCE_WINDOW_SECS: f64 = 0.35;
 /// Bloques de 30 ms que conserva la referencia (≈1 s).
 const SLOTS: usize = 32;
+/// Retardo altavoz→micrófono que se busca al estimar el acople: 60-240 ms.
+const MIN_LAG: usize = 2;
+const MAX_LAG: usize = 8;
+/// Bloques de historia para emparejar el eco con su referencia.
+const HISTORY: usize = 16;
 /// 20 bits para el nivel: resolución 1e-6, de sobra para umbrales de 0,001.
 const LEVEL_BITS: u32 = 20;
 const LEVEL_MASK: u64 = (1 << LEVEL_BITS) - 1;
@@ -34,15 +42,6 @@ pub enum BargeInMode {
     Fixed,
     /// Umbral por bloque descontando el eco de la referencia.
     Adaptive,
-}
-
-/// Lo que la referencia de reproducción aporta a un bloque de captura.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ReferenceLevel {
-    /// Nivel máximo de la referencia en la ventana (retardo incluido).
-    pub peak: f64,
-    /// Frase en curso, para el diagnóstico por frase.
-    pub phrase: u64,
 }
 
 fn now_ms() -> u64 {
@@ -150,6 +149,18 @@ impl PlaybackReference {
         }
         peak
     }
+
+    /// Nivel del bloque publicado más recientemente (el que suena ahora).
+    pub fn latest(&self) -> Option<f64> {
+        if !self.is_active() {
+            return None;
+        }
+        self.slots
+            .iter()
+            .filter_map(|slot| unpack(slot.load(Ordering::Relaxed)))
+            .max_by_key(|(at, _)| *at)
+            .map(|(_, level)| level)
+    }
 }
 
 /// Ajustes del umbral adaptativo.
@@ -167,10 +178,10 @@ pub struct AdaptiveSettings {
     pub max_coupling: f64,
     /// Por debajo de esta referencia no se puede medir el acople.
     pub min_reference: f64,
+    /// Los primeros bloques de la frase aún no traen el eco del altavoz.
+    pub learn_delay_secs: f64,
     /// Solo se aprende al principio de la frase: allí casi seguro hay solo eco.
     pub learn_secs: f64,
-    pub percentile: f64,
-    pub samples: usize,
 }
 
 impl Default for AdaptiveSettings {
@@ -183,9 +194,8 @@ impl Default for AdaptiveSettings {
             min_coupling: 0.05,
             max_coupling: 1.5,
             min_reference: 0.003,
+            learn_delay_secs: 0.2,
             learn_secs: 0.6,
-            percentile: 90.0,
-            samples: 60,
         }
     }
 }
@@ -205,7 +215,10 @@ pub struct BargeSummary {
 pub struct AdaptiveBargeIn {
     settings: AdaptiveSettings,
     coupling: f64,
-    ratios: Vec<f64>,
+    /// `(mic, referencia)` por bloque, para emparejar el eco con su retardo.
+    history: VecDeque<(f64, f64)>,
+    /// Cocientes `mic/ref` por retardo durante la ventana de aprendizaje.
+    learn: Vec<Vec<f64>>,
     phrase: u64,
     age_secs: f64,
     blocks: usize,
@@ -226,7 +239,8 @@ impl AdaptiveBargeIn {
         Self {
             coupling: settings.initial_coupling,
             settings,
-            ratios: Vec::with_capacity(settings.samples),
+            history: VecDeque::with_capacity(HISTORY),
+            learn: vec![Vec::new(); MAX_LAG - MIN_LAG + 1],
             phrase: 0,
             age_secs: 0.0,
             blocks: 0,
@@ -247,26 +261,43 @@ impl AdaptiveBargeIn {
             return false;
         }
         self.phrase = phrase;
-        self.ratios.clear();
+        self.history.clear();
+        for ratios in &mut self.learn {
+            ratios.clear();
+        }
         self.age_secs = 0.0;
         true
     }
 
     /// Umbral de este bloque; aprende el acople con los bloques de solo eco.
-    pub fn threshold(&mut self, level: f64, reference: Option<f64>, noise: f64) -> f64 {
+    ///
+    /// `reference` es el pico de la ventana (lo que el micrófono pudo oír) y
+    /// `current` el bloque que suena ahora, para emparejar el eco con su
+    /// retardo: un bloque flojo tras un pico no es un acople bajo.
+    pub fn threshold(
+        &mut self,
+        level: f64,
+        reference: Option<f64>,
+        current: Option<f64>,
+        noise: f64,
+    ) -> f64 {
+        if self.age_secs > self.settings.learn_secs {
+            self.commit_learning();
+        }
         let echo_level = reference.unwrap_or(0.0);
         let echo = echo_level * self.coupling;
         let floor = noise.max(0.0) * self.settings.noise_margin;
         let threshold = (echo * self.settings.echo_margin)
             .max(floor)
             .max(self.settings.min_threshold);
-        if let Some(reference) = reference {
-            if reference >= self.settings.min_reference
-                && self.age_secs <= self.settings.learn_secs
-                && level <= threshold
-            {
-                self.learn(level / reference);
-            }
+        let now_reference = current.unwrap_or(0.0);
+        self.push_history(level, now_reference);
+        if now_reference >= self.settings.min_reference
+            && self.age_secs >= self.settings.learn_delay_secs
+            && self.age_secs <= self.settings.learn_secs
+            && level <= threshold
+        {
+            self.learn_lags(level);
         }
         self.age_secs += CHUNK_SECS;
         self.blocks += 1;
@@ -300,33 +331,60 @@ impl AdaptiveBargeIn {
         Some(summary)
     }
 
-    fn learn(&mut self, ratio: f64) {
-        if !ratio.is_finite() || ratio <= 0.0 || ratio > self.settings.max_coupling {
+    fn push_history(&mut self, level: f64, reference: f64) {
+        if self.history.len() == HISTORY {
+            self.history.pop_front();
+        }
+        self.history.push_back((level, reference));
+    }
+
+    /// Guarda `mic/ref` para cada retardo posible; la voz sube el cociente de
+    /// algunos bloques, y la mediana de la frase lo descarta.
+    fn learn_lags(&mut self, level: f64) {
+        for (slot, lag) in self.learn.iter_mut().zip(MIN_LAG..=MAX_LAG) {
+            let Some((_, reference)) = self.history.iter().rev().nth(lag) else {
+                continue;
+            };
+            if *reference < self.settings.min_reference {
+                continue;
+            }
+            let ratio = level / reference;
+            if ratio.is_finite() && ratio > 0.0 {
+                slot.push(ratio);
+            }
+        }
+    }
+
+    /// Cierra la ventana de aprendizaje: el acople mediano, con el retardo que
+    /// mejor encaja. Sin muestras, conserva el acople anterior.
+    fn commit_learning(&mut self) {
+        let mut medians: Vec<f64> = self
+            .learn
+            .iter()
+            .filter(|ratios| ratios.len() >= 3)
+            .map(|ratios| median(ratios))
+            .collect();
+        for ratios in &mut self.learn {
+            ratios.clear();
+        }
+        if medians.is_empty() {
             return;
         }
-        if self.ratios.len() >= self.settings.samples {
-            self.ratios.remove(0);
-        }
-        self.ratios.push(ratio);
-        let high = percentile(&self.ratios, self.settings.percentile);
-        self.coupling = high.clamp(self.settings.min_coupling, self.settings.max_coupling);
+        medians.sort_by(f64::total_cmp);
+        let coupling = medians[medians.len() / 2];
+        self.coupling = coupling.clamp(self.settings.min_coupling, self.settings.max_coupling);
     }
 }
 
-/// `np.percentile(values, q)` con interpolación lineal.
-fn percentile(values: &[f64], q: f64) -> f64 {
-    if values.is_empty() {
-        return 0.0;
-    }
+/// Mediana con interpolación lineal (como `np.median`).
+fn median(values: &[f64]) -> f64 {
     let mut sorted = values.to_vec();
     sorted.sort_by(f64::total_cmp);
-    let position = (sorted.len() - 1) as f64 * q / 100.0;
-    let low = position.floor();
-    let index = low as usize;
-    let fraction = position - low;
-    match sorted.get(index + 1) {
-        Some(high) => sorted[index] + fraction * (high - sorted[index]),
-        None => sorted[index],
+    let middle = sorted.len() / 2;
+    if sorted.len().is_multiple_of(2) {
+        (sorted[middle - 1] + sorted[middle]) / 2.0
+    } else {
+        sorted[middle]
     }
 }
 

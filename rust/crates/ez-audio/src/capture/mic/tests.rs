@@ -186,19 +186,21 @@ fn fired(events: &[CaptureEvent]) -> bool {
 
 #[test]
 fn adaptive_ignores_the_echo_of_the_assistant() {
-    let reference = Arc::new(PlaybackReference::new());
     let settings = adaptive_settings();
-    let mut pipeline = adaptive_pipeline(&settings, &reference);
-    reference.begin();
-    let mut barged = false;
-    for block in 0..60 {
-        let reference_level = 0.004 + 0.002 * f64::from(block % 10) / 10.0;
-        reference.publish(reference_level);
-        let level = reference_level * 0.8;
-        barged |= fired(&pipeline.feed(&settings, &tone(level), level, true, false));
+    for coupling in [0.3, 0.5, 0.8] {
+        let reference = Arc::new(PlaybackReference::new());
+        let mut pipeline = adaptive_pipeline(&settings, &reference);
+        reference.begin();
+        let mut barged = false;
+        for block in 0..60 {
+            let reference_level = 0.004 + 0.002 * f64::from(block % 10) / 10.0;
+            reference.publish(reference_level);
+            let level = reference_level * coupling;
+            barged |= fired(&pipeline.feed(&settings, &tone(level), level, true, false));
+        }
+        reference.end();
+        assert!(!barged, "solo eco (acople {coupling}) no interrumpe");
     }
-    reference.end();
-    assert!(!barged, "solo eco (acople 0,8) no interrumpe");
 }
 
 #[test]
@@ -251,13 +253,17 @@ fn short_clicks_and_steady_noise_do_not_interrupt() {
     let reference = Arc::new(PlaybackReference::new());
     let settings = adaptive_settings();
     let mut pipeline = adaptive_pipeline(&settings, &reference);
+    // La sala ya se midió mientras la app escuchaba (antes de hablar).
+    for _ in 0..25 {
+        pipeline.feed(&settings, &tone(0.005), 0.005, false, false);
+    }
     reference.begin();
     let mut barged = false;
     // Dos golpes cortos por encima de cualquier umbral.
     for _ in 0..2 {
         barged |= fired(&pipeline.feed(&settings, &tone(0.2), 0.2, true, false));
     }
-    // Ruido constante que sube el piso: el umbral lo sigue, no hay corte.
+    // Ruido constante que el umbral ya contempla: no hay corte.
     for _ in 0..40 {
         reference.publish(0.004);
         barged |= fired(&pipeline.feed(&settings, &tone(0.005), 0.005, true, false));

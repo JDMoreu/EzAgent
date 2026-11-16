@@ -210,18 +210,20 @@ impl CapturePipeline {
             self.finish_barge_phrase();
             return fixed;
         }
-        let Some(reference) = self.reference.as_ref() else {
-            return fixed;
-        };
-        let Some(peak) = reference.peak_in_window(REFERENCE_WINDOW_SECS) else {
+        let sampled = self.reference.as_ref().and_then(|reference| {
+            reference
+                .peak_in_window(REFERENCE_WINDOW_SECS)
+                .map(|peak| (peak, reference.latest().unwrap_or(peak), reference.phrase()))
+        });
+        let Some((peak, current, phrase)) = sampled else {
             self.finish_barge_phrase();
             return fixed;
         };
-        if self.adaptive.observe_phrase(reference.phrase()) {
+        if self.adaptive.observe_phrase(phrase) {
             self.finish_barge_phrase();
         }
         self.adaptive
-            .threshold(level, Some(peak), self.segmenter.noise)
+            .threshold(level, Some(peak), Some(current), self.segmenter.noise)
     }
 
     /// Cierra la frase del TTS y deja sus cifras en el log (afinado real).
