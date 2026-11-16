@@ -56,6 +56,9 @@ fn shows_permanent_grant(screen: &str) -> bool {
 /// S3 confirma la aprobación: el diálogo desapareció y no quedó una concesión
 /// permanente. Devuelve el motivo del fallo si no se cumple.
 pub fn approval_granted(screen: &str) -> Result<(), &'static str> {
+    if screen_fingerprint(screen).is_empty() {
+        return Err("no pude leer la pantalla después de aprobar");
+    }
     if classify(screen).kind != DialogKind::None {
         return Err("el diálogo de permiso sigue en pantalla");
     }

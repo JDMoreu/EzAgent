@@ -249,6 +249,8 @@ fn s1_and_s2_must_match_and_s3_must_be_clean() {
     assert!(!same_dialog(before, " Bash command\n  npm test\n"));
     let idle = "▐▛███▛█ Claude Code v2.1.319\n❯\n⏵⏵ auto mode on";
     assert_eq!(Ok(()), approval_granted(idle));
+    assert!(approval_granted("").is_err());
+    assert!(approval_granted("   \n\n").is_err());
     assert!(approval_granted(before).is_err());
     assert!(approval_granted("✓ Always allow npm test from now on").is_err());
     assert!(approval_granted("✓ Allowed once\n❯").is_ok());
