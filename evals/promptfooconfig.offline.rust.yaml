@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+# El mismo contrato del prompt y las herramientas que promptfooconfig.offline.yaml,
+# pero con el binario Rust (ezagent-voice eval --mode context). No llama a ningún
+# modelo: corre sin red ni clave, así que cabe en CI y se compara caso por caso
+# con la corrida de Python.
+description: "EzAgent · contrato del prompt y las herramientas (offline, Rust)"
+
+prompts:
+  - "{{user}}"
+
+providers:
+  - id: file://provider_rust.py:call_api
+    label: ezagent-contexto-rust
+    config:
+      mode: context
+
+tests:
+  - file://tests/contract.yaml
+
+evaluateOptions:
+  maxConcurrency: 4
+  cache: false

@@ -7,6 +7,7 @@ pub mod chat;
 pub mod chat_wiring;
 pub mod core;
 pub mod demo;
+pub mod eval;
 pub mod events;
 pub mod live;
 pub mod main;

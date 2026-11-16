@@ -44,6 +44,10 @@ pub fn run() -> i32 {
 
 /// `main()` con los argumentos ya separados (pruebas incluidas).
 pub fn run_with(argv: &[String]) -> i32 {
+    // `eval` no abre ventanas ni micrófono: se atiende antes que nada.
+    if let Some(code) = super::eval::maybe_run(argv) {
+        return code;
+    }
     // Antes de crear cualquier ventana Win32, como el Python.
     ez_hud::win::dpi::enable_dpi_awareness();
     let prog = argv.first().map_or_else(
