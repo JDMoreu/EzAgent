@@ -1,0 +1,18 @@
+ ! The fixture has no more to sa +
+
+  ┃
+  ┃  Create a file named agent-signals-test.txt that holds the word hello.
+  ┃
+
+  ┃
+  ┃  ⠋ touch agent-signals-test.txt
+  ┃
+
+  ┃
+  ┃  △ Permission required
+  ┃
+  ┃  $ touch agent-signals-test.txt
+  ┃
+  ┃
+  ┃   Allow once   Always allow   Reject                                 ctrl+f fullscreen  ⇆ select  enter confirm
+  ┃
