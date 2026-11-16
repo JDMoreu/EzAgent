@@ -359,10 +359,13 @@ impl Supervisor {
     /// activarlo: sus miembros no reciben los argumentos que saltan permisos y
     /// su recuperación no pregunta.
     pub fn mark_autonomous(&self, swarm: &str) {
-        self.autonomous
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .insert(swarm.to_string());
+        {
+            let mut known = self
+                .autonomous
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            known.insert(swarm.to_string());
+        }
         self.recovery.mark_autonomous(swarm);
     }
 

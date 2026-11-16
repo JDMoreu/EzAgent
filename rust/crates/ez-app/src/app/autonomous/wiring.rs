@@ -15,12 +15,8 @@ use crate::app::core::VoiceApp;
 impl VoiceApp {
     /// El enjambre del modo con equipo, si la app lo montó (10.18).
     fn team_swarm(&self) -> Option<Arc<dyn TeamSwarm>> {
-        self.inner
-            .agents
-            .swarm
-            .lock()
-            .clone()
-            .map(|stack| Arc::new(StackSwarm::new(stack)) as Arc<dyn TeamSwarm>)
+        let stack = self.inner.agents.swarm.lock().clone();
+        stack.map(|stack| Arc::new(StackSwarm::new(stack)) as Arc<dyn TeamSwarm>)
     }
 
     /// Crea el bucle y, en producción, lo instala antes del runtime.

@@ -431,7 +431,7 @@ fn autonomous_start_marks_the_swarm_before_it_is_active() {
 
 #[test]
 fn a_fix_task_carries_its_note_and_reopens_a_finished_board() {
-    let (service, _board, swarm, _seats) = swarm_service();
+    let (service, _board, swarm, seats) = swarm_service();
     service
         .store
         .set_status(&swarm, "done")
@@ -462,5 +462,19 @@ fn a_fix_task_carries_its_note_and_reopens_a_finished_board() {
             .unwrap_or_else(|error| panic!("{error}"))
             .map(|info| info.status),
         Some("active".to_string())
+    );
+    // El miembro ve la nota al tomar la tarea (es su cuerpo).
+    let bo = token(&seats, "bo");
+    service
+        .handle(&bo, &args(&["next"]))
+        .unwrap_or_else(|error| panic!("{error}"));
+    let reply = service
+        .handle(&bo, &args(&["done", "listo"]))
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(reply.text.contains("Corregir hallazgo 1"), "{}", reply.text);
+    assert!(
+        reply.text.contains("C:/t/compartido/correccion-1.md"),
+        "{}",
+        reply.text
     );
 }
