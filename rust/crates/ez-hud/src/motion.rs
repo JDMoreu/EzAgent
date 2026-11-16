@@ -357,6 +357,46 @@ mod tests {
     }
 
     #[test]
+    fn the_trajectory_does_not_depend_on_the_frame_rate() {
+        for damping in [22.0, 40.0, 55.0] {
+            let mut reference = Spring::new(0.0, 400.0, damping);
+            reference.t = 1.0;
+            reference.step(0.5, false);
+            for fps in [30, 60, 144] {
+                let mut sampled = Spring::new(0.0, 400.0, damping);
+                sampled.t = 1.0;
+                for _ in 0..fps / 2 {
+                    sampled.step(1.0 / f64::from(fps), false);
+                }
+                assert!(
+                    (sampled.x - reference.x).abs() < 1e-10,
+                    "posición {fps} fps, c={damping}"
+                );
+                assert!(
+                    (sampled.v - reference.v).abs() < 1e-10,
+                    "velocidad {fps} fps, c={damping}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn reversing_keeps_position_and_velocity() {
+        let mut spring = Spring::new(0.0, SPRING_IN.0, SPRING_IN.1);
+        spring.t = 1.0;
+        spring.step(0.08, false);
+        let (position, velocity) = (spring.x, spring.v);
+        spring.t = 0.0;
+        assert_eq!(spring.step(0.0, false), position);
+        assert_eq!(spring.v, velocity);
+        spring.step(0.001, false);
+        assert!((spring.x - position).abs() < 0.01);
+        spring.step(10.0, false);
+        assert!(spring.settled());
+        assert!(spring.x.abs() < 1e-8);
+    }
+
+    #[test]
     fn fade_is_linear_and_stops_on_target() {
         let mut spring = Spring::new(0.0, SPRING_IN.0, SPRING_IN.1);
         spring.t = 1.0;

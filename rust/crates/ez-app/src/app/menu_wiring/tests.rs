@@ -323,6 +323,31 @@ fn live_speed_changes_memory_only() {
 }
 
 #[test]
+fn appearance_changes_are_applied_but_not_written_until_save() {
+    let fixture = Fixture::new();
+    fixture
+        .app
+        .apply_instant_setting("ui_scale", &ConfigValue::Float(1.4), false, false);
+    assert_eq!(
+        fixture.app.config().get("ui_scale").and_then(Value::as_f64),
+        Some(1.4)
+    );
+    assert!((fixture.app.hud().bar_scale() - 1.4).abs() < 1e-9);
+    assert!(!fixture.config_file.exists());
+    // Quien lo aplica desde fuera del menú sigue escribiendo en el acto.
+    fixture
+        .app
+        .apply_instant_setting("ui_scale", &ConfigValue::Float(1.2), true, true);
+    assert_eq!(
+        fixture
+            .config_json()
+            .get("ui_scale")
+            .and_then(Value::as_f64),
+        Some(1.2)
+    );
+}
+
+#[test]
 fn live_voice_changes_the_speaker() {
     let fixture = Fixture::new();
     fixture

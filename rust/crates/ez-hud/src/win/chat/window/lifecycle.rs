@@ -243,3 +243,19 @@ impl Drop for ChatPanel {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_window_sits_around_the_panel_with_the_shadow_margin() {
+        let panel = (100.4, 200.6, 500.0, 800.0);
+        assert_eq!(window_rect(panel, 12), (88, 189, 424, 623));
+        let form = form_around((500.0, 500.0), 1.0, (100.0, 36.0));
+        assert_eq!(form, (450.0, 482.0, 550.0, 518.0));
+        let scaled = form_around((500.0, 500.0), 1.5, (100.0, 36.0));
+        assert_eq!(scaled.2 - scaled.0, 150.0);
+        assert_eq!(scaled.3 - scaled.1, 54.0);
+    }
+}

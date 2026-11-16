@@ -118,6 +118,10 @@ mod tests {
         assert_eq!(guard.feed("hola "), "hola ");
         assert_eq!(guard.feed("mundo"), "mundo");
         assert!(!guard.tripped);
+        let mut guard = ToolMarkupGuard::new();
+        let text = "Hola, ¿qué tal? a < b y <b>negrita</b>.";
+        assert_eq!(guard.feed(text), text);
+        assert!(!guard.tripped);
     }
 
     #[test]
@@ -131,9 +135,43 @@ mod tests {
     }
 
     #[test]
+    fn a_marker_split_in_any_chunk_size_is_cut_where_it_starts() {
+        let dsml = "<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"delegate_to_agent\">";
+        let text = format!("Listo. {dsml}<｜DSML｜ parameter>x");
+        for size in [1, 2, 3, 5, 8] {
+            let mut guard = ToolMarkupGuard::new();
+            let mut out = String::new();
+            let mut rest = text.as_str();
+            while !rest.is_empty() {
+                let end = rest
+                    .char_indices()
+                    .nth(size)
+                    .map_or(rest.len(), |(offset, _)| offset);
+                out.push_str(&guard.feed(&rest[..end]));
+                rest = &rest[end..];
+            }
+            out.push_str(&guard.flush());
+            assert_eq!(out, "Listo. ", "tamaño {size}");
+            assert!(guard.tripped, "tamaño {size}");
+            assert!(!out.contains("DSML") && !out.contains("invoke"));
+        }
+    }
+
+    #[test]
+    fn the_notice_is_plain_spanish_and_claims_nothing_was_done() {
+        assert!(TOOL_MARKUP_NOTICE.contains("No se hizo nada"));
+        assert!(!TOOL_MARKUP_NOTICE.contains("DSML"));
+    }
+
+    #[test]
     fn releases_false_alarms_on_flush() {
         let mut guard = ToolMarkupGuard::new();
         assert_eq!(guard.feed("a <to"), "a ");
         assert_eq!(guard.flush(), "<to");
+        let mut guard = ToolMarkupGuard::new();
+        assert_eq!(guard.feed("Mira <"), "Mira ");
+        assert_eq!(guard.feed("｜"), "");
+        assert_eq!(guard.flush(), "<｜");
+        assert!(!guard.tripped);
     }
 }

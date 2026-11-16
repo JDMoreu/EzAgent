@@ -131,6 +131,74 @@ fn a_closed_panel_swallows_pointer_and_keys() {
     assert!(panel.render().bgra.iter().all(|byte| *byte == 0));
 }
 
+/// Panel with a view already installed, in the given animation state.
+fn panel_with_view(state: AnimState, view: ChatView) -> (Arc<ChatPanel>, Arc<FakeUi>) {
+    let ui = Arc::new(FakeUi::default());
+    let panel = Arc::new(ChatPanel::new(
+        Arc::clone(&ui) as Arc<dyn ChatUi>,
+        Arc::new(Recorder::default()),
+    ));
+    {
+        let mut inner = panel.state.lock();
+        inner.view = Some(SendView(Box::new(view)));
+        inner.anim = Anim {
+            state,
+            t0: 0.0,
+            p: if state == AnimState::Open { 1.0 } else { 0.0 },
+        };
+        inner.last = 0.0;
+    }
+    let window = Arc::new(ChatWindow::new(&panel, 0, 0, 120, 120));
+    *panel.window.lock() = Some(Arc::clone(&window));
+    (panel, ui)
+}
+
+#[test]
+fn input_is_swallowed_while_the_panel_animates() {
+    let (panel, _ui) = panel_with_view(AnimState::Opening, empty_view());
+    assert!(panel.pointer_down(60, 60));
+    assert!(panel.key(13, false));
+    assert!(panel.char("a"));
+    assert!(panel.paste("b"));
+    let text = panel
+        .state
+        .lock()
+        .view
+        .as_ref()
+        .map(|view| view.input.text().to_string())
+        .unwrap_or_default();
+    assert!(text.is_empty());
+}
+
+#[test]
+fn the_form_hides_only_after_the_first_painted_frame() {
+    let (panel, ui) = panel_with_view(AnimState::Opening, sample_view());
+    assert!(!*ui.form_hidden.lock());
+    let _ = panel.render();
+    assert!(*ui.form_hidden.lock());
+}
+
+#[test]
+fn the_repaint_asks_for_sixty_fps_only_while_something_moves() {
+    let mut view = empty_view();
+    assert_eq!(
+        frame_interval(AnimState::Opening, &mut view, false, 0.0, 0.0),
+        1.0 / 60.0
+    );
+    assert_eq!(
+        frame_interval(AnimState::Open, &mut view, false, 0.0, 0.0),
+        1.0 / 30.0
+    );
+    assert_eq!(
+        frame_interval(AnimState::Open, &mut view, true, 0.0, 0.0),
+        1.0 / 60.0
+    );
+    assert_eq!(
+        frame_interval(AnimState::Open, &mut view, false, 1.0, 0.0),
+        1.0 / 60.0
+    );
+}
+
 #[test]
 fn an_empty_zone_lets_the_window_drag() {
     let (panel, _) = open_panel(empty_view());

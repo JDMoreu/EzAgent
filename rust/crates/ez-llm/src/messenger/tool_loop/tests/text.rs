@@ -113,6 +113,33 @@ fn a_tool_without_runtime_is_not_executed() {
 }
 
 #[test]
+fn without_a_runtime_the_chat_prompt_does_not_stick_to_the_next_turn() {
+    let (messenger, client) = messenger_with(
+        vec![
+            Script::Chunks(vec![text("Hola.")]),
+            Script::Chunks(vec![text("Adiós.")]),
+        ],
+        None,
+        &[],
+    );
+    let _ = messenger
+        .ask_stream("hola", AskMode::Chat)
+        .collect::<Result<String, _>>()
+        .expect("chat");
+    say(&messenger, "adiós");
+    let requests = requests(&client);
+    let first = requests[0]["messages"][0]["content"]
+        .as_str()
+        .expect("prompt");
+    assert!(first.contains(CHAT_MODE_PROMPT));
+    let second = requests[1]["messages"][0]["content"]
+        .as_str()
+        .expect("prompt");
+    assert!(!second.contains(CHAT_MODE_PROMPT));
+    assert!(second.contains("núcleo agéntico no está disponible"));
+}
+
+#[test]
 fn a_runtime_that_fails_to_begin_degrades_to_conversation() {
     let runtime = FakeRuntime::new();
     runtime.state().begin_error = Some(RuntimeFailure::new("RuntimeError", "memoria corrupta"));

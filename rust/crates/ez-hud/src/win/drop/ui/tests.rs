@@ -303,6 +303,19 @@ fn activity_becomes_the_orbit_in_priority_order() {
 }
 
 #[test]
+fn set_activity_keeps_the_snapshot_the_peek_shows() {
+    let harness = Harness::new();
+    let rows = vec![
+        item("t1", "working", 0.0, false, true),
+        item("t2", "needs_you", 1.0, true, false),
+    ];
+    harness.ui.set_activity(rows.clone());
+    assert_eq!(*harness.ui.activity.read(), rows);
+    harness.ui.set_activity(Vec::new());
+    assert!(harness.ui.activity.read().is_empty());
+}
+
+#[test]
 fn the_autonomous_mark_is_never_cut_from_a_full_orbit() {
     let harness = Harness::new();
     let mut rows: Vec<PeekItem> = (0..6)
