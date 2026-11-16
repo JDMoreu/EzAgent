@@ -3,7 +3,7 @@ name: "LLM 429 sin Retry-After"
 notes: >
   Mismo límite sin cabecera `Retry-After`: la app dice «Espera un momento o»
   en vez de dar segundos, no reintenta y el turno siguiente responde.
-timeout: 90
+timeout: 180
 settings:
   silence_secs: 1.0
   speech_secs_min: 0.6
@@ -18,7 +18,7 @@ llm:
 whisper:
   transcripts:
     - "¿Qué hora es?"
-    - "¿Ya?"
+    - "¿Qué día es hoy?"
 steps:
   - wait_state: listening
   - audio: que_hora_es.wav

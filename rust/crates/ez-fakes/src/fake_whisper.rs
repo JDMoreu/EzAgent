@@ -289,7 +289,11 @@ fn apply_fault(request: Request, fault: &Fault) {
         info!("fake-whisper: muere a mitad de la petición (corte simulado)");
         std::process::exit(0);
     }
-    let status = if fault.status >= 400 { fault.status } else { 500 };
+    let status = if fault.status >= 400 {
+        fault.status
+    } else {
+        500
+    };
     let message = if fault.error.trim().is_empty() {
         "whisper-server falló".to_string()
     } else {

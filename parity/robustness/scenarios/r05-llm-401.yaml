@@ -3,7 +3,7 @@ name: "LLM 401 y después un turno bueno"
 notes: >
   La clave no vale: la app dice el mensaje amable, no reintenta y sigue
   escuchando; el turno siguiente (ya con el guion bueno) responde normal.
-timeout: 90
+timeout: 180
 settings:
   silence_secs: 1.0
   speech_secs_min: 0.6

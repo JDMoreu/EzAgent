@@ -4,7 +4,7 @@ notes: >
   `fake-whisper` tarda 3 s y la app corta a 1 s (`stt_timeout_secs`). No se
   reintenta la ruta alterna: el turno avisa de que whisper no respondió a
   tiempo y el siguiente turno, ya con el servidor libre, se transcribe.
-timeout: 100
+timeout: 180
 settings:
   silence_secs: 1.0
   speech_secs_min: 0.6

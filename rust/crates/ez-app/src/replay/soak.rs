@@ -13,13 +13,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use ez_gfx::Image;
+use ez_hud::model::drop::{DropModel, Update};
 use ez_hud::paint::chat::render::{render_message, RenderOptions as ChatOptions};
 use ez_hud::paint::chat::{Block, ChatHost, FileInfo, Paragraph, Span};
 use ez_hud::paint::drop::{render_model, RenderOptions as BarOptions};
 use ez_hud::paint::peek::{paint_rows, NoIcons, PeekItem};
-use ez_hud::model::drop::{DropModel, Update};
 use ez_hud::tokens::palette;
-use ez_gfx::Image;
 
 use super::run_path;
 use super::scenario::Paths;
@@ -110,7 +110,7 @@ fn paint_loop(stop: &AtomicBool) {
             dt: FRAME_SECS,
             pose,
             rms: 0.3,
-            hover: frames % 7 == 0,
+            hover: frames.is_multiple_of(7),
             in_call: true,
             ..Update::default()
         };
@@ -135,7 +135,7 @@ fn paint_loop(stop: &AtomicBool) {
                 let _ = paint_rows(&items, 0, 240, 150, 1.0, "light", None, now, &NoIcons);
             }
             _ => {
-                let text = if frames % 2 == 0 {
+                let text = if frames.is_multiple_of(2) {
                     "Hola **mundo**, listo."
                 } else {
                     "Reviso el *estado* de la tarea.\n\nY vuelvo a pintar."
@@ -150,7 +150,10 @@ fn paint_loop(stop: &AtomicBool) {
         now += FRAME_SECS;
         std::thread::sleep(Duration::from_secs_f64(FRAME_SECS));
     }
-    let _ = writeln!(std::io::stdout(), "soak: HUD fuera de pantalla {frames} fotogramas");
+    let _ = writeln!(
+        std::io::stdout(),
+        "soak: HUD fuera de pantalla {frames} fotogramas"
+    );
 }
 
 /// Filas fijas de la vista rápida.

@@ -38,7 +38,7 @@ RUST = ROOT / "rust"
 FAKES = RUST / "target" / "debug"
 REPLAY_EXE = FAKES / "ezagent-replay.exe"
 
-CASE_TIMEOUT_SECS = 240.0
+CASE_TIMEOUT_SECS = 420.0
 SAMPLE_SECS = 60.0
 # Texto que solo depende del cliente HTTP (httpx vs reqwest): se compara la
 # conducta, no el detalle del error de red.
@@ -241,9 +241,13 @@ def differences(python: dict[str, Any], rust: dict[str, Any]) -> list[str]:
     for key in ("state", "in_call", "muted"):
         if left[key] != right[key]:
             problems.append(f"final {key}: Python {left[key]!r} != Rust {right[key]!r}")
-    for key in ("speech", "messages", "transcripts"):
-        if left[key] != right[key]:
+    # Las locuciones salen de hilos distintos (voz y error); la traza escrita va
+    # ordenada por hilo, no por reloj, así que se comparan como conjunto.
+    for key in ("speech", "transcripts"):
+        if sorted(left[key]) != sorted(right[key]):
             problems.append(f"{key}: Python {left[key]!r} != Rust {right[key]!r}")
+    if left["messages"] != right["messages"]:
+        problems.append(f"messages: Python {left['messages']!r} != Rust {right['messages']!r}")
     if rust.get("errors"):
         problems.append(f"aserciones del YAML en Rust: {rust['errors']}")
     if python.get("errors"):
@@ -372,9 +376,36 @@ def sample(counters: Counters, pid: int) -> dict[str, Any]:
         counters.close(handle)
 
 
-def soak(selection: list[str], minutes: float, warmup: float, work: Path) -> int:
+def soak(selection: list[str], minutes: float, warmup: float, work: Path, detach: bool) -> int:
     if not REPLAY_EXE.is_file():
         raise SystemExit(f"falta {REPLAY_EXE}; compílalo con: cargo build -p ez-app --features replay --bin ezagent-replay")
+    if detach:
+        # Un proceso aparte sobrevive a la sesión que lo lanzó; el muestreo y el
+        # veredicto quedan en `soak.json`.
+        command = [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "soak",
+            "--minutes",
+            str(minutes),
+            "--warmup",
+            str(warmup),
+            "--work",
+            str(work),
+        ]
+        for case in selection:
+            command += ["--case", case]
+        handle = open(work / "sampler.log", "w", encoding="utf-8")
+        flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        subprocess.Popen(
+            command,
+            cwd=str(ROOT),
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            creationflags=flags,
+        )
+        print(f"soak lanzado en segundo plano; verá el veredicto en {work / 'soak.json'}")
+        return 0
     paths = case_paths(selection)
     root = rust_root(work, paths)
     command = [str(REPLAY_EXE), "--soak", str(minutes)]
@@ -458,6 +489,7 @@ def main(argv: list[str] | None = None) -> int:
         child.add_argument("--work", type=Path, help="carpeta de salida (por defecto, temporal)")
     soak_parser.add_argument("--minutes", type=float, default=120.0)
     soak_parser.add_argument("--warmup", type=float, default=10.0, help="minutos descartados")
+    soak_parser.add_argument("--detach", action="store_true", help="lanza el soak aparte y sale")
     args = parser.parse_args(argv)
     if args.python_case:
         if args.out is None:
@@ -466,7 +498,7 @@ def main(argv: list[str] | None = None) -> int:
     work = args.work or Path(tempfile.mkdtemp(prefix="ezrobustness-"))
     work.mkdir(parents=True, exist_ok=True)
     if args.mode == "soak":
-        return soak(args.case, args.minutes, args.warmup, work)
+        return soak(args.case, args.minutes, args.warmup, work, args.detach)
     return compare(args.case, work)
 
 

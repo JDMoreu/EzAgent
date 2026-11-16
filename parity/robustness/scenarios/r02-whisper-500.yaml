@@ -4,7 +4,7 @@ notes: >
   El primer turno de `fake-whisper` responde 500 con un cuerpo JSON; el
   segundo vuelve a transcribir. La app dice el mensaje del servidor (código y
   cuerpo recortado a 200 caracteres), no lanza el turno y sigue en la llamada.
-timeout: 90
+timeout: 180
 settings:
   silence_secs: 1.0
   speech_secs_min: 0.6

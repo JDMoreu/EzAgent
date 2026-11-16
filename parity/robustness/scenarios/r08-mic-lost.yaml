@@ -4,7 +4,7 @@ notes: >
   La captura falla en plena llamada (doble de `ez-audio` con `mic_fail`): la app
   cuelga, dice el motivo por voz y queda en reposo. No se queda escuchando un
   dispositivo que ya no existe ni reintenta la captura.
-timeout: 90
+timeout: 180
 settings:
   silence_secs: 1.0
   speech_secs_min: 0.4

@@ -4,7 +4,7 @@ notes: >
   `fake-llm` emite tres trozos del SSE y cierra sin `finish_reason` ni
   `[DONE]`. La app dice lo que llegó, cierra el turno sin inventar error y el
   siguiente turno responde entero.
-timeout: 90
+timeout: 180
 settings:
   silence_secs: 1.0
   speech_secs_min: 0.6

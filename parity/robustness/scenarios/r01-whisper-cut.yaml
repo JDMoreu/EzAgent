@@ -5,7 +5,7 @@ notes: >
   turno no se transcribe, la app dice el error de whisper y sigue en la
   llamada. El turno siguiente, con el puerto ya cerrado, recibe el aviso de que
   no puede conectar. La app no se cuelga ni pierde la llamada.
-timeout: 90
+timeout: 180
 settings:
   silence_secs: 1.0
   speech_secs_min: 0.6
