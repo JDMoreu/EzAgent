@@ -1,0 +1,4 @@
+{
+  "code": 0,
+  "stdout": "usage: ezagent-voice.exe [-h] [--config CONFIG] [--ask ASK] [--say SAY]\r\n                         [--list-agents] [--list-mics] [--demo-ui] [--mic MIC]\r\n                         [--write-config]\r\n\r\nEzAgent Voice — mensajero para Herdr\r\n\r\noptions:\r\n  -h, --help       show this help message and exit\r\n  --config CONFIG\r\n  --ask ASK        Pregunta única (sin micrófono) y sale\r\n  --say SAY        Dice un texto por Kokoro y sale\r\n  --list-agents\r\n  --list-mics\r\n  --demo-ui        Recorre los estados del HUD sin micrófono ni servidores\r\n  --mic MIC        Índice de micrófono\r\n  --write-config   Escribe voice.json con los valores actuales y sale\r\n"
+}

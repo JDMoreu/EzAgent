@@ -124,17 +124,20 @@ start "EzAgent Voice" "%RUST_EXE%"
 timeout /t 2 >nul
 exit /b 0
 
-rem Las mismas DLL que usa rust\run-dev.cmd, si el entorno de Python existe.
-rem DECISION: si falta .venv se avisa y se sigue; el stage instalado ya trae
-rem onnxruntime.dll y espeak-ng junto al ejecutable.
+rem Las DLL de la version Rust ya no salen del entorno de Python: viven en la
+rem carpeta de datos de la app (%LOCALAPPDATA%\EzAgent o EZAGENT_HOME) y las
+rem descarga "ezagent-voice downloads --all" (lo hace install).
+rem DECISION: si faltan se avisa y se sigue; la app lo explica al arrancar.
 :rust_env
-if not exist "%ROOT%.venv\Lib\site-packages\onnxruntime\capi\onnxruntime.dll" (
-    echo   Aviso: no encuentro onnxruntime.dll en .venv; ejecuta "uv sync".
-    exit /b 0
-)
-set "ORT_DYLIB_PATH=%ROOT%.venv\Lib\site-packages\onnxruntime\capi\onnxruntime.dll"
-set "EZAGENT_ESPEAK_LIBRARY=%ROOT%.venv\Lib\site-packages\espeakng_loader\espeak-ng.dll"
-set "EZAGENT_ESPEAK_DATA_PATH=%ROOT%.venv\Lib\site-packages\espeakng_loader\espeak-ng-data"
+set "EZ_DATA=%EZAGENT_HOME%"
+if not defined EZ_DATA set "EZ_DATA=%LOCALAPPDATA%\EzAgent"
+if not exist "%EZ_DATA%\onnxruntime\onnxruntime.dll" goto rust_env_missing
+if not exist "%EZ_DATA%\espeak-ng\espeak-ng.dll" goto rust_env_missing
+exit /b 0
+
+:rust_env_missing
+echo   Aviso: faltan ONNX Runtime o espeak-ng en %EZ_DATA%.
+echo   Ejecuta "EzAgent.bat install" para descargarlos.
 exit /b 0
 
 :ensure_venv
@@ -250,6 +253,15 @@ call :build_rust
 if errorlevel 1 (
     pause
     exit /b 1
+)
+if exist "%RUST_EXE%" (
+    echo.
+    echo   Descargando recursos de la version Rust (modelos, ONNX Runtime, espeak-ng)...
+    "%RUST_EXE%" downloads --all
+    if errorlevel 1 (
+        echo   Aviso: no se pudieron descargar todos los recursos.
+        echo   Revisa la conexion y vuelve a ejecutar "EzAgent.bat install".
+    )
 )
 pause
 exit /b 0

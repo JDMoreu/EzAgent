@@ -76,7 +76,9 @@ fn executable_dir() -> Option<PathBuf> {
 pub fn default_library_path() -> Option<PathBuf> {
     env_path("EZAGENT_ESPEAK_LIBRARY")
         .or_else(|| env_path("PHONEMIZER_ESPEAK_LIBRARY"))
-        .or_else(|| library_in(&[default_install_dir(), executable_dir()?]))
+        // DECISION: primero junto al ejecutable (el stage instalado) y después
+        // la carpeta de descargas, como la DLL de ONNX Runtime.
+        .or_else(|| library_in(&[executable_dir()?, default_install_dir()]))
 }
 
 /// Data directory (`phontab` inside) elegida por configuración o entorno.
@@ -84,8 +86,9 @@ pub fn default_data_path() -> Option<PathBuf> {
     env_path("EZAGENT_ESPEAK_DATA_PATH")
         .or_else(|| env_path("PHONEMIZER_ESPEAK_DATA_PATH"))
         .or_else(|| {
-            let mut folders = vec![default_install_dir()];
+            let mut folders = Vec::new();
             folders.extend(executable_dir());
+            folders.push(default_install_dir());
             folders
                 .into_iter()
                 .map(|folder| folder.join("espeak-ng-data"))
