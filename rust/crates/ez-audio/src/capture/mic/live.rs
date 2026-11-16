@@ -4,12 +4,13 @@
 //! el menú del HUD los cambia en vivo. Aquí viven en memoria compartida para
 //! que nadie tenga que retener el micrófono mientras dura la captura.
 
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
 
 use super::{MicCapture, VadSettings};
+use crate::barge_in::{BargeInMode, PlaybackReference};
 use crate::turn::SmartTurn;
 
 /// `f64` atómico (`f64::to_bits`) para leer un ajuste sin candado.
@@ -44,7 +45,10 @@ pub(super) struct Live {
     noise_multiplier: AtomicF64,
     barge_in_rms: AtomicF64,
     barge_in_secs: AtomicF64,
+    barge_in_mode: AtomicU8,
     turn_quick_secs: AtomicF64,
+    /// Envolvente de lo que suena en el altavoz; la pone la app al empezar.
+    playback: Mutex<Option<Arc<PlaybackReference>>>,
     /// Detector de fin de turno (Smart Turn); `None` = solo silencio.
     turn_detector: Mutex<Option<Arc<SmartTurn>>>,
     last_speech_end: Mutex<Option<f64>>,
@@ -67,7 +71,9 @@ impl Live {
             noise_multiplier: AtomicF64::new(settings.noise_multiplier),
             barge_in_rms: AtomicF64::new(settings.barge_in_rms),
             barge_in_secs: AtomicF64::new(settings.barge_in_secs),
+            barge_in_mode: AtomicU8::new(mode_id(settings.barge_in_mode)),
             turn_quick_secs: AtomicF64::new(settings.turn_quick_secs),
+            playback: Mutex::new(None),
             turn_detector: Mutex::new(None),
             last_speech_end: Mutex::new(None),
         }
@@ -83,8 +89,13 @@ impl Live {
             noise_multiplier: self.noise_multiplier.get(),
             barge_in_rms: self.barge_in_rms.get(),
             barge_in_secs: self.barge_in_secs.get(),
+            barge_in_mode: mode_of(self.barge_in_mode.load(Ordering::Relaxed)),
             turn_quick_secs: self.turn_quick_secs.get(),
         }
+    }
+
+    pub(super) fn playback_reference(&self) -> Option<Arc<PlaybackReference>> {
+        self.playback.lock().clone()
     }
 
     pub(super) fn turn_detector(&self) -> Option<Arc<SmartTurn>> {
@@ -94,6 +105,20 @@ impl Live {
 
 fn index_id(index: Option<usize>) -> i64 {
     index.map_or(-1, |value| value as i64)
+}
+
+fn mode_id(mode: BargeInMode) -> u8 {
+    match mode {
+        BargeInMode::Fixed => 0,
+        BargeInMode::Adaptive => 1,
+    }
+}
+
+fn mode_of(value: u8) -> BargeInMode {
+    match value {
+        1 => BargeInMode::Adaptive,
+        _ => BargeInMode::Fixed,
+    }
 }
 
 impl MicCapture {
@@ -212,6 +237,22 @@ impl MicCapture {
 
     pub fn set_barge_in_secs(&self, value: f64) {
         self.inner.live.barge_in_secs.set(value);
+    }
+
+    pub fn barge_in_mode(&self) -> BargeInMode {
+        mode_of(self.inner.live.barge_in_mode.load(Ordering::Relaxed))
+    }
+
+    pub fn set_barge_in_mode(&self, mode: BargeInMode) {
+        self.inner
+            .live
+            .barge_in_mode
+            .store(mode_id(mode), Ordering::Relaxed);
+    }
+
+    /// El altavoz publica aquí lo que suena; `None` deja el modo clásico.
+    pub fn set_playback_reference(&self, reference: Option<Arc<PlaybackReference>>) {
+        *self.inner.live.playback.lock() = reference;
     }
 
     pub fn turn_quick_secs(&self) -> f64 {

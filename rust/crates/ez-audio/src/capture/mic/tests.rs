@@ -141,3 +141,158 @@ fn the_turn_detector_is_read_on_every_probe() {
     assert!(mic.end_probe().is_some());
     assert!(mic.turn_detector().is_none());
 }
+
+/// Voz sintética: un tono plano del nivel pedido, 480 muestras por bloque.
+fn tone(level: f64) -> Vec<u8> {
+    let sample = (level.clamp(0.0, 1.0) * 32767.0) as i16;
+    sample.to_le_bytes().repeat(480)
+}
+
+fn adaptive_settings() -> VadSettings {
+    VadSettings {
+        silence_secs: 0.2,
+        min_speech_secs: 0.1,
+        barge_in_rms: 0.008,
+        barge_in_secs: 0.25,
+        barge_in_mode: BargeInMode::Adaptive,
+        ..VadSettings::default()
+    }
+}
+
+fn adaptive_pipeline(
+    settings: &VadSettings,
+    reference: &Arc<PlaybackReference>,
+) -> CapturePipeline {
+    CapturePipeline::with_reference(settings, 16_000, None, Some(Arc::clone(reference)))
+}
+
+fn fired(events: &[CaptureEvent]) -> bool {
+    events
+        .iter()
+        .any(|event| matches!(event, CaptureEvent::BargeIn(_)))
+}
+
+#[test]
+fn adaptive_ignores_the_echo_of_the_assistant() {
+    let reference = Arc::new(PlaybackReference::new());
+    let settings = adaptive_settings();
+    let mut pipeline = adaptive_pipeline(&settings, &reference);
+    reference.begin();
+    let mut barged = false;
+    for block in 0..60 {
+        let reference_level = 0.004 + 0.002 * f64::from(block % 10) / 10.0;
+        reference.publish(reference_level);
+        let level = reference_level * 0.8;
+        barged |= fired(&pipeline.feed(&settings, &tone(level), level, true, false));
+    }
+    reference.end();
+    assert!(!barged, "solo eco (acople 0,8) no interrumpe");
+}
+
+#[test]
+fn adaptive_hears_a_voice_below_the_fixed_threshold() {
+    let reference = Arc::new(PlaybackReference::new());
+    let settings = adaptive_settings();
+    let mut pipeline = adaptive_pipeline(&settings, &reference);
+    reference.begin();
+    let mut barge_at = None;
+    for block in 0..60 {
+        reference.publish(0.004);
+        // Eco de 0,002 más una voz moderada: 0,007 en total, por debajo de 0,008.
+        let voice = if block >= 10 { 0.005 } else { 0.0 };
+        let level = 0.002 + voice;
+        if fired(&pipeline.feed(&settings, &tone(level), level, true, false)) && barge_at.is_none()
+        {
+            barge_at = Some(block);
+        }
+    }
+    reference.end();
+    let block = barge_at.expect("la voz normal interrumpe");
+    assert!(
+        block <= 21,
+        "tras 0,3 s de voz ya debe cortar (bloque {block})"
+    );
+}
+
+#[test]
+fn fixed_mode_keeps_the_python_threshold() {
+    let reference = Arc::new(PlaybackReference::new());
+    let settings = VadSettings {
+        barge_in_mode: BargeInMode::Fixed,
+        ..adaptive_settings()
+    };
+    let mut pipeline = adaptive_pipeline(&settings, &reference);
+    reference.begin();
+    let mut barged = false;
+    for block in 0..60 {
+        reference.publish(0.004);
+        let voice = if block >= 10 { 0.005 } else { 0.0 };
+        let level = 0.002 + voice;
+        barged |= fired(&pipeline.feed(&settings, &tone(level), level, true, false));
+    }
+    reference.end();
+    assert!(!barged, "con umbral fijo 0,007 no alcanza");
+}
+
+#[test]
+fn short_clicks_and_steady_noise_do_not_interrupt() {
+    let reference = Arc::new(PlaybackReference::new());
+    let settings = adaptive_settings();
+    let mut pipeline = adaptive_pipeline(&settings, &reference);
+    reference.begin();
+    let mut barged = false;
+    // Dos golpes cortos por encima de cualquier umbral.
+    for _ in 0..2 {
+        barged |= fired(&pipeline.feed(&settings, &tone(0.2), 0.2, true, false));
+    }
+    // Ruido constante que sube el piso: el umbral lo sigue, no hay corte.
+    for _ in 0..40 {
+        reference.publish(0.004);
+        barged |= fired(&pipeline.feed(&settings, &tone(0.005), 0.005, true, false));
+    }
+    reference.end();
+    assert!(!barged);
+}
+
+#[test]
+fn after_a_barge_in_the_utterance_starts_at_its_first_word() {
+    let reference = Arc::new(PlaybackReference::new());
+    let settings = adaptive_settings();
+    let mut pipeline = adaptive_pipeline(&settings, &reference);
+    reference.begin();
+    let mut fed: Vec<Vec<u8>> = Vec::new();
+    // El eco no dispara y la voz empieza en el bloque 10.
+    for block in 0..60 {
+        reference.publish(0.004);
+        let voice = if block >= 10 { 0.005 } else { 0.0 };
+        let level = 0.002 + voice;
+        let chunk = tone(level);
+        fed.push(chunk.clone());
+        let events = pipeline.feed(&settings, &chunk, level, true, false);
+        if fired(&events) {
+            break;
+        }
+    }
+    let run = fed[fed.len() - 9..].to_vec();
+    assert_eq!(run.len(), 9, "la racha del barge-in son 9 bloques");
+    // El TTS se cortó: la app vuelve a escuchar y la frase sigue.
+    reference.end();
+    let mut utterance = None;
+    for block in 0..20 {
+        let level = if block < 6 { 0.006 } else { 0.0 };
+        let chunk = tone(level);
+        let events = pipeline.feed(&settings, &chunk, level, false, false);
+        if let Some(pcm) = events.iter().find_map(|event| match event {
+            CaptureEvent::Utterance(pcm) if !pcm.is_empty() => Some(pcm.clone()),
+            _ => None,
+        }) {
+            utterance = Some(pcm);
+            break;
+        }
+    }
+    let utterance = utterance.expect("hay frase");
+    assert!(
+        utterance.starts_with(&run[0]),
+        "la racha reinyectada abre la frase, sin perder el principio"
+    );
+}

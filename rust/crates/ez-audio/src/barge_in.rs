@@ -7,8 +7,8 @@
 mod adaptive;
 
 pub use adaptive::{
-    AdaptiveBargeIn, AdaptiveSettings, BargeInMode, BargeSummary, PlaybackReference, ReferenceLevel,
-    REFERENCE_WINDOW_SECS,
+    AdaptiveBargeIn, AdaptiveSettings, BargeInMode, BargeSummary, PlaybackReference,
+    ReferenceLevel, REFERENCE_WINDOW_SECS,
 };
 
 use crate::CHUNK_SECS;

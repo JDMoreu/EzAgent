@@ -194,6 +194,8 @@ impl Default for AdaptiveSettings {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BargeSummary {
     pub mic_max: f64,
+    /// Eco estimado: `acople × referencia`, el máximo de la frase.
+    pub echo_max: f64,
     pub coupling: f64,
     pub threshold: f64,
     pub barged: bool,
@@ -208,6 +210,7 @@ pub struct AdaptiveBargeIn {
     age_secs: f64,
     blocks: usize,
     mic_max: f64,
+    echo_max: f64,
     threshold_max: f64,
     barged: bool,
 }
@@ -228,6 +231,7 @@ impl AdaptiveBargeIn {
             age_secs: 0.0,
             blocks: 0,
             mic_max: 0.0,
+            echo_max: 0.0,
             threshold_max: 0.0,
             barged: false,
         }
@@ -250,9 +254,12 @@ impl AdaptiveBargeIn {
 
     /// Umbral de este bloque; aprende el acople con los bloques de solo eco.
     pub fn threshold(&mut self, level: f64, reference: Option<f64>, noise: f64) -> f64 {
-        let echo = reference.unwrap_or(0.0) * self.coupling * self.settings.echo_margin;
+        let echo_level = reference.unwrap_or(0.0);
+        let echo = echo_level * self.coupling;
         let floor = noise.max(0.0) * self.settings.noise_margin;
-        let threshold = echo.max(floor).max(self.settings.min_threshold);
+        let threshold = (echo * self.settings.echo_margin)
+            .max(floor)
+            .max(self.settings.min_threshold);
         if let Some(reference) = reference {
             if reference >= self.settings.min_reference
                 && self.age_secs <= self.settings.learn_secs
@@ -264,6 +271,7 @@ impl AdaptiveBargeIn {
         self.age_secs += CHUNK_SECS;
         self.blocks += 1;
         self.mic_max = self.mic_max.max(level);
+        self.echo_max = self.echo_max.max(echo);
         self.threshold_max = self.threshold_max.max(threshold);
         threshold
     }
@@ -279,12 +287,14 @@ impl AdaptiveBargeIn {
         }
         let summary = BargeSummary {
             mic_max: self.mic_max,
+            echo_max: self.echo_max,
             coupling: self.coupling,
             threshold: self.threshold_max,
             barged: self.barged,
         };
         self.blocks = 0;
         self.mic_max = 0.0;
+        self.echo_max = 0.0;
         self.threshold_max = 0.0;
         self.barged = false;
         Some(summary)
