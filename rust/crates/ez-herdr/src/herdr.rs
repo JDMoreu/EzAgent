@@ -20,6 +20,7 @@ use serde_json::{Map, Value};
 
 mod actions;
 mod handoff;
+mod names;
 pub(crate) mod process;
 mod runtime;
 mod terminals;
@@ -27,6 +28,7 @@ mod text;
 
 pub use actions::ReadyCallback;
 pub use actions::RunAgent;
+pub use names::{candidate_labels, resolve_name, NameCandidate, NameHit, NameKind, NameMatch};
 pub use runtime::{system as system_runtime, HerdrRuntime, SystemRuntime};
 pub use text::{strip_ansi, visible_name};
 

@@ -204,6 +204,23 @@ impl VoiceApp {
                     }
                 });
             }),
+            // DECISION: un nombre dictado dudoso se pregunta con el mismo
+            // `ConfirmationManager` que la política; el candado del runtime se
+            // suelta antes de esperar la respuesta (que puede tardar 15 s).
+            confirm_name: Some(Arc::new({
+                let app = weak.clone();
+                move |question: &str| {
+                    let gate = super::callbacks::upgrade_value(&app, |app| {
+                        app.inner
+                            .agents
+                            .agent
+                            .lock()
+                            .as_ref()
+                            .and_then(|runtime| runtime.confirm_gate())
+                    });
+                    gate.is_some_and(|gate| gate.ask(question, false, None))
+                }
+            })),
         };
         let herdr = Arc::clone(&self.inner.agents.herdr);
         runtime.add_tool_group(Arc::new(move |_: &AgentRuntime| {

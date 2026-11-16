@@ -363,6 +363,8 @@ pub(super) fn callbacks(spec: &Value, calls: &Calls) -> HerdrCallbacks {
                 "agent": agent, "error": error}),
             );
         }),
+        // Los fixtures son del Python: no hay nombres dudosos que preguntar.
+        confirm_name: None,
     }
 }
 

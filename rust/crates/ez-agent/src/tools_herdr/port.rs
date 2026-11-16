@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use ez_herdr::herdr::{Herdr, HerdrError, RunAgent};
+use ez_herdr::herdr::{Herdr, HerdrError, NameCandidate, NameKind, RunAgent};
 use serde_json::{Map, Value};
 
 use super::delegate::driver;
@@ -29,6 +29,12 @@ impl std::fmt::Display for PortError {
 pub trait HerdrPort: Send + Sync {
     fn resolve_agent(&self, name: &str) -> Option<String>;
     fn label_for(&self, address: &str) -> String;
+    /// Candidatos vivos para resolver un nombre dictado. Los dobles de prueba
+    /// no los conocen: sin candidatos se usa el texto tal cual (el Python).
+    fn name_candidates(&self, kind: NameKind, fresh: bool) -> Vec<NameCandidate> {
+        let _ = (kind, fresh);
+        Vec::new()
+    }
     fn list_agents(&self) -> Result<Vec<Map<String, Value>>, PortError>;
     fn get_agent(&self, address: &str) -> Result<Map<String, Value>, PortError>;
     fn read_agent(&self, address: &str, lines: Option<i64>) -> Result<String, PortError>;
@@ -67,6 +73,10 @@ impl HerdrPort for Arc<Herdr> {
 
     fn label_for(&self, address: &str) -> String {
         Herdr::label_for(self, address)
+    }
+
+    fn name_candidates(&self, kind: NameKind, fresh: bool) -> Vec<NameCandidate> {
+        Herdr::name_candidates(self, kind, fresh)
     }
 
     fn list_agents(&self) -> Result<Vec<Map<String, Value>>, PortError> {
