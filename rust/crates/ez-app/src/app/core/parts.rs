@@ -159,8 +159,11 @@ impl VoiceApp {
         };
         let herdr: Arc<dyn ez_agent::runtime::HerdrApi> =
             Arc::new(AgentHerdr(Arc::clone(&self.inner.agents.herdr)));
+        // El bucle debe estar instalado antes de `AgentRuntime::new` (A1b).
+        self.prepare_autonomous();
         match AgentRuntime::new(cfg.clone(), Some(herdr), callbacks, None) {
             Ok(runtime) => {
+                self.attach_autonomous(&runtime);
                 self.install_extra_tools(&runtime, &weak);
                 log("Núcleo agéntico disponible.");
                 Some(runtime)

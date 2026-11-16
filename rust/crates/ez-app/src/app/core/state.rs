@@ -271,6 +271,8 @@ pub struct AgentsState {
     pub prelaunch: Mutex<HashMap<String, Map<String, Value>>>,
     /// `_announce_queue`.
     pub announce_queue: Mutex<Vec<(String, bool)>>,
+    /// Bucle del modo autónomo (AUTO-A3); `None` si no hay núcleo agéntico.
+    pub autonomous: Mutex<Option<Arc<crate::app::autonomous::AutonomousLoop>>>,
 }
 
 /// Interfaz, colas y accesorios del hilo principal (`root`, `hud`, `events`…).

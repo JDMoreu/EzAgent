@@ -78,7 +78,7 @@ impl VoiceApp {
                     self.start_call();
                 }
             }
-            "cancel" => self.hang_up(),
+            "cancel" => self.cancel_hotkey(),
             "repeat" => {
                 let summary = self.last_summary();
                 if !summary.is_empty() {
