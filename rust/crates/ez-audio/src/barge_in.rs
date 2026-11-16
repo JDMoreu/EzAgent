@@ -4,6 +4,13 @@
 //! de voz por encima del umbral y las pausas entre sílabas no pueden pasar de
 //! unos pocos chunks; un clic, un golpe de teclado o un soplido no lo cumplen.
 
+mod adaptive;
+
+pub use adaptive::{
+    AdaptiveBargeIn, AdaptiveSettings, BargeInMode, BargeSummary, PlaybackReference, ReferenceLevel,
+    REFERENCE_WINDOW_SECS,
+};
+
 use crate::CHUNK_SECS;
 
 pub const BARGE_IN_SECS: f64 = 0.25;
