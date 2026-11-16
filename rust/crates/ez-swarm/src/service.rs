@@ -214,6 +214,33 @@ impl SwarmService {
         cwd: &str,
         tasks: Option<&[(String, String)]>,
     ) -> DbResult<(String, Vec<Seat>)> {
+        self.create(goal, members, cwd, tasks, &|_| {})
+    }
+
+    /// Creates a swarm for the autonomous mode (10.18).
+    ///
+    /// `before_active` runs with the id before the swarm is visible as active,
+    /// so the first launch of its members already knows it is autonomous.
+    pub fn start_autonomous(
+        &self,
+        goal: &str,
+        members: &[MemberSpec],
+        cwd: &str,
+        before_active: &dyn Fn(&str),
+    ) -> DbResult<String> {
+        let (swarm, _) = self.create(goal, members, cwd, None, before_active)?;
+        Ok(swarm)
+    }
+
+    /// Creates the swarm in `setup`, fills the board and activates it.
+    fn create(
+        &self,
+        goal: &str,
+        members: &[MemberSpec],
+        cwd: &str,
+        tasks: Option<&[(String, String)]>,
+        before_active: &dyn Fn(&str),
+    ) -> DbResult<(String, Vec<Seat>)> {
         if members.is_empty() {
             return Err(SwarmError::new("Un enjambre necesita al menos un miembro.").into());
         }
@@ -227,9 +254,33 @@ impl SwarmService {
                 return Err(error);
             }
         };
+        before_active(&swarm);
         self.store.set_status(&swarm, "active")?;
         info!("Enjambre {} creado con {} miembros.", swarm, seats.len());
         Ok((swarm, seats))
+    }
+
+    /// One `fix` task of the autonomous mode (10.18); `note` carries the
+    /// correction file so the member that takes it knows where to look.
+    pub fn fix_task(&self, swarm: &str, title: &str, note: &str, role: &str) -> DbResult<i64> {
+        if self.store.tasks(swarm)?.len() >= MAX_TASKS {
+            return Err(SwarmError::new(format!(
+                "El enjambre ya tiene {MAX_TASKS} tareas; agrupa el trabajo."
+            ))
+            .into());
+        }
+        // El tablero se cierra solo al terminar; una corrección lo reabre.
+        if self
+            .store
+            .get(swarm)?
+            .is_some_and(|info| info.status == "done")
+        {
+            self.store.set_status(swarm, "active")?;
+        }
+        let task = self.store.add_task(swarm, title, role, "", &[], 0)?;
+        self.store.set_task_note(swarm, task.id, note)?;
+        self.changed(swarm, SYSTEM, "add");
+        Ok(task.id)
     }
 
     fn populate(

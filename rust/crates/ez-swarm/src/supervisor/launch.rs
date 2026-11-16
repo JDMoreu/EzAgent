@@ -40,9 +40,11 @@ impl Supervisor {
         let context = Arc::clone(&self.launch);
         let info = info.clone();
         let member = member.clone();
+        // 10.18: el modo autónomo aprueba los permisos; el enjambre no los salta.
+        let autonomous = self.is_autonomous(&info.id);
         let spawned = thread::Builder::new()
             .name("ezagent-swarm-launch".to_string())
-            .spawn(move || launch_work(&context, &info, &member));
+            .spawn(move || launch_work(&context, &info, &member, autonomous));
         if let Err(error) = spawned {
             warn!("No pude lanzar el hilo de apertura del enjambre: {error}");
             self.book.lock().launching.remove(&key);
@@ -51,9 +53,9 @@ impl Supervisor {
     }
 }
 
-fn launch_work(context: &LaunchContext, info: &SwarmInfo, member: &Member) {
+fn launch_work(context: &LaunchContext, info: &SwarmInfo, member: &Member, autonomous: bool) {
     let key = (info.id.clone(), member.name.clone());
-    if let Err(error) = open_member(context, info, member) {
+    if let Err(error) = open_member(context, info, member, autonomous) {
         warn!(
             "Enjambre {}: no pude abrir a {}: {}",
             info.id, member.name, error
@@ -81,10 +83,15 @@ fn launch_work(context: &LaunchContext, info: &SwarmInfo, member: &Member) {
 }
 
 /// Abre la terminal, guarda su dirección y deja el aviso inicial pendiente.
-fn open_member(context: &LaunchContext, info: &SwarmInfo, member: &Member) -> Result<(), String> {
+fn open_member(
+    context: &LaunchContext,
+    info: &SwarmInfo,
+    member: &Member,
+    autonomous: bool,
+) -> Result<(), String> {
     let key = (info.id.clone(), member.name.clone());
     let seat = write_seat(context, &info.id, &member.name)?;
-    let request = launch_request(context, info, member, &seat);
+    let request = launch_request(context, info, member, &seat, autonomous);
     // Se abre sin tarea: la línea de inicio se escribe después, con el
     // programa ya asentado, y se repite hasta que el agente use `ezs`.
     let result = context.host.run_agent(&member.agent, "", request)?;
@@ -125,8 +132,12 @@ fn launch_request(
     info: &SwarmInfo,
     member: &Member,
     seat: &std::path::Path,
+    autonomous: bool,
 ) -> LaunchRequest {
-    let extra = context.host.swarm_args(&member.agent);
+    let mut extra = context.host.swarm_args(&member.agent);
+    if autonomous {
+        extra.retain(|arg| !skips_permissions(arg));
+    }
     let mut env = Map::new();
     env.insert(
         "EZS_SEAT".to_string(),
@@ -141,6 +152,14 @@ fn launch_request(
         model: (!member.model.is_empty()).then(|| member.model.clone()),
         effort: (!member.effort.is_empty()).then(|| member.effort.clone()),
     }
+}
+
+/// Argumentos de perfil que saltan los permisos del agente (10.18).
+///
+/// Los miembros del enjambre autónomo piden permiso como cualquier otro
+/// agente: lo aprueba el bucle del modo autónomo, nunca el propio CLI.
+fn skips_permissions(argument: &str) -> bool {
+    matches!(argument, "--yolo" | "--dangerously-skip-permissions")
 }
 
 /// `address` o `terminal` del resultado, o el error que devolvió Herdr.

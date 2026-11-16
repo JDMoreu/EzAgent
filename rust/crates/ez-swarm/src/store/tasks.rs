@@ -86,6 +86,20 @@ impl Db {
         })
     }
 
+    /// One-line note shown with a task (`result`, before `terminar` writes it).
+    pub fn set_task_note(&self, swarm: &str, task_id: i64, note: &str) -> DbResult<()> {
+        let text = clip(note, MAX_RESULT).0;
+        let now = self.now();
+        self.write(|db| {
+            self.require_swarm(db, swarm)?;
+            db.execute(
+                "UPDATE task SET result = ?, updated = ? WHERE swarm = ? AND id = ?",
+                params![text, now, swarm, task_id],
+            )?;
+            Ok(())
+        })
+    }
+
     /// Tasks `member` could take right now (without taking them).
     pub fn ready(&self, swarm: &str, member: &str) -> DbResult<Vec<Task>> {
         self.read(|db| {

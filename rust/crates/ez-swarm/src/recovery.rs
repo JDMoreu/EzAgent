@@ -99,6 +99,8 @@ pub struct Recovery {
     clock: Clock,
     active: Arc<Mutex<HashSet<Key>>>,
     book: Mutex<Book>,
+    /// Enjambres del modo autónomo: no se pregunta por sus incidentes (10.18).
+    autonomous: Mutex<HashSet<String>>,
 }
 
 impl Recovery {
@@ -150,7 +152,25 @@ impl Recovery {
             clock: options.clock,
             active,
             book: Mutex::new(Book::default()),
+            autonomous: Mutex::new(HashSet::new()),
         }
+    }
+
+    /// El enjambre lo lleva el modo autónomo: su bucle da la única noticia
+    /// (10.18). Hay que llamarlo antes de activar el enjambre.
+    pub fn mark_autonomous(&self, swarm: &str) {
+        self.autonomous
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(swarm.to_string());
+    }
+
+    /// ¿El modo autónomo se ocupa de los incidentes de este enjambre?
+    fn quiet(&self, swarm: &str) -> bool {
+        self.autonomous
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains(swarm)
     }
 
     fn store(&self) -> &Db {
@@ -277,6 +297,10 @@ impl Recovery {
             "Enjambre {}: incidente I{} {} en {}.",
             info.id, incident.id, kind, member.name
         );
+        if self.quiet(&info.id) {
+            // 10.18: el bucle autónomo pausa y da la única noticia.
+            return Ok(incident);
+        }
         if inc::ASK_KINDS.contains(&kind) {
             (self.ask)(&inc::question(&incident, member, &tasks, alt.as_ref()));
         } else {
@@ -314,11 +338,13 @@ impl Recovery {
         let count = self.book().renewals.get(&key).copied().unwrap_or(0);
         if count >= MAX_RENEWALS {
             self.raise_incident(info, member, "context", detail, 0.0)?;
-            (self.ask)(&format!(
-                "Enjambre: {} se quedó sin contexto otra vez en la misma tarea. \
-                 ¿Lo reemplazo con otro agente, reparto su trabajo o pauso el enjambre?",
-                member.name
-            ));
+            if !self.quiet(&info.id) {
+                (self.ask)(&format!(
+                    "Enjambre: {} se quedó sin contexto otra vez en la misma tarea. \
+                     ¿Lo reemplazo con otro agente, reparto su trabajo o pauso el enjambre?",
+                    member.name
+                ));
+            }
             return Ok(());
         }
         self.book().renewals.insert(key, count + 1);

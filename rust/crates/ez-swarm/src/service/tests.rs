@@ -396,3 +396,71 @@ fn options_and_tokens_match_the_python_contract() {
         .unwrap_or_else(|error| panic!("{error}"))
         .is_none());
 }
+
+#[test]
+fn autonomous_start_marks_the_swarm_before_it_is_active() {
+    let board = temp_board(0.0);
+    let db =
+        Db::new(board.path.clone(), Arc::new(|| 0.0)).unwrap_or_else(|error| panic!("{error}"));
+    let service = SwarmService::new(db, "ezs", Arc::new(|| 0.0));
+    let members = [MemberSpec::new("dev", "dev", "claude")];
+    let seen = std::cell::RefCell::new(String::new());
+    let swarm = service
+        .start_autonomous("Migrar", &members, "C:/t", &|id| {
+            *seen.borrow_mut() = id.to_string();
+        })
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(*seen.borrow(), swarm);
+    assert_eq!(
+        service
+            .store
+            .get(&swarm)
+            .unwrap_or_else(|error| panic!("{error}"))
+            .map(|info| info.status),
+        Some("active".to_string())
+    );
+    assert_eq!(
+        service
+            .store
+            .tasks(&swarm)
+            .unwrap_or_else(|error| panic!("{error}"))
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn a_fix_task_carries_its_note_and_reopens_a_finished_board() {
+    let (service, _board, swarm, _seats) = swarm_service();
+    service
+        .store
+        .set_status(&swarm, "done")
+        .unwrap_or_else(|error| panic!("{error}"));
+    let id = service
+        .fix_task(
+            &swarm,
+            "Corregir hallazgo 1",
+            "Lee C:/t/compartido/correccion-1.md",
+            "dev",
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+    let task = service
+        .store
+        .tasks(&swarm)
+        .unwrap_or_else(|error| panic!("{error}"))
+        .into_iter()
+        .find(|task| task.id == id)
+        .unwrap_or_else(|| panic!("falta la tarea {id}"));
+    assert_eq!(task.title, "Corregir hallazgo 1");
+    assert_eq!(task.role, "dev");
+    assert_eq!(task.result, "Lee C:/t/compartido/correccion-1.md");
+    assert_eq!(task.state, "pending");
+    assert_eq!(
+        service
+            .store
+            .get(&swarm)
+            .unwrap_or_else(|error| panic!("{error}"))
+            .map(|info| info.status),
+        Some("active".to_string())
+    );
+}

@@ -240,6 +240,8 @@ pub struct Supervisor {
     pub progress: Progress,
     /// Incidentes y decisiones.
     pub recovery: Recovery,
+    /// Enjambres que lleva el modo autónomo (10.18).
+    autonomous: Mutex<HashSet<String>>,
     clock: Clock,
     book: Arc<Book>,
     launch: Arc<launch::LaunchContext>,
@@ -300,6 +302,7 @@ impl Supervisor {
             view: RwLock::new(Vec::new()),
             progress: Progress::new(),
             recovery,
+            autonomous: Mutex::new(HashSet::new()),
             clock: config.clock,
             book,
             launch,
@@ -350,6 +353,25 @@ impl Supervisor {
     /// Adelanta la próxima pasada (hay novedades en el tablero).
     pub fn poke(&self) {
         self.book.wake.set();
+    }
+
+    /// Marca un enjambre del modo autónomo (10.18). Hay que hacerlo antes de
+    /// activarlo: sus miembros no reciben los argumentos que saltan permisos y
+    /// su recuperación no pregunta.
+    pub fn mark_autonomous(&self, swarm: &str) {
+        self.autonomous
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(swarm.to_string());
+        self.recovery.mark_autonomous(swarm);
+    }
+
+    /// ¿El enjambre lo lanzó el modo autónomo?
+    pub fn is_autonomous(&self, swarm: &str) -> bool {
+        self.autonomous
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains(swarm)
     }
 
     fn run(&self) {
