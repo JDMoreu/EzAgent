@@ -205,7 +205,7 @@ pub(crate) fn host_devices() -> Vec<HostDevice> {
     inputs
 }
 
-/// Enumera el bloque de MME de PortAudio, que es el que numera `voice.json`.
+/// Enumera los dispositivos de PortAudio (MME, DirectSound, WASAPI y WDM-KS) con su índice global, que es el que numera `voice.json`.
 pub fn list_portaudio_devices() -> Vec<PortAudioDevice> {
     portaudio_devices_with(&host_devices())
 }
