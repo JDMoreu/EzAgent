@@ -76,6 +76,26 @@ fn png_2x1() -> Vec<u8> {
     out
 }
 
+fn bmp_2x1() -> Vec<u8> {
+    // 24 bits por píxel, fila rellenada a 4 bytes (2 px → 8). De abajo arriba.
+    let mut out = Vec::new();
+    out.extend_from_slice(b"BM");
+    out.extend_from_slice(&62_u32.to_le_bytes());
+    out.extend_from_slice(&[0; 4]);
+    out.extend_from_slice(&54_u32.to_le_bytes());
+    out.extend_from_slice(&40_u32.to_le_bytes());
+    out.extend_from_slice(&2_i32.to_le_bytes());
+    out.extend_from_slice(&1_i32.to_le_bytes());
+    out.extend_from_slice(&1_u16.to_le_bytes());
+    out.extend_from_slice(&24_u16.to_le_bytes());
+    for field in [0_u32, 8, 0, 0, 0, 0] {
+        out.extend_from_slice(&field.to_le_bytes());
+    }
+    // Píxel 0 rojo, píxel 1 azul, en BGR.
+    out.extend_from_slice(&[0, 0, 255, 255, 0, 0, 0, 0]);
+    out
+}
+
 fn temp_dir() -> PathBuf {
     std::env::temp_dir()
 }
@@ -274,7 +294,7 @@ fn host_parses_markdown_and_inline_spans() {
 }
 
 #[test]
-fn host_reads_file_cards_previews_and_png() {
+fn host_reads_file_cards_previews_and_images() {
     let host = HudHost;
     let text = TempFile::new("nota.txt");
     text.write(b"uno\ndos\n");
@@ -309,6 +329,28 @@ fn host_reads_file_cards_previews_and_png() {
     let image = host.load_image(&card).expect("imagen PNG");
     assert_eq!((image.width(), image.height()), (2, 1));
     assert_eq!(chat_file_info(&card).size, card.size as i64);
+
+    // El formato no se filtra por la extensión: Pillow abre cualquiera de
+    // los que acepta `media.IMAGE_EXTENSIONS`.
+    let bmp = TempFile::new("imagen.bmp");
+    bmp.write(&bmp_2x1());
+    let card = host
+        .file_info(Some(&bmp.path), Some(&roots))
+        .expect("tarjeta BMP");
+    let image = host.load_image(&card).expect("imagen BMP");
+    assert_eq!((image.width(), image.height()), (2, 1));
+    assert_eq!(image.pixel(0, 0).to_array(), [255, 0, 0, 255]);
+    assert_eq!(image.pixel(1, 0).to_array(), [0, 0, 255, 255]);
+
+    // Cabecera GIF válida de 2×1 y cuerpo basura: el decodificador falla y la
+    // ficha se queda sin imagen.
+    let corrupt = TempFile::new("rota.gif");
+    corrupt.write(b"GIF89a\x02\x00\x01\x00 basura");
+    let card = host
+        .file_info(Some(&corrupt.path), Some(&roots))
+        .expect("tarjeta rota");
+    assert_eq!(card.kind, MediaKind::Image);
+    assert!(host.load_image(&card).is_none());
 }
 
 #[test]

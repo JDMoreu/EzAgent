@@ -19,6 +19,7 @@ use ez_gfx::{Image, Rgba};
 use crate::tokens::{ColorMap, Rect};
 
 mod base;
+pub mod imaging;
 pub mod labels;
 pub mod render;
 pub mod render_rich;

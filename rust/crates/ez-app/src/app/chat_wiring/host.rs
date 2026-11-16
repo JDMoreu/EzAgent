@@ -159,13 +159,20 @@ impl ChatHost for HudHost {
 
     fn load_image(&self, info: &FileInfo) -> Option<Image> {
         let loaded = media::load_image(Some(&chat_file_info(info)))?;
-        // DECISION: `ez-app` solo declara `png`; GIF/JPEG/BMP/WebP se pintan
-        // como «No puedo mostrar esta imagen» hasta que el HUD tenga `image`.
-        if loaded.format != "png" {
-            return None;
+        let bytes = match std::fs::read(&loaded.path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                tracing::warn!("No pude abrir la imagen {}: {error}", info.name);
+                return None;
+            }
+        };
+        match ez_hud::paint::chat::imaging::decode(&bytes) {
+            Ok(image) => Some(image),
+            Err(error) => {
+                tracing::warn!("No pude abrir la imagen {}: {error}", info.name);
+                None
+            }
         }
-        let bytes = std::fs::read(&loaded.path).ok()?;
-        decode_png(&bytes)
     }
 
     fn text_preview(&self, info: &FileInfo) -> Option<(String, bool)> {
@@ -177,64 +184,4 @@ impl ViewHost for HudHost {
     fn parse_inline(&self, text: &str) -> Vec<Span> {
         spans(markdown::parse_inline(text))
     }
-}
-
-/// PNG RGBA, like `PIL.Image.convert("RGBA")` (first frame).
-fn decode_png(bytes: &[u8]) -> Option<Image> {
-    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
-    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let mut reader = decoder.read_info().ok()?;
-    let mut buffer = vec![0_u8; reader.output_buffer_size()?];
-    let info = reader.next_frame(&mut buffer).ok()?;
-    let data = &buffer[..info.buffer_size()];
-    let pixels = (info.width as usize) * (info.height as usize);
-    let rgba = match info.color_type {
-        png::ColorType::Rgba => data.to_vec(),
-        png::ColorType::Rgb => {
-            let mut out = vec![255_u8; pixels * 4];
-            for (source, target) in data
-                .as_chunks::<3>()
-                .0
-                .iter()
-                .zip(out.as_chunks_mut::<4>().0)
-            {
-                target[..3].copy_from_slice(source);
-            }
-            out
-        }
-        png::ColorType::GrayscaleAlpha => {
-            let mut out = vec![0_u8; pixels * 4];
-            for (source, target) in data
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .zip(out.as_chunks_mut::<4>().0)
-            {
-                target[0] = source[0];
-                target[1] = source[0];
-                target[2] = source[0];
-                target[3] = source[1];
-            }
-            out
-        }
-        png::ColorType::Grayscale => {
-            let mut out = vec![255_u8; pixels * 4];
-            for (source, target) in data
-                .as_chunks::<1>()
-                .0
-                .iter()
-                .zip(out.as_chunks_mut::<4>().0)
-            {
-                target[0] = source[0];
-                target[1] = source[0];
-                target[2] = source[0];
-            }
-            out
-        }
-        png::ColorType::Indexed => return None,
-    };
-    if rgba.len() != pixels * 4 {
-        return None;
-    }
-    Image::from_rgba(info.width, info.height, rgba).ok()
 }

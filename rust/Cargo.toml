@@ -66,7 +66,15 @@ tracing = "=0.1.44"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
 tracing-appender = "=0.2.5"
 freetype-rs = "=0.38.0"
-image = { version = "=0.25.10", default-features = false, features = ["png"] }
+# Los mismos formatos que abre `PIL.Image` en el chat (ver
+# `src/ezagent/voice/chat/media.py`): PNG, JPEG, GIF, BMP y WebP.
+image = { version = "=0.25.10", default-features = false, features = [
+    "png",
+    "jpeg",
+    "gif",
+    "webp",
+    "bmp",
+] }
 png = "=0.18.1"
 sha2 = "=0.11.1"
 zip = { version = "=9.5.1", default-features = false, features = ["deflate"] }
