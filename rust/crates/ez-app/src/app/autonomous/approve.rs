@@ -52,27 +52,35 @@ pub fn approve_blocked(loop_: &AutonomousLoop, session: &mut Session, address: &
     }
 }
 
-/// 10.9: si el lanzamiento falló por el diálogo de confianza, se aprueba.
-pub fn approve_trust(loop_: &AutonomousLoop, session: &mut Session, address: &str) -> bool {
+/// 10.2/10.9: si la terminal quedó en el diálogo de confianza, se aprueba solo
+/// cuando la carpeta está dentro de `workdir`; si no, pausa con el motivo.
+///
+/// La usan el lanzamiento del ejecutor, el del verificador y los miembros del
+/// equipo autónomo (que se abren desde el enjambre).
+pub fn approve_launch(loop_: &AutonomousLoop, session: &mut Session, address: &str) -> Approval {
     let Ok(screen) = loop_.port.read_agent(address, Some(60)) else {
-        return false;
+        return Approval::Ignored;
     };
     let dialog = classify(&screen);
     if dialog.kind != DialogKind::Trust {
-        return false;
+        return Approval::Ignored;
     }
     let Some(scope) = scope_for(session, address, false) else {
-        return false;
+        return Approval::Ignored;
     };
     match decide(&dialog, &scope) {
-        Decision::Approve(keys) => {
-            matches!(
-                perform(loop_, session, address, &screen, &dialog, &keys),
-                Approval::Approved
-            )
+        Decision::Ignore => Approval::Ignored,
+        Decision::Ask(reason) => {
+            deny(loop_, session, address, &dialog, &reason);
+            Approval::Paused(reason)
         }
-        _ => false,
+        Decision::Approve(keys) => perform(loop_, session, address, &screen, &dialog, &keys),
     }
+}
+
+/// 10.9: si el lanzamiento falló por el diálogo de confianza, se aprueba.
+pub fn approve_trust(loop_: &AutonomousLoop, session: &mut Session, address: &str) -> bool {
+    matches!(approve_launch(loop_, session, address), Approval::Approved)
 }
 
 /// Alcance del papel, con las rutas ya canónicas (10.1).

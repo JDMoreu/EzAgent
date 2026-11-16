@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::thread;
 
 use ez_core::pyvalue::{head_chars, py_strip, python_str, text_or_empty, truthy};
+use ez_herdr::permission::{classify, DialogKind};
 use serde_json::{Map, Value};
 use tracing::{info, warn};
 
@@ -96,10 +97,24 @@ fn open_member(
     // programa ya asentado, y se repite hasta que el agente use `ezs`.
     let result = context.host.run_agent(&member.agent, "", request)?;
     let address = launched_address(&result)?;
+    let ok = truthy(result.get("ok").unwrap_or(&Value::Null));
+    // 10.9: la terminal puede haber quedado abierta en un diálogo (la
+    // confianza en la carpeta, p. ej.). La aprueba el bucle autónomo con la
+    // regla de 10.2, así que el miembro se conserva en vez de darlo por
+    // perdido; su aviso inicial queda pendiente para cuando se libere.
+    let waiting = !ok && screen_has_dialog(context, &address);
+    if !ok && !waiting {
+        return Err(error_text(&result));
+    }
     let store = &context.service.store;
     store
         .set_address(&info.id, &member.name, &address)
         .map_err(|error| error.to_string())?;
+    if waiting {
+        store
+            .set_member_state(&info.id, &member.name, "blocked")
+            .map_err(|error| error.to_string())?;
+    }
     context.book.lock().unbriefed.insert(key.clone());
     if let Some(Value::Array(warnings)) = result.get("warnings") {
         for warning in warnings {
@@ -162,22 +177,36 @@ fn skips_permissions(argument: &str) -> bool {
     matches!(argument, "--yolo" | "--dangerously-skip-permissions")
 }
 
-/// `address` o `terminal` del resultado, o el error que devolvió Herdr.
+/// `address` o `terminal` del resultado; el error de Herdr si no hubo terminal.
 fn launched_address(result: &Map<String, Value>) -> Result<String, String> {
     let mut address = text_or_empty(result.get("address"));
     if address.is_empty() {
         address = text_or_empty(result.get("terminal"));
     }
     let address = py_strip(&address).to_string();
-    if !truthy(result.get("ok").unwrap_or(&Value::Null)) || address.is_empty() {
-        let error = text_or_empty(result.get("error"));
-        return Err(if error.is_empty() {
-            "Herdr no devolvió una terminal.".to_string()
-        } else {
-            error
-        });
+    if address.is_empty() {
+        return Err(error_text(result));
     }
     Ok(address)
+}
+
+/// El texto de error del resultado, el mismo que se anunciaba al fallar.
+fn error_text(result: &Map<String, Value>) -> String {
+    let error = text_or_empty(result.get("error"));
+    if error.is_empty() {
+        "Herdr no devolvió una terminal.".to_string()
+    } else {
+        error
+    }
+}
+
+/// ¿La pantalla pide un permiso o confiar en la carpeta? (10.7 y 10.9)
+fn screen_has_dialog(context: &LaunchContext, address: &str) -> bool {
+    context
+        .host
+        .read_agent(address, 60)
+        .map(|screen| classify(&screen).kind != DialogKind::None)
+        .unwrap_or(false)
 }
 
 /// Guarda el token del miembro en su archivo; la terminal solo ve la ruta.

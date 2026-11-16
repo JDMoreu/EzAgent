@@ -50,6 +50,13 @@ impl FakeTeam {
         self.board.lock().status = status.to_string();
     }
 
+    pub(crate) fn set_member_state(&self, name: &str, state: &str) {
+        let mut board = self.board.lock();
+        if let Some(member) = board.members.iter_mut().find(|member| member.name == name) {
+            member.state = state.to_string();
+        }
+    }
+
     pub(crate) fn goal(&self) -> String {
         self.board.lock().goal.clone()
     }
@@ -87,6 +94,7 @@ impl TeamSwarm for FakeTeam {
                 name: member.name.clone(),
                 role: member.role.clone(),
                 address: format!("m-{}", member.name),
+                state: "idle".to_string(),
             })
             .collect();
         Ok("sw1".to_string())
@@ -331,6 +339,51 @@ fn a_swarm_incident_pauses_the_loop_without_swarm_questions() {
         .says()
         .iter()
         .any(|text| text.contains("se quedó sin cuota, contexto o ventana")));
+}
+
+const CLAUDE_TRUST: &str =
+    include_str!("../../../../../ez-herdr/tests/permission/claude_trust_numbered.txt");
+
+/// La pantalla real de Claude con la carpeta del encargo.
+fn trust_screen(folder: &std::path::Path) -> String {
+    CLAUDE_TRUST.replace("/home/lab/q5-repo", &folder.display().to_string())
+}
+
+#[test]
+fn a_member_waiting_for_folder_trust_is_approved_inside_the_workdir() {
+    let (h, team) = harness();
+    h.loop_
+        .start_team_task(&team_spec(&h))
+        .expect("arranca el equipo");
+    // El supervisor abrió al miembro y el CLI quedó en el diálogo de confianza.
+    team.set_member_state("plan", "blocked");
+    h.port.add("m-plan", "blocked", &trust_screen(&h.workdir));
+    assert!(h.wait_keys(1), "no se aprobó la confianza del miembro");
+    let keys = h.port.keys_sent();
+    assert_eq!(keys[0].0, "m-plan");
+    assert_eq!(keys[0].1, vec!["1".to_string()]);
+    assert_eq!(
+        h.loop_.status().expect("estado").state,
+        TaskState::Running,
+        "la confianza dentro de workdir no pausa la tarea"
+    );
+}
+
+#[test]
+fn a_member_trusting_a_folder_outside_the_workdir_pauses_the_team() {
+    let (h, team) = harness();
+    h.loop_
+        .start_team_task(&team_spec(&h))
+        .expect("arranca el equipo");
+    team.set_member_state("plan", "blocked");
+    // La pantalla del fixture confía en /home/lab/q5-repo, fuera de workdir.
+    h.port.add("m-plan", "blocked", CLAUDE_TRUST);
+    assert!(h.wait(|| h.paused_reason().is_some()), "no pausó");
+    assert_eq!(
+        h.paused_reason().expect("motivo"),
+        "la carpeta del diálogo no está dentro de la carpeta de trabajo"
+    );
+    assert!(h.port.keys_sent().is_empty(), "no se aprobó nada");
 }
 
 #[test]
