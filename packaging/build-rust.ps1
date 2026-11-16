@@ -12,11 +12,18 @@
 # de VC++ en la máquina destino. Con -DynamicCrt se compila con el CRT dinámico:
 # entonces hay que instalar "Microsoft Visual C++ 2015-2022 Redistributable
 # (x64)" en cada equipo antes de abrir la app.
+# DECISION: el flag va en RUSTFLAGS de esta invocación y no en
+# rust\.cargo\config.toml, que afectaría también al desarrollo y a los tests
+# (cargo no admite rustflags por perfil).
 #
 # Salidas:
 #   dist\rust-stage\                    carpeta lista para ejecutar
 #   dist\EzAgent-portable-0.2.0.zip     versión portable
 #   dist\EzAgent-Setup-0.2.0.exe        instalador con desinstalador
+# DECISION: el ZIP va plano (sin carpeta contenedora), como una carpeta portable
+# que se descomprime donde el usuario quiera.
+# DECISION: -SitePackages permite tomar las DLL de otro entorno si el worktree
+# no tiene .venv; por omisión se usa .venv\Lib\site-packages del repo.
 
 [CmdletBinding()]
 param(
