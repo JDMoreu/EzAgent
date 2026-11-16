@@ -16,6 +16,7 @@ use crate::paint::peek::{
 use crate::tokens::palette_version;
 
 use super::frame::{compose, place_card};
+use super::surface::PeekSurface;
 use super::ui::PeekUi;
 use super::window::PeekWindow;
 
@@ -83,7 +84,7 @@ pub struct Peek {
     icons: Arc<dyn IconPainter>,
     pub(super) lock: Mutex<PeekState>,
     static_layer: Mutex<Option<(StaticKey, PeekBuffer)>>,
-    pub(super) win: Mutex<Option<Arc<PeekWindow>>>,
+    pub(super) win: Mutex<Option<Arc<dyn PeekSurface>>>,
 }
 
 impl Peek {
@@ -204,8 +205,13 @@ impl Peek {
                 self.close(state, now);
             }
         }
+        // La fila bajo el puntero se calcula con el estado ya prestado:
+        // `pointer_row` volvía a pedir `self.lock` en este mismo hilo y colgaba
+        // la barra (un candado de `parking_lot` no es reentrante).
         state.hover_row = if state.mode.is_some() {
-            self.pointer_row()
+            self.cursor_client().and_then(|(x, y)| {
+                crate::paint::peek::row_at(state.rows.0.len(), x, y, self.scale())
+            })
         } else {
             None
         };
@@ -314,7 +320,7 @@ impl Peek {
         self.lock.lock().above = above;
         let mut slot = self.win.lock();
         if slot.is_none() {
-            let window = Arc::new(PeekWindow::new(self, x, y, width, height));
+            let window: Arc<dyn PeekSurface> = Arc::new(PeekWindow::new(self, x, y, width, height));
             *slot = Some(Arc::clone(&window));
             drop(slot);
             // start() espera a que Windows cree la ventana: fuera del hilo de la barra,
@@ -366,11 +372,6 @@ impl Peek {
             && x <= f64::from(width) - margin
             && margin <= y
             && y <= f64::from(height) - margin
-    }
-
-    fn pointer_row(&self) -> Option<usize> {
-        let (x, y) = self.cursor_client()?;
-        self.row_at(x, y)
     }
 
     /// Fila bajo un punto de la ventana (px físicos), o `None`.

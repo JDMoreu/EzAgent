@@ -12,6 +12,7 @@ use crate::paint::peek::PeekBuffer;
 use crate::win::layered::{LayeredWindow, RgbaFrame, WindowHooks, WindowOptions};
 
 use super::controller::Peek;
+use super::surface::PeekSurface;
 
 /// Intervalo inicial de pintura (`1.0 / 60.0`).
 pub const DEFAULT_INTERVAL: f64 = 1.0 / 60.0;
@@ -178,6 +179,52 @@ impl Drop for PeekWindow {
         if self.thread.lock().is_some() {
             self.stop();
         }
+    }
+}
+
+impl PeekSurface for PeekWindow {
+    fn start(self: Arc<Self>) {
+        PeekWindow::start(&self);
+    }
+
+    fn stop(&self) {
+        PeekWindow::stop(self);
+    }
+
+    fn show(&self) {
+        PeekWindow::show(self);
+    }
+
+    fn hide(&self) {
+        PeekWindow::hide(self);
+    }
+
+    fn resize(&self, width: i32, height: i32) {
+        PeekWindow::resize(self, width, height);
+    }
+
+    fn set_pos(&self, x: i32, y: i32) {
+        PeekWindow::set_pos(self, x, y);
+    }
+
+    fn is_visible(&self) -> bool {
+        PeekWindow::is_visible(self)
+    }
+
+    fn size(&self) -> (i32, i32) {
+        PeekWindow::size(self)
+    }
+
+    fn position(&self) -> (i32, i32) {
+        PeekWindow::position(self)
+    }
+
+    fn set_interval(&self, seconds: f64) {
+        PeekWindow::set_interval(self, seconds);
+    }
+
+    fn mark_dirty(&self) {
+        PeekWindow::mark_dirty(self);
     }
 }
 

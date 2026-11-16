@@ -16,6 +16,7 @@
 
 mod controller;
 mod frame;
+mod surface;
 mod ui;
 mod window;
 

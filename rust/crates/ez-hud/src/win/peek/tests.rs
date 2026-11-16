@@ -1,10 +1,13 @@
 //! Pruebas de `win::peek` (F5-06).
 
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use parking_lot::Mutex;
+use parking_lot::{Condvar, Mutex};
 
 use super::controller::{visible_rows, Mode};
+use super::surface::PeekSurface;
 use super::*;
 use crate::paint::peek::{PeekBuffer, PeekItem};
 
@@ -307,4 +310,221 @@ fn render_paints_the_card_through_the_window_size() {
         .filter(|&(x, y)| frame.pixel(x, y)[3] > 0.0 && frame.pixel(x, y) != body)
         .count();
     assert!(lit > 10, "la marca en curso no llegó al cuadro ({lit} px)");
+}
+
+/// Barra con hub: `place` necesita el rectángulo de la forma para colocar.
+struct HubUi;
+
+impl PeekUi for HubUi {
+    fn bar_scale(&self) -> Option<f64> {
+        Some(1.0)
+    }
+    fn scale(&self) -> f64 {
+        1.0
+    }
+    fn theme_name(&self) -> String {
+        String::from("dark")
+    }
+    fn hub_extent(&self) -> Option<(f64, f64, f64, f64)> {
+        Some((100.0, 900.0, 300.0, 980.0))
+    }
+    fn form_extent(&self) -> Option<(f64, f64, f64)> {
+        Some((200.0, 940.0, 24.0))
+    }
+    fn work_area(&self) -> (i32, i32, i32, i32) {
+        (0, 0, 1920, 1080)
+    }
+}
+
+/// Ventana de la vista rápida que se comporta como Win32: `resize` no vuelve
+/// hasta que el hilo de la ventana ha atendido el mensaje, y ese hilo está
+/// pintando (`render`) cuando le llega.
+struct SyncSurface {
+    size: Mutex<(i32, i32)>,
+    visible: AtomicBool,
+    /// `true` imita a `SetWindowPos`: `resize` espera un cuadro.
+    waits: bool,
+    frames: Mutex<u64>,
+    frames_cv: Condvar,
+    stopping: AtomicBool,
+    resizes: AtomicUsize,
+    /// `true` si algún `resize` no consiguió su cuadro: el lock estaba tomado.
+    missed: AtomicBool,
+}
+
+impl SyncSurface {
+    fn new(width: i32, height: i32, waits: bool) -> Arc<Self> {
+        Arc::new(Self {
+            size: Mutex::new((width, height)),
+            visible: AtomicBool::new(true),
+            waits,
+            frames: Mutex::new(0),
+            frames_cv: Condvar::new(),
+            stopping: AtomicBool::new(false),
+            resizes: AtomicUsize::new(0),
+            missed: AtomicBool::new(false),
+        })
+    }
+
+    /// El hilo de pintura terminó un cuadro.
+    fn frame_done(&self) {
+        *self.frames.lock() += 1;
+        self.frames_cv.notify_all();
+    }
+
+    /// Espera al cuadro siguiente, con plazo: si no llega, la prueba falla en
+    /// vez de colgarse (`missed`).
+    fn wait_frame(&self) {
+        let target = *self.frames.lock() + 1;
+        let mut frames = self.frames.lock();
+        let waited = self.frames_cv.wait_for(&mut frames, Duration::from_secs(3));
+        if waited.timed_out() || *frames < target {
+            self.missed.store(true, Ordering::SeqCst);
+        }
+    }
+}
+
+impl PeekSurface for SyncSurface {
+    fn start(self: Arc<Self>) {
+        self.visible.store(true, Ordering::SeqCst);
+    }
+
+    fn stop(&self) {
+        self.stopping.store(true, Ordering::SeqCst);
+    }
+
+    fn show(&self) {
+        self.visible.store(true, Ordering::SeqCst);
+    }
+
+    fn hide(&self) {
+        self.visible.store(false, Ordering::SeqCst);
+    }
+
+    fn resize(&self, width: i32, height: i32) {
+        self.resizes.fetch_add(1, Ordering::SeqCst);
+        if self.waits {
+            self.wait_frame();
+        }
+        *self.size.lock() = (width.max(1), height.max(1));
+    }
+
+    fn set_pos(&self, _x: i32, _y: i32) {}
+
+    fn is_visible(&self) -> bool {
+        self.visible.load(Ordering::SeqCst)
+    }
+
+    fn size(&self) -> (i32, i32) {
+        *self.size.lock()
+    }
+
+    fn position(&self) -> (i32, i32) {
+        (0, 0)
+    }
+
+    fn set_interval(&self, _seconds: f64) {}
+
+    fn mark_dirty(&self) {}
+}
+
+/// `P-FIX-LOCKAUDIT`: la carrera que congeló la barra en la app real.
+///
+/// Hilo A (barra): `refresh` + `tick` a ritmo alto con filas que cambian de
+/// tamaño, para que cada vuelta pase por `place`. Hilo B (vista rápida):
+/// `render` en bucle. Si `place` mueve la ventana con `win` tomado, el mensaje
+/// síncrono espera a un `render` que necesita ese mismo lock; y si `tick`
+/// vuelve a pedir el estado que ya tiene, el hilo se cuelga. La prueba corre la
+/// barra en su hilo y espera con plazo: falla en vez de colgar la suite (con el
+/// código anterior a `100d5da` y sin el arreglo de `advance` falla aquí).
+#[test]
+fn the_card_never_moves_with_its_lock_taken() {
+    let peek = Arc::new(Peek::new(
+        Arc::new(HubUi),
+        Arc::new(crate::paint::peek::NoIcons),
+    ));
+    let surface = SyncSurface::new(PEEK_W as i32 + 12, 200, true);
+    *peek.win.lock() = Some(Arc::clone(&surface) as Arc<dyn PeekSurface>);
+    peek.refresh(vec![item("a", "working", true, false)]);
+
+    let painter = {
+        let peek = Arc::clone(&peek);
+        let surface = Arc::clone(&surface);
+        std::thread::spawn(move || {
+            while !surface.stopping.load(Ordering::SeqCst) {
+                let _ = peek.render();
+                surface.frame_done();
+            }
+        })
+    };
+
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let bar = {
+        let peek = Arc::clone(&peek);
+        let surface = Arc::clone(&surface);
+        std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut now = 0.0;
+            for round in 0..120 {
+                if surface.missed.load(Ordering::SeqCst) || Instant::now() >= deadline {
+                    break;
+                }
+                let rows = round % 4 + 1;
+                peek.refresh(
+                    (0..rows)
+                        .map(|index| item(&format!("k{index}"), "working", true, false))
+                        .collect(),
+                );
+                now += 0.05;
+                peek.tick(now, true, false);
+            }
+            let _ = done_tx.send(());
+        })
+    };
+
+    let finished = done_rx.recv_timeout(Duration::from_secs(20)).is_ok();
+    surface.stopping.store(true, Ordering::SeqCst);
+    surface.frame_done();
+    assert!(
+        finished,
+        "la barra no terminó sus vueltas: `tick`/`place` se quedaron esperando"
+    );
+    bar.join().expect("el hilo de la barra terminó");
+    painter.join().expect("el hilo de pintura terminó");
+    assert!(
+        surface.resizes.load(Ordering::SeqCst) > 0,
+        "la prueba no forzó ningún `place`"
+    );
+    assert!(
+        !surface.missed.load(Ordering::SeqCst),
+        "`resize` esperó a un cuadro con el lock de la ventana tomado"
+    );
+}
+
+/// `P-FIX-LOCKAUDIT`: `advance` pedía la fila bajo el puntero con `row_at`,
+/// que vuelve a bloquear el estado que `tick` ya tiene. Con el puntero sobre la
+/// tarjeta abierta, la barra se congelaba en el primer cuadro.
+#[test]
+fn a_tick_with_the_pointer_over_the_card_does_not_relock_the_state() {
+    let peek = Arc::new(Peek::new(
+        Arc::new(HubUi),
+        Arc::new(crate::paint::peek::NoIcons),
+    ));
+    *peek.win.lock() = Some(Arc::clone(&SyncSurface::new(260, 200, false)) as Arc<dyn PeekSurface>);
+    peek.refresh(vec![item("a", "working", true, false)]);
+    {
+        let mut state = peek.lock.lock();
+        state.rows = (vec![item("a", "working", true, false)], 0);
+        state.mode = Some(Mode::Hover);
+        state.shown_at = ez_core::metrics::monotonic() - 1.0;
+    }
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        peek.tick(ez_core::metrics::monotonic(), false, false);
+        let _ = done_tx.send(());
+    });
+    assert!(
+        done_rx.recv_timeout(Duration::from_secs(2)).is_ok(),
+        "`tick` volvió a pedir el lock del estado en el mismo hilo"
+    );
 }
