@@ -10,6 +10,7 @@ use std::process::Child;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use ez_audio::barge_in::PlaybackReference;
 use ez_audio::capture::MicCapture;
 use ez_chat::session::ChatModel;
 use ez_core::config::VoiceConfig;
@@ -79,6 +80,10 @@ pub trait SpeakerApi: Send + Sync {
     }
     /// `Speaker.close`.
     fn close(&self) {}
+    /// Envolvente de lo que suena, para el barge-in adaptativo de la captura.
+    fn reference(&self) -> Option<Arc<PlaybackReference>> {
+        None
+    }
 }
 
 impl SpeakerApi for ez_tts::speaker::Speaker {
@@ -123,6 +128,10 @@ impl SpeakerApi for ez_tts::speaker::Speaker {
 
     fn close(&self) {
         ez_tts::speaker::Speaker::close(self);
+    }
+
+    fn reference(&self) -> Option<Arc<PlaybackReference>> {
+        Some(ez_tts::speaker::Speaker::reference(self))
     }
 }
 

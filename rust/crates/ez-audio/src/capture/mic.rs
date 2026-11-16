@@ -15,7 +15,10 @@ mod live;
 use self::live::Live;
 
 use super::{choose_mic, device_at, input_config, pcm_rms, to_mono_i16, CaptureError};
-use crate::barge_in::{BargeInDetector, BARGE_IN_SECS};
+use crate::barge_in::{
+    AdaptiveBargeIn, BargeInDetector, BargeInMode, PlaybackReference, BARGE_IN_SECS,
+    REFERENCE_WINDOW_SECS,
+};
 use crate::segmenter::{EndProbe, Segmenter, SegmenterConfig};
 use crate::CHUNK_SECS;
 
@@ -32,6 +35,8 @@ pub struct VadSettings {
     pub turn_quick_secs: f64,
     pub barge_in_rms: f64,
     pub barge_in_secs: f64,
+    /// `adaptive` descuenta el eco del TTS con la referencia del altavoz.
+    pub barge_in_mode: BargeInMode,
 }
 
 impl Default for VadSettings {
@@ -46,6 +51,9 @@ impl Default for VadSettings {
             turn_quick_secs: 0.35,
             barge_in_rms: 0.0,
             barge_in_secs: BARGE_IN_SECS,
+            // DECISION: el valor por omisión de la captura es el del Python;
+            // la app pide `adaptive` al leer `barge_in_mode` de `voice.json`.
+            barge_in_mode: BargeInMode::Fixed,
         }
     }
 }
@@ -75,8 +83,11 @@ pub enum CaptureEvent {
 pub struct CapturePipeline {
     pub segmenter: Segmenter,
     pub barge: BargeInDetector,
+    pub adaptive: AdaptiveBargeIn,
     pub rate: u32,
     pub last_speech_end: Option<f64>,
+    mode: BargeInMode,
+    reference: Option<Arc<PlaybackReference>>,
 }
 
 impl CapturePipeline {
@@ -95,9 +106,24 @@ impl CapturePipeline {
         Self {
             segmenter: Segmenter::new(config),
             barge: BargeInDetector::new(settings.barge_in_rms, settings.barge_in_secs),
+            adaptive: AdaptiveBargeIn::default(),
             rate,
             last_speech_end: None,
+            mode: settings.barge_in_mode,
+            reference: None,
         }
+    }
+
+    /// Como [`Self::new`] con la envolvente de lo que suena en el altavoz.
+    pub fn with_reference(
+        settings: &VadSettings,
+        rate: u32,
+        end_probe: Option<EndProbe>,
+        reference: Option<Arc<PlaybackReference>>,
+    ) -> Self {
+        let mut pipeline = Self::new(settings, rate, end_probe);
+        pipeline.reference = reference;
+        pipeline
     }
 
     /// Consume un chunk y devuelve los eventos que toca emitir.
@@ -116,11 +142,14 @@ impl CapturePipeline {
         }
         let mut events = Vec::new();
         let mut chunks = vec![(chunk.to_vec(), level)];
-        if speaking && self.barge.threshold > 0.0 {
+        let threshold = self.barge_threshold(settings, level, speaking);
+        self.barge.threshold = threshold;
+        if speaking && threshold > 0.0 {
             if let Some(run) = self.barge.feed(chunk, level) {
                 // El usuario habla por encima del TTS: corta y reinyecta el
                 // principio de su frase para que Whisper no la oiga mocha.
                 events.push(CaptureEvent::BargeIn(level));
+                self.adaptive.note_barge();
                 self.segmenter.reset();
                 chunks = run;
             }
@@ -167,8 +196,49 @@ impl CapturePipeline {
         self.segmenter.max_utterance_secs = settings.max_utterance_secs;
         self.segmenter.quick_silence_secs = settings.turn_quick_secs;
         self.segmenter.set_pre_roll(settings.pre_roll_secs);
-        self.barge.threshold = settings.barge_in_rms;
         self.barge.secs = settings.barge_in_secs;
+        self.mode = settings.barge_in_mode;
+    }
+
+    /// Umbral del bloque: fijo (`barge_in_rms`) o descontando el eco del TTS.
+    ///
+    /// Sin referencia de reproducción (el altavoz del arnés no suena) se usa
+    /// el modo clásico, así que las trazas doradas no cambian.
+    fn barge_threshold(&mut self, settings: &VadSettings, level: f64, speaking: bool) -> f64 {
+        let fixed = settings.barge_in_rms;
+        if !speaking || fixed <= 0.0 || self.mode != BargeInMode::Adaptive {
+            self.finish_barge_phrase();
+            return fixed;
+        }
+        let sampled = self.reference.as_ref().and_then(|reference| {
+            reference
+                .peak_in_window(REFERENCE_WINDOW_SECS)
+                .map(|peak| (peak, reference.latest().unwrap_or(peak), reference.phrase()))
+        });
+        let Some((peak, current, phrase)) = sampled else {
+            self.finish_barge_phrase();
+            return fixed;
+        };
+        if self.adaptive.observe_phrase(phrase) {
+            self.finish_barge_phrase();
+        }
+        self.adaptive
+            .threshold(level, Some(peak), Some(current), self.segmenter.noise)
+    }
+
+    /// Cierra la frase del TTS y deja sus cifras en el log (afinado real).
+    fn finish_barge_phrase(&mut self) {
+        let Some(summary) = self.adaptive.summary() else {
+            return;
+        };
+        tracing::info!(
+            "Barge-in: mic_max={:.4} eco={:.4} acople={:.2} umbral={:.4} interrumpió={}",
+            summary.mic_max,
+            summary.echo_max,
+            summary.coupling,
+            summary.threshold,
+            summary.barged
+        );
     }
 }
 
@@ -319,7 +389,9 @@ impl MicCapture {
         let rate = self.rate();
         let (stream, receiver) = open_stream(&device, rate)?;
         let mut hooks = hooks;
-        let mut pipeline = CapturePipeline::new(&self.settings(), rate, self.end_probe());
+        let reference = self.inner.live.playback_reference();
+        let mut pipeline =
+            CapturePipeline::with_reference(&self.settings(), rate, self.end_probe(), reference);
         let frames = ((f64::from(rate) * CHUNK_SECS) as usize).max(160);
         let mut pending: Vec<i16> = Vec::with_capacity(frames * 2);
         while !stop_event.load(Ordering::SeqCst) {

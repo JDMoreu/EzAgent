@@ -6,7 +6,7 @@ use ez_audio::capture::{MicCapture, VadSettings};
 use serde_json::Value;
 
 use super::super::{schedule_start_call, MenuEffects};
-use crate::app::core::{cfg_float, log, VoiceApp};
+use crate::app::core::{barge_in_mode, cfg_float, log, VoiceApp};
 
 impl VoiceApp {
     /// `_reload_mic(index, restart=True)`.
@@ -28,11 +28,12 @@ impl VoiceApp {
             min_speech_secs: cfg_float(&cfg, "min_speech_secs", 0.2),
             max_utterance_secs: cfg_float(&cfg, "max_utterance_secs", 30.0),
             noise_multiplier: cfg_float(&cfg, "noise_multiplier", 1.3),
+            turn_quick_secs: cfg_float(&cfg, "turn_quick_secs", 0.35),
             // Los valores por omisión del `VoiceConfig` del Python (0.008 y
             // 0.25): con un `voice.json` sin la clave, 0.0 apagaba el detector.
             barge_in_rms: cfg_float(&cfg, "barge_in_rms", 0.008),
             barge_in_secs: cfg_float(&cfg, "barge_in_secs", 0.25),
-            ..VadSettings::default()
+            barge_in_mode: barge_in_mode(&cfg),
         };
         let new = MicCapture::new(index, settings);
         let device_index = new.device_index();

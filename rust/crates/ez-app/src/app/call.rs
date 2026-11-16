@@ -143,6 +143,11 @@ impl VoiceApp {
         // retener el cerrojo del micrófono: el menú y el chat siguen vivos
         // durante toda la llamada, como en el Python (audio.py §stream).
         let mic = self.inner.audio.mic();
+        // La captura ve la envolvente de lo que suena (barge-in adaptativo);
+        // sin altavoz real (arnés) no hay referencia y se usa el modo clásico.
+        if let Some(reference) = self.inner.speech.speaker.reference() {
+            mic.set_playback_reference(Some(reference));
+        }
         let result = mic.stream(
             &flags.stop,
             hooks,

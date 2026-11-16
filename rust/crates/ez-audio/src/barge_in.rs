@@ -3,6 +3,16 @@
 //! Interrupción: una voz de verdad dura más que un golpe. Se exige un mínimo
 //! de voz por encima del umbral y las pausas entre sílabas no pueden pasar de
 //! unos pocos chunks; un clic, un golpe de teclado o un soplido no lo cumplen.
+//!
+//! `adaptive` añade el modo de P-IMP-BARGEIN: el umbral de cada bloque descuenta
+//! el eco que publica el altavoz. El modo `fixed` reproduce el Python.
+
+mod adaptive;
+
+pub use adaptive::{
+    AdaptiveBargeIn, AdaptiveSettings, BargeInMode, BargeSummary, PlaybackReference,
+    REFERENCE_WINDOW_SECS,
+};
 
 use crate::CHUNK_SECS;
 
