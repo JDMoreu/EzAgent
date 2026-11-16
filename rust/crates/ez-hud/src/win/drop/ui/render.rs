@@ -143,6 +143,10 @@ impl DropUI {
         let now = monotonic();
         let window = self.window();
         let mut save_position = false;
+        // `peek.tick` mueve, muestra u oculta la ventana de la vista rápida
+        // (otro hilo): va después de soltar el lock de la barra.
+        let mut over_form = false;
+        let blocked;
         let frame = {
             let mut bar = self.bar.lock();
             let dt = (now - bar.last).clamp(0.0, 0.05);
@@ -156,7 +160,6 @@ impl DropUI {
                 bar.reduced_at = now;
             }
             let bs = bar.scale * bar.bar_scale;
-            let mut over_form = false;
             bar.hover_item = None;
             if let Some((x, y)) = cursor_logical(window.as_ref(), bs) {
                 if bar.model.near(x, y) {
@@ -169,14 +172,13 @@ impl DropUI {
             let dragging = window
                 .as_ref()
                 .is_some_and(|window| window.dragging_moved());
-            let blocked = !bar.visible
+            blocked = !bar.visible
                 || bar.menu_open
                 || bar.chat_open
                 || bar.asking
                 || bar.model.form_hidden
                 || dragging;
             self.update_peek_view(&bar, window.as_deref());
-            self.peek.tick(now, over_form, blocked);
             let hover = now < bar.hover_until;
             let shown = pose_of(self.ui.update(Some(now)));
             let pose = if bar.asking {
@@ -255,10 +257,12 @@ impl DropUI {
                 }
             }
         };
+        self.peek.tick(now, over_form, blocked);
         if save_position {
             self.save_bar_position();
         }
-        self.chat.read().clone().poll(now);
+        let chat = self.chat.read().clone();
+        chat.poll(now);
         frame
     }
 

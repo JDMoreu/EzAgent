@@ -70,30 +70,39 @@ impl DropUI {
         if self.menu_panel().is_none() || self.window().is_none() {
             return;
         }
-        let geometry = self.card_geometry();
-        let rect = geometry.rect();
-        let mut slot = self.card.lock();
-        if slot.is_none() {
+        let existing = {
+            let mut slot = self.card.lock();
+            match slot.as_mut() {
+                Some(slot) => {
+                    slot.geometry = self.card_geometry();
+                    Some((Arc::clone(&slot.window), slot.geometry.rect()))
+                }
+                None => None,
+            }
+        };
+        // Sin el lock de la tarjeta: `start` espera a que nazca el hilo de la
+        // ventana y `resize`/`set_pos`/`show` son mensajes al suyo, que pide el
+        // lock en `render_card` (misma regla que `Peek::place`).
+        let Some((window, rect)) = existing else {
             if !create {
                 return;
             }
+            let geometry = self.card_geometry();
+            let rect = geometry.rect();
             let window = self
                 .factory
                 .card(self.self_weak.clone(), rect.x, rect.y, rect.w, rect.h);
             let _ = window.start();
-            *slot = Some(CardSlot {
+            *self.card.lock() = Some(CardSlot {
                 window: Arc::clone(&window),
                 geometry,
             });
-            drop(slot);
             window.show();
             return;
-        }
-        let slot = slot.as_mut().expect("la tarjeta existe");
-        slot.geometry = geometry;
-        slot.window.resize(rect.w, rect.h);
-        slot.window.set_pos(rect.x, rect.y);
-        slot.window.show();
+        };
+        window.resize(rect.w, rect.h);
+        window.set_pos(rect.x, rect.y);
+        window.show();
     }
 
     /// `_apply_card_rect`: nuevo rectángulo físico y menú adaptado.
@@ -157,11 +166,28 @@ impl DropUI {
     }
 
     /// `_menu_closed`: el menú terminó de plegarse.
+    ///
+    /// Lo llama el menú desde dentro de `update`/`close`, con su lock tomado
+    /// (`menu.py` lo avisa al acabar la animación). Parar la tarjeta espera a su
+    /// hilo de ventana, que en un gancho del puntero pide ese mismo lock: se
+    /// para en su propio hilo para no dejar el abrazo mortal.
     pub fn menu_closed(&self) {
         self.bar.lock().menu_open = false;
-        let card = self.card.lock().take();
-        if let Some(card) = card {
-            card.window.stop();
+        self.stop_card_async();
+    }
+
+    /// Retira la tarjeta y la detiene fuera del callback que avisó.
+    pub(super) fn stop_card_async(&self) {
+        let Some(card) = self.card.lock().take() else {
+            return;
+        };
+        let spawned = std::thread::Builder::new()
+            .name(String::from("ezagent-card-stop"))
+            .spawn(move || card.window.stop());
+        // DECISION: si no hay hilo, la ventana se queda hasta el cierre de la
+        // app; colgar la interfaz aquí es peor que dejar una ventana oculta.
+        if let Err(error) = spawned {
+            tracing::warn!("no se pudo parar la tarjeta en su hilo: {error}");
         }
     }
 
