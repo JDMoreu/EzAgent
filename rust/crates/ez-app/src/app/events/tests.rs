@@ -228,9 +228,12 @@ fn busy_done_follows_the_barge_in_flag() {
     let generation = turn_gen(app);
     app.inner.speech.busy_speaking.set();
     app.inner.audio.reset_capture.clear();
+    *app.inner.turn.post_tts_until.lock() = 0.0;
+    let before = monotonic();
     app.handle_event(AppEvent::BusyDone(generation));
     assert!(!app.inner.speech.busy_speaking.is_set());
     assert!(app.inner.audio.reset_capture.is_set());
+    assert!(*app.inner.turn.post_tts_until.lock() >= before + 0.2);
     // Si el aviso ya estaba cortado, no se resetea la captura.
     app.inner.speech.busy_speaking.set();
     app.inner.speech.busy_barged.store(true, Ordering::SeqCst);
@@ -259,8 +262,15 @@ fn busy_notice_adds_a_chat_note_for_the_current_turn() {
         messages.last().map(|m| m.text.as_str()),
         Some("Termino lo anterior y sigo.")
     );
+    assert!(!app.inner.speech.busy_speaking.is_set());
     app.handle_event(AppEvent::BusyNotice(generation + 1, "answer".to_string()));
     assert_eq!(app.inner.chat.chat.snapshot().1.len(), before + 1);
+
+    // Con voz en el chat, además se dice (y se marca como aviso en curso).
+    app.inner.chat.chat.set_voice_replies(true);
+    app.handle_event(AppEvent::BusyNotice(generation, "chat".to_string()));
+    assert_eq!(app.inner.chat.chat.snapshot().1.len(), before + 2);
+    assert!(app.inner.speech.busy_speaking.is_set());
 }
 
 #[test]

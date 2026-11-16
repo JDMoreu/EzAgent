@@ -184,6 +184,10 @@ pub(crate) struct RuntimeState {
     pub recorded: Vec<String>,
     pub turns: Vec<String>,
     pub remaining: Option<i64>,
+    /// Presupuesto vivo: `remaining_tool_calls` descuenta lo ya ejecutado.
+    pub budget: Option<i64>,
+    /// Puerta que retiene `execute` para imitar una herramienta lenta.
+    pub execute_gate: Option<Arc<Gate>>,
     pub notify: Option<String>,
     pub confirm: Option<bool>,
     pub refreshed: usize,
@@ -208,6 +212,8 @@ impl FakeRuntime {
                 recorded: Vec::new(),
                 turns: Vec::new(),
                 remaining: None,
+                budget: None,
+                execute_gate: None,
                 notify: None,
                 confirm: None,
                 refreshed: 0,
@@ -261,18 +267,30 @@ impl AgentRuntimeApi for FakeRuntime {
     }
 
     fn remaining_tool_calls(&self) -> Option<i64> {
-        self.state().remaining
+        let state = self.state();
+        if let Some(budget) = state.budget {
+            return Some((budget - state.executed.len() as i64).max(0));
+        }
+        state.remaining
     }
 
     fn execute(&self, name: &str, raw_arguments: &str) -> Result<Value, RuntimeFailure> {
-        let mut state = self.state();
-        state
-            .executed
-            .push((name.to_string(), raw_arguments.to_string()));
-        match state.results.iter().find(|(key, _)| key == name) {
-            Some((_, result)) => result.clone(),
-            None => Ok(json!({"ok": true, "data": "resultado", "error": null})),
+        let (result, gate) = {
+            let mut state = self.state();
+            state
+                .executed
+                .push((name.to_string(), raw_arguments.to_string()));
+            let result = match state.results.iter().find(|(key, _)| key == name) {
+                Some((_, result)) => result.clone(),
+                None => Ok(json!({"ok": true, "data": "resultado", "error": null})),
+            };
+            (result, state.execute_gate.clone())
+        };
+        // Fuera del lock: el turno espera aquí como una herramienta real.
+        if let Some(gate) = gate {
+            gate.wait();
         }
+        result
     }
 
     fn render_result(&self, result: Value) -> String {

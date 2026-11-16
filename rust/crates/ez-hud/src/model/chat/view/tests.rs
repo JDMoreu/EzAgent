@@ -24,6 +24,16 @@ fn configure_keeps_the_messages_unless_the_width_changes() {
 }
 
 #[test]
+fn a_new_palette_rebuilds_the_cached_messages() {
+    let mut view = sample_view();
+    let _ = view.render(0.0);
+    assert_eq!(view.cache.len(), 1);
+    let light = crate::tokens::palette("light").expect("the light palette exists");
+    view.configure(440.0, 700.0, 1.0, "dark", light);
+    assert_eq!(view.cache.len(), 0);
+}
+
+#[test]
 fn the_panel_has_the_physical_size_of_the_window() {
     let mut view = sample_view();
     let frame = view.render(0.0);

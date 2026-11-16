@@ -11,6 +11,8 @@ use super::surface::PeekSurface;
 use super::*;
 use crate::paint::peek::{PeekBuffer, PeekItem};
 
+mod tmap_group4;
+
 #[test]
 fn place_card_centers_under_the_hub() {
     let hub = (100.0, 100.0, 300.0, 140.0);

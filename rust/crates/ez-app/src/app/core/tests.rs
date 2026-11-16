@@ -439,13 +439,34 @@ fn hud_config_reads_writes_and_remembers() {
 fn filler_sentences_match_python() {
     assert!(is_filler_sentence("Un momento, lo reviso."));
     assert!(is_filler_sentence("¿Pensando?"));
+    assert!(is_filler_sentence("Pensando…"));
+    assert!(is_filler_sentence("Va, déjame ver."));
+    assert!(is_filler_sentence("A ver."));
     assert!(is_filler_sentence("Dejame ver si esto funciona"));
     assert!(is_filler_sentence("Ya lo veo"));
     assert!(is_filler_sentence("ENSEGUIDA"));
     assert!(!is_filler_sentence("Busco en la web."));
+    assert!(!is_filler_sentence("Sí, está abierto."));
+    assert!(!is_filler_sentence(
+        "Un momento: el agente t51 terminó y dejó tres archivos nuevos."
+    ));
     assert!(!is_filler_sentence("Esto es una prueba completa"));
     assert!(!is_filler_sentence("una dos tres cuatro cinco seis siete"));
     assert!(!is_filler_sentence(""));
+    // Los avisos concretos del código nunca se confunden con muletillas.
+    for (name, arguments) in [
+        ("web_search", "{}"),
+        ("fetch_page", "{}"),
+        ("run_skill_script", "{}"),
+        ("delegate_to_agent", "{\"action\":\"send\"}"),
+        (
+            "delegate_to_agent",
+            "{\"action\":\"run\",\"agent\":\"codex\"}",
+        ),
+    ] {
+        let ack = ez_llm::messenger::tool_ack(name, arguments).expect("la herramienta tiene aviso");
+        assert!(!is_filler_sentence(&ack), "{name}: {ack}");
+    }
 }
 
 #[test]

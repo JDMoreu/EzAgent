@@ -265,3 +265,73 @@ fn with_labels_recorre_objetos_y_listas() {
     assert_eq!(list.data[0]["label"], json!("pestaña 1"));
     assert_eq!(list.data[1], json!({"agent": "claude"}));
 }
+
+#[test]
+fn confirmations_never_say_the_internal_address() {
+    let labels = |address: &str| match address {
+        "t51" => "Claude Code de EzAgent".to_string(),
+        "t5y" => "OpenCode de EzAgent".to_string(),
+        _ => String::new(),
+    };
+    let pattern = regex::Regex::new(r"\bt[0-9a-z]{2,3}\b").expect("patrón");
+    for value in [
+        json!({"action": "kill", "address": "t5y"}),
+        json!({"action": "send", "address": "t51", "task": "Iguala el espaciado"}),
+        json!({"action": "read", "address": "t51", "lines": 20}),
+        json!({"action": "watch", "address": "t51"}),
+        json!({"action": "focus", "address": "t51"}),
+        json!({"action": "keys", "address": "t51", "keys": ["enter"]}),
+        json!({"action": "configure", "address": "t51", "model": "sonnet"}),
+        json!({"action": "run", "agent": "claude", "task": "x", "input_from": "t5z"}),
+    ] {
+        let summary = delegate_summary(&args(value.clone()), &labels);
+        assert!(!pattern.is_match(&summary), "{summary}");
+        let unknown = delegate_summary(&args(value.clone()), &|_| String::new());
+        assert!(!pattern.is_match(&unknown), "{unknown}");
+    }
+    let kill = delegate_summary(&args_kill(), &labels);
+    assert_eq!(kill, "Terminar OpenCode de EzAgent.");
+}
+
+fn args_kill() -> Map<String, Value> {
+    args(json!({"action": "kill", "address": "t5y"}))
+}
+
+#[test]
+fn a_result_with_an_address_carries_only_its_visible_name() {
+    let herdr = Herdr::new(VoiceConfig::new());
+    let raw = json!({
+        "address": "t51",
+        "agent": "claude-code",
+        "where": "EzAgent / Claude Code",
+        "name": "Claude Code",
+        "title": "Claude Code",
+        "labels": {"where": "EzAgent / Claude Code"},
+    });
+    let listed = with_labels(
+        &|address| herdr.label_for(address),
+        ToolResult::ok(json!([raw.clone()])),
+    );
+    let item = &listed.data[0];
+    assert_eq!(item["label"], json!("Claude Code de EzAgent"));
+    for key in ["where", "name", "title", "labels"] {
+        assert!(
+            !item.as_object().expect("objeto").contains_key(key),
+            "{key}"
+        );
+    }
+    let single = with_labels(&|address| herdr.label_for(address), ToolResult::ok(raw));
+    assert_eq!(single.data["label"], json!("Claude Code de EzAgent"));
+    assert!(!single
+        .data
+        .as_object()
+        .expect("objeto")
+        .contains_key("where"));
+
+    // Sin etiqueta en el contexto, el nombre visible se compone de sus campos.
+    let fresh = with_labels(
+        &|_| String::new(),
+        ToolResult::ok(json!({"address": "t60", "name": "QA", "space": "EzAgent"})),
+    );
+    assert_eq!(fresh.data["label"], json!("QA de EzAgent"));
+}

@@ -499,7 +499,12 @@ claridad que no puedes ejecutarla en este momento."
     pub(crate) fn notify_context(&self, text: &str) {
         let callback = lock(&self.shared.on_context_event).clone();
         if let Some(callback) = callback {
-            callback(text);
+            // El Python traga cualquier fallo del aviso (`except Exception`):
+            // una ventana cerrada no puede tumbar el turno.
+            let called = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| callback(text)));
+            if called.is_err() {
+                tracing::debug!("El aviso de contexto falló; el turno sigue");
+            }
         }
     }
 

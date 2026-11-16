@@ -322,3 +322,38 @@ fn done_prompt_queues_the_question() {
          que te muestre el resultado o que haga algo más con él?"
     );
 }
+
+#[test]
+fn the_done_notice_names_the_tab_and_never_reads_back_the_request() {
+    let fixture = setup();
+    let app = &fixture.app;
+    app.inner.agents.herdr.seed_context(
+        Some(vec![json!({
+            "address": "t51",
+            "agent": "claude-code",
+            "label": "Claude Code de EzAgent",
+        })
+        .as_object()
+        .cloned()
+        .expect("objeto")]),
+        Some(0.0),
+        None,
+    );
+    let request = "El input de texto del chat debe tener el mismo espaciado arriba y abajo";
+    for reason in ["done", "blocked", "error", "lost"] {
+        let question = app.done_question("t51", "claude-code", reason, request);
+        assert!(
+            question.contains("Claude Code de EzAgent"),
+            "{reason}: {question}"
+        );
+        assert!(!question.contains("espaciado") && !question.contains('«'));
+        assert!(!question.contains("t51"), "{reason}: {question}");
+    }
+    assert_eq!(
+        app.done_question("t9", "codex", "lost", "una tarea cualquiera"),
+        "Codex se cerró antes de que pudiera confirmar que terminó. ¿Quieres que lo revise?"
+    );
+    assert!(app
+        .done_question("t9", "", "blocked", "x")
+        .starts_with("El agente necesita"));
+}

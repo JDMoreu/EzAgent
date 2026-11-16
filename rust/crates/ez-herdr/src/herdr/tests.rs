@@ -32,6 +32,10 @@ fn visible_name_prefiere_espacio_y_pestana() {
             json!({"name": "2", "space": "EzAgent"}),
             "pestaña 2 de EzAgent",
         ),
+        (
+            json!({"name": "planificador", "space": "EzAgent"}),
+            "planificador de EzAgent",
+        ),
         (json!({"name": "Claude Code"}), "Claude Code"),
         (
             json!({"agent": "claude-code", "cwd": "C:\\work\\proyecto"}),

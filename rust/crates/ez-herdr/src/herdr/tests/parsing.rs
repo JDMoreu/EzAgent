@@ -3,6 +3,7 @@ use super::super::*;
 use ez_core::config::VoiceConfig;
 use ez_core::metrics::monotonic;
 use serde_json::json;
+use std::sync::Arc;
 
 #[test]
 fn list_agents_parsea_igual_que_python() {
@@ -168,4 +169,58 @@ fn context_text_escapa_y_anota_la_frescura() {
          {\"terminals\": [{\"label\": \"a\\u003cb\\u003e\"}, {\"label\": \"x\"}], \"total\": 2, \"freshness\": \"reciente\"}\n\
          </untrusted_agent_windows>"
     );
+}
+
+struct FixedAgents(Vec<serde_json::Map<String, Value>>);
+
+impl HerdrRuntime for FixedAgents {
+    fn run(
+        &self,
+        _argv: &[String],
+        _timeout: f64,
+        _anonymous: bool,
+    ) -> Result<Completed, RunError> {
+        Err(RunError::NotFound)
+    }
+
+    fn which(&self, _program: &str) -> Option<std::path::PathBuf> {
+        None
+    }
+
+    fn monotonic(&self) -> f64 {
+        0.0
+    }
+
+    fn next_id(&self) -> String {
+        "0000".to_string()
+    }
+
+    fn spawn(&self, _name: &str, _task: super::super::runtime::SpawnTask) -> bool {
+        false
+    }
+
+    fn agents(&self) -> Option<Vec<serde_json::Map<String, Value>>> {
+        Some(self.0.clone())
+    }
+}
+
+#[test]
+fn the_prompt_context_has_no_raw_where_or_name() {
+    let agent = json!({
+        "address": "t51",
+        "agent": "claude-code",
+        "state": "working",
+        "cwd": "C:/x/EzAgent",
+        "where": "EzAgent / Claude Code",
+        "name": "Claude Code",
+        "label": "Claude Code de EzAgent",
+    });
+    let rows = vec![agent.as_object().cloned().expect("objeto")];
+    let herdr = Herdr::with_runtime(VoiceConfig::new(), Arc::new(FixedAgents(rows)));
+    herdr.refresh_context();
+    let snapshot = herdr.context_snapshot().expect("snapshot del contexto");
+    let terminal = &snapshot["terminals"][0];
+    assert_eq!(terminal["label"], json!("Claude Code de EzAgent"));
+    assert!(terminal.get("where").is_none() && terminal.get("name").is_none());
+    assert_eq!(herdr.label_for("t51"), "Claude Code de EzAgent");
 }
