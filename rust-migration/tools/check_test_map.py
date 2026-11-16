@@ -41,9 +41,26 @@ def check_references(root: Path, text: str) -> list[str]:
             continue
         if case and file.is_file():
             body = file.read_text(encoding="utf-8", errors="replace")
-            if case not in body:
-                problems.append(f"{path} no contiene el caso {case}")
+            missing = [one for one in expand_case(case) if one not in body]
+            if missing:
+                problems.append(f"{path} no contiene el caso {', '.join(missing)}")
     return problems
+
+
+def expand_case(case: str) -> list[str]:
+    """`pref/0011-0012/0041` → `pref/0011`, `pref/0012`, `pref/0041` (extremos de cada rango)."""
+    parts = case.split("/")
+    numeric = [bool(re.fullmatch(r"\d+(-\d+)?", part)) for part in parts]
+    if not any(numeric):
+        return [case]
+    first = numeric.index(True)
+    if not all(numeric[first:]):
+        return [case]
+    prefix = "/".join(parts[:first])
+    ids = []
+    for part in parts[first:]:
+        ids.extend(part.split("-"))
+    return [f"{prefix}/{one}" if prefix else one for one in ids]
 
 
 def main() -> int:
