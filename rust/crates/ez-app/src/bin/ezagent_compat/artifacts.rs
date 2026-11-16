@@ -1,4 +1,7 @@
 //! Lectura y escritura de los artefactos del perfil por las APIs del port.
+//!
+//! DECISION: no se consulta SQLite a mano; cada artefacto pasa por el lector o
+//! escritor real del crate, que es lo que se quiere validar contra Python.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -342,6 +345,8 @@ fn memory_store(home: &Path) -> Result<MemoryStore, String> {
 
 fn save_memory(home: &Path) -> Result<Value, String> {
     let store = memory_store(home)?;
+    // DECISION: fecha fija dentro de la retención de 180 días; una más vieja la
+    // borraría `purge_old` justo después de insertarla.
     let saved = store.record(
         "user",
         "mensaje de compatibilidad F7-03",
@@ -411,12 +416,14 @@ fn summarize_jsonl(path: &Path) -> Value {
     let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
     let mut lines = 0;
     let mut bad = 0;
+    // DECISION: `pyloads` es el `json.loads` de Python (NaN/Infinity incluidos),
+    // así que una línea que Python acepta no cuenta como ilegible aquí.
     for line in py_splitlines(&text) {
         if line.trim().is_empty() {
             continue;
         }
         lines += 1;
-        match serde_json::from_str::<Value>(line) {
+        match ez_core::pyloads::loads(line) {
             Ok(Value::Object(map)) => {
                 keys.extend(map.keys().cloned());
                 if let Some(kind) = map.get("kind").and_then(Value::as_str) {

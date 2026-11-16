@@ -89,10 +89,11 @@ def main(argv: list[str] | None = None) -> int:
     except HarnessError as error:
         print(f"arnés: {error}", file=sys.stderr)
         return 2
-    profile = args.profile
+    profile = args.profile.resolve()
     if not (profile / "voice.json").exists():
         print(f"arnés: no hay perfil real en {profile}", file=sys.stderr)
         return 2
+    os.chdir(ROOT)
     report = Report()
     workspace = Workspace(profile, keep=args.keep)
     print(f"Perfil copiado a un temporal: {workspace.base}")

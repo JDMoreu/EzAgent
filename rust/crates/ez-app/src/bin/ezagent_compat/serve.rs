@@ -43,6 +43,8 @@ fn start(base: &Path) -> Result<Started, String> {
     std::fs::create_dir_all(base).map_err(|error| error.to_string())?;
     let db = Db::open(base.join("board.db")).map_err(|error| error.to_string())?;
     let service = Arc::new(SwarmService::with_defaults(db));
+    // DECISION: se siembra con `SwarmService::start`, el mismo alta (miembros,
+    // tareas encadenadas y tokens) que usa la app y el servidor de Python.
     let members = [
         MemberSpec::new("ana", "dev", "opencode"),
         MemberSpec::new("bo", "qa", "codex"),

@@ -81,7 +81,7 @@ def first_difference(left, right, path: str = "") -> str | None:
     if isinstance(left, list) and isinstance(right, list):
         if len(left) != len(right):
             return f"{where} (longitud {len(left)} ≠ {len(right)})"
-        for index, (one, other) in enumerate(zip(left, right)):
+        for index, (one, other) in enumerate(zip(left, right, strict=True)):
             found = first_difference(one, other, f"{where}[{index}]")
             if found is not None:
                 return found
