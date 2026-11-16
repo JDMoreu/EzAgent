@@ -5,6 +5,7 @@
 mod support;
 pub(crate) use support::*;
 
+mod budgets;
 mod lifecycle;
 mod text;
 mod tools;

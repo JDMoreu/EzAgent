@@ -390,6 +390,10 @@ mod tests {
         assert_eq!(model.item_at(0.0, 0.0), None);
         assert!(!model.animating(59.0 / 60.0));
         assert_eq!(model.hub_rect(1.0), (12.0, 12.0, 180.0, 116.0));
+        let (x0, _, x1, _) = model.hub_rect(1.0);
+        assert!(x1 - x0 > crate::model::drop::CIRCLE_D + 3.0 * crate::model::drop::BTN);
+        let folded = model.hub_rect(0.0);
+        assert!(folded.2 - folded.0 < x1 - x0);
         assert_eq!(model.bar_rect(), (-10.0, -10.0, 202.0, 138.0));
         assert!(model.near(1.0, 1.0));
         assert!(!model.near(500.0, 500.0));

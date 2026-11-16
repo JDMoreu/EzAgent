@@ -277,13 +277,46 @@ fn json_without_text_is_empty() {
 
 #[test]
 fn server_errors_are_not_retried_and_show_the_body() {
-    let (url, records, handle) = fake_server(vec![(503, "modelo no cargado".to_string())]);
-    let config = config_for(&url);
-    let error = transcribe(&config, b"x", None).expect_err("error del servidor");
+    for status in [400_u16, 500, 503] {
+        let (url, records, handle) = fake_server(vec![(status, "modelo no cargado".to_string())]);
+        let config = config_for(&url);
+        let error = transcribe(&config, b"x", None).expect_err("error del servidor");
+        handle.join().expect("servidor falso");
+        assert!(error.message().contains(&format!("respondió {status}")));
+        assert!(error.message().contains("modelo no cargado"));
+        assert_eq!(records.lock().expect("registro").len(), 1);
+    }
+}
+
+#[test]
+fn default_vocabulary_hints_prime_whisper() {
+    let (url, records, handle) = fake_server(vec![json_response(r#"{"text": "hola"}"#)]);
+    let mut config = config_for(&url);
+    config.set("stt_model", json!("ggml-base-q5_1"));
+    assert_eq!(transcribe(&config, b"x", None).expect("texto"), "hola");
     handle.join().expect("servidor falso");
-    assert!(error.message().contains("respondió 503"));
-    assert!(error.message().contains("modelo no cargado"));
-    assert_eq!(records.lock().expect("registro").len(), 1);
+    let requests = records.lock().expect("registro");
+    let prompt = multipart_field(&requests[0].body, "prompt").expect("pista por defecto");
+    assert!(prompt.contains("OpenCode"), "{prompt}");
+    assert_eq!(
+        multipart_field(&requests[0].body, "model").as_deref(),
+        Some("ggml-base-q5_1")
+    );
+}
+
+#[test]
+fn whisper_home_respects_the_environment() {
+    use std::ffi::OsString;
+    let folder = temp_dir("home-env");
+    let previous: Option<OsString> = std::env::var_os("EZAGENT_WHISPER_HOME");
+    std::env::set_var("EZAGENT_WHISPER_HOME", &folder);
+    let found = whisper_home();
+    match previous {
+        Some(value) => std::env::set_var("EZAGENT_WHISPER_HOME", value),
+        None => std::env::remove_var("EZAGENT_WHISPER_HOME"),
+    }
+    assert_eq!(found, Some(folder.clone()));
+    cleanup(&folder);
 }
 
 #[test]

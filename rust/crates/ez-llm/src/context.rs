@@ -332,4 +332,95 @@ mod tests {
         assert!(text.ends_with("Usuario: pregunta 0\nAsistente: respuesta 0"));
         assert_eq!(with_summary("p", " "), "p");
     }
+
+    #[test]
+    fn compaction_and_clipping_trigger_at_the_configured_fractions() {
+        let messages = conversation(10);
+        let tokens = estimate_tokens(&messages);
+        let compact = (tokens as f64 / COMPACT_AT) as i64;
+        assert!(!needs_compaction(&messages, compact + 500, 0));
+        assert!(needs_compaction(&messages, compact - 500, 0));
+        assert!(needs_compaction(&messages, compact + 500, 2000));
+        let clip = (tokens as f64 / CLIP_AT) as i64;
+        assert!(needs_clipping(&messages, clip - 10));
+        assert!(!needs_clipping(&messages, clip + 10));
+    }
+
+    #[test]
+    fn split_never_separates_a_tool_call_from_its_result() {
+        let mut history = vec![json!({"role": "system", "content": "s"})];
+        for index in 0..6 {
+            history.push(json!({"role": "user", "content": format!("u{index}")}));
+            history.push(json!({
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"id": format!("c{index}"), "function": {"name": "t", "arguments": "{}"}}],
+            }));
+            history
+                .push(json!({"role": "tool", "content": "r", "tool_call_id": format!("c{index}")}));
+            history.push(json!({"role": "assistant", "content": format!("a{index}")}));
+        }
+        let (old, recent) = split_history(&history, 2);
+        assert_eq!(recent[0]["role"], "user");
+        assert_eq!(
+            old.last().map(|message| message["role"].clone()),
+            Some(json!("assistant"))
+        );
+        for part in [&old, &recent] {
+            for index in 0..part.len() {
+                if part[index]["role"] == "tool" {
+                    assert!(
+                        part[index - 1].get("tool_calls").is_some(),
+                        "resultado separado de su llamada"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn transcript_includes_tools_and_keeps_the_end_of_a_huge_history() {
+        let old = vec![
+            json!({"role": "user", "content": "lanza un agente"}),
+            json!({
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"function": {"name": "delegate", "arguments": "{\"a\": 1}"}}],
+            }),
+            json!({"role": "tool", "content": "x".repeat(900), "tool_call_id": "1"}),
+            json!({"role": "assistant", "content": "Listo, está corriendo."}),
+        ];
+        let body = render_transcript(&old, "Antes hablamos de precios.");
+        assert!(body.starts_with("RESUMEN PREVIO:") && body.contains("Antes hablamos de precios."));
+        assert!(body.contains("Usuario: lanza un agente"));
+        assert!(body.contains("[herramienta delegate"));
+        assert!(body.contains("Asistente: Listo, está corriendo."));
+        assert!(body.lines().map(char_len).max().unwrap_or(0) < 400);
+
+        let huge: Vec<Value> = (0..1000)
+            .map(|index| json!({"role": "user", "content": format!("mensaje {index} {}", "z".repeat(200))}))
+            .collect();
+        let body = render_transcript(&huge, "");
+        assert!(char_len(&body) <= TRANSCRIPT_CHARS + 10);
+        assert!(body.contains("mensaje 999"));
+        assert!(!body.contains("mensaje 0 "));
+    }
+
+    #[test]
+    fn summary_messages_carry_the_archivist_prompt_and_the_previous_summary() {
+        let request = summary_messages(&conversation(2)[1..], "previo");
+        assert_eq!(request[0]["role"], "system");
+        assert!(request[0]["content"]
+            .as_str()
+            .unwrap_or("")
+            .contains("archivista"));
+        assert_eq!(request[1]["role"], "user");
+        assert!(request[1]["content"]
+            .as_str()
+            .unwrap_or("")
+            .contains("previo"));
+        let combined = with_summary("PROMPT", "- el usuario quiere X");
+        assert!(combined.starts_with("PROMPT"));
+        assert!(combined.contains("# Resumen de la conversación hasta ahora"));
+    }
 }

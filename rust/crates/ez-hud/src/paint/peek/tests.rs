@@ -63,6 +63,43 @@ fn meta_line_joins_label_agent_and_time() {
     // Un agente desconocido conserva su nombre con la inicial en mayúscula.
     let unknown = item("x", "X", "hermes", "waiting", 100.0);
     assert_eq!(meta_line(&unknown, 130.0), "En espera · Hermes · ahora");
+    // Los mismos tres tiempos que pide `test_activity.py`.
+    let live = PeekItem {
+        live: true,
+        ..item("a", "Tarea a", "codex", "working", 0.0)
+    };
+    let done = item("b", "Tarea b", "codex", "done", 0.0);
+    assert_eq!(meta_line(&live, 12.0 * 60.0), "En curso · Codex · 12 min");
+    assert_eq!(
+        meta_line(&done, 3.0 * 3600.0),
+        "Completada · Codex · hace 3 h"
+    );
+    assert_eq!(meta_line(&done, 20.0), "Completada · Codex · ahora");
+}
+
+#[test]
+fn a_one_row_notice_is_a_capsule_sized_like_the_pill() {
+    use crate::model::drop::{BTN, GAP, PILL_H, PILL_W};
+    fn measures() -> (f64, f64, f64) {
+        (PILL_W, PEEK_W, BTN + GAP)
+    }
+    assert_eq!(card_height(1, false), PILL_H);
+    assert_eq!(RADIUS, PILL_H / 2.0);
+    let (pill_w, peek_w, step) = measures();
+    assert!(pill_w < peek_w && peek_w < pill_w + 4.0 * step);
+}
+
+#[test]
+fn the_two_lines_sit_centred_in_the_row() {
+    for scale in [1.0, 1.275, 2.0] {
+        let (first, second) = baselines(scale);
+        let above = first - super::text::text_cap_height(FS_TASK, scale);
+        let below = ROW_H - second;
+        assert!(
+            (above - below).abs() <= 0.01,
+            "scale {scale}: {above} != {below}"
+        );
+    }
 }
 
 #[test]

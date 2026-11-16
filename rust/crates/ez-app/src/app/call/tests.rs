@@ -335,3 +335,55 @@ fn call_worker_reports_a_missing_microphone() {
         )]
     );
 }
+
+#[test]
+fn speech_start_during_the_busy_notice_is_ignored() {
+    let fixture = Fixture::new();
+    let app = &fixture.app;
+    app.start_call();
+    let generation = turn_gen(app);
+    set_state(app, THINKING);
+    app.inner.speech.busy_speaking.set();
+    app.on_speech_start(0.1);
+    assert_eq!(turn_gen(app), generation);
+    assert!(app.inner.session.ignore_utterance.load(Ordering::SeqCst));
+}
+
+#[test]
+fn signal_tts_stop_also_cuts_the_busy_notice() {
+    let fixture = Fixture::new();
+    let app = &fixture.app;
+    let tts = Arc::new(Flag::new());
+    let busy = Arc::new(Flag::new());
+    *app.inner.speech.tts_stop.lock() = Some(Arc::clone(&tts));
+    *app.inner.speech.busy_stop.lock() = Some(Arc::clone(&busy));
+    app.signal_tts_stop();
+    assert!(tts.is_set());
+    assert!(busy.is_set());
+}
+
+#[test]
+fn after_a_busy_barge_in_the_speech_start_follows_the_normal_flow() {
+    let fixture = Fixture::new();
+    let app = &fixture.app;
+    app.start_call();
+    let generation = turn_gen(app);
+    set_state(app, THINKING);
+    app.inner.config.cfg.write().set("barge_in", json!(true));
+    app.inner.speech.busy_speaking.set();
+    let turn_stop = app.new_tts_stop();
+    let busy_stop = Arc::new(Flag::new());
+    *app.inner.speech.busy_stop.lock() = Some(Arc::clone(&busy_stop));
+    app.on_barge_in(0.1);
+    assert!(!turn_stop.is_set(), "el barge-in no toca el stop del turno");
+    assert!(busy_stop.is_set());
+
+    *app.inner.turn.last_turn_audio.lock() = Some((vec![1, 2], 16_000, monotonic() - 1.0));
+    app.on_speech_start(0.1);
+    assert_eq!(turn_gen(app), generation + 1);
+    assert_eq!(
+        *app.inner.turn.resume_pcm.lock(),
+        Some((vec![1, 2], 16_000))
+    );
+    assert_eq!(app.inner.session.state.read().as_str(), LISTENING);
+}

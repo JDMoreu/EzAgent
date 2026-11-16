@@ -176,6 +176,7 @@ fn lo_vivo_usa_el_estado_del_watcher_y_la_etiqueta_visible() {
     assert_eq!(items.len(), 2);
     assert_eq!(items[0].key, "t1");
     assert_eq!(items[0].title, "Arreglar el HUD");
+    assert_eq!(items[0].agent, "");
     assert_eq!(items[0].state, NEEDS_YOU);
     assert_eq!(items[0].since, 10.0);
     assert_eq!(items[1].key, "t3");

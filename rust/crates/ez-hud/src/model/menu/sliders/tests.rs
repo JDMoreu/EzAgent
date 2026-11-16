@@ -1,7 +1,9 @@
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-use crate::model::settings::{db_to_rms, MenuSettings, SettingValue, METER_DB_FLOOR, SLIDERS};
+use crate::model::settings::{
+    db_to_rms, MenuSettings, SettingValue, METER_DB_CEIL, METER_DB_FLOOR, SLIDERS,
+};
 
 use super::super::geometry::{MenuCallbacks, MenuOptions};
 use super::super::rects::{SLIDER_TRACK_X0, SLIDER_TRACK_X1};
@@ -132,4 +134,56 @@ fn an_unknown_slider_key_is_ignored() {
     menu.set_slider_from_x("no_existe", 200.0, 2.0);
     assert_eq!(menu.settings.get("speed").cloned(), before);
     assert_eq!(SLIDERS.len(), 16);
+}
+
+fn decibels(rms: f64) -> f64 {
+    20.0 * rms.log10()
+}
+
+fn drag_to(menu: &mut Menu, fraction: f64) -> f64 {
+    let x = SLIDER_TRACK_X0 + fraction * (SLIDER_TRACK_X1 - SLIDER_TRACK_X0);
+    menu.set_meter_from_x(x, 1.0);
+    match menu.settings.get("min_rms") {
+        Some(SettingValue::Float(value)) => *value,
+        other => panic!("min_rms no es un número: {other:?}"),
+    }
+}
+
+#[test]
+fn the_meter_track_is_the_whole_decibel_scale() {
+    let spec = SLIDERS.get("min_rms").expect("min_rms");
+    assert!((decibels(spec.minimum) - METER_DB_FLOOR).abs() < 1e-9);
+    assert!((decibels(spec.maximum) - METER_DB_CEIL).abs() < 1e-9);
+
+    let mut menu = menu_with(vec![("input_meter", "meter")], MenuCallbacks::default());
+    assert!((decibels(drag_to(&mut menu, 0.0)) - METER_DB_FLOOR).abs() <= 0.05);
+    assert!((decibels(drag_to(&mut menu, 1.0)) - METER_DB_CEIL).abs() <= 0.05);
+    for fraction in [0.05, 0.25, 0.5, 0.75, 0.95] {
+        let rms = drag_to(&mut menu, fraction);
+        let drawn = crate::paint::menu::controls::meter_fraction(rms);
+        let span = METER_DB_CEIL - METER_DB_FLOOR;
+        assert!(
+            (drawn - fraction).abs() <= 0.5 / span,
+            "{fraction} -> {drawn}"
+        );
+    }
+    let low = decibels(drag_to(&mut menu, 0.10));
+    let high = decibels(drag_to(&mut menu, 0.90));
+    assert!((high - low - 0.8 * (METER_DB_CEIL - METER_DB_FLOOR)).abs() <= 1.0);
+}
+
+#[test]
+fn the_default_threshold_sits_inside_the_range_and_survives_quantizing() {
+    use crate::model::settings::DEFAULT_VALUES;
+    let settings = MenuSettings::default();
+    let value = match settings.get("min_rms") {
+        Some(SettingValue::Float(value)) => *value,
+        other => panic!("min_rms no es un número: {other:?}"),
+    };
+    let default = match DEFAULT_VALUES.get("min_rms") {
+        Some(SettingValue::Float(value)) => *value,
+        other => panic!("min_rms por defecto no es un número: {other:?}"),
+    };
+    assert!((value - default).abs() / default < 0.06);
+    assert!(db_to_rms(METER_DB_FLOOR) < value && value < db_to_rms(METER_DB_CEIL));
 }
