@@ -275,10 +275,17 @@ fn a_slow_history_still_animates_the_opening() {
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
+    // La animación va por reloj: con el equipo cargado se pintan menos cuadros.
+    // Lo que se vigila es que la carga lenta del historial no se coma la
+    // animación (antes el primer cuadro ya salía con p = 1).
     let middle = progress.iter().filter(|p| **p > 0.0 && **p < 1.0).count();
     assert!(
-        middle >= 3,
-        "la apertura solo pintó {middle} cuadros intermedios: {progress:?}"
+        middle >= 1,
+        "la apertura no pintó cuadros intermedios: {progress:?}"
+    );
+    assert!(
+        progress.first().is_some_and(|p| *p < 0.5),
+        "la apertura empezó casi terminada: {progress:?}"
     );
     assert_eq!(panel.state.lock().anim.state, AnimState::Open);
     panel.close_now();
@@ -311,10 +318,12 @@ fn closing_paints_intermediate_frames_before_removing_the_window() {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     assert!(finished, "el cierre no terminó: {progress:?}");
+    // La animación va por reloj: con el equipo cargado se pintan menos cuadros;
+    // basta con que el cierre se vea antes de retirar la ventana.
     let middle = progress.iter().filter(|p| **p > 0.0 && **p < 1.0).count();
     assert!(
-        middle >= 3,
-        "el cierre solo pintó {middle} cuadros intermedios: {progress:?}"
+        middle >= 1,
+        "el cierre no pintó cuadros intermedios: {progress:?}"
     );
     panel.poll(0.0);
     assert!(

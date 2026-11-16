@@ -12,7 +12,7 @@ use super::output::print_line;
 /// `_print_agents(cfg)`: una línea por agente de Herdr.
 pub fn print_agents(cfg: &VoiceConfig) {
     let herdr = Herdr::new(cfg.clone());
-    match herdr.list_agents(10.0) {
+    match herdr.list_agents(20.0) {
         Ok(agents) => {
             for agent in agents {
                 print_line(&agent_row(&agent));

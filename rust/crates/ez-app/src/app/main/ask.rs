@@ -25,7 +25,7 @@ impl HerdrApi for CliHerdr {
 
     fn list_agents(&self) -> Vec<Value> {
         self.0
-            .list_agents(10.0)
+            .list_agents(20.0)
             .map(|agents| agents.into_iter().map(Value::Object).collect())
             .unwrap_or_default()
     }

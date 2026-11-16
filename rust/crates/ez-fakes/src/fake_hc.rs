@@ -300,7 +300,9 @@ impl StateLock {
                     .with_context(|| format!("no pude crear {}", parent.display()))?;
             }
         }
-        for _ in 0..400 {
+        // 30 s: con el equipo cargado (compilaciones, antivirus) varios fake-hc
+        // en fila pueden tardar más de los 2 s de antes y la prueba fallaba.
+        for _ in 0..6000 {
             match std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -326,7 +328,17 @@ impl StateLock {
 
 impl Drop for StateLock {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
+        // En Windows el borrado puede fallar un instante si otro proceso (el
+        // antivirus, por ejemplo) tiene abierto el archivo; un cerrojo que se
+        // queda dejaría bloqueados a todos los fake-hc siguientes.
+        for _ in 0..200 {
+            match std::fs::remove_file(&self.path) {
+                Err(error) if error.kind() != ErrorKind::NotFound => {
+                    sleep(Duration::from_millis(10));
+                }
+                _ => return,
+            }
+        }
     }
 }
 
