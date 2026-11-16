@@ -29,11 +29,11 @@ Rama de trabajo: `rust/main`, último commit `de8d108`. No hay workers en marcha
 1. ~~Verificar la última fusión (P-IMP-BARGEIN)~~ **Hecho al retomar:** fmt, clippy, 101 binarios y reproducción 3/3 en verde; `release` recompilada. Órdenes por si hay que repetir:
    - `cd rust && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
    - `cargo build -p ez-fakes --bins && cargo build -p ez-swarm --bin ezs && cargo test -p ez-app --features replay --test replay_parity` (≈7 min)
-2. **AUTO-A3:** el bucle del modo autónomo en la app (**en curso** desde la reanudación, árbol `../EzAgent-wt/AUTO-A3`).
+2. ~~AUTO-A3~~ **Hecho e integrado** (bucle del modo autónomo, modo A completo); verificado: 101 binarios + reproducción 3/3; `release` recompilada.
    - Brief: `rust-migration/briefs/AUTO-A3.md`; *prompt*: `rust-migration/tools/orquestacion/prompt-AUTO-A3.txt`.
    - Su rama `work/AUTO-A3` no tiene avance (se detuvo nada más empezar).
-3. **Modo B** (multiagente sobre el enjambre, sección 10.18).
-4. **UI** (sección 10.19): fila y marca en la barra y la vista rápida.
+3. **Modo B** (multiagente sobre el enjambre, sección 10.18): **en curso** (`AUTO-B`, árbol `../EzAgent-wt/AUTO-B`).
+4. **UI** (sección 10.19): fila y marca en la barra y la vista rápida: **en curso** (`AUTO-UI`, árbol `../EzAgent-wt/AUTO-UI`).
 5. **Recompilar `release`** (`cargo build --release -p ez-app --bin ezagent-voice`) para que el usuario pruebe con `rust\run-dev.cmd`:
    - la interrupción por voz;
    - los nombres dictados;
