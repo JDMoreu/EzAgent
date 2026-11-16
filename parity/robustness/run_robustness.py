@@ -349,12 +349,16 @@ class Counters:
         if snapshot in (0, self.wintypes.HANDLE(-1).value):
             return -1
         entry = self.ctypes.create_string_buffer(64)
-        self.ctypes.c_uint32.from_buffer(entry).value = 64
+        # `dwSize` debe ser exactamente `sizeof(THREADENTRY32)` = 28; Windows
+        # rechaza otro valor con ERROR_BAD_LENGTH.
+        self.ctypes.c_uint32.from_buffer(entry).value = 28
         count = 0
         try:
             ok = self.kernel32.Thread32First(snapshot, entry)
             while ok:
-                owner = self.ctypes.c_uint32.from_buffer(entry, 8).value
+                # THREADENTRY32: dwSize(0), cntUsage(4), th32ThreadID(8),
+                # th32OwnerProcessID(12).
+                owner = self.ctypes.c_uint32.from_buffer(entry, 12).value
                 if owner == pid:
                     count += 1
                 ok = self.kernel32.Thread32Next(snapshot, entry)
