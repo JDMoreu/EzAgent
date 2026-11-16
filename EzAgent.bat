@@ -11,7 +11,8 @@ set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
 set "RUST_EXE=%ROOT%rust\target\release\ezagent-voice.exe"
 
-rem Por omision arranca la version Rust si esta compilada; "py" fuerza Python.
+rem DECISION: por omision arranca la version Rust si esta compilada; "py"
+rem fuerza la ruta Python (los subcomandos siguientes se resuelven despues).
 set "MODE=auto"
 if /I "%~1"=="py" set "MODE=py"
 if /I "%MODE%"=="py" shift
@@ -122,6 +123,8 @@ timeout /t 2 >nul
 exit /b 0
 
 rem Las mismas DLL que usa rust\run-dev.cmd, si el entorno de Python existe.
+rem DECISION: si falta .venv se avisa y se sigue; el stage instalado ya trae
+rem onnxruntime.dll y espeak-ng junto al ejecutable.
 :rust_env
 if not exist "%ROOT%.venv\Lib\site-packages\onnxruntime\capi\onnxruntime.dll" (
     echo   Aviso: no encuentro onnxruntime.dll en .venv; ejecuta "uv sync".
@@ -170,6 +173,8 @@ exit /b 0
 %PS% -Command "$v=@(Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'python.exe' -and $_.CommandLine -like '*-m ezagent.voice*') -or $_.Name -eq 'ezagent-voice.exe' }); if ($v.Count -gt 0) { exit 0 } else { exit 1 }"
 exit /b %errorlevel%
 
+rem DECISION: se detiene siempre ezagent-voice.exe (y el script de Python
+rem sigue parando la voz Python y whisper); asi stop sirve en los dos modos.
 :stop_voice
 %PS% -Command "$v=@(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'ezagent-voice.exe' }); foreach ($p in $v) { Write-Host ('Deteniendo EzAgent Voice (PID ' + $p.ProcessId + ')...'); Stop-Process -Id $p.ProcessId -Force }"
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\stop-voice.ps1"
@@ -215,6 +220,8 @@ if errorlevel 1 (
 pause
 exit /b 0
 
+rem DECISION: en modo Rust la lista la da el binario (--list-agents); el modo
+rem Python conserva herdr-app status, como hasta ahora.
 :list_agents_rust
 call :rust_env
 "%RUST_EXE%" --list-agents
