@@ -348,6 +348,8 @@ impl AutonomousLoop {
                 // puede estar pidiendo confiar en la carpeta. Se aprueba con la
                 // misma transacción que el ejecutor único; fuera de `workdir`,
                 // se pausa.
+                // DECISION: se reintenta mientras el tablero lo dé por
+                // bloqueado (el supervisor lo marca al abrir con el diálogo).
                 if let approve::Approval::Paused(reason) =
                     approve::approve_launch(self, session, &member.address)
                 {

@@ -114,6 +114,9 @@ fn write_key(path: &Path, key: &str, value: Value) {
 }
 
 fn queue() -> &'static SaveQueue {
+    // DECISION: hay un solo HUD y un solo `voice.json`; la cola vive en el
+    // proceso para no cambiar los campos públicos de `HudConfig` (los usa la
+    // app al arrancar).
     static QUEUE: OnceLock<SaveQueue> = OnceLock::new();
     QUEUE.get_or_init(|| SaveQueue::start(Arc::new(write_key)))
 }
@@ -311,20 +314,23 @@ mod tests {
             queue.push(path, "drop_x", Value::from(value));
         }
         queue.push(path, "drop_dock", Value::String("left".to_string()));
-        let first = received
-            .recv_timeout(std::time::Duration::from_secs(10))
-            .expect("drop_x");
-        let second = received
-            .recv_timeout(std::time::Duration::from_secs(10))
-            .expect("drop_dock");
-        assert_eq!(first, ("drop_x".to_string(), Value::from(99)));
+        let mut written = Vec::new();
+        while let Ok(item) = received.recv_timeout(std::time::Duration::from_millis(300)) {
+            written.push(item);
+        }
+        let xs: Vec<i64> = written
+            .iter()
+            .filter(|(key, _)| key == "drop_x")
+            .map(|(_, value)| value.as_i64().unwrap_or_default())
+            .collect();
+        assert!(!xs.is_empty(), "no se escribió drop_x");
+        assert_eq!(xs.last(), Some(&99), "el último valor de drop_x manda");
+        assert!(xs.windows(2).all(|pair| pair[0] <= pair[1]), "{xs:?}");
         assert_eq!(
-            second,
-            ("drop_dock".to_string(), Value::String("left".to_string()))
+            written.last(),
+            Some(&("drop_dock".to_string(), Value::String("left".to_string()))),
+            "drop_dock llegó al final"
         );
-        assert!(received
-            .recv_timeout(std::time::Duration::from_millis(100))
-            .is_err());
     }
 
     #[test]

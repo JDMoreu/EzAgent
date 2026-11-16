@@ -102,6 +102,8 @@ fn open_member(
     // confianza en la carpeta, p. ej.). La aprueba el bucle autónomo con la
     // regla de 10.2, así que el miembro se conserva en vez de darlo por
     // perdido; su aviso inicial queda pendiente para cuando se libere.
+    // DECISION: la seguridad la decide el bucle con la misma transacción de
+    // 10.2/10.9 que el ejecutor único; aquí solo se conserva la terminal.
     let waiting = !ok && screen_has_dialog(context, &address);
     if !ok && !waiting {
         return Err(error_text(&result));

@@ -70,6 +70,7 @@ pub trait DropConfig: Send + Sync {
 
     /// Pide el guardado sin bloquear al hilo que llama (la barra guarda su
     /// posición desde el hilo de pintura). Por omisión, como [`Self::save`].
+    // DECISION: el adaptador que ya escribe en otro hilo no necesita cambiarlo.
     fn save_soon(&self, key: &str, value: ConfigValue) {
         self.save(key, value);
     }
