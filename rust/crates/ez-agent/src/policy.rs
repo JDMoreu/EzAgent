@@ -158,6 +158,128 @@ mod tests {
     }
 
     #[test]
+    fn matches_the_contract_oracle_over_the_whole_space() {
+        fn oracle(
+            level: i64,
+            tainted: bool,
+            bulk: i64,
+            always: bool,
+            nondestructive: bool,
+        ) -> &'static str {
+            if level >= 3 {
+                "deny"
+            } else if always {
+                if bulk > 5 {
+                    "confirm_strong"
+                } else {
+                    "confirm"
+                }
+            } else if bulk > 5 {
+                "confirm_strong"
+            } else if (tainted && level >= 1) || (level == 2 && nondestructive) {
+                "confirm"
+            } else {
+                "allow"
+            }
+        }
+
+        let mut count = 0;
+        for level in 0..5 {
+            for tainted in [false, true] {
+                for bulk in [0, 1, 5, 6, 50] {
+                    for always in [false, true] {
+                        for nondestructive in [false, true] {
+                            let decision = decide(level, tainted, bulk, always, nondestructive);
+                            assert_eq!(
+                                decision.action.as_str(),
+                                oracle(level, tainted, bulk, always, nondestructive),
+                                "{level}/{tainted}/{bulk}/{always}/{nondestructive}"
+                            );
+                            assert!(!decision.reason.is_empty());
+                            count += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(count, 200);
+        for level in [3, 4, 99] {
+            for tainted in [false, true] {
+                for bulk in [0, 100] {
+                    for always in [false, true] {
+                        for nondestructive in [false, true] {
+                            assert_eq!(
+                                decide(level, tainted, bulk, always, nondestructive).action,
+                                Action::Deny
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn destructive_operations_always_confirm() {
+        for level in 0..3 {
+            for tainted in [false, true] {
+                for bulk in [0, 1, 5, 6, 1000] {
+                    for nondestructive in [false, true] {
+                        let action = decide(level, tainted, bulk, true, nondestructive).action;
+                        assert!(
+                            action == Action::Confirm || action == Action::ConfirmStrong,
+                            "{level}/{tainted}/{bulk}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn threshold_taint_and_level_two_follow_the_contract() {
+        assert_eq!(decide(1, false, 5, false, false).action, Action::Allow);
+        assert_eq!(
+            decide(1, false, 6, false, false).action,
+            Action::ConfirmStrong
+        );
+        assert_eq!(
+            decide_with_threshold(1, false, 3, false, false, 2).action,
+            Action::ConfirmStrong
+        );
+        assert_eq!(
+            decide_with_threshold(1, false, 2, false, false, 2).action,
+            Action::Allow
+        );
+        assert_eq!(
+            decide_with_threshold(0, false, 1, false, false, 0).action,
+            Action::ConfirmStrong
+        );
+        assert_eq!(decide(0, true, 0, false, false).action, Action::Allow);
+        assert_eq!(decide(1, true, 0, false, false).action, Action::Confirm);
+        assert_eq!(decide(2, true, 0, false, false).action, Action::Confirm);
+        assert_eq!(decide(2, false, 0, false, false).action, Action::Allow);
+        assert_eq!(decide(2, false, 0, false, true).action, Action::Confirm);
+        assert_eq!(decide(1, false, 0, false, true).action, Action::Allow);
+    }
+
+    #[test]
+    fn the_returned_level_names_the_tool_or_two_when_it_confirms() {
+        assert_eq!(
+            decide(0, false, 0, false, false),
+            Decision {
+                action: Action::Allow,
+                level: 0,
+                reason: "Permitido"
+            }
+        );
+        assert_eq!(decide(1, true, 0, false, false).level, 1);
+        assert_eq!(decide(0, false, 99, false, false).level, 2);
+        assert_eq!(decide(1, false, 0, true, false).level, 2);
+        assert_eq!(decide(3, false, 0, false, false).level, 3);
+    }
+
+    #[test]
     fn self_confirmed_skips_only_the_policy_confirmation() {
         let confirm = decide(2, false, 0, false, true);
         assert_eq!(confirm.action, Action::Confirm);

@@ -509,6 +509,74 @@ mod tests {
     }
 
     #[test]
+    fn buttons_do_not_overlap_each_other_or_the_form() {
+        for (layout, docks) in DOCKS {
+            let circle = layout == "circle";
+            for &dock in docks {
+                let sl = slots(layout, 1.0, Some(dock));
+                let mut names: Vec<&str> = BUTTONS.to_vec();
+                names.push("pill");
+                let form_r = if circle { CIRCLE_D } else { PILL_H } / 2.0;
+                for (index, a) in names.iter().enumerate() {
+                    for b in &names[index + 1..] {
+                        let (ax, ay) = sl[a];
+                        let (bx, by) = sl[b];
+                        let ra = if *a == "pill" { form_r } else { BTN / 2.0 };
+                        let rb = if *b == "pill" { form_r } else { BTN / 2.0 };
+                        if (*a == "pill" || *b == "pill") && !circle {
+                            let dx = ((ax - bx).abs() - PILL_W / 2.0 - BTN / 2.0).max(0.0);
+                            assert!(
+                                dx > 0.0 || (ay - by).abs() > PILL_H / 2.0 + BTN / 2.0 - 1.0,
+                                "{layout}/{dock}: {a} y {b}"
+                            );
+                        } else {
+                            let distance = ((ax - bx).powi(2) + (ay - by).powi(2)).sqrt();
+                            assert!(distance >= ra + rb, "{layout}/{dock}: {a} y {b}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_call_button_keeps_the_same_spacing_as_the_others() {
+        for (layout, docks) in DOCKS {
+            let circle = layout == "circle";
+            for &dock in docks {
+                for mic in [1.0, 0.0] {
+                    let sl = slots(layout, mic, Some(dock));
+                    let row_y = sl["hang"].1;
+                    let mut names: Vec<&str> = sl
+                        .iter()
+                        .filter(|(name, point)| {
+                            (point.1 - row_y).abs() < 0.01 && !(**name == "mic" && mic == 0.0)
+                        })
+                        .map(|(name, _)| *name)
+                        .collect();
+                    names.sort_by(|a, b| sl[a].0.total_cmp(&sl[b].0));
+                    let half = |name: &str| {
+                        if name == "pill" {
+                            (if circle { CIRCLE_D } else { PILL_W }) / 2.0
+                        } else {
+                            BTN * if name == "mic" { mic } else { 1.0 } / 2.0
+                        }
+                    };
+                    for pair in names.windows(2) {
+                        let (a, b) = (pair[0], pair[1]);
+                        let gap = sl[b].0 - half(b) - (sl[a].0 + half(a));
+                        let expected = neighbor_gap(a, b, circle);
+                        assert!(
+                            (gap - expected).abs() < 1e-6,
+                            "{layout}/{dock}/{mic}: {a}-{b} {gap} != {expected}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn when_nothing_fits_the_least_bad_dock_is_returned() {
         let tiny = (0, 0, 120, 90);
         let dock = choose_dock("circle", None, (60.0, 45.0), tiny, 1.0);

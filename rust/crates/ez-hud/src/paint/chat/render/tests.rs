@@ -143,6 +143,40 @@ fn render_message_reports_plain_text_and_copy_hits() {
 }
 
 #[test]
+fn a_single_word_longer_than_the_column_does_not_hang() {
+    let pal = palette();
+    let host = Host {
+        blocks: vec![paragraph(&"a".repeat(400))],
+    };
+    let rendered = render_message(&host, "", &pal, 160.0, &RenderOptions::default());
+    assert!(rendered.height > 10.0, "{}", rendered.height);
+    assert!(rendered.height.is_finite());
+}
+
+#[test]
+fn logical_height_does_not_depend_on_the_screen_scale() {
+    let pal = palette();
+    let host = Host {
+        blocks: (0..12)
+            .map(|_| paragraph("Un párrafo bastante largo "))
+            .collect(),
+    };
+    let heights: Vec<f64> = [1.0, 1.5, 2.0]
+        .iter()
+        .map(|scale| {
+            let options = RenderOptions {
+                scale: *scale,
+                ..RenderOptions::default()
+            };
+            render_message(&host, "", &pal, 420.0, &options).height
+        })
+        .collect();
+    let maximum = heights.iter().cloned().fold(f64::MIN, f64::max);
+    let minimum = heights.iter().cloned().fold(f64::MAX, f64::min);
+    assert!(maximum - minimum <= 24.0, "{heights:?}");
+}
+
+#[test]
 fn render_message_paints_paragraphs() {
     let pal = palette();
     let host = Host {

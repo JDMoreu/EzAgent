@@ -1,3 +1,5 @@
+mod extra;
+
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
@@ -44,17 +46,26 @@ struct HostState {
     state_after_enter: Option<String>,
     sent: Vec<(String, String, bool)>,
     keys: Vec<Vec<String>>,
+    gets: usize,
+    slow_get: f64,
 }
 
 struct FakeHost {
     state: Mutex<HostState>,
+    clock: Option<Arc<FakeClock>>,
 }
 
 impl FakeHost {
     fn new(state: HostState) -> Self {
         Self {
             state: Mutex::new(state),
+            clock: None,
         }
+    }
+
+    fn with_clock(mut self, clock: Arc<FakeClock>) -> Self {
+        self.clock = Some(clock);
+        self
     }
 
     fn state(&self) -> std::sync::MutexGuard<'_, HostState> {
@@ -64,7 +75,17 @@ impl FakeHost {
 
 impl SessionHost for FakeHost {
     fn get_agent(&self, _address: &str) -> Result<Map<String, Value>, HerdrError> {
-        Ok(self.state().info.clone())
+        let (info, slow) = {
+            let mut state = self.state();
+            state.gets += 1;
+            (state.info.clone(), state.slow_get)
+        };
+        if slow > 0.0 {
+            if let Some(clock) = &self.clock {
+                *clock.now.lock().expect("reloj") += slow;
+            }
+        }
+        Ok(info)
     }
 
     fn send_agent(

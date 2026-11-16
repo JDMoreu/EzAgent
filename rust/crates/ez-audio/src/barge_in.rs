@@ -120,7 +120,11 @@ mod tests {
         let run = barge.feed(&[2, 3], 0.1).expect("hay interrupción");
         assert_eq!(run.len(), 9);
         assert_eq!(run[8], (vec![2, 3], 0.1));
-        // Tras confirmar, el detector queda limpio.
+        // Tras confirmar, el detector queda listo para otra frase.
+        for _ in 0..8 {
+            assert!(barge.feed(&[0, 1], 0.1).is_none());
+        }
+        assert!(barge.feed(&[2, 3], 0.1).is_some(), "segunda interrupción");
         assert!(barge.feed(&[4, 5], 0.0).is_none());
     }
 

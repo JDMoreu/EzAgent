@@ -1,6 +1,10 @@
 use super::*;
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
+
+use crate::herdr::{Completed, HerdrRuntime, RunError};
 
 fn watcher(announce: bool) -> Watcher {
     let on_event: EventCallback = Arc::new(|_, _, _, _| {});
@@ -225,6 +229,131 @@ fn arrancar_y_parar_no_se_cuelga() {
     watcher.stop();
     watcher.start();
     watcher.stop();
+    for slot in [&watcher.poll, &watcher.delivery] {
+        let worker = lock(slot);
+        assert!(
+            worker.as_ref().is_some_and(|worker| !worker.is_alive()),
+            "los dos hilos se unen al parar"
+        );
+    }
+}
+
+#[test]
+fn a_done_needs_an_observed_working_transition() {
+    let watcher = watcher(true);
+    watcher.compare(&[terminal("t1", dict("idle"))]);
+    watcher.compare(&[terminal("t1", dict("done"))]);
+    assert!(events(&watcher).is_empty());
+    watcher.compare(&[terminal("t1", dict("working"))]);
+    watcher.compare(&[terminal("t1", dict("done"))]);
+    assert_eq!(events(&watcher).len(), 1);
+}
+
+struct FailingRuntime {
+    calls: Mutex<usize>,
+}
+
+impl HerdrRuntime for FailingRuntime {
+    fn run(&self, _: &[String], _: f64, _: bool) -> Result<Completed, RunError> {
+        *lock(&self.calls) += 1;
+        Err(RunError::Os("sin hc".to_string()))
+    }
+
+    fn which(&self, _: &str) -> Option<std::path::PathBuf> {
+        None
+    }
+
+    fn monotonic(&self) -> f64 {
+        0.0
+    }
+
+    fn next_id(&self) -> String {
+        String::new()
+    }
+
+    fn spawn(&self, _: &str, _: Box<dyn FnOnce() + Send + 'static>) -> bool {
+        false
+    }
+}
+
+#[test]
+fn un_sondeo_fallido_conserva_el_estado_y_avisa_salud() {
+    let health: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&health);
+    let on_health: HealthCallback = Arc::new(move |healthy| {
+        lock(&recorded).push(healthy.unwrap_or(false));
+    });
+    let on_event: EventCallback = Arc::new(|_, _, _, _| {});
+    let should_announce: AnnounceCallback = Arc::new(|_| true);
+    let runtime: Arc<dyn HerdrRuntime> = Arc::new(FailingRuntime {
+        calls: Mutex::new(0),
+    });
+    let watcher = Arc::new(
+        Watcher::new("hc", on_event, should_announce, Some(on_health), None).with_runtime(runtime),
+    );
+    watcher.compare(&[terminal("t1", dict("working"))]);
+    let worker = Arc::clone(&watcher);
+    let poll = std::thread::spawn(move || worker.poll_loop());
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while watcher.healthy() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    watcher.stop();
+    poll.join().expect("hilo del sondeo");
+    assert!(!watcher.healthy());
+    assert_eq!(watcher.state_of("t1").as_deref(), Some("working"));
+    assert_eq!(lock(&health).as_slice(), &[false]);
+}
+
+#[test]
+fn los_callbacks_no_frenan_el_sondeo() {
+    let (entered_sender, entered) = mpsc::channel::<()>();
+    let (release_sender, release) = mpsc::channel::<()>();
+    let release = Arc::new(Mutex::new(release));
+    let seen: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(Vec::new()));
+    let recorder = Arc::clone(&seen);
+    let on_event: EventCallback = Arc::new(move |address, _, _, reason| {
+        lock(&recorder).push((address.to_string(), reason.to_string()));
+        let _ = entered_sender.send(());
+        let _ = lock(&release).recv_timeout(Duration::from_secs(2));
+    });
+    let should_announce: AnnounceCallback = Arc::new(|_| true);
+    let watcher = Arc::new(Watcher::new("hc", on_event, should_announce, None, None));
+    let worker = Arc::clone(&watcher);
+    let delivery = std::thread::spawn(move || worker.deliver());
+    watcher.compare(&[
+        terminal("t1", dict("working")),
+        terminal("t2", dict("working")),
+    ]);
+    watcher.compare(&[
+        terminal("t1", dict("blocked")),
+        terminal("t2", dict("working")),
+    ]);
+    entered
+        .recv_timeout(Duration::from_secs(1))
+        .expect("el primer aviso entra en el callback");
+    let started = Instant::now();
+    watcher.compare(&[
+        terminal("t1", dict("blocked")),
+        terminal("t2", dict("done")),
+    ]);
+    assert!(started.elapsed() < Duration::from_millis(500));
+    let _ = release_sender.send(());
+    let _ = release_sender.send(());
+    let _ = watcher.sender.send(None);
+    delivery.join().expect("hilo de entrega");
+    let seen = lock(&seen).clone();
+    assert!(seen.contains(&("t1".to_string(), "blocked".to_string())));
+    assert!(seen.contains(&("t2".to_string(), "done".to_string())));
+}
+
+#[test]
+fn el_backoff_crece_hasta_cinco_segundos() {
+    let delays: Vec<f64> = (1..=4)
+        .map(|failures| BACKOFF_S[failures.min(BACKOFF_S.len()) - 1])
+        .collect();
+    assert_eq!(delays, vec![1.0, 2.0, 5.0, 5.0]);
+    assert_eq!((POLL_S, IDLE_POLL_S), (1.0, 5.0));
 }
 
 #[test]
