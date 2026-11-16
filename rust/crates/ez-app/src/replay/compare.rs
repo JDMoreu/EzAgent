@@ -5,6 +5,12 @@
 //! separado**. Dentro de un hilo se ignoran los eventos `driver.step`, porque
 //! son del propio arnés y su entrelazado con los de la app varía (lo mostró el
 //! Python). `seq` también se ignora: al quitar pasos deja de ser comparable.
+//!
+//! Los eventos `swarm.*` van en su propio carril (`<hilo>/swarm`). Los produce
+//! el guion del enjambre (`ezs` y los tics del supervisor) y su entrelazado con
+//! los `hud.show` del mismo hilo depende de cuánto dura la voz falsa frente a
+//! cuánto tarda en arrancar cada `ezs`: con el equipo cargado variaba de una
+//! corrida a otra sin que cambiara nada de la app. Cada carril conserva su orden.
 
 use serde_json::{Map, Value};
 
@@ -76,13 +82,20 @@ fn group(text: &str) -> Result<Vec<(String, Vec<Event>)>, String> {
         let Some(object) = item.as_object() else {
             return Err(format!("evento sin objeto: {line}"));
         };
-        let thread = object
+        let event = object
+            .get("event")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if event == "driver.step" {
+            continue;
+        }
+        let mut thread = object
             .get("thread")
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
-        if object.get("event").and_then(Value::as_str) == Some("driver.step") {
-            continue;
+        if event.starts_with("swarm.") {
+            thread.push_str("/swarm");
         }
         let mut comparable = object.clone();
         comparable.remove("seq");
@@ -125,6 +138,33 @@ mod tests {
         "{\"thread\": \"main#0\", \"seq\": 3, \"event\": \"hud.show\", \"state\": \"listening\"}\n",
         "{\"thread\": \"ezagent-call#0\", \"seq\": 1, \"event\": \"vad.speech_start\"}\n",
     );
+
+    #[test]
+    fn swarm_events_are_compared_apart_from_the_hud() {
+        let golden = concat!(
+            "{\"thread\": \"main#0\", \"seq\": 1, \"event\": \"hud.show\", \"state\": \"speaking\"}
+",
+            "{\"thread\": \"main#0\", \"seq\": 2, \"event\": \"swarm.ezs\", \"member\": \"qa\"}
+",
+            "{\"thread\": \"main#0\", \"seq\": 3, \"event\": \"hud.show\", \"state\": \"listening\"}
+",
+        );
+        let earlier_hud = concat!(
+            "{\"thread\": \"main#0\", \"seq\": 1, \"event\": \"hud.show\", \"state\": \"speaking\"}
+",
+            "{\"thread\": \"main#0\", \"seq\": 2, \"event\": \"hud.show\", \"state\": \"listening\"}
+",
+            "{\"thread\": \"main#0\", \"seq\": 3, \"event\": \"swarm.ezs\", \"member\": \"qa\"}
+",
+        );
+        assert_eq!(causal_diff(golden, earlier_hud), Ok(None));
+        let other_member = earlier_hud.replace("\"qa\"", "\"dev\"");
+        let diff = causal_diff(golden, &other_member).expect("trazas válidas");
+        assert_eq!(
+            diff.map(|diff| diff.thread),
+            Some("main#0/swarm".to_string())
+        );
+    }
 
     #[test]
     fn ignores_driver_steps_and_seq() {
