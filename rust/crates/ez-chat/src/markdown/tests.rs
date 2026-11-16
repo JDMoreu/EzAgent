@@ -230,6 +230,13 @@ fn images_and_documents() {
         })]
     );
     assert_eq!(
+        parse(&format!("[A](<{path}>)")),
+        vec![Block::Document(Document {
+            label: "A".into(),
+            target: path.into()
+        })]
+    );
+    assert_eq!(
         parse("- [A](C:\\a.pdf)\n- [B](C:\\b.pdf)"),
         vec![
             Block::Document(Document {

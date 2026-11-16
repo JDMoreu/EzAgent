@@ -546,3 +546,6 @@ mod tests {
         assert_eq!(manager.last_outcome(), Some("cancelled"));
     }
 }
+
+#[cfg(test)]
+mod extra_tests;

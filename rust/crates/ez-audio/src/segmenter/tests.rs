@@ -216,6 +216,10 @@ fn pre_roll_keeps_only_the_last_chunks() {
     assert_eq!(segmenter.pre[1], vec![19]);
     segmenter.set_pre_roll(f64::NAN);
     assert_eq!(segmenter.pre_roll_secs, 0.0);
+    assert_eq!(segmenter.pre.len(), 1);
+    segmenter.set_pre_roll(-4.0);
+    assert_eq!(segmenter.pre_roll_secs, 0.0);
+    assert_eq!(segmenter.pre.len(), 1);
 }
 
 #[test]
@@ -278,6 +282,59 @@ fn failed_probe_falls_back_to_long_silence() {
     }
     assert!(closed.is_some());
     assert_eq!(segmenter.last_close_reason, "silence");
+}
+
+#[test]
+fn speech_start_is_announced_once() {
+    let mut segmenter = Segmenter::default();
+    let mut flags = vec![segmenter.feed(&quiet(), 0.0003).1];
+    for _ in 0..20 {
+        flags.push(segmenter.feed(&loud(), 0.03).1);
+    }
+    assert_eq!(flags.iter().filter(|started| **started).count(), 1);
+}
+
+#[test]
+fn the_utterance_keeps_the_speech_and_the_pre_roll() {
+    let config = SegmenterConfig {
+        pre_roll_secs: 0.3,
+        silence_secs: 1.3,
+        ..SegmenterConfig::default()
+    };
+    let mut segmenter = Segmenter::new(config);
+    let marked = [1_u8, 0].repeat(480);
+    let silence = [0_u8, 0].repeat(480);
+    for _ in 0..30 {
+        segmenter.feed(&silence, 0.0003);
+    }
+    let mut utterance = None;
+    for _ in 0..10 {
+        segmenter.feed(&marked, 0.03);
+    }
+    for _ in 0..60 {
+        if let (Some(pcm), _) = segmenter.feed(&silence, 0.0) {
+            utterance = Some(pcm);
+            break;
+        }
+    }
+    let pcm = utterance.expect("la frase se cierra");
+    assert!(pcm.starts_with(&silence));
+    assert!(pcm.chunks(marked.len()).filter(|c| *c == marked).count() >= 10);
+    assert!(pcm.len() > marked.len() * 10);
+}
+
+#[test]
+fn reset_discards_the_turn_in_progress() {
+    let mut segmenter = Segmenter::default();
+    calibrate(&mut segmenter);
+    for _ in 0..10 {
+        segmenter.feed(&loud(), 0.2);
+    }
+    segmenter.reset();
+    assert!(segmenter.flush().is_none());
+    for _ in 0..80 {
+        assert!(segmenter.feed(&quiet(), 0.0).0.is_none());
+    }
 }
 
 #[test]

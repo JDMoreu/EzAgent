@@ -226,14 +226,39 @@ fn a_rejected_key_shows_the_reason() {
 }
 
 #[test]
-fn escape_cancels_the_capture() {
+fn escape_cancels_without_changes_and_typing_is_swallowed() {
     let mut menu = menu(MenuCallbacks::default());
-    menu.begin_text_edit("hotkey", Some(1.0));
+    menu.begin_text_edit("repeat_hotkey", Some(1.0));
+    let before = menu.settings.get("repeat_hotkey").cloned();
+    let buffer = menu.text_buffer().to_string();
     assert!(menu.capturing);
+    assert!(menu.text_input("x"));
+    assert!(menu.paste_text("abc"));
+    assert_eq!(menu.text_buffer(), buffer);
     assert!(menu.text_key(27, false));
     assert!(!menu.capturing);
     assert!(menu.editing_key().is_none());
+    assert_eq!(menu.settings.get("repeat_hotkey").cloned(), before);
     assert!(menu.capture_msg.is_none());
+}
+
+#[test]
+fn closing_the_menu_ends_the_capture() {
+    let captures = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&captures);
+    let callbacks = MenuCallbacks {
+        hotkey_capture: Some(Box::new(move |active| {
+            recorded.lock().push(active);
+        })),
+        ..MenuCallbacks::default()
+    };
+    let mut menu = menu(callbacks);
+    menu.begin_text_edit("hotkey", Some(1.0));
+    assert!(menu.capturing);
+    menu.close(1.5);
+    assert!(!menu.capturing);
+    assert!(menu.editing_key().is_none());
+    assert_eq!(captures.lock().as_slice(), &[true, false]);
 }
 
 #[test]

@@ -7,7 +7,7 @@ use ez_gfx::Rgba;
 use super::*;
 use crate::paint::chat::test_support::{palette, EmptyHost};
 use crate::paint::chat::{
-    hit_kind, Block, ChatHost, Ctx, Document, FileInfo, HitData, ImageBlock, Paragraph,
+    hit_kind, Block, ChatHost, Code, Ctx, Document, FileInfo, HitData, ImageBlock, Paragraph,
 };
 use crate::paint::chat::{MediaKind, Span, Table, TableAlign};
 
@@ -194,6 +194,96 @@ fn missing_document_is_a_54_px_card() {
         target: "C:/no/existe.pdf".to_string(),
     };
     assert_eq!(layout_document(&missing, &ctx).0, 54.0);
+}
+
+#[test]
+fn tables_never_overflow_and_small_ones_keep_their_width() {
+    let pal = palette();
+    let host = host();
+    let ctx = Ctx::new(1.0, &pal, 360.0, &host);
+    let columns = 9;
+    let cell = || vec![Span::plain("dato largo de ejemplo")];
+    let wide = Table {
+        header: (0..columns)
+            .map(|index| vec![Span::plain(format!("Columna {index}"))])
+            .collect(),
+        rows: vec![(0..columns).map(|_| cell()).collect()],
+        aligns: vec![TableAlign::Left; columns],
+    };
+    let total: f64 = tables::column_widths(&ctx, &wide).iter().sum();
+    assert!(total <= 361.0, "{total}");
+
+    let small = Ctx::new(1.0, &pal, 420.0, &host);
+    let natural: f64 = tables::column_widths(&small, &table()).iter().sum();
+    assert!(natural < 420.0 / 2.0, "{natural}");
+}
+
+#[test]
+fn long_cell_text_makes_the_row_taller() {
+    let pal = palette();
+    let host = host();
+    let ctx = Ctx::new(1.0, &pal, 300.0, &host);
+    let short = table();
+    let long = Table {
+        header: short.header.clone(),
+        rows: vec![vec![
+            vec![Span::plain("texto ".repeat(40))],
+            vec![Span::plain("y")],
+        ]],
+        aligns: short.aligns.clone(),
+    };
+    let (short_h, _) = layout_table(&short, &ctx);
+    let (long_h, _) = layout_table(&long, &ctx);
+    assert!(long_h > short_h + 20.0, "{long_h} <= {short_h}");
+}
+
+#[test]
+fn preview_content_never_adds_clickable_zones() {
+    let pal = palette();
+    let mut host = host();
+    host.info = Some(file_info());
+    host.preview = Some((
+        "```\ncódigo\n```\n\n![x](https://a.b/c.png)".to_string(),
+        false,
+    ));
+    host.blocks = vec![
+        Block::Code(Code {
+            lang: String::new(),
+            text: "código".to_string(),
+        }),
+        Block::Image(ImageBlock {
+            alt: "x".to_string(),
+            src: "https://a.b/c.png".to_string(),
+        }),
+    ];
+    let ctx = Ctx::new(1.0, &pal, 300.0, &host);
+    let (height, paint) = layout_document(&document(), &ctx);
+    let mut image = ez_gfx::Image::new(300, height as u32, Rgba::TRANSPARENT);
+    let mut ctx = Ctx::new(1.0, &pal, 300.0, &host);
+    paint(&mut image, &mut ctx, 0.0, 0.0);
+    let kinds: Vec<&str> = ctx.hits.iter().map(|hit| hit.kind).collect();
+    assert_eq!(kinds, vec![hit_kind::REVEAL, hit_kind::OPEN]);
+}
+
+#[test]
+fn a_long_preview_is_capped() {
+    let pal = palette();
+    let mut host = host();
+    host.info = Some(file_info());
+    host.blocks = (0..80)
+        .map(|index| {
+            Block::Paragraph(Paragraph {
+                spans: vec![Span::plain(format!("Párrafo número {index} con texto."))],
+            })
+        })
+        .collect();
+    host.preview = Some(("texto largo".to_string(), false));
+    let ctx = Ctx::new(1.0, &pal, 300.0, &host);
+    let (height, _) = layout_document(&document(), &ctx);
+    assert!(
+        height <= CARD_H + PREVIEW_MAX + 20.0 + 12.0 + 1.0,
+        "{height}"
+    );
 }
 
 #[test]

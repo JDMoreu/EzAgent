@@ -428,7 +428,131 @@ fn dragging_near_the_edge_moves_the_buttons_and_saves_the_dock() {
         harness.config.saved_value("drop_dock"),
         Some(ConfigValue::Text(String::from("left")))
     );
+    assert_eq!(
+        harness.config.saved_value("drop_layout"),
+        Some(ConfigValue::Text(String::from(harness.ui.layout())))
+    );
     assert_eq!(harness.host.positions.lock().last(), Some(&(x, y)));
+}
+
+#[test]
+fn dragging_near_an_edge_keeps_the_form_under_the_cursor() {
+    let harness = Harness::new();
+    harness.ui.show("idle");
+    harness.ui.set_layout("circle");
+    let work = monitor::work_area();
+    let radius = crate::model::drop::CIRCLE_D / 2.0;
+    let bottom = (f64::from(work.0 + work.2) / 2.0, f64::from(work.3) - radius);
+    let request = harness.ui.origin_for(bottom, harness.ui.dock());
+    let (x, y) = harness.ui.drag_target(request.0, request.1);
+    assert_eq!(harness.ui.dock(), "top");
+    let (form_x, form_y) = crate::model::drop::form_center("circle", Some("top"));
+    let bs = harness.ui.bs();
+    assert!((f64::from(x) + form_x * bs - bottom.0).abs() <= 1.0);
+    assert!((f64::from(y) + form_y * bs - bottom.1).abs() <= 1.0);
+    assert_eq!(harness.windows.bar().size(), harness.ui.size());
+
+    let left = (f64::from(work.0) + radius, f64::from(work.1 + 500));
+    let request = harness.ui.origin_for(left, harness.ui.dock());
+    let (x, y) = harness.ui.drag_target(request.0, request.1);
+    assert_eq!(harness.ui.dock(), "right");
+    let (form_x, _) = crate::model::drop::form_center("circle", Some("right"));
+    assert!((f64::from(x) + form_x * bs - left.0).abs() <= 1.0);
+    assert!(f64::from(x) <= f64::from(work.2) - f64::from(harness.ui.size().0) + 13.0);
+    assert!(f64::from(y) >= f64::from(work.1) - 13.0);
+}
+
+#[test]
+fn dragging_back_to_the_middle_returns_to_the_default_dock() {
+    let harness = Harness::new();
+    harness.ui.show("idle");
+    harness.ui.set_layout("circle");
+    let work = monitor::work_area();
+    let bottom = (
+        f64::from(work.0 + work.2) / 2.0,
+        f64::from(work.3) - crate::model::drop::CIRCLE_D / 2.0,
+    );
+    let request = harness.ui.origin_for(bottom, harness.ui.dock());
+    harness.ui.drag_target(request.0, request.1);
+    assert_eq!(harness.ui.dock(), "top");
+    let middle = (f64::from(work.0 + work.2) / 2.0, f64::from(work.1 + 500));
+    let request = harness.ui.origin_for(middle, harness.ui.dock());
+    harness.ui.drag_target(request.0, request.1);
+    assert_eq!(harness.ui.dock(), "bottom");
+
+    // Un arrastre que no cambia nada solo se recorta a la pantalla.
+    let (want_x, want_y) = harness.windows.bar().position();
+    let clamped = harness.ui.clamp_position(want_x, want_y);
+    assert_eq!(harness.ui.drag_target(want_x, want_y), clamped);
+    assert_eq!(harness.ui.dock(), "bottom");
+}
+
+#[test]
+fn switching_shape_and_bar_size_recheck_the_dock() {
+    let harness = Harness::new();
+    harness.ui.show("idle");
+    harness.ui.set_layout("circle");
+    let work = monitor::work_area();
+    let bottom = (
+        f64::from(work.0 + work.2) / 2.0,
+        f64::from(work.3) - crate::model::drop::CIRCLE_D / 2.0,
+    );
+    let request = harness.ui.origin_for(bottom, harness.ui.dock());
+    harness.ui.drag_target(request.0, request.1);
+    assert_eq!(harness.ui.dock(), "top");
+    harness.ui.set_layout("pill");
+    assert_eq!(harness.ui.dock(), "sides");
+    assert_eq!(harness.windows.bar().size(), harness.ui.size());
+    drop(harness);
+
+    let harness = Harness::new();
+    harness.ui.show("idle");
+    harness.ui.set_layout("circle");
+    let (form_x, form_y) = crate::model::drop::form_center("circle", Some("bottom"));
+    let x = (f64::from(work.0 + work.2) / 2.0 - form_x).round_ties_even() as i32;
+    let y = (f64::from(work.3) - 40.0 - form_y).round_ties_even() as i32;
+    harness.windows.bar().set_pos(x, y);
+    harness.ui.set_bar_scale(2.0);
+    assert_ne!(harness.ui.dock(), "bottom");
+    assert!(
+        crate::model::drop::window_overflow(
+            "circle",
+            harness.ui.dock(),
+            harness.ui.form_anchor().expect("forma visible"),
+            work,
+            harness.ui.bs(),
+            0.0,
+        ) <= 24.0
+    );
+}
+
+#[test]
+fn the_saved_dock_only_counts_for_the_layout_it_was_saved_with() {
+    let config = |layout: &str, saved: &str, dock: &str| {
+        RecordingConfig::with(&[
+            ("ui_layout", ConfigValue::Text(layout.to_string())),
+            ("drop_layout", ConfigValue::Text(saved.to_string())),
+            ("drop_dock", ConfigValue::Text(dock.to_string())),
+        ])
+    };
+    let same = create_ui(
+        Arc::new(RecordingHost::default()),
+        Some(config("circle", "circle", "top")),
+        None,
+    );
+    assert_eq!(same.dock(), "top");
+    let other = create_ui(
+        Arc::new(RecordingHost::default()),
+        Some(config("circle", "pill", "top")),
+        None,
+    );
+    assert_eq!(other.dock(), "bottom");
+    let junk = create_ui(
+        Arc::new(RecordingHost::default()),
+        Some(config("pill", "pill", "top")),
+        None,
+    );
+    assert_eq!(junk.dock(), "sides");
 }
 
 #[test]
