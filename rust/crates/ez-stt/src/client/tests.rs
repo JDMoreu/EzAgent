@@ -362,6 +362,27 @@ fn the_working_endpoint_is_tried_first_and_forgotten() {
 }
 
 #[test]
+fn a_connect_error_tries_the_alternative_route() {
+    // Un puerto cerrado da error de conexión; el mensaje final menciona la
+    // ruta alternativa, prueba de que se intentó después de la primaria.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("puerto libre");
+    let port = listener.local_addr().expect("puerto").port();
+    drop(listener);
+    let mut config = VoiceConfig::new();
+    config.set(
+        "whisper_url",
+        json!(format!("http://127.0.0.1:{port}/inference")),
+    );
+    config.set("stt_timeout_secs", json!(5.0));
+    let error = transcribe(&config, b"x", None).expect_err("sin servidor");
+    assert!(
+        error.message().contains("/v1/audio/transcriptions"),
+        "{}",
+        error.message()
+    );
+}
+
+#[test]
 fn hallucinated_subtitle_phrases_are_always_discarded() {
     for text in [
         "¡Gracias por ver el vídeo!",

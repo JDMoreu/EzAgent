@@ -1,5 +1,7 @@
 //! Pruebas de ejecución, política, confirmación y límites (F4-09).
 
+mod security;
+
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -13,7 +15,11 @@ use crate::registry::{ToolInfo, ToolResult, ToolSpec};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-fn fixture_with(label: &str, callbacks: RuntimeCallbacks) -> (PathBuf, AgentRuntime) {
+fn fixture_full(
+    label: &str,
+    general: &str,
+    callbacks: RuntimeCallbacks,
+) -> (PathBuf, AgentRuntime) {
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     let root = std::env::temp_dir().join(format!("ez-runtime-{}-{id}-{label}", std::process::id()));
     let work = root.join("work");
@@ -25,7 +31,7 @@ fn fixture_with(label: &str, callbacks: RuntimeCallbacks) -> (PathBuf, AgentRunt
     std::fs::write(
         &permissions,
         format!(
-            "[general]\nmax_tool_calls_per_turn = 100\nconfirm_timeout_s = 0.05\n\
+            "[general]\nmax_tool_calls_per_turn = 100\nconfirm_timeout_s = 0.05\n{general}\
              [paths]\nread_roots = ['{root_text}']\nwrite_roots = ['{root_text}']\n\
              deny = []\ndeny_globs = []\n"
         ),
@@ -37,8 +43,16 @@ fn fixture_with(label: &str, callbacks: RuntimeCallbacks) -> (PathBuf, AgentRunt
     (work, runtime)
 }
 
+fn fixture_with(label: &str, callbacks: RuntimeCallbacks) -> (PathBuf, AgentRuntime) {
+    fixture_full(label, "", callbacks)
+}
+
 fn fixture(label: &str) -> (PathBuf, AgentRuntime) {
-    fixture_with(label, RuntimeCallbacks::default())
+    fixture_full(label, "", RuntimeCallbacks::default())
+}
+
+fn fixture_with_general(label: &str, general: &str) -> (PathBuf, AgentRuntime) {
+    fixture_full(label, general, RuntimeCallbacks::default())
 }
 
 fn rewrite_permissions(runtime: &AgentRuntime, text: &str) {
@@ -495,13 +509,25 @@ fn extra_tools_from_the_previous_turn_survive_exactly_one_turn() {
 fn notify_address_needs_a_request_and_a_watched_agent() {
     let (_work, runtime) = fixture("notify");
     assert_eq!(runtime.pending_notify_address(), None);
-    runtime.begin_turn("avísame cuando termine");
-    assert_eq!(runtime.pending_notify_address(), None);
     runtime.set_last_agent_address(Some("t1:2"));
-    assert_eq!(runtime.pending_notify_address(), Some("t1:2".into()));
-    runtime.begin_turn("hola, buen día");
-    assert_eq!(runtime.pending_notify_address(), None);
-    runtime.begin_turn("");
+    for text in [
+        "avísame cuando termine",
+        "VIGILA ese agente",
+        "dime qué pasó",
+    ] {
+        runtime.begin_turn(text);
+        assert_eq!(
+            runtime.pending_notify_address(),
+            Some("t1:2".into()),
+            "{text}"
+        );
+    }
+    for text in ["hola, buen día", ""] {
+        runtime.begin_turn(text);
+        assert_eq!(runtime.pending_notify_address(), None, "{text}");
+    }
+    runtime.set_last_agent_address(None);
+    runtime.begin_turn("avísame");
     assert_eq!(runtime.pending_notify_address(), None);
 }
 

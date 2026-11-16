@@ -143,6 +143,26 @@ fn secret_values_are_dots_and_never_the_key() {
 }
 
 #[test]
+fn an_empty_secret_paints_the_placeholder_and_editing_still_hides_the_key() {
+    let menu = menu();
+    let target = draw(&menu, |ctx| {
+        super::keycaps::draw_secret_value(ctx, "", false, 37.0, 1.0);
+    });
+    let layer = &target;
+    let ink = (25..120)
+        .flat_map(|x| (30..45).map(move |y| pixel(layer, x, y)[3]))
+        .fold(0.0_f32, f32::max);
+    assert!(ink > 0.0, "«Sin clave» se pinta");
+    let target = draw(&menu, |ctx| {
+        super::keycaps::draw_secret_value(ctx, "sk-secreto", true, 37.0, 1.0);
+    });
+    assert!(
+        pixel(&target, 33, 37)[3] > 0.0,
+        "los puntos siguen ahí al editar"
+    );
+}
+
+#[test]
 fn a_hotkey_paints_keycaps_and_a_capture_field() {
     let menu = menu();
     let target = draw(&menu, |ctx| {

@@ -20,6 +20,8 @@ fn base_tools_are_five_and_each_intent_adds_without_removing() {
     );
     assert!(names_with_time.contains(&"get_datetime".to_string()));
     assert!(names_with_time.contains(&"copy_path".to_string()));
+    let both = names("copia y abre el archivo", &SelectOptions::default());
+    assert!(both.contains(&"copy_path".to_string()) && both.contains(&"open_path".to_string()));
     for base in BASE_TOOLS {
         assert!(names_with_time.contains(&base.to_string()));
     }
@@ -37,6 +39,9 @@ fn documents_skills_memory_scripts_and_the_optional_recall() {
     assert!(excel.contains(&"load_skill".to_string()));
     let word = names("pásalo a Word", &SelectOptions::default());
     assert!(word.contains(&"load_skill".to_string()));
+    let opened = names("abre el documento", &SelectOptions::default());
+    assert!(opened.contains(&"open_path".to_string()));
+    assert!(opened.contains(&"read_file".to_string()));
     let manual = names("usa la skill pdf", &SelectOptions::default());
     assert!(manual.contains(&"load_skill".to_string()));
     assert!(manual.contains(&"run_skill_script".to_string()));

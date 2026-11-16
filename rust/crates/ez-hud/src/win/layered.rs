@@ -404,3 +404,43 @@ impl LayeredWindow {
             .is_some_and(|handle| !handle.is_finished())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn window(lazy_drag: bool, hwnd: isize) -> LayeredWindow {
+        let mut options = WindowOptions::new(100, 100);
+        options.lazy_drag = lazy_drag;
+        let window = LayeredWindow::new(options);
+        window.set_hwnd(hwnd);
+        window
+    }
+
+    fn position_and_dirty(window: &LayeredWindow) -> ((i32, i32), bool) {
+        let state = window.state.lock();
+        ((state.x, state.y), state.dirty)
+    }
+
+    #[test]
+    fn moving_a_window_only_repaints_when_its_frame_depends_on_position() {
+        for (lazy, expected_dirty) in [(true, false), (false, true)] {
+            let window = window(lazy, 0x7FFF_0001);
+            window.state.lock().dirty = false;
+            window.set_pos(40, 60);
+            assert_eq!(
+                position_and_dirty(&window),
+                ((40, 60), expected_dirty),
+                "lazy={lazy}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_lazy_window_without_a_handle_still_marks_dirty() {
+        let window = window(true, 0);
+        window.state.lock().dirty = false;
+        window.set_pos(5, 5);
+        assert_eq!(position_and_dirty(&window), ((5, 5), true));
+    }
+}

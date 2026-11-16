@@ -66,6 +66,18 @@ fn the_header_registers_one_hit_per_control() {
             "{expected} missing from {kinds:?}"
         );
     }
+    let settings = view
+        .hits
+        .iter()
+        .find(|zone| zone.kind == "settings")
+        .expect("settings")
+        .rect
+        .center();
+    assert_eq!(
+        view.pointer_down(settings.0, settings.1)
+            .map(|action| action.kind),
+        Some("settings")
+    );
 }
 
 #[test]
@@ -207,7 +219,8 @@ fn the_cancel_button_drops_the_confirmation() {
 fn the_orb_takes_the_room_of_the_back_button() {
     let mut view = sample_view();
     let _ = view.render(0.0);
-    assert!(view.orb.is_some());
+    assert_eq!(view.orb, Some((PAD + ORB_D / 2.0, HEADER_H / 2.0, ORB_D)));
+    assert_eq!(view.orb, Some((30.0, 28.0, 28.0)));
     view.mode = Mode::History;
     let _ = view.render(0.0);
     assert!(view.orb.is_none());

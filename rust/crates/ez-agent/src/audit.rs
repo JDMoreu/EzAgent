@@ -234,4 +234,79 @@ mod tests {
             let _ = std::fs::remove_file(file);
         }
     }
+
+    #[test]
+    fn redact_leaves_the_input_untouched() {
+        let log = AuditLog::new(&temp_file("untouched"));
+        let original = json!({"api_key": "abc", "nested": {"content": "zz"}});
+        let snapshot = original.clone();
+        let _ = log.redact(&original);
+        assert_eq!(original, snapshot);
+    }
+
+    #[test]
+    fn concurrent_writes_do_not_interleave_lines() {
+        let path = temp_file("concurrent");
+        let log = std::sync::Arc::new(AuditLog::new(&path));
+        let mut threads = Vec::new();
+        for worker in 0..8 {
+            let log = std::sync::Arc::clone(&log);
+            threads.push(std::thread::spawn(move || {
+                let args = json!({"p": "ñ".repeat(50)});
+                for index in 0..60 {
+                    log.log(&AuditEntry {
+                        turn_id: &format!("{worker}-{index}"),
+                        tool: "write_file",
+                        level: 1,
+                        args: &args,
+                        decision: "allow",
+                        taint: false,
+                        result_ok: true,
+                        ms: 1.234,
+                        error_kind: None,
+                    });
+                }
+            }));
+        }
+        for thread in threads {
+            thread.join().expect("hilo de auditoría");
+        }
+        let body = std::fs::read_to_string(&path).unwrap_or_default();
+        let records: Vec<Value> = body
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("línea JSON válida"))
+            .collect();
+        assert_eq!(records.len(), 8 * 60);
+        let ids: std::collections::HashSet<&str> = records
+            .iter()
+            .filter_map(|record| record["turn_id"].as_str())
+            .collect();
+        assert_eq!(ids.len(), 8 * 60);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn disk_failure_does_not_panic() {
+        let blocker = std::env::temp_dir()
+            .join(format!("ez-audit-{}-folder", uuid::Uuid::new_v4().simple()))
+            .join("es-carpeta.jsonl");
+        std::fs::create_dir_all(&blocker).expect("carpeta bloqueante");
+        let log = AuditLog::new(&blocker);
+        let args = json!({});
+        log.log(&AuditEntry {
+            turn_id: "t1",
+            tool: "write_file",
+            level: 1,
+            args: &args,
+            decision: "allow",
+            taint: false,
+            result_ok: true,
+            ms: 1.234,
+            error_kind: None,
+        });
+        let _ = std::fs::remove_dir(&blocker);
+        if let Some(parent) = blocker.parent() {
+            let _ = std::fs::remove_dir(parent);
+        }
+    }
 }
