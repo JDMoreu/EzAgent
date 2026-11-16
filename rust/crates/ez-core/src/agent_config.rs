@@ -44,10 +44,16 @@ fn default_app_dir() -> PathBuf {
 }
 
 fn write_default_template(path: &Path) {
+    // `Path.write_text` traduce `\n` al final de línea del sistema.
+    let body = if cfg!(windows) {
+        DEFAULT_PERMISSIONS_TOML.replace('\n', "\r\n")
+    } else {
+        DEFAULT_PERMISSIONS_TOML.to_string()
+    };
     let written = path
         .parent()
         .map_or(Ok(()), std::fs::create_dir_all)
-        .and_then(|()| std::fs::write(path, DEFAULT_PERMISSIONS_TOML));
+        .and_then(|()| std::fs::write(path, body));
     match written {
         Ok(()) => tracing::info!("Creada la política por defecto en {}", path.display()),
         Err(error) => tracing::warn!(
@@ -145,6 +151,13 @@ mod tests {
         let (config, warnings) = AgentConfig::load(Some(&file));
         assert!(warnings.is_empty());
         assert!(file.exists());
+        let text = std::fs::read_to_string(&file).expect("plantilla escrita");
+        if cfg!(windows) {
+            assert!(text.contains("\r\n"));
+            assert!(!text.replace("\r\n", "").contains('\n'));
+        } else {
+            assert!(text.contains('\n'));
+        }
         assert_eq!(config.general.max_tool_calls_per_turn, 4);
         assert_eq!(config.app_dir, dir);
         assert_eq!(config.history_path, dir.join("memory").join("history.db"));
