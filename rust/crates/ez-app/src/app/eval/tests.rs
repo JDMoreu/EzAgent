@@ -148,3 +148,25 @@ fn tool_names_reads_the_function_block() {
     assert_eq!(tool_names(&tools), vec![json!("a"), json!("b")]);
     assert!(tool_names(&[]).is_empty());
 }
+
+/// Un enlace dentro de la arena se quita sin vaciar la carpeta a la que apunta.
+#[cfg(windows)]
+#[test]
+fn cleaning_the_sandbox_never_follows_a_link_outside() {
+    let outside = std::env::temp_dir().join(format!("ezagent-eval-outside-{}", std::process::id()));
+    std::fs::create_dir_all(&outside).expect("carpeta de fuera");
+    std::fs::write(outside.join("keep.txt"), "no borrar").expect("archivo de fuera");
+    let arena = std::env::temp_dir().join(format!("ezagent-eval-arena-{}", std::process::id()));
+    std::fs::create_dir_all(&arena).expect("arena");
+    let link = arena.join("enlace");
+    // Crear un enlace de carpeta pide el modo de desarrollador o permisos de
+    // administrador; sin ellos la prueba no aplica.
+    let made = std::os::windows::fs::symlink_dir(&outside, &link).is_ok();
+    if made {
+        super::sandbox::remove_tree_for_tests(&arena);
+        assert!(outside.join("keep.txt").exists(), "se borró lo de fuera");
+        assert!(!arena.exists(), "la arena quedó");
+    }
+    let _ = std::fs::remove_file(outside.join("keep.txt"));
+    let _ = std::fs::remove_dir(&outside);
+}

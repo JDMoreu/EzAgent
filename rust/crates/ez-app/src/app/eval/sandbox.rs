@@ -81,11 +81,25 @@ fn remove_tree(path: &Path) {
     };
     for entry in entries.flatten() {
         let child = entry.path();
-        if child.is_dir() {
+        // `file_type` no sigue enlaces: un enlace simbólico o una unión de
+        // Windows se quita sin entrar, así nunca se borra nada fuera de la arena.
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_symlink() {
+            if std::fs::remove_file(&child).is_err() {
+                let _ = std::fs::remove_dir(&child);
+            }
+        } else if kind.is_dir() {
             remove_tree(&child);
         } else {
             let _ = std::fs::remove_file(&child);
         }
     }
     let _ = std::fs::remove_dir(path);
+}
+
+#[cfg(test)]
+pub(super) fn remove_tree_for_tests(path: &Path) {
+    remove_tree(path);
 }
