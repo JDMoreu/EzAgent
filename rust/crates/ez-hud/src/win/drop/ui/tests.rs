@@ -2,6 +2,7 @@
 //! dobles de ventana, configuración, host, chat y menú.
 
 mod live_menu;
+mod locks;
 mod sidebar;
 mod support;
 
@@ -184,7 +185,8 @@ fn the_menu_opens_and_closes_the_card() {
     menu.lock().state.lock().close_immediately = true;
     harness.ui.close_menu();
     assert!(!harness.ui.menu_open());
-    assert!(card.stopped.load(Ordering::SeqCst));
+    // El aviso llega con el lock del menú tomado: la ventana se para aparte.
+    wait_for(&card.stopped, "el stop de la tarjeta");
 }
 
 #[test]

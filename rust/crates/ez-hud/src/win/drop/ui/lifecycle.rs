@@ -27,7 +27,8 @@ impl DropUI {
     pub fn hide(&self) {
         self.bar.lock().visible = false;
         self.peek.hide_now();
-        self.chat.read().clone().close_now();
+        let chat = self.chat.read().clone();
+        chat.close_now();
         self.close_card_now();
         if let Some(window) = self.window() {
             window.hide();
@@ -37,7 +38,8 @@ impl DropUI {
     /// `close`: detiene la vista rápida y las ventanas.
     pub fn close(&self) {
         self.peek.stop();
-        self.chat.read().clone().close_now();
+        let chat = self.chat.read().clone();
+        chat.close_now();
         self.close_card_now();
         if let Some(window) = self.window() {
             window.stop();
@@ -54,7 +56,8 @@ impl DropUI {
     pub fn set_muted(&self, muted: bool) {
         self.bar.lock().muted = muted;
         self.ui.set_muted(muted, None);
-        self.chat.read().clone().set_mic_muted(muted);
+        let chat = self.chat.read().clone();
+        chat.set_mic_muted(muted);
     }
 
     /// `set_activity`: foto de la actividad para la órbita y la vista rápida.

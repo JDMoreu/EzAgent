@@ -23,6 +23,14 @@ pub(super) struct FakeWindow {
     pub(super) stopped: AtomicBool,
     dragging: AtomicBool,
     keyboard: AtomicBool,
+    /// La barra dueña, para mirar sus locks como hace el hilo de la ventana.
+    owner: Mutex<Option<Weak<DropUI>>>,
+    /// `P-FIX-LOCKAUDIT`: `stop` llegó con el lock del menú tomado.
+    pub(super) menu_taken: AtomicBool,
+    /// `P-FIX-LOCKAUDIT`: `resize` llegó con el lock de la tarjeta tomado.
+    pub(super) card_taken: AtomicBool,
+    /// La tarjeta vigila su lock; la barra no lo usa nunca.
+    pub(super) watch_card: AtomicBool,
 }
 
 impl FakeWindow {
@@ -36,6 +44,41 @@ impl FakeWindow {
 
     pub(super) fn keyboard_enabled(&self) -> bool {
         self.keyboard.load(Ordering::SeqCst)
+    }
+
+    /// El dueño de la ventana (el hilo de la ventana le pide cosas).
+    pub(super) fn owned_by(&self, ui: &Weak<DropUI>) {
+        *self.owner.lock() = Some(ui.clone());
+    }
+
+    fn owner(&self) -> Option<Arc<DropUI>> {
+        self.owner.lock().as_ref().and_then(Weak::upgrade)
+    }
+
+    /// Como el hilo de la ventana en un gancho: ¿está libre el menú ahora?
+    fn menu_is_free(&self) -> bool {
+        let Some(ui) = self.owner() else {
+            return true;
+        };
+        let Some(panel) = ui.menu_panel() else {
+            return true;
+        };
+        let free = panel
+            .try_lock_for(std::time::Duration::from_millis(250))
+            .is_some();
+        free
+    }
+
+    /// Como `render_card`: ¿está libre el lock de la tarjeta ahora?
+    fn card_is_free(&self) -> bool {
+        let Some(ui) = self.owner() else {
+            return true;
+        };
+        let free = ui
+            .card
+            .try_lock_for(std::time::Duration::from_millis(250))
+            .is_some();
+        free
     }
 }
 
@@ -55,6 +98,9 @@ impl HudWindow for FakeWindow {
     }
 
     fn stop(&self) {
+        if !self.menu_is_free() {
+            self.menu_taken.store(true, Ordering::SeqCst);
+        }
         self.stopped.store(true, Ordering::SeqCst);
         self.visible.store(false, Ordering::SeqCst);
     }
@@ -64,6 +110,9 @@ impl HudWindow for FakeWindow {
     }
 
     fn resize(&self, width: i32, height: i32) {
+        if self.watch_card.load(Ordering::SeqCst) && !self.card_is_free() {
+            self.card_taken.store(true, Ordering::SeqCst);
+        }
         *self.size.lock() = (width, height);
     }
 
@@ -113,28 +162,23 @@ impl FakeWindows {
 }
 
 impl WindowFactory for FakeWindows {
-    fn bar(
-        &self,
-        _ui: Weak<DropUI>,
-        x: i32,
-        y: i32,
-        width: i32,
-        height: i32,
-    ) -> Arc<dyn HudWindow> {
+    fn bar(&self, ui: Weak<DropUI>, x: i32, y: i32, width: i32, height: i32) -> Arc<dyn HudWindow> {
         let window = FakeWindow::new(x, y, width, height);
+        window.owned_by(&ui);
         self.bars.lock().push(Arc::clone(&window));
         window
     }
 
     fn card(
         &self,
-        _ui: Weak<DropUI>,
+        ui: Weak<DropUI>,
         x: i32,
         y: i32,
         width: i32,
         height: i32,
     ) -> Arc<dyn HudWindow> {
         let window = FakeWindow::new(x, y, width, height);
+        window.owned_by(&ui);
         self.cards.lock().push(Arc::clone(&window));
         window
     }
@@ -455,6 +499,15 @@ impl Harness {
     pub(super) fn open_card(&self) {
         self.ui.show("idle");
         self.ui.toggle_menu();
+    }
+}
+
+/// Espera a que un doble marque su bandera, con plazo: la suite no se cuelga.
+pub(super) fn wait_for(flag: &AtomicBool, what: &str) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while !flag.load(Ordering::SeqCst) {
+        assert!(std::time::Instant::now() < deadline, "no llegó: {what}");
+        std::thread::sleep(std::time::Duration::from_millis(2));
     }
 }
 

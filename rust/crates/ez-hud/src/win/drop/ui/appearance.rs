@@ -179,7 +179,8 @@ impl DropUI {
 
     /// `chat_is_open`.
     pub fn chat_is_open(&self) -> bool {
-        self.chat.read().is_open()
+        let chat = self.chat.read().clone();
+        chat.is_open()
     }
 
     /// `set_chat_open`: el 💬 se ilumina.

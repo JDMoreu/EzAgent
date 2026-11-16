@@ -160,7 +160,9 @@ impl ChatPanel {
         };
         drop(state);
         self.ui.set_form_hidden(false);
-        if let Some(window) = self.window.lock().as_ref() {
+        // Sin el lock de la ventana: sus métodos despiertan a su hilo de pintura.
+        let window = self.window.lock().clone();
+        if let Some(window) = window {
             window.set_keyboard_enabled(false);
             // The paint loop may be asleep on the 30 fps interval of the open
             // panel: wake it so the shrink starts with the panel still whole.
