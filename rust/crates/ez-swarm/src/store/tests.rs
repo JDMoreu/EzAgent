@@ -1,5 +1,7 @@
 //! Tests of the board store.
 
+mod gaps;
+
 use crate::db::test_support::{seed, temp_board, TempBoard};
 use crate::models::{Member, Task, BROADCAST, SYSTEM};
 

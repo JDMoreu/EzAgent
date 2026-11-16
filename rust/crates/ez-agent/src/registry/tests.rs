@@ -119,3 +119,119 @@ fn schemas_respect_order_and_limit() {
         vec!["a".to_string()]
     );
 }
+
+fn value_tool(name: &str, value: Value) -> ToolSpec {
+    let handler: Handler = Arc::new(move |_| Ok(ToolReturn::Value(value.clone())));
+    ToolSpec::new(name, "", json!({}), 0, handler)
+}
+
+#[test]
+fn normalizes_every_python_return_shape() {
+    let registry = ToolRegistry::new();
+    registry.register(ToolSpec::new(
+        "direct",
+        "",
+        json!({}),
+        0,
+        Arc::new(|_| Ok(ToolReturn::Result(ToolResult::ok(json!(1))))),
+    ));
+    assert_eq!(registry.run("direct", &json!({})), ToolResult::ok(json!(1)));
+    registry.register(value_tool("contract", json!({"ok": true, "data": [1]})));
+    assert_eq!(
+        registry.run("contract", &json!({})),
+        ToolResult::ok(json!([1]))
+    );
+    registry.register(value_tool("error", json!({"error": "solo error"})));
+    let failed = registry.run("error", &json!({}));
+    assert!(!failed.ok);
+    assert_eq!(failed.error.as_deref(), Some("solo error"));
+    registry.register(value_tool("data", json!({"data": 5})));
+    assert_eq!(registry.run("data", &json!({})), ToolResult::ok(json!(5)));
+    registry.register(value_tool("none", Value::Null));
+    assert_eq!(
+        registry.run("none", &json!({})),
+        ToolResult::ok(Value::Null)
+    );
+    registry.register(value_tool("text", json!("texto")));
+    assert_eq!(
+        registry.run("text", &json!({})),
+        ToolResult::ok(json!("texto"))
+    );
+    registry.register(value_tool("number", json!(42)));
+    assert_eq!(
+        registry.run("number", &json!({})),
+        ToolResult::ok(json!(42))
+    );
+    registry.register(value_tool("plain", json!({"cualquier": "cosa"})));
+    assert_eq!(
+        registry.run("plain", &json!({})),
+        ToolResult::ok(json!({"cualquier": "cosa"}))
+    );
+}
+
+#[test]
+fn a_duplicate_replaces_the_previous_tool() {
+    let registry = ToolRegistry::new();
+    registry.register(value_tool("t", json!("viejo")));
+    registry.register(value_tool("t", json!("nuevo")));
+    assert_eq!(registry.names(), vec!["t".to_string()]);
+    assert_eq!(registry.run("t", &json!({})).data, json!("nuevo"));
+}
+
+#[test]
+fn registration_is_safe_to_share_between_threads() {
+    let registry = Arc::new(ToolRegistry::new());
+    let workers: Vec<_> = (0..8)
+        .map(|worker| {
+            let registry = Arc::clone(&registry);
+            std::thread::spawn(move || {
+                for index in 0..50 {
+                    registry.register(value_tool(&format!("t{worker}-{index}"), json!(1)));
+                    let _ = registry.names();
+                }
+            })
+        })
+        .collect();
+    for worker in workers {
+        worker.join().expect("hilo");
+    }
+    assert_eq!(registry.names().len(), 400);
+}
+
+#[test]
+fn validates_boolean_and_number_types() {
+    let registry = ToolRegistry::new();
+    let handler: Handler = Arc::new(|_| Ok(ToolResult::ok(Value::Null).into()));
+    registry.register(ToolSpec::new(
+        "bools",
+        "",
+        json!({"type": "object", "properties": {"x": {"type": "boolean"}}}),
+        0,
+        Arc::clone(&handler),
+    ));
+    for good in [json!(true), json!(false)] {
+        assert_eq!(registry.validate("bools", &json!({"x": good})), None);
+    }
+    for bad in [json!(0), json!(1), json!("true"), Value::Null] {
+        let error = registry
+            .validate("bools", &json!({"x": bad}))
+            .unwrap_or_default();
+        assert!(error.contains("'x'"), "{bad} aceptado: {error}");
+    }
+    registry.register(ToolSpec::new(
+        "numbers",
+        "",
+        json!({"type": "object", "properties": {"x": {"type": "number"}}}),
+        0,
+        handler,
+    ));
+    for good in [json!(0), json!(1.5), json!(-3)] {
+        assert_eq!(registry.validate("numbers", &json!({"x": good})), None);
+    }
+    for bad in [json!("1"), Value::Null, json!(true)] {
+        let error = registry
+            .validate("numbers", &json!({"x": bad}))
+            .unwrap_or_default();
+        assert!(error.contains("'x'"), "{bad} aceptado: {error}");
+    }
+}

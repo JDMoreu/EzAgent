@@ -442,3 +442,11 @@ fn live_settings_flow_through_the_menu_callbacks() {
     harness.ui.set_testing(true);
     assert!(harness.menus.menu().lock().state.lock().testing);
 }
+
+#[test]
+fn bar_hit_testing_follows_scale() {
+    let harness = Harness::new();
+    harness.ui.set_bar_scale(2.0);
+    let (fx, fy) = crate::model::drop::form_center(harness.ui.layout(), Some(harness.ui.dock()));
+    assert_eq!(harness.ui.item_at(fx, fy), Some("pill"));
+}
