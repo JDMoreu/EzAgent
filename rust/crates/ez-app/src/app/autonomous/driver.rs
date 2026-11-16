@@ -190,17 +190,23 @@ impl AutonomousLoop {
                 return;
             }
         };
-        match state_of(&row).as_str() {
+        let verifier_state = state_of(&row);
+        match verifier_state.as_str() {
             "blocked" => self.blocked(session, &address),
             "done" | "idle" => {
-                let result = session.dir.read_verdict(
-                    k,
-                    &VerdictSpec {
-                        token: &token,
-                        criteria: session.criteria.len(),
-                    },
-                );
-                verify::finish_verification(self, session, result);
+                if session.dir.verdict_path(k).is_file() {
+                    let result = session.dir.read_verdict(
+                        k,
+                        &VerdictSpec {
+                            token: &token,
+                            criteria: session.criteria.len(),
+                        },
+                    );
+                    verify::finish_verification(self, session, result);
+                } else if verifier_state == "done" {
+                    // El proceso salió sin escribir el veredicto (10.10).
+                    verify::finish_verification(self, session, Err(verify::failure_error()));
+                }
             }
             "error" => {
                 if let Some(reason) = self.screen_incident(&address) {

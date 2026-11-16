@@ -129,3 +129,27 @@ pub fn parse_criteria(text: &str) -> Vec<Criterion> {
     }
     criteria
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_the_encargo_and_criteria_written_by_the_code() {
+        let encargo = "# Encargo\n\narreglar la API\n\nEspacio: proyecto\n\nRutas de trabajo:\n\
+                       - C:/t\n\nCriterios: C:/t/compartido/criterios.md\n\n## Fin\n\nCuando \
+                       termines, escribe un resumen en C:/t/compartido/fin-1.md y avisa.\n";
+        assert_eq!(
+            parse_encargo(encargo),
+            ("arreglar la API".to_string(), "proyecto".to_string())
+        );
+        let criteria = "# Criterios\n\n1. compila\n   Comprobación: cargo build\n2. pasa la \
+                        prueba\n   Comprobación: cargo test\n";
+        let parsed = parse_criteria(criteria);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].text, "compila");
+        assert_eq!(parsed[0].check, "cargo build");
+        assert_eq!(parsed[1].text, "pasa la prueba");
+        assert_eq!(parsed[1].check, "cargo test");
+    }
+}

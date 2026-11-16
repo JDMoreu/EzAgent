@@ -229,7 +229,12 @@ pub fn ok_of(row: &Map<String, Value>) -> bool {
 
 /// Texto del error de una fila de Herdr.
 pub fn error_of(row: &Map<String, Value>) -> String {
-    text_or_empty(row.get("error"))
+    let text = text_or_empty(row.get("error"));
+    if text.is_empty() {
+        "Herdr no confirmó el lanzamiento".to_string()
+    } else {
+        text
+    }
 }
 
 /// Envía la ruta de `encargo.md` a una terminal ya abierta (9.5).
