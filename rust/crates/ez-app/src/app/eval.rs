@@ -67,7 +67,8 @@ fn run(argv: &[String]) -> i32 {
     let parsed = match parse_args(argv) {
         Ok(parsed) => parsed,
         Err(error) => {
-            return fail(&format!("{USAGE}\nezagent-voice: error: {error}"), 2);
+            write_stderr(&format!("{USAGE}\nezagent-voice: error: {error}\n"));
+            return 2;
         }
     };
     let mode = match parsed {
@@ -99,6 +100,12 @@ fn write_stdout(text: &str) {
     let mut out = std::io::stdout().lock();
     let _ = out.write_all(text.as_bytes());
     let _ = out.flush();
+}
+
+fn write_stderr(text: &str) {
+    let mut err = std::io::stderr().lock();
+    let _ = err.write_all(text.as_bytes());
+    let _ = err.flush();
 }
 
 fn parse_args(argv: &[String]) -> Result<Parsed, String> {

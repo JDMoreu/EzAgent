@@ -113,6 +113,8 @@ fn first_step_returns_the_assistant_after_the_user() {
         first_step(&messages, "nada"),
         json!({"content": "", "tool_calls": []})
     );
+    // `(content or "").strip()`: un nulo no se convierte en "None".
+    assert_eq!(text(&json!({"content": null})), "");
 }
 
 #[test]

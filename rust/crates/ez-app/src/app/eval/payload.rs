@@ -27,7 +27,10 @@ pub fn first_step(messages: &[Value], user: &str) -> Value {
 
 /// `(step.get("content") or "").strip()`.
 pub fn text(step: &Value) -> String {
-    let raw = step.get("content").map_or_else(String::new, python_str);
+    let raw = step
+        .get("content")
+        .filter(|value| truthy(value))
+        .map_or_else(String::new, python_str);
     py_strip(&raw).to_string()
 }
 
