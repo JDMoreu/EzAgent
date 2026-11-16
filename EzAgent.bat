@@ -118,6 +118,8 @@ call :rust_env
 echo.
 echo   Iniciando EzAgent Voice (Rust)...
 echo   La primera vez whisper-server tarda unos segundos.
+rem La version Rust no abre consola; en desarrollo se pide una para ver los registros.
+set "EZAGENT_CONSOLE=1"
 start "EzAgent Voice" "%RUST_EXE%"
 timeout /t 2 >nul
 exit /b 0

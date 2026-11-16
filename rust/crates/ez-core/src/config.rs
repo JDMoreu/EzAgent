@@ -52,6 +52,13 @@ use self::llm_env::{env_text, resolve_llm, ResolvedLlm};
 
 pub use self::defaults::{default_agents, default_profiles};
 
+/// Ajustes que solo tiene la versión Rust. No van en los valores de fábrica
+/// (la paridad de `VoiceConfig` con el Python los compara), pero si el usuario
+/// los escribe en `voice.json` se cargan y se conservan al guardar.
+// DECISION: `barge_in_mode` («adaptive» por omisión, «fixed» como el Python)
+// se descartaba al cargar porque `from_json` solo admitía claves conocidas.
+pub const RUST_ONLY_KEYS: &[&str] = &["barge_in_mode"];
+
 /// Configuración de `ezagent-voice`.
 #[derive(Clone, Debug, Serialize)]
 #[serde(transparent)]
@@ -88,7 +95,7 @@ impl VoiceConfig {
     pub fn from_json(data: &Map<String, Value>) -> Self {
         let mut config = Self::new();
         for (key, value) in data {
-            if config.values.contains_key(key) {
+            if config.values.contains_key(key) || RUST_ONLY_KEYS.contains(&key.as_str()) {
                 config.values.insert(key.clone(), value.clone());
             }
         }

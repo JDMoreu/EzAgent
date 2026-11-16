@@ -210,3 +210,10 @@ fn waiting_for_a_ready_server_returns_immediately() {
     let url = format!("http://127.0.0.1:{port}/inference");
     assert!(wait_until_ready(&url, 1.0));
 }
+
+#[test]
+fn the_missing_whisper_hint_names_a_command_that_exists_there() {
+    assert!(super::missing_whisper_hint(true).ends_with("ezagent-voice downloads --all"));
+    assert!(super::missing_whisper_hint(false)
+        .ends_with("uv run python -m ezagent.core.downloads --all"));
+}

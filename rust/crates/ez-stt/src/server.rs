@@ -33,6 +33,27 @@ pub fn resource_root() -> PathBuf {
     resource_root_in(exe_dir.as_deref())
 }
 
+/// La app corre instalada (recursos junto al ejecutable), no desde el repo.
+fn packaged() -> bool {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf));
+    exe_dir
+        .as_deref()
+        .is_some_and(|dir| resource_root_in(Some(dir)) == dir)
+}
+
+/// Aviso de whisper ausente con la orden que sirve en cada caso.
+// DECISION: el texto del Python manda a `uv run python -m …`, que no existe en
+// la app instalada; ahí se da el subcomando del propio ejecutable.
+pub fn missing_whisper_hint(packaged: bool) -> &'static str {
+    if packaged {
+        "No encuentro whisper. Descárgalo con: ezagent-voice downloads --all"
+    } else {
+        "No encuentro whisper. Descárgalo con: uv run python -m ezagent.core.downloads --all"
+    }
+}
+
 /// `resource_root` con la carpeta del ejecutable recibida como parámetro.
 // DECISION: el Python usa `sys._MEIPASS`; aquí la carpeta del ejecutable se
 // reconoce por `scripts/start-whisper.ps1`, que es el recurso que necesita.
@@ -214,9 +235,7 @@ fn ensure_whisper_at(config: &mut VoiceConfig, wait_secs: f64, root: &Path) -> O
     if !has_server(home.as_deref()) && model.is_none() {
         // DECISION: app.py usa log() propio (sin niveles); el aviso hablado lo
         // emite la capa que trata el estado "error" del HUD.
-        info!(
-            "No encuentro whisper. Descárgalo con: uv run python -m ezagent.core.downloads --all"
-        );
+        info!("{}", missing_whisper_hint(packaged()));
         return None;
     }
     let Some(port) = free_local_port() else {

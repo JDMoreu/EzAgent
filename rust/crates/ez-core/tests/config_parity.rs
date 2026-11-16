@@ -487,3 +487,22 @@ fn concurrent_full_and_key_saves_never_lose_an_update() {
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_dir(&dir);
 }
+
+/// `barge_in_mode` solo existe en Rust: se carga de `voice.json` y sobrevive a
+/// un guardado de Ajustes, pero no aparece en los valores de fábrica.
+#[test]
+fn rust_only_keys_survive_load_and_save() {
+    let mut data = serde_json::Map::new();
+    data.insert(
+        "barge_in_mode".to_string(),
+        serde_json::Value::from("fixed"),
+    );
+    let config = ez_core::config::VoiceConfig::from_json(&data);
+    assert_eq!(
+        config.get("barge_in_mode"),
+        Some(&serde_json::Value::from("fixed"))
+    );
+    assert!(ez_core::config::VoiceConfig::new()
+        .get("barge_in_mode")
+        .is_none());
+}

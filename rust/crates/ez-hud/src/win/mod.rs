@@ -10,6 +10,7 @@
 //! y cada bloque lleva su comentario `// SAFETY:`.
 
 pub mod chat;
+pub mod console;
 pub mod dpi;
 pub mod drag;
 pub mod drop;

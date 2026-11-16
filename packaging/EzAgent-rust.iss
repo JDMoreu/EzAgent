@@ -52,4 +52,5 @@ Name: "{group}\Desinstalar {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
+Filename: "{app}\{#MyAppExeName}"; Parameters: "downloads --all"; Description: "Descargar whisper y los modelos de voz (requiere Internet)"; StatusMsg: "Descargando whisper y los modelos de voz..."; Flags: postinstall waituntilterminated skipifsilent
 Filename: "{app}\{#MyAppExeName}"; Description: "Abrir {#MyAppName}"; Flags: nowait postinstall skipifsilent

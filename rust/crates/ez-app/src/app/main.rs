@@ -48,6 +48,12 @@ pub fn run_with(argv: &[String]) -> i32 {
     if let Some(code) = super::eval::maybe_run(argv) {
         return code;
     }
+    // DECISION: la app instalada no tiene Python; `ezagent-voice downloads`
+    // es `python -m ezagent.core.downloads` (mismos argumentos y salida).
+    if argv.get(1).map(String::as_str) == Some("downloads") {
+        let mut stdout = std::io::stdout();
+        return ez_core::downloads::cli_main(&argv[2..], &mut stdout);
+    }
     // Antes de crear cualquier ventana Win32, como el Python.
     ez_hud::win::dpi::enable_dpi_awareness();
     let prog = argv.first().map_or_else(
