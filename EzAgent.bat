@@ -9,6 +9,13 @@ set "PY=%ROOT%.venv\Scripts\python.exe"
 set "PS=powershell -NoProfile -ExecutionPolicy Bypass"
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
+set "RUST_EXE=%ROOT%rust\target\release\ezagent-voice.exe"
+
+rem Por omision arranca la version Rust si esta compilada; "py" fuerza Python.
+set "MODE=auto"
+if /I "%~1"=="py" set "MODE=py"
+if /I "%MODE%"=="py" shift
+if /I "%MODE%"=="auto" if exist "%RUST_EXE%" set "MODE=rust"
 
 if /I "%~1"=="voice"    ( call :start_voice & exit /b )
 if /I "%~1"=="stop"     ( call :stop_voice & exit /b )
@@ -68,27 +75,61 @@ echo   EzAgent.bat status       muestra el estado
 echo   EzAgent.bat install      instala/actualiza dependencias
 echo   EzAgent.bat mics         lista microfonos
 echo   EzAgent.bat agents       lista agentes de Herdr
+echo   EzAgent.bat py <cmd>     fuerza la version Python
 echo   EzAgent.bat shortcut     crea acceso directo en el escritorio
 exit /b 0
 
 rem ---------------------------------------------------------------- voz
 :start_voice
+if /I "%MODE%"=="rust" goto start_voice_rust
 call :ensure_venv || exit /b 1
 call :ensure_env  || exit /b 1
 call :ensure_herdr
 
 call :voice_running
-if not errorlevel 1 (
-    echo.
-    echo   El mensajero ya esta corriendo.
-    exit /b 0
-)
+if errorlevel 1 goto launch_voice
 
+echo.
+echo   El mensajero ya esta corriendo.
+exit /b 0
+
+:launch_voice
 echo.
 echo   Iniciando EzAgent Voice...
 echo   La primera vez whisper-server tarda unos segundos.
 start "EzAgent Voice" powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "%ROOT%scripts\start-voice.ps1"
 timeout /t 2 >nul
+exit /b 0
+
+:start_voice_rust
+call :ensure_env || exit /b 1
+call :ensure_herdr
+
+call :voice_running
+if errorlevel 1 goto launch_voice_rust
+
+echo.
+echo   El mensajero ya esta corriendo.
+exit /b 0
+
+:launch_voice_rust
+call :rust_env
+echo.
+echo   Iniciando EzAgent Voice (Rust)...
+echo   La primera vez whisper-server tarda unos segundos.
+start "EzAgent Voice" "%RUST_EXE%"
+timeout /t 2 >nul
+exit /b 0
+
+rem Las mismas DLL que usa rust\run-dev.cmd, si el entorno de Python existe.
+:rust_env
+if not exist "%ROOT%.venv\Lib\site-packages\onnxruntime\capi\onnxruntime.dll" (
+    echo   Aviso: no encuentro onnxruntime.dll en .venv; ejecuta "uv sync".
+    exit /b 0
+)
+set "ORT_DYLIB_PATH=%ROOT%.venv\Lib\site-packages\onnxruntime\capi\onnxruntime.dll"
+set "EZAGENT_ESPEAK_LIBRARY=%ROOT%.venv\Lib\site-packages\espeakng_loader\espeak-ng.dll"
+set "EZAGENT_ESPEAK_DATA_PATH=%ROOT%.venv\Lib\site-packages\espeakng_loader\espeak-ng-data"
 exit /b 0
 
 :ensure_venv
@@ -126,17 +167,18 @@ if errorlevel 1 (
 exit /b 0
 
 :voice_running
-%PS% -Command "$v=@(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like '*-m ezagent.voice*' }); if ($v.Count -gt 0) { exit 0 } else { exit 1 }"
+%PS% -Command "$v=@(Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'python.exe' -and $_.CommandLine -like '*-m ezagent.voice*') -or $_.Name -eq 'ezagent-voice.exe' }); if ($v.Count -gt 0) { exit 0 } else { exit 1 }"
 exit /b %errorlevel%
 
 :stop_voice
+%PS% -Command "$v=@(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'ezagent-voice.exe' }); foreach ($p in $v) { Write-Host ('Deteniendo EzAgent Voice (PID ' + $p.ProcessId + ')...'); Stop-Process -Id $p.ProcessId -Force }"
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\stop-voice.ps1"
 exit /b 0
 
 :show_status
 echo.
 echo   Procesos
-%PS% -Command "$v=@(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like '*-m ezagent.voice*' }); if ($v.Count -gt 0) { 'Voice: RUNNING  PID ' + (($v | ForEach-Object ProcessId) -join ', ') } else { 'Voice: stopped' }; $w=@(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'whisper-server.exe' }); if ($w.Count -gt 0) { 'Whisper: RUNNING  PID ' + (($w | ForEach-Object ProcessId) -join ', ') } else { 'Whisper: stopped' }"
+%PS% -Command "$v=@(Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'python.exe' -and $_.CommandLine -like '*-m ezagent.voice*') -or $_.Name -eq 'ezagent-voice.exe' }); if ($v.Count -gt 0) { 'Voice: RUNNING  ' + (($v | ForEach-Object { $_.Name + ' PID ' + $_.ProcessId }) -join ', ') } else { 'Voice: stopped' }; $w=@(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'whisper-server.exe' }); if ($w.Count -gt 0) { 'Whisper: RUNNING  PID ' + (($w | ForEach-Object ProcessId) -join ', ') } else { 'Whisper: stopped' }"
 echo.
 echo   Herdr
 where herdr-app >nul 2>nul
@@ -150,18 +192,32 @@ pause
 exit /b 0
 
 :list_mics
+if /I "%MODE%"=="rust" goto list_mics_rust
 call :ensure_venv || exit /b 1
 "%PY%" -m ezagent.voice --list-mics
 pause
 exit /b 0
 
+:list_mics_rust
+call :rust_env
+"%RUST_EXE%" --list-mics
+pause
+exit /b 0
+
 :list_agents
+if /I "%MODE%"=="rust" goto list_agents_rust
 where herdr-app >nul 2>nul
 if errorlevel 1 (
     echo   herdr-app no esta en PATH.
 ) else (
     herdr-app status
 )
+pause
+exit /b 0
+
+:list_agents_rust
+call :rust_env
+"%RUST_EXE%" --list-agents
 pause
 exit /b 0
 
@@ -181,7 +237,37 @@ if errorlevel 1 (
     exit /b 1
 )
 echo   Dependencias listas.
+call :build_rust
+if errorlevel 1 (
+    pause
+    exit /b 1
+)
 pause
+exit /b 0
+
+:build_rust
+where cargo >nul 2>nul
+if errorlevel 1 (
+    echo   cargo no esta en PATH; se omite la version Rust.
+    exit /b 0
+)
+echo.
+echo   Compilando la version Rust...
+pushd "%ROOT%rust"
+cargo build --release -p ez-app --bin ezagent-voice
+if errorlevel 1 (
+    echo   Fallo cargo build de ezagent-voice.
+    popd
+    exit /b 1
+)
+cargo build --release -p ez-swarm --bin ezs
+if errorlevel 1 (
+    echo   Fallo cargo build de ezs.
+    popd
+    exit /b 1
+)
+popd
+echo   Version Rust lista.
 exit /b 0
 
 :create_shortcut
