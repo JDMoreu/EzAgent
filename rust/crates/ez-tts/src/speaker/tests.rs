@@ -111,7 +111,11 @@ impl AudioStream for FakeStream {
         Ok(())
     }
 
-    fn finish(&mut self, stop: &AtomicBool) -> Result<bool, String> {
+    fn finish(
+        &mut self,
+        stop: &AtomicBool,
+        _reference: Option<&PlaybackReference>,
+    ) -> Result<bool, String> {
         let sounded = !stop.load(Ordering::Relaxed);
         self.trace.lock().finishes.push(sounded);
         Ok(sounded)
@@ -177,6 +181,7 @@ fn play_chunks_480_samples_and_reports_each_level() {
         Some(2),
         Some(&mut |level| levels.push(level)),
         Some(&mut || starts += 1),
+        None,
     )
     .expect("suena");
     assert!(sounded);
@@ -205,6 +210,7 @@ fn stop_before_the_first_chunk_writes_nothing() {
         None,
         None,
         Some(&mut || starts += 1),
+        None,
     )
     .expect("abre y corta");
     assert!(!sounded);
@@ -228,6 +234,7 @@ fn stop_after_the_first_chunk_keeps_only_that_chunk() {
         None,
         Some(&mut on_level),
         None,
+        None,
     )
     .expect("corta");
     assert!(!sounded);
@@ -247,6 +254,7 @@ fn empty_audio_still_opens_and_finishes() {
         None,
         None,
         Some(&mut || starts += 1),
+        None,
     )
     .expect("nada");
     assert!(sounded);
@@ -254,6 +262,41 @@ fn empty_audio_still_opens_and_finishes() {
     let trace = trace.lock();
     assert!(trace.chunks.is_empty());
     assert_eq!(trace.finishes, vec![true]);
+}
+
+#[test]
+fn the_playback_reference_opens_and_closes_with_the_phrase() {
+    let (sink, _trace) = fake_sink();
+    let reference = PlaybackReference::new();
+    let stop = AtomicBool::new(false);
+    play_samples(
+        sink.as_ref(),
+        &[0.5; 100],
+        24_000,
+        &stop,
+        None,
+        None,
+        None,
+        Some(&reference),
+    )
+    .expect("suena");
+    assert!(!reference.is_active(), "la frase quedó cerrada");
+    assert_eq!(reference.phrase(), 1);
+    // Un corte también deja la referencia inactiva (el `Drop` la cierra).
+    let stop = AtomicBool::new(true);
+    play_samples(
+        sink.as_ref(),
+        &[0.5; 100],
+        24_000,
+        &stop,
+        None,
+        None,
+        None,
+        Some(&reference),
+    )
+    .expect("corta");
+    assert!(!reference.is_active());
+    assert_eq!(reference.phrase(), 2);
 }
 
 #[test]

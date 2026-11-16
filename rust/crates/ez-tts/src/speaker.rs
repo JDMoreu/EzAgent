@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use ez_audio::barge_in::PlaybackReference;
 use ez_core::config::VoiceConfig;
 use ez_core::downloads::DownloadError;
 use ez_core::models::resolve_kokoro_files;
@@ -71,7 +72,25 @@ pub trait AudioStream {
     fn write(&mut self, samples: &[i16]) -> Result<(), String>;
 
     /// Sounds what was written; `false` if `stop` interrupted it.
-    fn finish(&mut self, stop: &AtomicBool) -> Result<bool, String>;
+    ///
+    /// `reference` es la envolvente que ve el detector de barge-in: se publica
+    /// al ritmo real de salida, no al de `write` (que puede solo acumular).
+    fn finish(
+        &mut self,
+        stop: &AtomicBool,
+        reference: Option<&PlaybackReference>,
+    ) -> Result<bool, String>;
+}
+
+/// Marca la frase como sonando mientras viva y la cierra al salir.
+struct ReferenceGuard<'a>(Option<&'a PlaybackReference>);
+
+impl Drop for ReferenceGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(reference) = self.0 {
+            reference.end();
+        }
+    }
 }
 
 /// `Speaker._play`: clip, chunk, report levels and stop on barge-in.
@@ -86,8 +105,13 @@ pub fn play_samples(
     device_index: Option<usize>,
     mut on_level: Option<&mut dyn FnMut(f64)>,
     mut on_start: Option<&mut dyn FnMut()>,
+    reference: Option<&PlaybackReference>,
 ) -> Result<bool, SpeakerError> {
     let mut stream = sink.open(sample_rate, device_index)?;
+    if let Some(reference) = reference {
+        reference.begin();
+    }
+    let _reference = ReferenceGuard(reference);
     // shortcut: un stream por frase, como PyAudio (F14); medir en hardware el
     // coste de abrirlo y mantenerlo solo si supera el hueco audible.
     let pcm = to_pcm(samples);
@@ -107,7 +131,7 @@ pub fn play_samples(
             callback(pcm_rms(chunk));
         }
     }
-    stream.finish(stop).map_err(SpeakerError::from)
+    stream.finish(stop, reference).map_err(SpeakerError::from)
 }
 
 /// `(np.clip(samples, -1.0, 1.0) * 32767).astype(np.int16)`.
@@ -140,6 +164,8 @@ pub struct Speaker {
     synth_lock: Mutex<()>,
     play_lock: Mutex<()>,
     sink: Arc<dyn AudioSink>,
+    /// Envolvente de lo que suena, para el barge-in adaptativo de `ez-audio`.
+    reference: Arc<PlaybackReference>,
 }
 
 impl Speaker {
@@ -166,7 +192,13 @@ impl Speaker {
             synth_lock: Mutex::new(()),
             play_lock: Mutex::new(()),
             sink,
+            reference: Arc::new(PlaybackReference::new()),
         })
+    }
+
+    /// Envolvente de lo que se reproduce (misma instancia toda la sesión).
+    pub fn reference(&self) -> Arc<PlaybackReference> {
+        Arc::clone(&self.reference)
     }
 
     /// Replaces the config snapshot read by `synthesize` and `reload_model`.
@@ -242,6 +274,7 @@ impl Speaker {
             device_index(&self.config()),
             on_level,
             on_start,
+            Some(self.reference.as_ref()),
         )
     }
 
@@ -455,7 +488,11 @@ impl AudioStream for CpalStream {
         Ok(())
     }
 
-    fn finish(&mut self, stop: &AtomicBool) -> Result<bool, String> {
+    fn finish(
+        &mut self,
+        stop: &AtomicBool,
+        reference: Option<&PlaybackReference>,
+    ) -> Result<bool, String> {
         if self.played {
             return Ok(true);
         }
@@ -464,20 +501,27 @@ impl AudioStream for CpalStream {
         let Some(sender) = self.sender.take() else {
             return Ok(false);
         };
-        for sample in samples {
-            loop {
-                if stop.load(Ordering::Relaxed) {
-                    return Ok(false);
-                }
-                self.pending.fetch_add(1, Ordering::Relaxed);
-                match sender.send_timeout(sample, Duration::from_millis(50)) {
-                    Ok(()) => break,
-                    Err(crossbeam_channel::SendTimeoutError::Timeout(_)) => {
-                        self.pending.fetch_sub(1, Ordering::Relaxed);
-                    }
-                    Err(crossbeam_channel::SendTimeoutError::Disconnected(_)) => {
-                        self.pending.fetch_sub(1, Ordering::Relaxed);
+        for chunk in samples.chunks(CHUNK_SAMPLES) {
+            // La referencia va con retardo de un buffer (~80 ms), cubierto por
+            // la ventana de eco del detector.
+            if let Some(reference) = reference {
+                reference.publish(pcm_rms(chunk));
+            }
+            for sample in chunk {
+                loop {
+                    if stop.load(Ordering::Relaxed) {
                         return Ok(false);
+                    }
+                    self.pending.fetch_add(1, Ordering::Relaxed);
+                    match sender.send_timeout(*sample, Duration::from_millis(50)) {
+                        Ok(()) => break,
+                        Err(crossbeam_channel::SendTimeoutError::Timeout(_)) => {
+                            self.pending.fetch_sub(1, Ordering::Relaxed);
+                        }
+                        Err(crossbeam_channel::SendTimeoutError::Disconnected(_)) => {
+                            self.pending.fetch_sub(1, Ordering::Relaxed);
+                            return Ok(false);
+                        }
                     }
                 }
             }

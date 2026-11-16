@@ -51,6 +51,7 @@ use serde_json::{json, Value};
 
 use crate::tray::TrayIcon;
 
+pub(crate) use self::callbacks::barge_in_mode;
 use self::callbacks::mic_capture;
 pub use self::chat_model::AppChat;
 pub use self::events::{AppEvent, MenuEvent, Queue};

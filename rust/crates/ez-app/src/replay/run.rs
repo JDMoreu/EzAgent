@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use ez_audio::barge_in::BargeInMode;
 use ez_audio::capture::{MicCapture, VadSettings};
 use ez_chat::session::ChatModel;
 use ez_chat::store::ChatStore;
@@ -447,6 +448,8 @@ fn vad_settings(scenario: &Scenario) -> VadSettings {
         turn_quick_secs: 0.35,
         barge_in_rms: number(scenario, "barge_in_rms", 0.008),
         barge_in_secs: number(scenario, "barge_in_secs", 0.25),
+        // El altavoz del arnés no suena: las trazas doradas son las clásicas.
+        barge_in_mode: BargeInMode::Fixed,
     }
 }
 

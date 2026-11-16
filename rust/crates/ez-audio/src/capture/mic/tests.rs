@@ -142,6 +142,18 @@ fn the_turn_detector_is_read_on_every_probe() {
     assert!(mic.turn_detector().is_none());
 }
 
+#[test]
+fn the_playback_reference_and_the_mode_travel_with_the_mic() {
+    let mic = MicCapture::silent(VadSettings::default());
+    assert_eq!(mic.barge_in_mode(), BargeInMode::Fixed);
+    let reference = Arc::new(PlaybackReference::new());
+    mic.set_playback_reference(Some(Arc::clone(&reference)));
+    mic.set_barge_in_mode(BargeInMode::Adaptive);
+    assert_eq!(mic.live_settings(0.0).barge_in_mode, BargeInMode::Adaptive);
+    let seen = mic.inner.live.playback_reference().expect("hay referencia");
+    assert!(Arc::ptr_eq(&seen, &reference));
+}
+
 /// Voz sintética: un tono plano del nivel pedido, 480 muestras por bloque.
 fn tone(level: f64) -> Vec<u8> {
     let sample = (level.clamp(0.0, 1.0) * 32767.0) as i16;

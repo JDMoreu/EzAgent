@@ -81,6 +81,8 @@ impl AgentSwarmStack for SwarmActive {
     }
 }
 
+use ez_audio::barge_in::BargeInMode;
+
 pub(super) fn mic_capture(cfg: &VoiceConfig) -> MicCapture {
     let index = cfg
         .get("input_device_index")
@@ -103,8 +105,17 @@ pub(super) fn mic_capture(cfg: &VoiceConfig) -> MicCapture {
             turn_quick_secs: cfg_float(cfg, "turn_quick_secs", 0.35),
             barge_in_rms: cfg_float(cfg, "barge_in_rms", 0.008),
             barge_in_secs: cfg_float(cfg, "barge_in_secs", 0.25),
+            barge_in_mode: barge_in_mode(cfg),
         },
     )
+}
+
+/// `barge_in_mode` de `voice.json`: «fixed» es el Python; lo demás, adaptativo.
+pub(crate) fn barge_in_mode(cfg: &VoiceConfig) -> BargeInMode {
+    match cfg_text(cfg, "barge_in_mode", "adaptive").as_str() {
+        "fixed" => BargeInMode::Fixed,
+        _ => BargeInMode::Adaptive,
+    }
 }
 
 pub(super) fn saved_llm(cfg: &VoiceConfig) -> SavedLlm {
@@ -252,6 +263,16 @@ mod tests {
     use ez_core::config::VoiceConfig;
     use ez_herdr::herdr::Herdr;
     use serde_json::json;
+
+    #[test]
+    fn barge_in_mode_defaults_to_adaptive_and_honours_fixed() {
+        let mut cfg = VoiceConfig::new();
+        assert_eq!(barge_in_mode(&cfg), BargeInMode::Adaptive);
+        cfg.set("barge_in_mode", json!("fixed"));
+        assert_eq!(barge_in_mode(&cfg), BargeInMode::Fixed);
+        cfg.set("barge_in_mode", json!("desconocido"));
+        assert_eq!(barge_in_mode(&cfg), BargeInMode::Adaptive);
+    }
 
     #[test]
     fn agent_herdr_ports_the_catalog_and_context_texts() {
