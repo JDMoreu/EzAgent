@@ -23,6 +23,7 @@ mod wiring;
 mod tests;
 
 pub use time::{Clock, RealClock, TestClock};
+pub(crate) use wiring::{peek_row, AUTONOMOUS_KEY};
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};

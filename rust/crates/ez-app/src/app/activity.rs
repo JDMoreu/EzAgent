@@ -10,6 +10,9 @@ mod tasks;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+pub(crate) use log::activity_rows;
+
 use std::sync::atomic::Ordering;
 
 use ez_core::pytime::timestamp;

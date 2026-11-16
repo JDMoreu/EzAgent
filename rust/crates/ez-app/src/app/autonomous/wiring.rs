@@ -5,12 +5,41 @@
 use std::sync::Arc;
 
 use ez_agent::autonomous::artifacts;
-use ez_agent::autonomous::AutonomousHost;
+use ez_agent::autonomous::{AutonomousHost, Summary, TaskState};
 use ez_agent::runtime::AgentRuntime;
 use ez_agent::tools_herdr::port::HerdrPort;
 
 use super::{AutonomousLoop, RealClock};
 use crate::app::core::VoiceApp;
+
+/// Clave de la fila fija de la vista rápida (10.19).
+pub const AUTONOMOUS_KEY: &str = "autonomous";
+/// Pregunta de la parada desde la fila, generada por el código (10.19).
+pub const STOP_QUESTION: &str = "¿Detengo el modo autónomo?";
+/// Motivo que viaja al bucle cuando se para desde la fila.
+const ROW_STOP_REASON: &str = "desde la vista rápida";
+
+/// La fila de la vista rápida mientras la tarea existe (9.8 y 10.19).
+///
+/// Devuelve el título, el detalle de la segunda línea y si lleva marca en la
+/// órbita. Juntos, título y detalle forman `Summary::describe`.
+pub fn peek_row(summary: &Summary) -> Option<(String, String, bool)> {
+    if !summary.state.unfinished() {
+        return None;
+    }
+    let title = format!("Autónomo · ronda {}", summary.round);
+    let detail = if summary.state == TaskState::Paused {
+        match &summary.pause_reason {
+            Some(reason) => format!("en pausa: {reason}"),
+            None => String::from("en pausa"),
+        }
+    } else {
+        ez_agent::autonomous::texts::state_label(summary.state).to_string()
+    };
+    // 9.8: la marca de la órbita solo con la tarea trabajando, no en pausa.
+    let active = matches!(summary.state, TaskState::Running | TaskState::Verifying);
+    Some((title, detail, active))
+}
 
 impl VoiceApp {
     /// Crea el bucle y, en producción, lo instala antes del runtime.
@@ -75,6 +104,26 @@ impl VoiceApp {
         self.hang_up();
         if self.autonomous_running() {
             let _ = self.stop_autonomous("atajo de cancelar", false);
+        }
+    }
+
+    /// 10.19: pulsar la fila pregunta y, solo con «sí», detiene la tarea.
+    ///
+    /// `ask` puede tardar lo que tarde el usuario: se llama sin ningún cerrojo
+    /// tomado (regla de hilos de 9.1), desde el hilo `ezagent-autonomo-stop`.
+    pub fn stop_autonomous_from_row(&self, ask: impl FnOnce(&str) -> bool) -> bool {
+        let Some(loop_) = self.autonomous_loop() else {
+            return false;
+        };
+        if loop_.status().is_none() || !ask(STOP_QUESTION) {
+            return false;
+        }
+        match self.stop_autonomous(ROW_STOP_REASON, false) {
+            Ok(()) => true,
+            Err(error) => {
+                crate::app::core::log(format!("No pude detener el modo autónomo: {error}"));
+                false
+            }
         }
     }
 }

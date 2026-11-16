@@ -4,6 +4,7 @@
 mod fake;
 mod flow;
 mod safety;
+mod ui;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
