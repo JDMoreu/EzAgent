@@ -1,14 +1,16 @@
-//! `eval --mode context` (Rust) contra `provider.py` (Python), caso por caso
-//! (F8-02).
+//! `eval --mode context` (Rust) contra la salida congelada de `provider.py`
+//! (PYOUT-1): la prueba ya no ejecuta Python en vivo.
 //!
-//! Se salta si no hay intérprete del proyecto (`EZ_EVAL_PYTHON` o `.venv`):
-//! comparar exige el Python con `ezagent` instalado.
+//! Los tres casos se capturaron con `evals/provider.py` (modo `context`) y se
+//! guardaron sin la línea del reloj en `parity/frozen/eval_context.json`.
 
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use serde_json::{json, Value};
+
+const FROZEN: &str = "../../../parity/frozen/eval_context.json";
 
 /// Casos del contrato offline (el mismo abanico que `evals/tests/contract.yaml`).
 const CASES: [&str; 3] = [
@@ -17,19 +19,10 @@ const CASES: [&str; 3] = [
     "copia el informe a la carpeta de respaldo",
 ];
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
-}
-
-/// Intérprete del proyecto: `EZ_EVAL_PYTHON` o el `.venv` del repositorio.
-fn python_binary() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("EZ_EVAL_PYTHON") {
-        return Some(PathBuf::from(path));
-    }
-    ["Scripts/python.exe", "bin/python"]
-        .iter()
-        .map(|relative| repo_root().join(".venv").join(relative))
-        .find(|candidate| candidate.is_file())
+fn frozen_context() -> Vec<Value> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(FROZEN);
+    let text = std::fs::read_to_string(&path).expect("salida congelada legible");
+    serde_json::from_str(&text).expect("salida congelada es JSON")
 }
 
 fn run_rust_context(user: &str) -> Value {
@@ -51,38 +44,6 @@ fn run_rust_context(user: &str) -> Value {
     serde_json::from_slice(&output.stdout).expect("el eval devuelve JSON")
 }
 
-/// Una sola corrida de Python para todos los casos (importar `ezagent` es caro).
-fn run_python_context(python: &PathBuf) -> Vec<Value> {
-    let script = r#"
-import json, sys
-sys.path.insert(0, sys.argv[1])
-import provider
-users = json.loads(sys.argv[2])
-out = []
-for user in users:
-    result = provider.call_api(user, {"config": {"mode": "context"}}, {"vars": {"user": user}})
-    if "error" in result:
-        sys.stderr.write(result["error"] + "\n")
-        sys.exit(1)
-    out.append(json.loads(result["output"]))
-print(json.dumps(out, ensure_ascii=False))
-"#;
-    let evals = repo_root().join("evals");
-    let output = Command::new(python)
-        .args(["-c", script])
-        .arg(&evals)
-        .arg(json!(CASES).to_string())
-        .env("PYTHONIOENCODING", "utf-8")
-        .output()
-        .expect("el proveedor Python arranca");
-    assert!(
-        output.status.success(),
-        "provider.py falló: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    serde_json::from_slice(&output.stdout).expect("provider.py devuelve JSON")
-}
-
 /// La hora del prompt cambia entre dos procesos; el resto debe ser idéntico.
 fn without_clock(prompt: &str) -> String {
     prompt
@@ -93,11 +54,8 @@ fn without_clock(prompt: &str) -> String {
 }
 
 #[test]
-fn context_matches_the_python_provider() {
-    let Some(python) = python_binary() else {
-        return;
-    };
-    let expected = run_python_context(&python);
+fn context_matches_the_frozen_python_provider() {
+    let expected = frozen_context();
     assert_eq!(expected.len(), CASES.len());
     for (user, reference) in CASES.iter().zip(expected) {
         let actual = run_rust_context(user);

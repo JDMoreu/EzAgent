@@ -74,7 +74,8 @@ pub fn resolve_providers() -> Vec<String> {
     vec!["CPUExecutionProvider".to_string()]
 }
 
-/// `onnxruntime.dll`, from `ORT_DYLIB_PATH` or next to the executable.
+/// `onnxruntime.dll`: `ORT_DYLIB_PATH`, junto al ejecutable o en la carpeta de
+/// descargas (`ezagent-voice downloads onnxruntime`).
 pub fn onnxruntime_path() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("ORT_DYLIB_PATH")
         .filter(|value| !value.is_empty())
@@ -114,7 +115,8 @@ impl OrtModel {
     /// `create_session(model_path)`, only with the runtime available.
     pub fn open(model_path: &Path) -> Result<Self, String> {
         let library = onnxruntime_path().ok_or_else(|| {
-            "onnxruntime.dll no está disponible; colócalo junto al ejecutable o define ORT_DYLIB_PATH"
+            "onnxruntime.dll no está disponible; ejecuta `ezagent-voice downloads onnxruntime`, \
+             colócalo junto al ejecutable o define ORT_DYLIB_PATH"
                 .to_string()
         })?;
         let environment = environment(&library)?;

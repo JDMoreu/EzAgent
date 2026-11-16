@@ -1,23 +1,16 @@
 @echo off
 rem Lanza la version Rust de EzAgent para probarla en desarrollo.
-rem Mientras no exista el instalador (F8), el ejecutable necesita las DLL de
-rem ONNX Runtime y espeak-ng; aqui se toman del entorno de Python del repo.
+rem Las DLL de ONNX Runtime y espeak-ng ya no salen de un entorno de Python:
+rem viven en la carpeta de datos de la app, donde las deja
+rem "ezagent-voice downloads --all" (o EzAgent.bat install).
 rem Uso: run-dev.cmd [argumentos de ezagent-voice, p. ej. --demo-ui]
 
 setlocal
-set "REPO=%~dp0.."
-set "PKG=%REPO%\.venv\Lib\site-packages"
+set "DATA=%EZAGENT_HOME%"
+if not defined DATA set "DATA=%LOCALAPPDATA%\EzAgent"
 
-set "ORT_DYLIB_PATH=%PKG%\onnxruntime\capi\onnxruntime.dll"
-set "EZAGENT_ESPEAK_LIBRARY=%PKG%\espeakng_loader\espeak-ng.dll"
-set "EZAGENT_ESPEAK_DATA_PATH=%PKG%\espeakng_loader\espeak-ng-data"
-
-if not exist "%ORT_DYLIB_PATH%" (
-  echo No encuentro onnxruntime.dll en %ORT_DYLIB_PATH%
-  echo Ejecuta antes "uv sync" en la carpeta del repo.
-  pause
-  exit /b 1
-)
+if not exist "%DATA%\onnxruntime\onnxruntime.dll" goto missing_dlls
+if not exist "%DATA%\espeak-ng\espeak-ng.dll" goto missing_dlls
 
 set "EXE=%~dp0target\release\ezagent-voice.exe"
 if not exist "%EXE%" (
@@ -32,6 +25,15 @@ if not exist "%EXE%" (
 )
 
 "%EXE%" %*
+set "CODE=%ERRORLEVEL%"
 echo.
-echo EzAgent termino con codigo %ERRORLEVEL%.
+echo EzAgent termino con codigo %CODE%.
 pause
+exit /b %CODE%
+
+:missing_dlls
+echo Faltan ONNX Runtime o espeak-ng en %DATA%.
+echo Ejecuta antes: cd rust ^&^& cargo run -p ez-app --bin ezagent-voice -- downloads --all
+echo (o EzAgent.bat install, que tambien las descarga).
+pause
+exit /b 1

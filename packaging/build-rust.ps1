@@ -2,10 +2,11 @@
 # Uso:
 #   powershell -ExecutionPolicy Bypass -File packaging\build-rust.ps1
 #
-# Requisitos: Rust estable (x86_64-pc-windows-msvc), uv sync (para las DLL de
-# ONNX Runtime y espeak-ng, igual que rust\run-dev.cmd) e Inno Setup 6.
-# Las DLL se toman de .venv\Lib\site-packages; con -SitePackages se puede
-# apuntar a otro entorno (por ejemplo, el del repo principal desde un worktree).
+# Requisitos: Rust estable (x86_64-pc-windows-msvc), los recursos descargados
+# con "ezagent-voice downloads --all" (ONNX Runtime y espeak-ng; los deja
+# EzAgent.bat install) e Inno Setup 6.
+# Las DLL salen de la carpeta de datos de la app (%LOCALAPPDATA%\EzAgent o
+# EZAGENT_HOME), no de un entorno de Python.
 #
 # Entorno de compilación: el CRT se enlaza estáticamente
 # (-C target-feature=+crt-static) para que el .exe no necesite el redistribuible
@@ -22,15 +23,12 @@
 #   dist\EzAgent-Setup-0.2.0.exe        instalador con desinstalador
 # DECISION: el ZIP va plano (sin carpeta contenedora), como una carpeta portable
 # que se descomprime donde el usuario quiera.
-# DECISION: -SitePackages permite tomar las DLL de otro entorno si el worktree
-# no tiene .venv; por omisión se usa .venv\Lib\site-packages del repo.
 
 [CmdletBinding()]
 param(
     [switch]$SkipTests,
     [switch]$SkipInstaller,
-    [switch]$DynamicCrt,
-    [string]$SitePackages = ""
+    [switch]$DynamicCrt
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,7 +36,8 @@ $root = Split-Path $PSScriptRoot -Parent
 $rust = Join-Path $root "rust"
 $dist = Join-Path $root "dist"
 $stage = Join-Path $dist "rust-stage"
-$pkg = if ($SitePackages) { $SitePackages } else { Join-Path $root ".venv\Lib\site-packages" }
+# Carpeta de datos de la app: ahí deja las DLL "ezagent-voice downloads --all".
+$dataHome = if ($env:EZAGENT_HOME) { $env:EZAGENT_HOME } else { Join-Path $env:LOCALAPPDATA "EzAgent" }
 $version = "0.2.0"
 $zip = Join-Path $dist "EzAgent-portable-$version.zip"
 $iss = Join-Path $PSScriptRoot "EzAgent-rust.iss"
@@ -46,7 +45,7 @@ $setup = Join-Path $dist "EzAgent-Setup-$version.exe"
 
 function Copy-Required([string]$From, [string]$To) {
     if (-not (Test-Path $From)) {
-        throw "No encuentro $From. Ejecuta 'uv sync' en $root o pasa -SitePackages."
+        throw "No encuentro $From. Ejecuta 'EzAgent.bat install' o 'ezagent-voice downloads --all'."
     }
     Copy-Item $From $To -Recurse -Force
 }
@@ -90,11 +89,13 @@ try {
     New-Item $stage -ItemType Directory -Force | Out-Null
     Copy-Required (Join-Path $rust "target\release\ezagent-voice.exe") $stage
     Copy-Required (Join-Path $rust "target\release\ezs.exe") $stage
-    # Las mismas DLL que rust\run-dev.cmd toma del entorno de Python.
-    Copy-Required (Join-Path $pkg "onnxruntime\capi\onnxruntime.dll") $stage
-    Copy-Required (Join-Path $pkg "onnxruntime\capi\onnxruntime_providers_shared.dll") $stage
-    Copy-Required (Join-Path $pkg "espeakng_loader\espeak-ng.dll") $stage
-    Copy-Required (Join-Path $pkg "espeakng_loader\espeak-ng-data") $stage
+    # Las DLL y los datos de espeak-ng salen de las descargas de la propia app.
+    $onnxruntime = Join-Path $dataHome "onnxruntime"
+    $espeak = Join-Path $dataHome "espeak-ng"
+    Copy-Required (Join-Path $onnxruntime "onnxruntime.dll") $stage
+    Copy-Required (Join-Path $onnxruntime "onnxruntime_providers_shared.dll") $stage
+    Copy-Required (Join-Path $espeak "espeak-ng.dll") $stage
+    Copy-Required (Join-Path $espeak "espeak-ng-data") $stage
     foreach ($extra in @(".env.example", "llm.example.json", "README.md")) {
         $source = Join-Path $root $extra
         if (Test-Path $source) { Copy-Item $source $stage -Force }
@@ -111,16 +112,40 @@ try {
     $licenses = Join-Path $stage "LICENSES"
     New-Item $licenses -ItemType Directory -Force | Out-Null
     Copy-Required (Join-Path $root "LICENSE") (Join-Path $licenses "EzAgent-LICENSE.txt")
-    Copy-Required (Join-Path $pkg "onnxruntime\LICENSE") (Join-Path $licenses "onnxruntime-LICENSE.txt")
-    Copy-Required (Join-Path $pkg "onnxruntime\ThirdPartyNotices.txt") (Join-Path $licenses "onnxruntime-ThirdPartyNotices.txt")
+    # La descarga de ONNX Runtime es el paquete NuGet, que solo deja en la
+    # carpeta de datos la subcarpeta de las DLL; su licencia MIT va aquí.
+    $onnxruntimeLicense = @"
+MIT License
+
+Copyright (c) Microsoft Corporation
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"@
+    Set-Content (Join-Path $licenses "onnxruntime-LICENSE.txt") $onnxruntimeLicense -Encoding UTF8
     $notice = @"
 Componentes redistribuidos en esta carpeta:
 
 - ezagent-voice.exe, ezs.exe: EzAgent, licencia Apache-2.0
   (LICENSES\EzAgent-LICENSE.txt).
-- onnxruntime.dll, onnxruntime_providers_shared.dll: ONNX Runtime, licencia
-  MIT (LICENSES\onnxruntime-LICENSE.txt y
-  LICENSES\onnxruntime-ThirdPartyNotices.txt).
+- onnxruntime.dll, onnxruntime_providers_shared.dll: ONNX Runtime 1.31.1,
+  licencia MIT (LICENSES\onnxruntime-LICENSE.txt). Avisos de terceros del
+  paquete: https://github.com/microsoft/onnxruntime/releases/tag/v1.31.1
 - espeak-ng.dll y espeak-ng-data\: eSpeak NG, licencia GPL-3.0-or-later.
   El código fuente está en https://github.com/espeak-ng/espeak-ng y se puede
   pedir una copia del código correspondiente a esta versión abriendo un issue

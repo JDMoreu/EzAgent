@@ -1,124 +1,97 @@
-//! Paridad de la CLI de `ezagent-voice` contra el Python real (P-APP).
+//! Paridad de la CLI de `ezagent-voice` contra las salidas congeladas del
+//! Python (PYOUT-1): la prueba ya no ejecuta Python en vivo.
 //!
-//! Ejecuta el binario y `python -m ezagent.voice.app` con los mismos argumentos
-//! y compara la salida y el código de salida. El intérprete del proyecto es
-//! opcional: si no existe, la prueba se marca como omitida con un mensaje.
+//! `--help` y `--write-config` se comparan con `parity/frozen/*.json`, sacados
+//! de `python -m ezagent.voice.app` antes de retirar la app Python.
+//! `--list-mics` y `--list-agents` dependen del equipo: su formato se comprueba
+//! con dobles en `src/app/main/tests.rs` (`mic_row`, `agent_row`), así que aquí
+//! no hay comparación en vivo.
 //!
-//! DECISION: `sys.argv[0]` se fija al nombre del binario Rust para que
-//! `argparse` genere el mismo `prog` (y el mismo ancho de `usage:`); si no, la
-//! única diferencia sería el nombre del programa. `PYTHONIOENCODING=utf-8`
-//! iguala la codificación de la tubería (Python usa la del sistema al no haber
-//! consola); `-s` evita el `site` del usuario pero deja leer esa variable.
+//! DECISION: `--write-config` parte de una configuración semilla con los valores
+//! del LLM fijados (`llm_pinned`), para que el `voice.json` resultante no
+//! dependa del `.env` ni de la carpeta desde la que se ejecuta la prueba.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const PYTHON: &str = "C:/Users/JDMoreu/Documents/EzAgent/.venv/Scripts/python.exe";
+use serde_json::Value;
+
 const MANIFEST: &str = env!("CARGO_MANIFEST_DIR");
 const BIN: &str = env!("CARGO_BIN_EXE_ezagent-voice");
+const HELP_FROZEN: &str = "../../../parity/frozen/cli_help.json";
+const WRITE_CONFIG_FROZEN: &str = "../../../parity/frozen/cli_write_config.json";
 
 struct Run {
     code: i32,
     stdout: Vec<u8>,
 }
 
-fn run_python(args: &[&str]) -> Run {
-    let prog = Path::new(BIN).file_name().map_or_else(
-        || "ezagent-voice".to_string(),
-        |name| name.to_string_lossy().into_owned(),
-    );
-    let bootstrap =
-        format!("import sys; sys.argv[0] = {prog:?}; from ezagent.voice.app import main; main()");
-    output(
-        Command::new(PYTHON)
-            .args(["-s", "-c", bootstrap.as_str()])
-            .args(args)
-            .env("PYTHONIOENCODING", "utf-8"),
-    )
+fn frozen(relative: &str) -> Value {
+    let path = Path::new(MANIFEST).join(relative);
+    let text = std::fs::read_to_string(&path).expect("salida congelada legible");
+    serde_json::from_str(&text).expect("salida congelada es JSON")
 }
 
-fn run_rust(args: &[&str]) -> Run {
-    output(Command::new(BIN).args(args))
-}
-
-fn output(command: &mut Command) -> Run {
-    let result = command
+fn run(args: &[&str]) -> Run {
+    let result = Command::new(BIN)
+        .args(args)
         .current_dir(MANIFEST)
         .output()
-        .expect("lanzar el programa");
+        .expect("lanzar el binario");
     Run {
         code: result.status.code().unwrap_or(-1),
         stdout: result.stdout,
     }
 }
 
-fn assert_same(what: &str, rust: &Run, python: &Run) {
-    assert_eq!(rust.code, python.code, "{what}: código de salida");
-    assert_eq!(
-        String::from_utf8_lossy(&rust.stdout),
-        String::from_utf8_lossy(&python.stdout),
-        "{what}: salida"
-    );
+fn code(value: &Value) -> i32 {
+    value["code"].as_i64().unwrap_or_default() as i32
+}
+
+fn text(value: &Value) -> &str {
+    value["stdout"].as_str().unwrap_or_default()
 }
 
 #[test]
-fn cli_matches_python() {
-    if !Path::new(PYTHON).exists() {
-        eprintln!("omitida: no existe el intérprete del proyecto en {PYTHON}");
-        return;
-    }
-    assert_same("--help", &run_rust(&["--help"]), &run_python(&["--help"]));
-    assert_same(
-        "--list-agents",
-        &run_rust(&["--list-agents"]),
-        &run_python(&["--list-agents"]),
+fn help_matches_the_frozen_python_output() {
+    let expected = frozen(HELP_FROZEN);
+    let actual = run(&["--help"]);
+    assert_eq!(actual.code, code(&expected), "--help: código de salida");
+    assert_eq!(
+        String::from_utf8_lossy(&actual.stdout),
+        text(&expected),
+        "--help: salida"
     );
-    compare_list_mics();
-    compare_write_config();
 }
 
-/// `--list-mics`: mismas líneas que el Python, en el mismo orden.
-///
-/// Rust reproduce las cuatro APIs de host de PortAudio (MME, DirectSound,
-/// WASAPI y WDM-KS) con sus índices globales, así que la lista completa debe
-/// coincidir línea a línea.
-fn compare_list_mics() {
-    let rust = run_rust(&["--list-mics"]);
-    let python = run_python(&["--list-mics"]);
-    assert_eq!(rust.code, python.code, "--list-mics: código de salida");
-    let rust_lines = lines(&rust.stdout);
-    let python_lines = lines(&python.stdout);
-    assert!(!rust_lines.is_empty(), "--list-mics: sin micrófonos");
-    assert_eq!(rust_lines, python_lines, "--list-mics: listado");
-}
-
-fn lines(text: &[u8]) -> Vec<String> {
-    String::from_utf8_lossy(text)
-        .lines()
-        .map(str::to_string)
-        .collect()
-}
-
-/// `--write-config` con el destino en `--config`: misma ruta para los dos,
-/// mismo texto impreso y mismo `voice.json`.
-fn compare_write_config() {
+/// `--write-config` con el destino en `--config`: mismo texto impreso y mismo
+/// `voice.json` que el Python congelado.
+#[test]
+fn write_config_matches_the_frozen_python_output() {
+    let expected = frozen(WRITE_CONFIG_FROZEN);
     let dir = temp_dir();
     std::fs::create_dir_all(&dir).expect("carpeta temporal");
     let path = dir.join("voice.json");
-    let text = path.to_string_lossy().into_owned();
-    let args = ["--config", text.as_str(), "--write-config"];
-    let rust = run_rust(&args);
-    let rust_file = std::fs::read(&path).expect("voice.json del binario");
-    std::fs::remove_file(&path).expect("limpiar voice.json");
-    let python = run_python(&args);
-    let python_file = std::fs::read(&path).expect("voice.json del Python");
-    assert_same("--write-config", &rust, &python);
+    std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&expected["seed"]).expect("semilla a JSON"),
+    )
+    .expect("semilla escrita");
+    let path_text = path.to_string_lossy().into_owned();
+    let actual = run(&["--config", path_text.as_str(), "--write-config"]);
+    let written = std::fs::read(&path).expect("voice.json del binario");
+    let _ = std::fs::remove_file(&path);
+    assert_eq!(actual.code, code(&expected), "--write-config: código de salida");
     assert_eq!(
-        String::from_utf8_lossy(&rust_file),
-        String::from_utf8_lossy(&python_file),
+        String::from_utf8_lossy(&actual.stdout).replace(path_text.as_str(), "{config}"),
+        text(&expected),
+        "--write-config: salida"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&written),
+        expected["config"].as_str().unwrap_or_default(),
         "--write-config: contenido de voice.json"
     );
-    let _ = std::fs::remove_file(&path);
 }
 
 fn temp_dir() -> PathBuf {

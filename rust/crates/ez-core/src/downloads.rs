@@ -15,9 +15,10 @@ use sha2::{Digest, Sha256};
 
 use crate::dirs;
 
-// DECISION: el manifiesto se incrusta desde el del Python (una sola fuente de
-// verdad hasta que F8 empaquete uno propio); `load_manifest_from` lee otro.
-const MANIFEST: &str = include_str!("../../../../src/ezagent/core/manifest.toml");
+// DECISION: la version Rust tiene su propio manifiesto (PYOUT-1) para no
+// depender del arbol Python, que se retira en el paso siguiente; incluye
+// onnxruntime y espeak-ng, que antes salian del `.venv`.
+const MANIFEST: &str = include_str!("manifest.toml");
 const CHUNK: usize = 256 * 1024;
 
 /// `DownloadError`: fallo de descarga, verificación o extracción.
@@ -467,10 +468,19 @@ mod tests {
     #[test]
     fn manifest_has_every_asset() {
         let assets = load_manifest().expect("manifiesto");
-        assert_eq!(assets.len(), 11);
+        assert_eq!(assets.len(), 13);
         assert!(assets["whisper-vulkan"].unzip);
         assert_eq!(assets["whisper-cpu"].strip_prefix, "Release/");
         assert!(assets["kokoro-fp32"].optional);
+        let runtime = &assets["onnxruntime"];
+        assert_eq!(
+            runtime.dest, "onnxruntime",
+            "ez-tts y ez-audio buscan la DLL ahí"
+        );
+        assert_eq!(runtime.strip_prefix, "runtimes/win-x64/native/");
+        let espeak = &assets["espeak-ng"];
+        assert_eq!(espeak.dest, "espeak-ng");
+        assert_eq!(espeak.strip_prefix, "espeakng_loader/");
     }
 
     #[test]
