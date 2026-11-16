@@ -79,6 +79,15 @@ fn hotkey_menu_shows_the_hidden_bar_and_saves_it() {
 }
 
 #[test]
+fn the_chat_hotkey_shows_the_hidden_bar() {
+    let fixture = Fixture::new();
+    assert!(fixture.app.inner.config.hud_hidden.load(Ordering::SeqCst));
+    fixture.app.handle_hotkey("chat");
+    assert!(!fixture.app.inner.config.hud_hidden.load(Ordering::SeqCst));
+    assert!(fixture.saved_config().contains("hud_hidden"));
+}
+
+#[test]
 fn show_bar_if_hidden_is_a_noop_when_visible() {
     let fixture = Fixture::new();
     fixture

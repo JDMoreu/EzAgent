@@ -50,6 +50,106 @@ fn chat_send_ignores_blank_text() {
     assert!(fixture.app.inner.chat.chat.snapshot().1.is_empty());
 }
 
+/// Confirmación pendiente que apunta lo que el usuario escribe.
+struct PendingGate {
+    submitted: parking_lot::Mutex<Vec<String>>,
+}
+
+impl ez_agent::runtime::ConfirmationGate for PendingGate {
+    fn ask(&self, _summary: &str, _strong: bool, _require_number: Option<i64>) -> bool {
+        true
+    }
+
+    fn pending(&self) -> bool {
+        true
+    }
+
+    fn pending_token(&self) -> Option<String> {
+        None
+    }
+
+    fn arm(&self, _token: Option<&str>) {}
+
+    fn submit_text(&self, text: &str, _token: Option<&str>) -> Option<bool> {
+        self.submitted.lock().push(text.to_string());
+        Some(true)
+    }
+
+    fn submit_click(&self, _yes: bool) {}
+
+    fn cancel(&self, _reason: &str) {}
+}
+
+#[test]
+fn chat_send_answers_a_pending_confirmation_instead_of_starting_a_turn() {
+    let fixture = Fixture::new();
+    let gate = std::sync::Arc::new(PendingGate {
+        submitted: parking_lot::Mutex::new(Vec::new()),
+    });
+    let permissions = std::env::temp_dir().join(format!(
+        "ezagent-chat-confirm-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_nanos())
+    ));
+    let runtime = ez_agent::runtime::AgentRuntime::new(
+        ez_core::config::VoiceConfig::new(),
+        None,
+        ez_agent::runtime::RuntimeCallbacks::default(),
+        Some(&permissions),
+    )
+    .expect("runtime de prueba");
+    runtime.set_confirm_gate(Some(
+        std::sync::Arc::clone(&gate) as std::sync::Arc<dyn ez_agent::runtime::ConfirmationGate>
+    ));
+    *fixture.app.inner.agents.agent.lock() = Some(runtime);
+    let generation = crate::app::events::turn_gen(&fixture.app);
+    fixture.app.chat_send("confirmo 3");
+    assert_eq!(gate.submitted.lock().as_slice(), ["confirmo 3".to_string()]);
+    assert_eq!(crate::app::events::turn_gen(&fixture.app), generation);
+    let messages = fixture.app.inner.chat.chat.snapshot().1;
+    assert_eq!(
+        messages.last().map(|message| message.text.as_str()),
+        Some("confirmo 3")
+    );
+    let _ = std::fs::remove_file(&permissions);
+}
+
+#[test]
+fn chat_worker_speaks_the_answer_when_chat_voice_is_on() {
+    let fixture = Fixture::new();
+    scripted(
+        &fixture,
+        vec![Script::Chunks(vec![chunk("Las ventas subieron un 12 %.")])],
+    );
+    drain_events(&fixture.app);
+    let generation = crate::app::events::turn_gen(&fixture.app);
+    fixture.app.chat_worker("cómo van las ventas", generation);
+    assert_eq!(
+        fixture.speaker.synthesized.lock().as_slice(),
+        ["Las ventas subieron un 12 %.".to_string()]
+    );
+}
+
+#[test]
+fn chat_worker_skips_tables_and_points_to_the_chat() {
+    let fixture = Fixture::new();
+    scripted(
+        &fixture,
+        vec![Script::Chunks(vec![chunk(
+            "Te dejo la comparativa.\n\n| a | b |\n|---|---|\n| 1 | 2 |",
+        )])],
+    );
+    drain_events(&fixture.app);
+    let generation = crate::app::events::turn_gen(&fixture.app);
+    fixture.app.chat_worker("compara", generation);
+    assert_eq!(
+        fixture.speaker.synthesized.lock().as_slice(),
+        ["Te dejo la comparativa. El detalle está en el chat.".to_string()]
+    );
+}
+
 #[test]
 fn chat_worker_shows_the_messenger_empty_answer() {
     let fixture = Fixture::new();

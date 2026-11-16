@@ -330,6 +330,14 @@ fn the_autonomous_mark_is_never_cut_from_a_full_orbit() {
 #[test]
 fn chat_is_optional_but_respects_asking_and_mute() {
     let harness = Harness::new();
+    harness.ui.set_layout("circle");
+    // `CIRCLE_D` (58 px) del Python.
+    assert_eq!(harness.ui.form_size(), (58.0, 58.0));
+    harness.ui.set_chat_open(true);
+    assert!(harness.ui.bar.lock().chat_open);
+    harness.ui.set_form_hidden(true);
+    assert!(harness.ui.bar.lock().model.form_hidden);
+    harness.ui.set_form_hidden(false);
     harness.ui.toggle_chat();
     assert_eq!(harness.chat.toggles.load(Ordering::SeqCst), 1);
     assert!(harness.chat.is_open());

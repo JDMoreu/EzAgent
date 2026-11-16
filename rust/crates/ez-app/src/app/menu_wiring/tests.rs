@@ -348,6 +348,23 @@ fn appearance_changes_are_applied_but_not_written_until_save() {
 }
 
 #[test]
+fn live_dictionary_changes_reach_the_transcription_configuration() {
+    let fixture = Fixture::new();
+    fixture.app.apply_live_setting(
+        "stt_dictionary",
+        &ConfigValue::Text("open code → OpenCode".to_string()),
+    );
+    assert_eq!(
+        fixture
+            .app
+            .config()
+            .get("stt_dictionary")
+            .and_then(Value::as_str),
+        Some("open code → OpenCode")
+    );
+}
+
+#[test]
 fn live_voice_changes_the_speaker() {
     let fixture = Fixture::new();
     fixture
