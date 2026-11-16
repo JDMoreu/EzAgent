@@ -25,7 +25,21 @@ fn default_port() -> u16 {
     DEFAULT_PORT
 }
 
-/// Guion de transcripciones. `by_hash` gana y no consume el orden.
+/// Un fallo guionizado (F7-05): se consume una petición sin transcripción.
+///
+/// `drop` cierra la conexión sin responder, como un whisper-server que muere a
+/// mitad de petición; si no, responde `status` con `{"error": error}`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Fault {
+    pub status: u16,
+    pub error: String,
+    pub delay_ms: u64,
+    pub drop: bool,
+}
+
+/// Guion de transcripciones. `by_hash` gana y no consume el orden; `faults` se
+/// consume una por petición antes de mirar las transcripciones.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Scenario {
     #[serde(default)]
@@ -34,6 +48,8 @@ pub struct Scenario {
     pub by_hash: BTreeMap<String, String>,
     #[serde(default)]
     pub repeat_last: bool,
+    #[serde(default)]
+    pub faults: Vec<Fault>,
 }
 
 impl Scenario {
@@ -53,11 +69,25 @@ impl Scenario {
 pub struct Transcripts {
     scenario: Scenario,
     index: usize,
+    fault: usize,
 }
 
 impl Transcripts {
     pub fn new(scenario: Scenario) -> Self {
-        Self { scenario, index: 0 }
+        Self {
+            scenario,
+            index: 0,
+            fault: 0,
+        }
+    }
+
+    /// Siguiente fallo del guion (se consume una vez).
+    pub fn next_fault(&mut self) -> Option<Fault> {
+        let fault = self.scenario.faults.get(self.fault).cloned();
+        if fault.is_some() {
+            self.fault += 1;
+        }
+        fault
     }
 
     /// Siguiente transcripción: primero el hash, después el orden del guion.
@@ -232,6 +262,10 @@ fn transcribe(mut request: Request, transcripts: &mut Transcripts) {
         );
         return;
     };
+    if let Some(fault) = transcripts.next_fault() {
+        apply_fault(request, &fault);
+        return;
+    }
     let hash = sha256::hex_digest(&file.data);
     let text = transcripts.next(Some(&hash));
     info!(
@@ -241,6 +275,27 @@ fn transcribe(mut request: Request, transcripts: &mut Transcripts) {
         transcripts.position()
     );
     respond_json(request, 200, &whisper_json(&text));
+}
+
+/// Aplica un fallo guionizado: espera, mata el servidor o devuelve un error.
+fn apply_fault(request: Request, fault: &Fault) {
+    if fault.delay_ms > 0 {
+        std::thread::sleep(std::time::Duration::from_millis(fault.delay_ms));
+    }
+    if fault.drop {
+        // Muere el proceso con la petición en vuelo, como un whisper-server
+        // que se cae a mitad de turno: el sistema cierra el socket y las
+        // peticiones siguientes encuentran el puerto cerrado.
+        info!("fake-whisper: muere a mitad de la petición (corte simulado)");
+        std::process::exit(0);
+    }
+    let status = if fault.status >= 400 { fault.status } else { 500 };
+    let message = if fault.error.trim().is_empty() {
+        "whisper-server falló".to_string()
+    } else {
+        fault.error.clone()
+    };
+    respond_json(request, status, &json!({"error": message}));
 }
 
 fn route(request: Request, transcripts: &mut Transcripts) {
@@ -312,6 +367,26 @@ mod tests {
         assert_eq!(options.port, 9000);
         assert!(Options::parse(&["--port".into(), "x".into()]).is_err());
         assert!(Options::parse(&["--otra".into()]).is_err());
+    }
+
+    #[test]
+    fn faults_are_consumed_before_the_transcripts() {
+        let scenario = Scenario::from_json(
+            r#"{
+                "faults": [{"drop": true}, {"status": 500, "error": "sin modelo"}, {"delay_ms": 5}],
+                "transcripts": ["uno"]
+            }"#,
+        )
+        .expect("escenario");
+        let mut transcripts = Transcripts::new(scenario);
+        let cut = transcripts.next_fault().expect("corte");
+        assert!(cut.drop);
+        assert_eq!(transcripts.position(), 0);
+        let failed = transcripts.next_fault().expect("error");
+        assert_eq!((failed.status, failed.error.as_str()), (500, "sin modelo"));
+        assert_eq!(transcripts.next_fault().map(|f| f.delay_ms), Some(5));
+        assert!(transcripts.next_fault().is_none());
+        assert_eq!(transcripts.next(None), "uno");
     }
 
     #[test]

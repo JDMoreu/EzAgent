@@ -1,0 +1,39 @@
+id: "R06"
+name: "LLM 429 con Retry-After"
+notes: >
+  El proveedor limita y manda `Retry-After: 2`: la app dice cuántos segundos
+  esperar, no reintenta sola y el turno siguiente responde.
+timeout: 90
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.6
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - status: 429
+      error: "rate limit"
+      error_type: "rate_limit_error"
+      retry_after: 2
+    - content: "Ahora sí."
+whisper:
+  transcripts:
+    - "¿Qué hora es?"
+    - "¿Otra vez?"
+steps:
+  - wait_state: listening
+  - audio: que_hora_es.wav
+  - wait_speech: "Espera unos 2 segundos"
+  - wait_quiet: 25
+  - audio: que_hora_es.wav
+  - wait_speech: "Ahora sí"
+  - wait_quiet: 30
+expect:
+  speech_contains:
+    - "Personalizado me limitó por demasiadas peticiones o tokens por minuto. Espera unos 2 segundos o elige otro modelo o proveedor en ajustes."
+  speech_any:
+    - "Ahora sí"
+  llm_requests: 2
+  final:
+    state: listening
+    in_call: true

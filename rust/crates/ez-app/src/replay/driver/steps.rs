@@ -35,6 +35,7 @@ pub fn handlers() -> Vec<Box<dyn Step>> {
         Box::new(Audio),
         Box::new(Silence),
         Box::new(Noise),
+        Box::new(MicFail),
         Box::new(Hotkey),
         Box::new(WaitState),
         Box::new(WaitRequests),
@@ -119,6 +120,24 @@ impl Step for Noise {
 
     fn apply(&self, driver: &Driver, step: &Map<String, Value>) -> Result<Option<Pending>, String> {
         driver.mic.push_noise(seconds(step, "noise"));
+        Ok(ready())
+    }
+}
+
+/// `mic_fail: "sin dispositivo"`: la captura se pierde a mitad de llamada.
+struct MicFail;
+
+impl Step for MicFail {
+    fn matches(&self, step: &Map<String, Value>) -> bool {
+        step.contains_key("mic_fail")
+    }
+
+    fn describe(&self, step: &Map<String, Value>) -> String {
+        describe_first(step, "mic_fail")
+    }
+
+    fn apply(&self, driver: &Driver, step: &Map<String, Value>) -> Result<Option<Pending>, String> {
+        driver.mic.fail(&text(step, "mic_fail"));
         Ok(ready())
     }
 }

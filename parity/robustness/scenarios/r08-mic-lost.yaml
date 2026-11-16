@@ -1,0 +1,32 @@
+id: "R08"
+name: "el micrófono se pierde a mitad de llamada"
+notes: >
+  La captura falla en plena llamada (doble de `ez-audio` con `mic_fail`): la app
+  cuelga, dice el motivo por voz y queda en reposo. No se queda escuchando un
+  dispositivo que ya no existe ni reintenta la captura.
+timeout: 90
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.4
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - content: "Aquí estoy."
+whisper:
+  transcripts:
+    - "Hola, ¿cómo estás?"
+steps:
+  - wait_state: listening
+  - audio: hola_como_estas.wav
+  - wait_speech: "Aquí estoy"
+  - wait_quiet: 25
+  - mic_fail: "sin dispositivo"
+  - wait_speech: "No puedo usar el micrófono"
+  - wait_drained: 25
+expect:
+  speech_contains:
+    - "No puedo usar el micrófono: sin dispositivo"
+  final:
+    state: idle
+    in_call: false

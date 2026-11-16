@@ -1,0 +1,41 @@
+id: "R03"
+name: "whisper cuelga la petición más que el presupuesto"
+notes: >
+  `fake-whisper` tarda 3 s y la app corta a 1 s (`stt_timeout_secs`). No se
+  reintenta la ruta alterna: el turno avisa de que whisper no respondió a
+  tiempo y el siguiente turno, ya con el servidor libre, se transcribe.
+timeout: 100
+settings:
+  silence_secs: 1.0
+  speech_secs_min: 0.6
+  stt_timeout_secs: 1.0
+llm:
+  model: fake-model
+  chunk_chars: 8
+  turns:
+    - content: "Dos más dos son cuatro."
+whisper:
+  transcripts:
+    - "¿Cuánto es dos más dos?"
+  faults:
+    - delay_ms: 3000
+steps:
+  - wait_state: listening
+  - audio: que_hora_es.wav
+  - wait_speech: "no respondió a tiempo"
+  - wait_quiet: 25
+  - audio: que_hora_es.wav
+  - wait_speech: "Dos más dos son cuatro"
+  - wait_quiet: 35
+expect:
+  user:
+    - "¿Cuánto es dos más dos?"
+  assistant:
+    - "Dos más dos son cuatro."
+  speech_any:
+    - "no respondió a tiempo"
+    - "Dos más dos son cuatro"
+  llm_requests: 1
+  final:
+    state: listening
+    in_call: true

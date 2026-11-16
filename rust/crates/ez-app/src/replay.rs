@@ -20,6 +20,7 @@ pub mod recording;
 pub mod run;
 pub mod scenario;
 pub mod services;
+pub mod soak;
 pub mod speaker;
 pub mod steps_c;
 mod swarm_c;
