@@ -153,8 +153,9 @@ del modelo y del proveedor; no son garantías.
 
 ## Agentes delegados
 
-`ez-agent::tools_herdr` es la única puerta hacia los CLIs de agentes; por debajo,
-`ez-herdr` habla con `hc`/`herdr-app`:
+`ez-agent::tools_herdr` es la vía del modelo hacia los CLIs de agentes; por
+debajo, `ez-herdr` habla con `hc`/`herdr-app` y es el mismo adaptador que usan el
+modo autónomo y el enjambre:
 
 - **run:** `ez-herdr::driver` arma el comando desde el perfil de `voice.json`
   (`agents`, `agent_profiles`), con modelo y esfuerzo validados.

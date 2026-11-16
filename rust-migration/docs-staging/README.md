@@ -316,7 +316,8 @@ error claro.
 
 ## Agentes delegados
 
-`delegate_to_agent` es la única puerta hacia los CLIs de agentes:
+`delegate_to_agent` es la vía normal del modelo hacia los CLIs de agentes; el
+modo autónomo y el enjambre usan el mismo adaptador de Herdr:
 
 - **run:** arma el comando desde el perfil de `voice.json` (`agents`,
   `agent_profiles`), con modelo y esfuerzo validados. Abre una pestaña visible de
@@ -411,10 +412,9 @@ Se activa con una frase explícita que incluya «modo autónomo», «autorizo»,
 «yolo», «sin pedirme permiso» o «sin preguntarme». Por ejemplo:
 
 > «Hazlo en modo autónomo y autorizo los permisos. En la carpeta
-> `C:\pruebas\autonomo`, crea `saludo.txt` con «hola» y un script `leer.py` que
-> lo lea e imprima su contenido. Criterio: el archivo existe y el script imprime
-> hola; se comprueba con `type saludo.txt` y `python leer.py`. Usa Codex en el
-> espacio «pruebas».»
+> `C:\pruebas\autonomo`, crea `saludo.txt` con «hola» y `nota.txt` con «listo».
+> Criterio: cada archivo contiene su texto; se comprueba con `type saludo.txt` y
+> `type nota.txt`. Usa Codex en el espacio «pruebas».»
 
 1. EzAgent pide **una sola confirmación generada por el código**, con la tarea,
    los criterios y sus comprobaciones, la carpeta, el agente y los topes.

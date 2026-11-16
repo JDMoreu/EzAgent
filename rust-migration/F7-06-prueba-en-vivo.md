@@ -153,17 +153,17 @@ Usa solo la carpeta de pruebas y una tarea trivial.
 
 - [ ] Crea `...\EzAgent-pruebas\autonomo-a`.
 - [ ] Di: «Hazlo en modo autónomo y autorizo los permisos. En la carpeta
-      `...\autonomo-a`, crea `saludo.txt` con el texto «hola» y un script
-      `leer.py` que lo lea e imprima su contenido. Criterio: el archivo existe y
-      el script imprime hola; se comprueba con `type saludo.txt` y
-      `python leer.py`. Usa Codex en el espacio «pruebas».»
+      `...\autonomo-a`, crea `saludo.txt` con el texto «hola» y `nota.txt` con
+      el texto «listo». Criterio: cada archivo contiene su texto; se comprueba
+      con `type saludo.txt` y `type nota.txt`. Usa Codex en el espacio
+      «pruebas».»
 - [ ] Qué debes ver: una **única** confirmación generada por el código, que
       enumera los criterios y sus comprobaciones, la carpeta, el agente y los
       topes. Responde «sí».
 - [ ] Observa que EzAgent abre el ejecutor, aprueba los permisos **una vez**
       (nunca «permitir siempre») y dice el inicio y las rondas.
 - [ ] Al terminar, comprueba:
-  - [ ] `saludo.txt` contiene `hola` y `leer.py` imprime `hola`.
+  - [ ] `saludo.txt` contiene `hola` y `nota.txt` contiene `listo`.
   - [ ] El aviso final nombra la tarea y la ruta de un resumen.
   - [ ] En `%APPDATA%\EzAgent\autonomo\<id>\privado\resumen.md` están los
         criterios con su evidencia y el diff.
@@ -184,9 +184,11 @@ Usa solo la carpeta de pruebas y una tarea trivial.
 
 - [ ] Crea `...\EzAgent-pruebas\autonomo-b`.
 - [ ] Di: «Modo autónomo con equipo y autorizo los permisos: en
-      `...\autonomo-b`, hagan una calculadora de sumas en Python. Criterio:
-      `suma.py` imprime 5 cuando se ejecuta con 2 y 3; se comprueba con
-      `python suma.py`. Papeles: OpenCode de planificador, Claude de
+      `...\autonomo-b`, hagan una nota de planificación. `plan.md` debe tener
+      tres pasos numerados y `resumen.md` debe repetir los tres pasos con la
+      palabra «listo». Criterio: ambos archivos existen y `resumen.md` contiene
+      «paso 1», «paso 2» y «paso 3»; se comprueba con `type plan.md` y
+      `type resumen.md`. Papeles: OpenCode de planificador, Claude de
       desarrollador y Codex de QA.»
 - [ ] Qué debes ver: la confirmación enumera papeles, agentes, carpeta y topes;
       los miembros se abren cuando les toca; la verificación la hace un
