@@ -42,6 +42,17 @@ fn accepts_the_json_inside_a_markdown_fence_and_ignores_extra_keys() {
     assert!(Verdict::parse(&text, &spec()).is_ok());
     let plain = format!("```\n{json}\n```");
     assert!(Verdict::parse(&plain, &spec()).is_ok());
+    let with_prose = format!("Aquí está el veredicto:\n\n{text}\n\nListo.");
+    assert!(Verdict::parse(&with_prose, &spec()).is_ok());
+}
+
+#[test]
+fn a_fence_inside_the_json_does_not_break_the_analysis() {
+    let finding = r#"{"severidad":"menor","criterio":null,"problema":"estilo",
+                     "evidencia":"```sh\necho hola\n```"}"#;
+    let verdict =
+        Verdict::parse(&body("true", criteria_both_true(), finding), &spec()).expect("válido");
+    assert_eq!(verdict.findings[0].severity, Severity::Minor);
 }
 
 #[test]

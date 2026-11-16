@@ -67,7 +67,7 @@ fn correction(round: i64) -> Action {
 #[test]
 fn two_clean_rounds_finish_and_close_the_scope() {
     let mut state = task(5, 120);
-    state.executor_started("addr1", "codex", &["C:/proyecto".to_string()]);
+    state.executor_started("addr1", "codex");
     assert_eq!(state.on_executor_finished(1_010.0), Action::LaunchVerifier);
     assert_eq!(
         state.on_verdict(Ok(clean()), shared(), 1_020.0),
@@ -307,7 +307,7 @@ fn a_done_task_can_be_accepted_but_stopping_never_accepts() {
     assert_eq!(state.stop("", true), Action::Wait);
 
     let mut running = task(5, 120);
-    running.executor_started("addr1", "codex", &[]);
+    running.executor_started("addr1", "codex");
     assert_eq!(running.stop("para", true), Action::Stopped);
     assert!(!running.accepted, "parar en curso no acepta el resultado");
     assert!(running.scope.is_empty());
@@ -367,24 +367,24 @@ fn a_verdict_that_does_not_say_what_to_fix_pauses() {
 #[test]
 fn scope_tracks_roles_and_editable_folders() {
     let mut state = task(5, 120);
-    state.executor_started(
-        "addr1",
-        "codex",
-        &["C:/proyecto".to_string(), "C:/proyecto/src".to_string()],
-    );
+    state.executor_started("addr1", "codex");
     let entry = state.approval_scope("addr1").expect("ejecutor");
     assert_eq!(entry.role, ScopeRole::Executor);
-    assert_eq!(entry.edit_dirs, ["C:/proyecto", "C:/proyecto/src"]);
+    assert_eq!(entry.edit_dirs, ["C:/proyecto"]);
 
     state.verifier_started("addr2", &["C:/tarea/verificacion-1".to_string()]);
     let verifier = state.approval_scope("addr2").expect("verificador");
     assert_eq!(verifier.role, ScopeRole::Verifier);
     assert_eq!(verifier.edit_dirs, ["C:/tarea/verificacion-1"]);
 
-    state.member_started("addr3", &["C:/proyecto".to_string()]);
+    state.member_started("addr3");
     assert_eq!(
         state.approval_scope("addr3").map(|e| e.role),
         Some(ScopeRole::Member)
+    );
+    assert_eq!(
+        state.approval_scope("addr3").map(|e| e.edit_dirs.clone()),
+        Some(vec!["C:/proyecto".to_string()])
     );
 
     // Una dirección ya cubierta se actualiza, no se duplica.
@@ -416,7 +416,7 @@ fn approvals_pause_at_the_cap() {
             max_approvals: 2,
         },
     );
-    state.executor_started("addr1", "codex", &[]);
+    state.executor_started("addr1", "codex");
     assert_eq!(state.record_approval(1_010.0), Action::Wait);
     assert_eq!(state.approvals, 1);
     assert_eq!(

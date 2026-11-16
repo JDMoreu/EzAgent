@@ -9,6 +9,8 @@ use ez_core::redact::redact;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
+use crate::audit::{AuditEntry, AuditLog};
+
 /// Texto de la opción elegida que se conserva.
 pub const MAX_OPTION_CHARS: usize = 60;
 
@@ -79,6 +81,25 @@ pub fn redact_value(value: &Value) -> Value {
     }
 }
 
+/// Escribe la línea `autonomous.approve` de la auditoría (10.15).
+///
+/// A3 la llama con cada aprobación o denegación; nunca se guarda la pantalla.
+pub fn log_approval(audit: &AuditLog, task_id: &str, record: &ApprovalRecord<'_>) {
+    let detail = approval_detail(record);
+    let turn_id = format!("autonomous:{task_id}");
+    audit.log(&AuditEntry {
+        turn_id: &turn_id,
+        tool: "autonomous.approve",
+        level: 2,
+        args: &detail,
+        decision: record.decision,
+        taint: false,
+        result_ok: record.decision == "approve",
+        ms: 0.0,
+        error_kind: None,
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,6 +129,22 @@ mod tests {
     }
 
     #[test]
+    fn the_chosen_option_is_cut_to_sixty_characters() {
+        let long = "Yes, allow once ".repeat(10);
+        let detail = approval_detail(&ApprovalRecord {
+            kind: "exec",
+            option: Some(&long),
+            command: None,
+            path: None,
+            address: "h1:abc",
+            decision: "approve",
+        });
+        let option = detail["option"].as_str().unwrap_or_default();
+        assert_eq!(option.chars().count(), MAX_OPTION_CHARS);
+        assert!(option.starts_with("Yes, allow once"));
+    }
+
+    #[test]
     fn a_fake_key_never_reaches_the_detail() {
         let detail = approval_detail(&ApprovalRecord {
             kind: "edit",
@@ -120,6 +157,33 @@ mod tests {
         let text = detail.to_string();
         assert!(!text.contains("sk-abc123def456"));
         assert!(text.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn the_audit_line_never_contains_the_screen_or_a_key() {
+        let path = std::env::temp_dir().join(format!(
+            "ez-autonomo-audit-{}.jsonl",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let audit = AuditLog::new(&path);
+        log_approval(
+            &audit,
+            "20261116-120000-abcd",
+            &ApprovalRecord {
+                kind: "exec",
+                option: Some("Yes, allow once"),
+                command: Some("cat .env"),
+                path: None,
+                address: "h1:abc",
+                decision: "approve",
+            },
+        );
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(text.contains("\"tool\": \"autonomous.approve\""));
+        assert!(text.contains("autonomous:20261116-120000-abcd"));
+        assert!(!text.contains("sk-"));
+        assert!(!text.contains("screen"));
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

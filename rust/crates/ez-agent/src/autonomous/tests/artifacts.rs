@@ -97,6 +97,10 @@ fn keeps_private_and_shared_artifacts_apart() {
         encargo_text.contains("fin-N.md"),
         "el encargo pide fin-N.md"
     );
+    assert!(
+        !encargo_text.contains("privado"),
+        "la carpeta privada nunca se da a un agente"
+    );
     assert!(encargo_text.contains(&task.shared().join("criterios.md").display().to_string()));
 
     let criteria_text = read(&task.shared().join("criterios.md"));
@@ -119,6 +123,7 @@ fn keeps_private_and_shared_artifacts_apart() {
     assert_eq!(estado["workdir"], "C:/proyecto");
     assert_eq!(estado["clean_streak"], 0);
     assert_eq!(estado["accepted"], false);
+    assert_eq!(estado["base_commit"], Value::Null);
     assert_eq!(estado["executor"], Value::Null);
     assert_eq!(estado["team"], Value::Null);
     assert_eq!(estado["pause_reason"], Value::Null);
@@ -132,7 +137,7 @@ fn state_is_written_atomically_and_reloaded() {
     let root = temp_root("estado");
     let mut state = state();
     let task = TaskDir::create(&root, &encargo(), &criteria(), &state).expect("crear");
-    state.executor_started("addr-1", "codex", &["C:/proyecto".to_string()]);
+    state.executor_started("addr-1", "codex");
     task.write_state(&state).expect("escribir estado");
     let loaded = task.load_state().expect("leer estado");
     assert_eq!(

@@ -135,6 +135,9 @@ pub struct AutonomousState {
     pub approvals: i64,
     #[serde(default)]
     pub workdir: String,
+    /// Commit base del proyecto, registrado al empezar (10.16).
+    #[serde(default)]
+    pub base_commit: Option<String>,
     pub scope: Vec<ScopeEntry>,
     pub executor: Option<Executor>,
     pub team: Option<Team>,
@@ -277,6 +280,7 @@ impl AutonomousState {
             max_approvals: limits.max_approvals,
             approvals: 0,
             workdir: workdir.to_string(),
+            base_commit: None,
             scope: Vec::new(),
             executor: None,
             team: None,
@@ -297,11 +301,14 @@ impl AutonomousState {
     }
 
     /// El ejecutor ya está abierto: preparando → ejecutando y a `scope`.
-    pub fn executor_started(&mut self, address: &str, agent: &str, edit_dirs: &[String]) -> Action {
+    ///
+    /// Solo puede editar dentro de `workdir` (10.1).
+    pub fn executor_started(&mut self, address: &str, agent: &str) -> Action {
         if !matches!(self.state, TaskState::Preparing | TaskState::Running) {
             return Action::Wait;
         }
-        self.cover(address, ScopeRole::Executor, edit_dirs);
+        let workdir = self.workdir.clone();
+        self.cover(address, ScopeRole::Executor, std::slice::from_ref(&workdir));
         self.executor = Some(Executor {
             address: address.to_string(),
             agent: agent.to_string(),
@@ -316,8 +323,9 @@ impl AutonomousState {
     }
 
     /// Un miembro del equipo abrió: puede editar dentro de `workdir` (10.1).
-    pub fn member_started(&mut self, address: &str, edit_dirs: &[String]) {
-        self.cover(address, ScopeRole::Member, edit_dirs);
+    pub fn member_started(&mut self, address: &str) {
+        let workdir = self.workdir.clone();
+        self.cover(address, ScopeRole::Member, std::slice::from_ref(&workdir));
     }
 
     /// Suma una dirección a las cubiertas por la autorización.

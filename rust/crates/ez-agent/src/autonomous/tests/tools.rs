@@ -263,6 +263,14 @@ fn authorization_looks_at_the_last_three_messages_of_ten_minutes() {
         ],
         now
     ));
+    assert!(!authorized(
+        &[message("hazlo sin autorización mía", now - 5.0)],
+        now
+    ));
+    assert!(!authorized(
+        &[message("no lo hagas en modo autónomo", now - 5.0)],
+        now
+    ));
     assert!(authorized(
         &[message("hazlo sin pedirme permiso", now - 5.0)],
         now
@@ -272,7 +280,12 @@ fn authorization_looks_at_the_last_three_messages_of_ten_minutes() {
 
 #[test]
 fn an_unfinished_task_blocks_another_one() {
-    for state in [TaskState::Running, TaskState::Paused, TaskState::Verifying] {
+    for state in [
+        TaskState::Preparing,
+        TaskState::Running,
+        TaskState::Paused,
+        TaskState::Verifying,
+    ] {
         let result = run(
             &build(host_with(state), FakeGuards::allowed("modo autónomo"))[0],
             task_args(),
@@ -541,6 +554,20 @@ fn resume_only_from_paused_and_passes_the_extension() {
     let empty = build(default_host(), FakeGuards::allowed("x"));
     let result = run(&empty[4], json!({}));
     assert_eq!(error_of(&result), texts::NO_TASK);
+}
+
+#[test]
+fn waits_for_a_pending_confirmation_before_opening_its_own() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc as StdArc;
+
+    let calls = StdArc::new(AtomicUsize::new(0));
+    let pending = {
+        let calls = StdArc::clone(&calls);
+        move || calls.fetch_add(1, Ordering::SeqCst) < 2
+    };
+    assert!(crate::autonomous::tools::wait_for_free(&pending, 1.0));
+    assert!(!crate::autonomous::tools::wait_for_free(&|| true, 0.05));
 }
 
 #[test]

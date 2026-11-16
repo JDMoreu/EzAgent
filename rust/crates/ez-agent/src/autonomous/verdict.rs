@@ -155,14 +155,21 @@ fn list_of<T>(
 /// El JSON solo, o dentro de una cerca de Markdown (10.11).
 fn extract_json(text: &str) -> &str {
     let trimmed = text.trim();
-    let Some(body) = trimmed.strip_prefix("```") else {
+    let json_start = trimmed.find('{').unwrap_or(trimmed.len());
+    // La cerca solo envuelve el JSON si aparece antes de que este empiece; una
+    // cerca dentro de un texto del veredicto no debe romper el análisis.
+    let Some(start) = trimmed.find("```").filter(|start| *start < json_start) else {
         return trimmed;
     };
-    let body = match body.find('\n') {
-        Some(index) => &body[index + 1..],
-        None => body,
+    let after = &trimmed[start + 3..];
+    let after = match after.find('\n') {
+        Some(index) => &after[index + 1..],
+        None => after,
     };
-    body.trim_end().strip_suffix("```").unwrap_or(body).trim()
+    match after.find("```") {
+        Some(end) => after[..end].trim(),
+        None => trimmed,
+    }
 }
 
 /// Una entrada por criterio, del 1 al total, sin repetir y con evidencia.

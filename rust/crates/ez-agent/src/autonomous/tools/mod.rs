@@ -49,6 +49,8 @@ pub const MAX_TASK_CHARS: i64 = 2000;
 pub const MAX_CRITERION_CHARS: i64 = 300;
 /// Timeout del registro para las herramientas de arranque (10.5).
 pub const START_TIMEOUT_S: f64 = 120.0;
+/// Espera máxima si ya hay otra confirmación pendiente (10.5).
+pub const CONFIRM_WAIT_S: f64 = 30.0;
 /// Timeout del registro para estado, parada y reanudación.
 pub const ACTION_TIMEOUT_S: f64 = 20.0;
 
@@ -82,6 +84,15 @@ pub trait ToolGuards: Send + Sync {
     fn default_cwd(&self) -> String;
     /// Topes de `voice.json`, con los valores de fábrica si faltan (10.13).
     fn defaults(&self) -> AutonomousDefaults;
+}
+
+/// Espera a que no haya otra confirmación pendiente (10.5).
+pub(crate) fn wait_for_free(pending: &dyn Fn() -> bool, timeout_s: f64) -> bool {
+    let deadline = Instant::now() + std::time::Duration::from_secs_f64(timeout_s.max(0.0));
+    while pending() && Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    !pending()
 }
 
 /// Guardas sobre un [`AgentRuntime`]: estado de sesión y gestor de confirmación.
@@ -127,6 +138,11 @@ impl ToolGuards for RuntimeGuards {
         let Some(gate) = self.runtime.confirm_gate() else {
             return false;
         };
+        // 10.5: no se abre otra confirmación mientras haya una pendiente; se
+        // espera a que se resuelva, con tope para no agotar el registro.
+        if !wait_for_free(&|| gate.pending(), CONFIRM_WAIT_S) {
+            return false;
+        }
         // DECISION (como `execute`): un fallo de la UI no debe tumbar la herramienta.
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             gate.ask(summary, strong, None)
@@ -174,11 +190,12 @@ pub fn install_host(host: Arc<dyn AutonomousHost>) -> bool {
     HOST.set(host).is_ok()
 }
 
-/// ¿Hay una tarea autónoma en curso? La selección de herramientas lo usa (10.5).
+/// ¿Hay una tarea autónoma que mostrar o controlar? (10.5)
+///
+/// Incluye la tarea cumplida pendiente de revisión: con ella se acepta el
+/// resultado. El hueco para arrancar otra lo decide `check_activation` (10.1).
 pub fn task_active() -> bool {
-    HOST.get()
-        .and_then(|host| host.status())
-        .is_some_and(|summary| summary.state.unfinished())
+    HOST.get().and_then(|host| host.status()).is_some()
 }
 
 fn authorize() -> &'static Regex {
