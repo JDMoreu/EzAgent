@@ -368,6 +368,11 @@ impl AgentRuntime {
         state::lock(&self.inner.session).last_user_text.clone()
     }
 
+    /// Los tres últimos mensajes del usuario con su instante (10.4).
+    pub fn recent_user_texts(&self) -> Vec<(String, f64)> {
+        state::lock(&self.inner.session).recent_user_texts.clone()
+    }
+
     /// Agente que corre en una dirección de Herdr (vacío si no se sabe).
     pub fn agent_at(&self, address: &str) -> String {
         if address.is_empty() {
@@ -402,6 +407,13 @@ impl AgentRuntime {
             let mut session = state::lock(&self.inner.session);
             session.turn_id = uuid_hex();
             session.last_user_text = text.to_string();
+            if !text.is_empty() {
+                session
+                    .recent_user_texts
+                    .push((text.to_string(), ez_core::pytime::timestamp()));
+                let excess = session.recent_user_texts.len().saturating_sub(3);
+                session.recent_user_texts.drain(..excess);
+            }
             session.tainted = false;
             session.calls_this_turn = 0;
             session.level1_writes = 0;

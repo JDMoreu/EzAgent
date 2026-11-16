@@ -157,6 +157,10 @@ pub struct SelectOptions<'a> {
     pub has_memory: bool,
     pub skill_keywords: Option<&'a HashSet<String>>,
     pub swarm_active: bool,
+    /// `AUTHORIZE_RE` coincide en los mensajes de 10.4.
+    pub autonomous_authorized: bool,
+    /// Hay una tarea autónoma en `preparing`, `running`, `verifying` o `paused`.
+    pub autonomous_active: bool,
 }
 
 impl Default for SelectOptions<'_> {
@@ -166,6 +170,8 @@ impl Default for SelectOptions<'_> {
             has_memory: true,
             skill_keywords: None,
             swarm_active: false,
+            autonomous_authorized: false,
+            autonomous_active: false,
         }
     }
 }
@@ -178,6 +184,16 @@ pub fn select_tool_names(text: &str, options: &SelectOptions<'_>) -> Vec<String>
     let mut names: Vec<String> = BASE_TOOLS.iter().map(|name| (*name).to_string()).collect();
     if options.swarm_active || swarm_matches(text) {
         names.push("swarm".into());
+    }
+    // 10.5: las de arranque solo con autorización; las de control, con tarea.
+    if options.autonomous_authorized {
+        names.push("start_autonomous_task".into());
+        names.push("start_autonomous_team".into());
+    }
+    if options.autonomous_active {
+        names.push("autonomous_status".into());
+        names.push("stop_autonomous_task".into());
+        names.push("resume_autonomous_task".into());
     }
     if options.scripts_loaded {
         names.push("run_skill_script".into());

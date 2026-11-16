@@ -1,6 +1,7 @@
 //! Crate skeleton created by F0-04.
 
 pub mod audit;
+pub mod autonomous;
 pub mod confirm;
 pub mod handoff;
 pub mod handoff_packet;

@@ -8,7 +8,7 @@ use ez_core::paths::resolve_safe;
 use ez_core::pyvalue::{python_str, truthy};
 use serde_json::{Map, Value};
 
-use crate::policy::{decide_with_threshold, Action};
+use crate::policy::{decide_with_threshold, with_self_confirmed, Action};
 use crate::registry::{ToolInfo, ToolResult, ToolSpec};
 
 use super::state::lock;
@@ -97,13 +97,16 @@ impl AgentRuntime {
         // DECISION (del Python): leer la salida de un agente marca el turno como
         // no confiable; controlar agentes no toca el sistema.
         let tainted = self.tainted() && !TAINT_FREE_TOOLS.contains(&name);
-        let decision = decide_with_threshold(
-            info.level,
-            tainted,
-            effective_bulk(&info, config.general.bulk_threshold),
-            info.always_confirm,
-            self.confirm_nondestructive(),
-            config.general.bulk_threshold,
+        let decision = with_self_confirmed(
+            decide_with_threshold(
+                info.level,
+                tainted,
+                effective_bulk(&info, config.general.bulk_threshold),
+                info.always_confirm,
+                self.confirm_nondestructive(),
+                config.general.bulk_threshold,
+            ),
+            spec.self_confirmed,
         );
         lock(&self.inner.session).calls_this_turn += 1;
         if decision.action == Action::Deny {

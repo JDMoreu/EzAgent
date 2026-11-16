@@ -255,6 +255,45 @@ fn without_a_summary_the_runtime_generates_the_confirmation_text() {
 }
 
 #[test]
+fn self_confirmed_tools_do_not_get_a_second_policy_confirmation() {
+    let (_work, runtime) = fixture("self-confirmed");
+    let info = ToolInfo {
+        level: 2,
+        always_confirm: true,
+        ..ToolInfo::default()
+    };
+    let mut spec = tool_with_info("pide_la_suya", info.clone());
+    spec.self_confirmed = true;
+    runtime.registry().register(spec);
+    let gate = Arc::new(ScriptedGate::new(false));
+    runtime.set_confirm_gate(Some(Arc::clone(&gate) as Arc<dyn ConfirmationGate>));
+    assert!(runtime.execute("pide_la_suya", &json!({})).ok);
+    assert!(
+        gate.calls.lock().expect("calls").is_empty(),
+        "la política no añade su confirmación"
+    );
+    // Una herramienta normal del mismo nivel sí pregunta.
+    runtime.registry().register(tool_with_info("normal", info));
+    assert!(!runtime.execute("normal", &json!({})).ok);
+    assert_eq!(gate.calls.lock().expect("calls").len(), 1);
+}
+
+#[test]
+fn recent_user_texts_keeps_the_last_three() {
+    let (_work, runtime) = fixture("recent-user");
+    for text in ["uno", "dos", "tres", "cuatro"] {
+        runtime.begin_turn(text);
+    }
+    let messages: Vec<String> = runtime
+        .recent_user_texts()
+        .into_iter()
+        .map(|(text, _)| text)
+        .collect();
+    assert_eq!(messages, ["dos", "tres", "cuatro"]);
+    assert!(runtime.recent_user_texts().iter().all(|(_, at)| *at > 0.0));
+}
+
+#[test]
 fn untrusted_output_taints_the_turn_and_begin_turn_clears_it() {
     let (_work, runtime) = fixture("taint");
     let mut hostile = ToolSpec::new(
