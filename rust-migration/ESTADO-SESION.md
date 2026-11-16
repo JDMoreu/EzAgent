@@ -26,10 +26,10 @@ Rama de trabajo: `rust/main`, último commit `de8d108`. No hay workers en marcha
   - **A2/A2b** (`ez-herdr::permission`: clasificador, lista de denegación, transacción y auditoría): integrado.
 
 ## Pendiente, en este orden
-1. **Verificar la última fusión (P-IMP-BARGEIN):** la verificación se cortó al pausar. Hay que correr:
+1. ~~Verificar la última fusión (P-IMP-BARGEIN)~~ **Hecho al retomar:** fmt, clippy, 101 binarios y reproducción 3/3 en verde; `release` recompilada. Órdenes por si hay que repetir:
    - `cd rust && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
    - `cargo build -p ez-fakes --bins && cargo build -p ez-swarm --bin ezs && cargo test -p ez-app --features replay --test replay_parity` (≈7 min)
-2. **AUTO-A3:** el bucle del modo autónomo en la app.
+2. **AUTO-A3:** el bucle del modo autónomo en la app (**en curso** desde la reanudación, árbol `../EzAgent-wt/AUTO-A3`).
    - Brief: `rust-migration/briefs/AUTO-A3.md`; *prompt*: `rust-migration/tools/orquestacion/prompt-AUTO-A3.txt`.
    - Su rama `work/AUTO-A3` no tiene avance (se detuvo nada más empezar).
 3. **Modo B** (multiagente sobre el enjambre, sección 10.18).
