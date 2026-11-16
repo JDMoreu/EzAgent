@@ -68,11 +68,18 @@ fn enter_sends_the_trimmed_text_and_shift_enter_adds_a_line() {
 }
 
 #[test]
-fn escape_clears_the_field_then_closes() {
+fn escape_clears_the_field_then_leaves_history_then_closes() {
     let mut view = sample_view();
     view.input.insert("algo");
     assert_eq!(view.key(27, false, false), None);
     assert!(view.input.text().is_empty());
+    view.mode = Mode::History;
+    assert_eq!(view.key(27, false, false), None);
+    assert_eq!(view.mode, Mode::Chat);
+    view.model.view_session(Some(2));
+    assert!(view.model.viewing().is_some());
+    assert_eq!(view.key(27, false, false), None);
+    assert!(view.model.viewing().is_none());
     assert_eq!(action_kind(&view.key(27, false, false)), Some("close"));
 }
 

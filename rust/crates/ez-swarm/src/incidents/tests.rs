@@ -65,6 +65,43 @@ fn incident(kind: &str, resets: f64) -> Incident {
 }
 
 #[test]
+fn the_python_regression_screens_match_the_expected_kinds() {
+    let now = at(12, 18, 45);
+    let clock = "7:10pm";
+    let claude_quota = format!(
+        "❯ [EzAgent] Tienes 1 mensaje nuevo en el enjambre. Ejecuta: ezs next\n\
+         \u{23bf}  You've hit your 5-hour limit · resets {clock} (America/Bogota)\n\
+         ● Usage limit reached · continuing automatically at {clock} · esc to cancel"
+    );
+    for (screen, expected) in [
+        (claude_quota.as_str(), Some("quota")),
+        (
+            "■ You've hit your usage limit. Upgrade to Pro, or try again at 9:30 PM.",
+            Some("quota"),
+        ),
+        ("Error: 429 Too Many Requests", Some("quota")),
+        ("Insufficient balance. Recarga tu cuenta.", Some("quota")),
+        ("Prompt is too long", Some("context")),
+        (
+            "Error: this request exceeds the context window of the model",
+            Some("context"),
+        ),
+        (
+            "✻ Compacting conversation… (esc to interrupt)",
+            Some("compacting"),
+        ),
+        ("Invalid API key · Please run /login", Some("auth")),
+        (
+            "● T2 hecha: 16 dependencias. Todas las pruebas pasan.",
+            None,
+        ),
+    ] {
+        let found = classify(screen, now).map(|signal| signal.kind);
+        assert_eq!(found.as_deref(), expected, "{screen}");
+    }
+}
+
+#[test]
 fn reset_times_match_python() {
     for (text, expected) in [
         ("resets 7:10pm", 83400.0),

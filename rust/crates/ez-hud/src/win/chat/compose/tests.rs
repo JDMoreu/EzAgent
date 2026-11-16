@@ -125,6 +125,38 @@ fn the_live_orb_and_status_line_become_layers() {
 }
 
 #[test]
+fn the_live_orb_keeps_its_size_and_has_no_halo() {
+    let ui = Arc::new(FakeUi {
+        fluid: true,
+        ..FakeUi::default()
+    });
+    let mut view = sample_view();
+    view.orb = Some((20.0, 20.0, 8.0));
+    let mut sizes = std::collections::HashSet::new();
+    let mut last = (0_usize, 0_usize);
+    for act in [0.0, 0.5, 1.0] {
+        let mut scene = Scene {
+            ui: ui.as_ref(),
+            view: &mut view,
+            anim: AnimState::Open,
+            form: (0.0, 0.0, 0.0, 0.0),
+            act,
+            now: 5.0,
+        };
+        let layers = live_layers(&mut scene, 100, 100, 1.0, 1.0, &[1.0], Some(16), Some(16));
+        let orb = &layers[0].2;
+        sizes.insert((orb.dim().0, orb.dim().1));
+        last = (orb.dim().0, orb.dim().1);
+        assert_eq!(orb[[0, 0, 3]], 0.0);
+        assert_eq!(orb[[0, orb.dim().1 - 1, 3]], 0.0);
+        let center = orb[[orb.dim().0 / 2, orb.dim().1 / 2, 3]];
+        assert!((center - 1.0).abs() < 1e-6, "centro opaco: {center}");
+    }
+    assert_eq!(sizes.len(), 1, "la actividad no cambia el tamaño");
+    assert_eq!(last, (8, 8));
+}
+
+#[test]
 fn the_stable_frame_is_cached_and_only_the_live_layer_moves() {
     let ui = fake_ui();
     let mut view = sample_view();

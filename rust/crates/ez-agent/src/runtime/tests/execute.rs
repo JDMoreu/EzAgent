@@ -170,6 +170,30 @@ fn unknown_tools_and_bad_arguments_are_rejected() {
 }
 
 #[test]
+fn an_allowed_write_needs_no_confirmation_and_the_audit_hides_the_content() {
+    let (work, runtime) = fixture("allowed-write");
+    let target = work.join("a.txt");
+    let content = "mi-clave-sk-PROYECTO-12345 contenido privado";
+    let result = runtime.execute(
+        "write_file",
+        &json!({"path": target.display().to_string(), "content": content}),
+    );
+    assert!(result.ok, "{result:?}");
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap_or_default(),
+        content
+    );
+    let audit = std::fs::read_to_string(runtime.config().audit_path).unwrap_or_default();
+    assert!(!audit.contains("contenido privado") && !audit.contains("sk-PROYECTO"));
+    assert!(audit.contains("\"decision\": \"allow\""));
+    assert!(audit.contains("\"result_ok\": true"));
+    assert!(
+        audit.contains(&format!("\"content_chars\": {}", content.chars().count())),
+        "{audit}"
+    );
+}
+
+#[test]
 fn tool_budget_is_per_turn_and_remaining_is_exposed() {
     let (_work, runtime) = fixture("budget");
     let mut config = runtime.config();

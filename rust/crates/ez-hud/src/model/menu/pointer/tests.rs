@@ -204,6 +204,24 @@ fn a_secret_row_copies_and_marks_the_check() {
 }
 
 #[test]
+fn a_failed_copy_does_not_mark_the_check() {
+    let callbacks = MenuCallbacks {
+        copy: Some(Box::new(|_text| false)),
+        ..MenuCallbacks::default()
+    };
+    let mut menu = menu_with(vec![("api_key", "text")], callbacks);
+    menu.settings
+        .set("api_key", &SettingValue::Text("sk-123".into()))
+        .expect("clave válida");
+    let layout = menu.layout();
+    let row = layout.get("api_key").copied().expect("fila secreta");
+    let (x, y) = menu.copy_rect(row.y0).center();
+    menu.pointer_down(x, y, 2.0);
+    menu.pointer_up(x, y, 2.0);
+    assert!(menu.copied.is_empty());
+}
+
+#[test]
 fn a_palette_click_changes_the_theme() {
     let mut menu = menu_with(vec![("theme_preview", "palette")], MenuCallbacks::default());
     let layout = menu.layout();

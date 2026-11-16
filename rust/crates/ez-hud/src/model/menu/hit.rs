@@ -384,6 +384,14 @@ mod tests {
         assert_eq!(hit.key, "api_key");
         let text = menu.hit(100.0, row.y0 + 10.0, 2.0).expect("fila");
         assert_eq!(text.kind, MenuHitKind::Text);
+        menu.settings
+            .set("api_key", &SettingValue::Text(String::new()))
+            .expect("clave válida");
+        let empty = menu.hit(copy.center().0, copy.center().1, 2.0);
+        assert!(
+            !matches!(empty, Some(hit) if hit.kind == MenuHitKind::Copy),
+            "sin clave no hay botón de copiar"
+        );
     }
 
     #[test]

@@ -170,3 +170,84 @@ fn finish_timeout_leaves_the_work_running() {
         .expect("sin plazo cumplido"));
     assert!(queue.finish(None).expect("fin"));
 }
+
+#[test]
+fn say_does_not_wait_for_a_slow_synthesis() {
+    let (started_tx, started_rx) = bounded::<()>(1);
+    let (gate_tx, gate_rx) = bounded::<()>(1);
+    let queue = SpeechQueue::new(
+        move |_text| {
+            let _ = started_tx.send(());
+            let _ = gate_rx.recv();
+            Ok((vec![0.1; 480], 24_000))
+        },
+        |_samples, _rate, on_start| {
+            on_start();
+            Ok(true)
+        },
+        Arc::new(AtomicBool::new(false)),
+        SpeechQueueOptions::default(),
+    );
+    let began = std::time::Instant::now();
+    assert!(queue.say("uno"));
+    assert!(queue.say("dos"));
+    assert!(began.elapsed() < Duration::from_millis(200));
+    started_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("empezó la síntesis");
+    // Un token por frase: la synthesizer se detiene en cada una.
+    gate_tx.send(()).expect("abre la puerta");
+    gate_tx.send(()).expect("abre la segunda puerta");
+    assert!(queue.finish(None).expect("fin"));
+}
+
+#[test]
+fn queues_are_bounded_and_say_waits_for_a_slot() {
+    assert_eq!(TEXT_MAXSIZE, 64);
+    assert_eq!(AUDIO_MAXSIZE, 8);
+    let (gate_tx, gate_rx) = bounded::<()>(1);
+    let queue = Arc::new(SpeechQueue::new(
+        |_text| Ok((vec![0.1; 480], 24_000)),
+        move |_samples, _rate, _on_start| {
+            let _ = gate_rx.recv();
+            Ok(true)
+        },
+        Arc::new(AtomicBool::new(false)),
+        SpeechQueueOptions::default(),
+    ));
+    let (done_tx, done_rx) = bounded::<Vec<bool>>(1);
+    let worker = Arc::clone(&queue);
+    let filler = std::thread::spawn(move || {
+        let results: Vec<bool> = (0..80)
+            .map(|index| worker.say(&format!("frase {index}")))
+            .collect();
+        let _ = done_tx.send(results);
+    });
+    assert!(
+        done_rx.recv_timeout(Duration::from_millis(300)).is_err(),
+        "la cola llena debe hacer backpressure"
+    );
+    queue.abort();
+    gate_tx.send(()).expect("abre la puerta");
+    let results = done_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("termina el llenado");
+    filler.join().expect("hilo de llenado");
+    assert!(queue.finish(None).expect("fin"));
+    assert!(results.contains(&false));
+}
+
+#[test]
+fn finish_is_idempotent_and_say_is_false_after_it() {
+    let record = recorder();
+    let queue = SpeechQueue::new(
+        synthesize(&record),
+        play(&record),
+        Arc::new(AtomicBool::new(false)),
+        options(&record),
+    );
+    assert!(queue.say("hola"));
+    assert!(queue.finish(None).expect("fin"));
+    assert!(queue.finish(None).expect("fin repetido"));
+    assert!(!queue.say("tarde"));
+}
