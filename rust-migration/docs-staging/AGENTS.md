@@ -97,10 +97,11 @@ antes de tu cambio, demuéstralo (`git stash` + ejecutar) y dilo en el informe.
   (`ezagent-call`, `ezagent-turn`, `ezagent-answer`, `ezagent-speech`,
   `ezagent-stt`, `ezagent-autonomo`, `ezagent-swarm-sup`…).
 - Nada bloquea el hilo de UI ni los hilos de audio. **Ningún lock se retiene
-  durante una operación larga, una llamada a otro componente ni una operación de
-  ventana**: se copia el estado con el lock tomado, se suelta y luego se llama.
-  `parking_lot` no es reentrante: no vuelvas a pedir el mismo lock en el mismo
-  hilo. El estado compartido va con lock corto o con colas.
+  durante una operación larga, una llamada a otro componente, una operación de
+  ventana ni una escritura a disco**: se copia el estado con el lock tomado, se
+  suelta y luego se llama. `parking_lot` no es reentrante: no vuelvas a pedir el
+  mismo lock en el mismo hilo. El estado compartido va con lock corto o con
+  colas.
 - Dependencias: solo las de `[workspace.dependencies]` y las que ya declara tu
   crate. No añadas dependencias ni cambies un `Cargo.toml` salvo que el brief te
   nombre dueño de una dependencia nativa.

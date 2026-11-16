@@ -104,7 +104,8 @@ EzAgent.bat
 
 `EzAgent.bat` sin argumentos abre el menú (opción 1 inicia el mensajero); con
 `EzAgent.bat voice` arranca directo. `EzAgent.bat install` hace `uv sync` y
-compila las dos versiones; `EzAgent.bat py <comando>` fuerza la ruta Python.
+compila la versión Rust (incluido `ezs`); `EzAgent.bat py <comando>` fuerza la
+ruta Python.
 `rust\run-dev.cmd` lanza el ejecutable con las variables de las DLL y sirve para
 probar una compilación de depuración. La primera vez, `EzAgent.bat` crea `.env`
 desde `.env.example` y lo abre para que pongas `LLM_PROVIDER` y su clave.
@@ -182,10 +183,11 @@ una sesión es algo más conservadora (0,6 s) mientras mide el acople.
 
 ## Ajustes
 
-La ventana de Ajustes se abre **en el centro de la pantalla** con ☰ o
-`Ctrl+Alt+O`. Se puede arrastrar desde cualquier zona libre, redimensionar desde
-los bordes y las esquinas, y un doble clic en la cabecera devuelve el tamaño y la
-posición de fábrica; la geometría se recuerda en `voice.json`. A la izquierda
+La ventana de Ajustes se abre **en el centro la primera vez** y luego donde la
+dejaste, con ☰ o `Ctrl+Alt+O`. Se puede arrastrar desde cualquier zona libre,
+redimensionar desde los bordes y las esquinas, y un doble clic en la cabecera
+devuelve el tamaño y la posición de fábrica; la geometría se recuerda en
+`voice.json`. A la izquierda
 están las cinco secciones y a la derecha los controles de la elegida, con todo el
 alto de la ventana, así que casi nunca hace falta desplazarse. Si una sección no
 cabe, la rueda desplaza su contenido. Los campos de texto se editan en línea: al
@@ -213,8 +215,9 @@ cancelar con `Esc` o pulsar fuera. `Ctrl+V` pega desde el portapapeles.
   predeterminado.
 
 Guardar y el punto de «cambios sin guardar» están siempre al pie de la ventana.
-La apariencia, la escucha y el chat se aplican en vivo, pero el punto recuerda
-que falta guardar. Los ajustes de audio, voz, TTS, VAD, Whisper y conversación se
+La apariencia y algunas opciones de escucha (reactivación y qué hace «cierra») se
+aplican en vivo, pero el punto recuerda que falta guardar; el resto se aplica al
+pulsar Guardar. Los ajustes de audio, voz, TTS, VAD, Whisper y conversación se
 guardan en `%APPDATA%\EzAgent\voice.json`; los perfiles de proveedor, en
 `%APPDATA%\EzAgent\llm.json`.
 
@@ -306,8 +309,8 @@ cancela.
 ### Skills incluidas
 
 `organizar-carpetas`, `investigar-web`, `documentos-word`, `documentos-pdf`,
-`hojas-excel`, `resumir-documento` y `notas-rapidas`. En el instalador, los
-scripts de skills buscan un Python del sistema; sin él, las skills que solo
+`hojas-excel`, `resumir-documento` y `notas-rapidas`. En la versión instalada,
+los scripts de skills buscan un Python del sistema; sin él, las skills que solo
 leen/escriben archivos siguen funcionando y las que ejecutan scripts muestran un
 error claro.
 
@@ -401,8 +404,8 @@ escucha en `127.0.0.1` con un token por sesión.
 El modo autónomo (modelo «elefante y pez dorado») hace una tarea de principio a
 fin sin pedirte permiso en cada paso, pero **solo si lo autorizas tú**. EzAgent
 hace de elefante: guarda el encargo y los criterios, lanza al ejecutor, aprueba
-los permisos que pide y verifica el resultado con un agente nuevo. No ejecuta la
-tarea por su cuenta.
+los permisos que pide y verifica el resultado con una sesión nueva de
+verificación. No ejecuta la tarea por su cuenta.
 
 Se activa con una frase explícita que incluya «modo autónomo», «autorizo»,
 «yolo», «sin pedirme permiso» o «sin preguntarme». Por ejemplo:
@@ -416,7 +419,7 @@ Se activa con una frase explícita que incluya «modo autónomo», «autorizo»,
 1. EzAgent pide **una sola confirmación generada por el código**, con la tarea,
    los criterios y sus comprobaciones, la carpeta, el agente y los topes.
 2. Se responde «sí» o «no», por voz o con los botones de la barra. La
-   autorización solo vale para las terminales de esa tarea y se aprueba **una
+   autorización solo sirve para las terminales de esa tarea y se aprueba **una
    sola vez** en cada diálogo (nunca «permitir siempre»).
 3. El ejecutor trabaja; al terminar, un **verificador nuevo** comprueba cada
    criterio con evidencia. Hacen falta **dos verificaciones limpias seguidas**.

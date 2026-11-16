@@ -219,7 +219,7 @@ flowchart LR
 - **Contexto bajo demanda.** Al abrir un agente solo se escribe una línea. Su
   papel y las reglas llegan con el primer `ezs next`, y `ezs me` las repite.
 - **Roles libres.** Plan, arch, lead, dev, back, front, ux, data, ops, docs, qa,
-  test y sec traen tarea y reglas propias; cualquier otro nombre corto vale con
+  test y sec traen tarea y reglas propias; cualquier otro nombre corto sirve con
   reglas genéricas y la tarea que diga el usuario. Cada miembro abre una etapa
   que espera a la anterior, salvo los marcados `parallel`.
 - **Mensajes de 280 caracteres**; el detalle va en un archivo (`--ref`).
@@ -304,10 +304,10 @@ Regla del repositorio: nada bloquea el hilo de UI ni los de audio, y el estado
 compartido va con lock o con colas. Los detalles que se aprendieron a golpes:
 
 - **Ningún lock se retiene durante una operación larga, una llamada a otro
-  componente ni una operación de ventana.** Se copia el estado con el lock
-  tomado, se suelta y después se llama a Herdr, a la barra, al gestor de
-  confirmaciones o a Win32. Ya hubo interbloqueos al mover la tarjeta, al cerrar
-  el menú, al abrir el chat y al mover la vista rápida.
+  componente, una operación de ventana ni una escritura a disco.** Se copia el
+  estado con el lock tomado, se suelta y después se llama a Herdr, a la barra, al
+  gestor de confirmaciones, a Win32 o al disco. Ya hubo interbloqueos al mover la
+  tarjeta, al cerrar el menú, al abrir el chat y al mover la vista rápida.
 - **`parking_lot` no es reentrante.** Una función que ya tiene el lock no puede
   volver a pedirlo en el mismo hilo; `advance` de la vista rápida lo hacía.
 - **Las paradas que esperan a otro hilo no se hacen con el lock tomado.** La
