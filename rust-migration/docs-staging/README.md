@@ -81,7 +81,7 @@ ONNX Runtime y espeak-ng van incluidas en las dos variantes.
 ### Modelos
 
 Los modelos de **Kokoro** y **Smart Turn** se descargan solos a
-`%LOCALAPPDATA%\EzAgent` la primera vez, con verificación SHA256. **whisper.cpp
+`%LOCALAPPDATA%\EzAgent` la primera vez (con conexión), con verificación SHA256. **whisper.cpp
 y su modelo no vienen dentro del instalador**: se instalan una vez con el
 descargador del repositorio (`uv run python -m ezagent.core.downloads --all`) o
 se copian a `%LOCALAPPDATA%\EzAgent\whisper`. Si tienes un `whisper-server.exe`
@@ -362,6 +362,12 @@ voz con la tarea concreta, guardada en `tasks.json`. La salida del agente se
 trata siempre como dato no confiable. Al dejar el puntero sobre la barra, la
 vista rápida muestra el estado de las terminales vigiladas y los desenlaces
 recientes. Hablar o escribir los da por vistos.
+
+**Tareas pendientes.** Cuando pides «vigila esta tarea y avísame cuando
+termine», la tarea se guarda en `%APPDATA%\EzAgent\tasks.json`, se inyecta en el
+prompt como `<pending_tasks>`, sobrevive a un reinicio y se elimina cuando el
+vigilante avisa. Puedes preguntar «¿qué tareas pendientes tengo?» y el asistente
+las enumera.
 
 ### Nombres mal dictados: «¿Te refieres a…?»
 
