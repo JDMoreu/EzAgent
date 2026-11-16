@@ -144,6 +144,18 @@ pub fn transcription_hint(
     Ok(format!("{HINT_LEAD}{}.", words.join(", ")))
 }
 
+/// `re.IGNORECASE` del Python iguala «i», «I», «İ» (U+0130) y «ı» (U+0131);
+/// el plegado de mayúsculas de `regex` no incluye las dos turcas.
+fn python_ignorecase(escaped: &str) -> String {
+    escaped
+        .chars()
+        .map(|character| match character {
+            'i' | 'I' | '\u{130}' | '\u{131}' => "[iI\u{130}\u{131}]".to_string(),
+            other => other.to_string(),
+        })
+        .collect()
+}
+
 /// Aplica las reglas una vez, de la frase más larga a la más corta.
 pub fn correct_transcription(text: &str, dictionary: &str) -> Result<String, DictionaryError> {
     let mut rules = parse_rules(dictionary)?;
@@ -157,7 +169,7 @@ pub fn correct_transcription(text: &str, dictionary: &str) -> Result<String, Dic
         .map(|(index, (source, _))| {
             let words: Vec<String> = source
                 .split_whitespace()
-                .map(|word| fancy_regex::escape(word).into_owned())
+                .map(|word| python_ignorecase(&fancy_regex::escape(word)))
                 .collect();
             format!("(?P<rule{index}>{})", words.join(r"\s+"))
         })

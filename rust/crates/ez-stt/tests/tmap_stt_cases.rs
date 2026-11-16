@@ -37,7 +37,6 @@ fn the_dictionary_matches_literals_without_chaining() {
 }
 
 #[test]
-#[ignore = "TMAP: diferencia con Python, ver informe"]
 fn python_re_ignorecase_matches_turkish_dotted_and_dotless_i() {
     // Python: `re.IGNORECASE` empareja «i» con «İ» (U+0130) y «ı» (U+0131);
     // el `casefold` de Rust no, así que quedan sin corregir.

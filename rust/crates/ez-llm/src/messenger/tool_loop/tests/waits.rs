@@ -229,7 +229,6 @@ fn a_single_enormous_turn_is_clipped_not_summarised() {
 }
 
 #[test]
-#[ignore = "TMAP: diferencia con Python, ver informe"]
 fn a_failing_notification_callback_does_not_break_the_turn() {
     let (messenger, _client) = messenger_with(
         vec![
