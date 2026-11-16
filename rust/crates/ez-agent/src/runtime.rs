@@ -257,8 +257,15 @@ impl AgentRuntime {
     }
 
     /// Sustituye la configuración (equivalente a mutar `runtime.config`).
+    /// Cambia la configuración y reconstruye lo que depende de ella, como la
+    /// recarga de `permissions.toml`: las herramientas de archivos guardan su
+    /// copia al construirse y, sin esto, seguían con los límites viejos (el
+    /// Python lee la configuración viva en cada llamada).
     pub fn set_config(&self, config: ez_core::agent_config::AgentConfig) {
         *state::write(&self.inner.config) = config;
+        self.rebuild_prompt();
+        self.rebuild_confirm();
+        self.rebuild_tools();
     }
 
     pub fn voice_config(&self) -> VoiceConfig {

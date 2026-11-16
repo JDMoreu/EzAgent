@@ -121,11 +121,9 @@ fn no_free_shell_tool_is_registered() {
 }
 
 #[test]
-#[ignore = "TMAP: diferencia con Python, ver informe"]
 fn changing_max_file_mb_at_runtime_reaches_the_writer() {
-    // Hallazgo: el Python lee `config.general.max_file_mb` al escribir; el
-    // puerto Rust clona la configuración en FsContext y `set_config` no la
-    // propaga a las herramientas ya construidas.
+    // El Python lee `config.general.max_file_mb` al escribir; en Rust
+    // `set_config` reconstruye las herramientas con la configuración nueva.
     let (work, runtime) = fixture("max-file-live");
     let mut config = runtime.config();
     config.general.max_file_mb = 0.001;
