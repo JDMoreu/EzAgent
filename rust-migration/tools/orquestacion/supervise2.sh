@@ -29,7 +29,9 @@ session_id() {
 
 cd "$DIR" || exit 1
 done_report() {
-  [ -f "$REPORT" ] && grep -qiE "Estado:[^a-z]*completado" "$REPORT"
+  # «completado» y ninguna verificación en «pendiente» (los workers escriben a
+  # veces el estado antes de verificar).
+  [ -f "$REPORT" ] && grep -qiE "Estado:[^a-z]*completado" "$REPORT"     && ! grep -qiE "^[-*] .*: *(\*\*)?pendiente" "$REPORT"
 }
 finish() {
   powershell -NoProfile -ExecutionPolicy Bypass -File "$HERE/cleanup_worker.ps1" -Dir "$DIR" >/dev/null 2>&1
