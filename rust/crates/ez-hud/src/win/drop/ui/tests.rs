@@ -354,6 +354,19 @@ fn chat_is_optional_but_respects_asking_and_mute() {
 }
 
 #[test]
+fn toggle_chat_without_a_panel_does_not_fail() {
+    let harness = Harness::new();
+    harness
+        .ui
+        .set_chat_panel(std::sync::Arc::new(super::traits::NoChat));
+    assert!(!harness.ui.chat_is_open());
+    harness.ui.toggle_chat();
+    harness.ui.toggle_chat();
+    assert!(!harness.ui.chat_is_open());
+    harness.ui.hide();
+}
+
+#[test]
 fn theme_custom_colors_and_chat_surface() {
     // El arnés ya retiene el candado de la paleta.
     let harness = Harness::new();
