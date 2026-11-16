@@ -371,6 +371,8 @@ pub fn classify(screen: &str) -> Dialog {
 
 fn deny_rules() -> &'static Vec<(Regex, &'static str)> {
     static RULES: OnceLock<Vec<(Regex, &'static str)>> = OnceLock::new();
+    // shortcut: la lista compara texto literal; una ruta que resuelve a la
+    // raíz con «..» (`rm -rf /tmp/..`) no se detecta. Ampliar si aparece.
     RULES.get_or_init(|| {
         [
             (
