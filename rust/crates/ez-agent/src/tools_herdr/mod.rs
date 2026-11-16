@@ -10,10 +10,12 @@
 pub mod args;
 pub mod builder;
 pub mod delegate;
+pub mod names;
 pub mod port;
 pub mod summaries;
 pub mod voice;
 
 pub use args::HerdrCallbacks;
 pub use builder::build_herdr_tools;
+pub use names::Names;
 pub use port::HerdrPort;

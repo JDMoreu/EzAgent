@@ -120,6 +120,8 @@ pub type CountHook = Arc<dyn Fn(i64) + Send + Sync>;
 pub type TextFn = Arc<dyn Fn() -> String + Send + Sync>;
 pub type TaskHook = Arc<dyn Fn(&str, &str, &str) + Send + Sync>;
 pub type SpecHook = Arc<dyn Fn(Value) + Send + Sync>;
+/// Pregunta de nombre dudoso («¿Te refieres al espacio «TEST»?»); `true` acepta.
+pub type NameConfirm = Arc<dyn Fn(&str) -> bool + Send + Sync>;
 
 fn no_text(_: &str) {}
 
@@ -155,6 +157,9 @@ pub struct HerdrCallbacks {
     /// arranque (programa, modelo, tarea) ocurre aparte.
     pub async_launch: bool,
     pub launch_failed: TaskHook,
+    /// Confirma un nombre dictado que se parece a varios candidatos (mejora
+    /// sobre el Python). Sin él, la duda se rechaza y se listan los nombres.
+    pub confirm_name: Option<NameConfirm>,
 }
 
 impl Default for HerdrCallbacks {
@@ -172,6 +177,7 @@ impl Default for HerdrCallbacks {
             prewarm_chain: Arc::new(no_spec),
             async_launch: false,
             launch_failed: Arc::new(no_task),
+            confirm_name: None,
         }
     }
 }

@@ -28,7 +28,7 @@ mod text;
 
 pub use actions::ReadyCallback;
 pub use actions::RunAgent;
-pub use names::{resolve_name, NameCandidate, NameHit, NameKind, NameMatch};
+pub use names::{candidate_labels, resolve_name, NameCandidate, NameHit, NameKind, NameMatch};
 pub use runtime::{system as system_runtime, HerdrRuntime, SystemRuntime};
 pub use text::{strip_ansi, visible_name};
 

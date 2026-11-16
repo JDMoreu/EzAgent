@@ -60,7 +60,12 @@ fn valida_los_argumentos_de_run() {
         call(json!({"action": "run", "agent": "nope"}))
             .error
             .as_deref(),
-        Some("Agente desconocido: 'nope'. Usa action=agents para ver los disponibles.")
+        // DECISION: el resolvedor de nombres sustituye el «Agente desconocido»
+        // del Python por la lista de agentes, para que el asistente pregunte.
+        Some(
+            "No encontré el agente «nope». Agentes disponibles: «Claude Code», «Codex», \
+             «MiniMax (mcode)», «MiniMax Code», «OpenCode», «Pi», «Qwen Code»."
+        )
     );
     assert_eq!(
         call(json!({"action": "run", "agent": "claude", "then": "mal"}))
@@ -119,7 +124,10 @@ fn el_catalogo_y_los_manuales_no_hablan_con_herdr() {
         call(json!({"action": "guide", "agent": "nope"}))
             .error
             .as_deref(),
-        Some("No hay manual para 'nope'. Usa action=agents.")
+        Some(
+            "No encontré el agente «nope». Agentes disponibles: «Claude Code», «Codex», \
+             «MiniMax (mcode)», «MiniMax Code», «OpenCode», «Pi», «Qwen Code»."
+        )
     );
 }
 

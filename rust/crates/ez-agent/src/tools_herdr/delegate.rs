@@ -10,7 +10,7 @@ use ez_core::config::{python_str, truthy};
 use ez_core::pyvalue::{py_strip, text_or_empty};
 use ez_herdr::driver::AgentDriver;
 use ez_herdr::herdr::Herdr;
-use ez_herdr::herdr::{RunAgent, DEFAULT_SHELL};
+use ez_herdr::herdr::{NameKind, RunAgent, DEFAULT_SHELL};
 use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
@@ -19,6 +19,7 @@ use super::args::{
     set_last_address, text_field, user_text, wants_close, wants_deliver, wants_notify, wrapped,
     ArgumentError, DelegateError, HerdrCallbacks, SharedState, DELEGATE_ACTIONS,
 };
+use super::names::Names;
 use crate::handoff::{answer_or_tail, compose_handoff};
 use crate::handoff_packet::{build_packet, packet_text};
 use crate::orchestration::{chain_spec, load_guide, parse_steps, ChainOptions, Step};
@@ -39,14 +40,18 @@ pub fn handle_delegate(
     state: &SharedState,
     args: &Map<String, Value>,
 ) -> ToolResult {
-    match delegate_action(herdr, callbacks, state, args) {
+    let names = Names::new(herdr, callbacks.confirm_name.as_ref());
+    let mut result = match delegate_action(herdr, &names, callbacks, state, args) {
         Ok(result) => result,
         Err(error) => error.into_result(),
-    }
+    };
+    names.attach(&mut result);
+    result
 }
 
 fn delegate_action(
     herdr: &dyn HerdrPort,
+    names: &Names<'_>,
     callbacks: &HerdrCallbacks,
     state: &SharedState,
     args: &Map<String, Value>,
@@ -60,42 +65,53 @@ fn delegate_action(
             )))
         }
         "get" => {
-            let address = required_text(args, "address", &action)?;
+            let address = pick_address(names, args, &action)?;
             Ok(wrapped(herdr.get_agent(&address)?))
         }
-        "read" => read_action(herdr, args, &action),
+        "read" => read_action(herdr, names, args, &action),
         "send" => {
-            let address = required_text(args, "address", &action)?;
+            let address = pick_address(names, args, &action)?;
             let task = required_text(args, "task", &action)?;
             // DECISION: la tarea llega tal cual al agente, sin preámbulo.
             Ok(wrapped(herdr.send_agent(&address, &task, true)?))
         }
-        "run" => handle_run(herdr, callbacks, state, args),
-        "open_terminal" => open_terminal_action(herdr, args, &action),
+        "run" => handle_run(herdr, names, callbacks, state, args),
+        "open_terminal" => open_terminal_action(herdr, names, args, &action),
         "agents" => {
             let catalog = herdr.agents_catalog();
             Ok(ToolResult::ok(Value::Array(
                 catalog.into_iter().map(Value::Object).collect(),
             )))
         }
-        "guide" => guide_action(herdr, args, &action),
-        "keys" => keys_action(herdr, args, &action),
-        "configure" => configure_action(herdr, args, &action),
+        "guide" => guide_action(herdr, names, args, &action),
+        "keys" => keys_action(herdr, names, args, &action),
+        "configure" => configure_action(herdr, names, args, &action),
         "focus" => {
-            let address = required_text(args, "address", &action)?;
+            let address = pick_address(names, args, &action)?;
             Ok(wrapped(herdr.focus_agent(&address)?))
         }
-        "kill" => kill_action(herdr, state, args, &action),
-        _ => watch_action(callbacks, state, args, &action),
+        "kill" => kill_action(herdr, names, state, args, &action),
+        _ => watch_action(names, callbacks, state, args, &action),
     }
+}
+
+/// `address` resuelto contra las terminales abiertas.
+fn pick_address(
+    names: &Names<'_>,
+    args: &Map<String, Value>,
+    action: &str,
+) -> Result<String, DelegateError> {
+    let spoken = required_text(args, "address", action)?;
+    Ok(names.pick(NameKind::Terminal, &spoken)?)
 }
 
 fn read_action(
     herdr: &dyn HerdrPort,
+    names: &Names<'_>,
     args: &Map<String, Value>,
     action: &str,
 ) -> Result<ToolResult, DelegateError> {
-    let address = required_text(args, "address", action)?;
+    let address = pick_address(names, args, action)?;
     let lines = optional_lines(args, action)?;
     let text = herdr.read_agent(&address, lines)?;
     Ok(ToolResult::ok(json!({"address": address, "text": text})))
@@ -103,13 +119,14 @@ fn read_action(
 
 fn open_terminal_action(
     herdr: &dyn HerdrPort,
+    names: &Names<'_>,
     args: &Map<String, Value>,
     action: &str,
 ) -> Result<ToolResult, DelegateError> {
     let name = required_text(args, "name", action)?;
     let shell = optional_text(args, "shell", action)?.unwrap_or_else(|| DEFAULT_SHELL.to_string());
     let cwd = optional_text(args, "cwd", action)?;
-    let space = optional_text(args, "space", action)?;
+    let space = pick_space(names, args, action)?;
     Ok(wrapped(herdr.open_terminal(
         &name,
         cwd.as_deref(),
@@ -118,12 +135,26 @@ fn open_terminal_action(
     )?))
 }
 
+/// `space` opcional resuelto contra los espacios abiertos.
+fn pick_space(
+    names: &Names<'_>,
+    args: &Map<String, Value>,
+    action: &str,
+) -> Result<Option<String>, DelegateError> {
+    match optional_text(args, "space", action)? {
+        Some(spoken) => Ok(Some(names.pick(NameKind::Space, &spoken)?)),
+        None => Ok(None),
+    }
+}
+
 fn guide_action(
     herdr: &dyn HerdrPort,
+    names: &Names<'_>,
     args: &Map<String, Value>,
     action: &str,
 ) -> Result<ToolResult, DelegateError> {
-    let wanted = required_text(args, "agent", action)?;
+    let spoken = required_text(args, "agent", action)?;
+    let wanted = names.pick(NameKind::Agent, &spoken)?;
     let key = herdr
         .resolve_agent(&wanted)
         .unwrap_or_else(|| wanted.to_lowercase());
@@ -141,10 +172,10 @@ fn guide_action(
 
 fn keys_action(
     herdr: &dyn HerdrPort,
+    names: &Names<'_>,
     args: &Map<String, Value>,
     action: &str,
 ) -> Result<ToolResult, DelegateError> {
-    let address = required_text(args, "address", action)?;
     let pressed = match args.get("keys") {
         Some(Value::Array(items)) if !items.is_empty() => items,
         _ => {
@@ -155,15 +186,16 @@ fn keys_action(
         }
     };
     let keys: Vec<String> = pressed.iter().map(python_str).collect();
+    let address = pick_address(names, args, action)?;
     Ok(wrapped(herdr.keys_agent(&address, &keys)?))
 }
 
 fn configure_action(
     herdr: &dyn HerdrPort,
+    names: &Names<'_>,
     args: &Map<String, Value>,
     action: &str,
 ) -> Result<ToolResult, DelegateError> {
-    let address = required_text(args, "address", action)?;
     let model = optional_text(args, "model", action)?;
     let effort = optional_text(args, "effort", action)?;
     if model.is_none() && effort.is_none() {
@@ -171,6 +203,7 @@ fn configure_action(
             ArgumentError::new("Para la acción «configure» indica «model» o «effort».").into(),
         );
     }
+    let address = pick_address(names, args, action)?;
     Ok(wrapped(herdr.configure_agent(
         &address,
         model.as_deref(),
@@ -180,11 +213,12 @@ fn configure_action(
 
 fn kill_action(
     herdr: &dyn HerdrPort,
+    names: &Names<'_>,
     state: &SharedState,
     args: &Map<String, Value>,
     action: &str,
 ) -> Result<ToolResult, DelegateError> {
-    let address = required_text(args, "address", action)?;
+    let address = pick_address(names, args, action)?;
     let result = wrapped(herdr.kill_agent(&address, true)?);
     // DECISION: si se mata el último agente, se olvida para no vigilar un
     // terminal que ya no existe.
@@ -195,12 +229,13 @@ fn kill_action(
 }
 
 fn watch_action(
+    names: &Names<'_>,
     callbacks: &HerdrCallbacks,
     state: &SharedState,
     args: &Map<String, Value>,
     action: &str,
 ) -> Result<ToolResult, DelegateError> {
-    let address = required_text(args, "address", action)?;
+    let address = pick_address(names, args, action)?;
     set_last_address(state, Some(address.clone()));
     (callbacks.remember_task)(&address, "", &user_text(callbacks));
     (callbacks.watch)(&address);
@@ -231,15 +266,23 @@ struct RunArgs {
 
 fn parse_run_args(
     herdr: &dyn HerdrPort,
+    names: &Names<'_>,
     callbacks: &HerdrCallbacks,
     args: &Map<String, Value>,
 ) -> Result<RunArgs, DelegateError> {
     let action = "run";
-    let agent = required_text(args, "agent", action)?;
+    let spoken_agent = required_text(args, "agent", action)?;
+    let agent = names.pick(NameKind::Agent, &spoken_agent)?;
     // DECISION: la tarea es opcional; sin ella solo se abre el agente.
     let task = optional_text(args, "task", action)?.unwrap_or_default();
-    let steps =
+    let mut steps =
         parse_steps(args.get("then").unwrap_or(&Value::Null)).map_err(ArgumentError::new)?;
+    for step in steps.iter_mut() {
+        if let Some(wanted) = step.get("agent").cloned() {
+            let resolved = names.pick(NameKind::Agent, &wanted)?;
+            step.insert("agent".to_string(), resolved);
+        }
+    }
     let mut wanted = vec![agent.as_str()];
     wanted.extend(
         steps
@@ -266,10 +309,13 @@ fn parse_run_args(
     let close_listening = optional_bool(args, "close_listening", action)?;
     let cwd = optional_text(args, "cwd", action)?;
     let name = optional_text(args, "name", action)?;
-    let space = optional_text(args, "space", action)?;
+    let space = pick_space(names, args, action)?;
     let model = optional_text(args, "model", action)?;
     let effort = optional_text(args, "effort", action)?;
-    let input_from = optional_text(args, "input_from", action)?;
+    let input_from = match optional_text(args, "input_from", action)? {
+        Some(spoken) => Some(names.pick(NameKind::Terminal, &spoken)?),
+        None => None,
+    };
     let text = user_text(callbacks);
     let deliver = optional_bool(args, "deliver_answer", action)?
         || (wants_deliver(&text) && (!task.is_empty() || !steps.is_empty()));
@@ -296,11 +342,12 @@ fn parse_run_args(
 /// `_handle_run`: lanza el agente y, con `then`, encadena el resto del flujo.
 fn handle_run(
     herdr: &dyn HerdrPort,
+    names: &Names<'_>,
     callbacks: &HerdrCallbacks,
     state: &SharedState,
     args: &Map<String, Value>,
 ) -> Result<ToolResult, DelegateError> {
-    handle_run_with_ids(herdr, callbacks, state, args, &new_chain_id)
+    handle_run_inner(herdr, names, callbacks, state, args, &new_chain_id)
 }
 
 /// Igual que `_handle_run`, con el generador de ids de cadena inyectado.
@@ -311,7 +358,19 @@ pub fn handle_run_with_ids(
     args: &Map<String, Value>,
     new_id: &dyn Fn() -> String,
 ) -> Result<ToolResult, DelegateError> {
-    let run = parse_run_args(herdr, callbacks, args)?;
+    let names = Names::new(herdr, callbacks.confirm_name.as_ref());
+    handle_run_inner(herdr, &names, callbacks, state, args, new_id)
+}
+
+fn handle_run_inner(
+    herdr: &dyn HerdrPort,
+    names: &Names<'_>,
+    callbacks: &HerdrCallbacks,
+    state: &SharedState,
+    args: &Map<String, Value>,
+    new_id: &dyn Fn() -> String,
+) -> Result<ToolResult, DelegateError> {
+    let run = parse_run_args(herdr, names, callbacks, args)?;
     let effective_task = match run.input_from.clone() {
         Some(source) => match apply_input_from(herdr, callbacks, &run, &source)? {
             RunStart::Done(result) => return Ok(result),
