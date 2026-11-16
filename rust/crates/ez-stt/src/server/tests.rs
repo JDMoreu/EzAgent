@@ -46,6 +46,22 @@ fn resource_root_contains_the_whisper_script() {
 }
 
 #[test]
+fn resource_root_prefers_the_copy_beside_the_executable() {
+    let base = temp_dir("root");
+    let scripts = base.join("scripts");
+    std::fs::create_dir_all(&scripts).expect("carpeta scripts");
+    let script = scripts.join("start-whisper.ps1");
+    std::fs::write(&script, "").expect("script de prueba");
+    assert_eq!(resource_root_in(Some(&base)), base);
+    let empty = temp_dir("root-empty");
+    assert_eq!(resource_root_in(Some(&empty)), resource_root_in(None));
+    let _ = std::fs::remove_file(&script);
+    let _ = std::fs::remove_dir(&scripts);
+    cleanup(&base);
+    cleanup(&empty);
+}
+
+#[test]
 fn a_free_local_port_is_available() {
     let port = free_local_port().expect("puerto libre");
     assert!(port > 0);

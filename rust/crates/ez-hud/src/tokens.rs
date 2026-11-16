@@ -330,12 +330,26 @@ pub fn font_style(token: &str) -> Option<FontStyle> {
         .map(|(_, style)| *style)
 }
 
-// DECISION: la ruta se resuelve desde el crate en tiempo de compilación, igual
-// que `Path(__file__).resolve().parents[1] / "assets" / "fonts"` en el Python.
 /// `FONT_DIR`: carpeta de las fuentes Geist del proyecto.
+// DECISION: el instalador copia `assets/fonts` junto al ejecutable (F8-01b);
+// en desarrollo se usa el árbol del código, como
+// `Path(__file__).resolve().parents[1] / "assets" / "fonts"` en el Python.
 pub static FONT_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/ezagent/voice/assets/fonts")
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf));
+    font_dir_in(exe_dir.as_deref())
 });
+
+/// `assets/fonts` junto al ejecutable, o el árbol del código si no existe.
+fn font_dir_in(exe_dir: Option<&Path>) -> PathBuf {
+    exe_dir
+        .map(|dir| dir.join("assets").join("fonts"))
+        .filter(|dir| dir.is_dir())
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/ezagent/voice/assets/fonts")
+        })
+}
 
 /// `FONT_FILES`: archivo de cada familia y peso.
 pub static FONT_FILES: LazyLock<BTreeMap<&'static str, BTreeMap<i32, PathBuf>>> =
@@ -548,6 +562,22 @@ mod tests {
         assert_eq!(rect.center(), (10.0, 20.0));
         assert!(rect.overlaps(&Rect::new(19.0, 29.0, 40.0, 40.0)));
         assert!(!rect.overlaps(&Rect::new(20.0, 10.0, 40.0, 40.0)));
+    }
+
+    #[test]
+    fn fonts_come_from_beside_the_executable_when_present() {
+        let base = std::env::temp_dir().join(format!("ez-hud-fonts-{}", std::process::id()));
+        let fonts = base.join("assets").join("fonts");
+        std::fs::create_dir_all(&fonts).expect("carpeta temporal");
+        assert_eq!(font_dir_in(Some(&base)), fonts);
+        let empty = base.join("empty");
+        std::fs::create_dir_all(&empty).expect("carpeta temporal");
+        assert_eq!(font_dir_in(Some(&empty)), font_dir_in(None));
+        assert!(font_dir_in(None).ends_with("voice/assets/fonts"));
+        let _ = std::fs::remove_dir(&fonts);
+        let _ = std::fs::remove_dir(base.join("assets"));
+        let _ = std::fs::remove_dir(&empty);
+        let _ = std::fs::remove_dir(&base);
     }
 
     #[test]

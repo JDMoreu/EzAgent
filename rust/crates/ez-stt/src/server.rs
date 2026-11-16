@@ -21,11 +21,25 @@ pub const WHISPER_WAIT_SECS: f64 = 25.0;
 /// `timeout` por defecto de `_whisper_ready`.
 pub const WHISPER_READY_TIMEOUT: Duration = Duration::from_secs(1);
 
-/// `_resource_root`: raíz del repo en desarrollo (donde vive `scripts/`).
+/// `_resource_root`: raíz de los recursos que acompañan al ejecutable.
 ///
-/// DECISION: no hay equivalente a `sys._MEIPASS`; se usa la ruta del crate en
-/// tiempo de compilación. Un empaquetado futuro puede añadir su propia raíz.
+/// En el empaquetado del Python es `sys._MEIPASS`; aquí es la carpeta del
+/// ejecutable cuando el instalador copió `scripts/start-whisper.ps1` a su lado
+/// (F8-01b). En desarrollo, la raíz del repo.
 pub fn resource_root() -> PathBuf {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf));
+    resource_root_in(exe_dir.as_deref())
+}
+
+/// `resource_root` con la carpeta del ejecutable recibida como parámetro.
+fn resource_root_in(exe_dir: Option<&Path>) -> PathBuf {
+    if let Some(dir) = exe_dir {
+        if dir.join("scripts").join("start-whisper.ps1").is_file() {
+            return dir.to_path_buf();
+        }
+    }
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest
         .ancestors()
