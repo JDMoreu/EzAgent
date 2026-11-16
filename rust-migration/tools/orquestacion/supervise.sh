@@ -1,23 +1,44 @@
 #!/bin/bash
-# Uso: supervise.sh <ID> <directorio-worktree> <archivo-prompt>
-# Lanza un worker de OpenCode y lo relanza (continuando su sesión) si se corta
+# Uso: supervise.sh <ID> <directorio-worktree> <archivo-prompt> [resume]
+# Lanza un worker de OpenCode y lo relanza (continuando SU sesión) si se corta
 # por un error de red o si se cuelga al arrancar. Termina cuando aparece el
 # informe del worker o tras MAX intentos.
-ID="$1"; DIR="$2"; PROMPT_FILE="$3"
+#
+# Las sesiones de OpenCode son globales (no por carpeta): `--continue` retoma la
+# última de cualquier worker. Por eso los reintentos usan `--session <id>` con el
+# id de la sesión titulada «<ID>-s1».
+#
+# Con «resume», la primera vuelta ya continúa la sesión existente «<ID>-s1»
+# (tras un cierre de Claude Code, por ejemplo). Un informe previo de la ronda se
+# aparta a «<ID>-r1.parcial.md» para que no cuente como terminado.
+ID="$1"; DIR="$2"; PROMPT_FILE="$3"; MODE="${4:-new}"
 MAX=8
 LOG_DIR=/c/Users/JDMoreu/AppData/Local/Temp/claude/40010d84cecbf54d/ffb0b8cb-44a7-4d4d-8f38-01a6793a649e/scratchpad
 REPORT="$DIR/rust-migration/reports/$ID-r1.md"
 PROMPT="$(cat "$PROMPT_FILE")"
-CONT="Continúa exactamente donde lo dejaste: la conexión se cortó. Revisa git status y git log de esta rama, ejecuta de nuevo lo que falte y termina la tarea de rust-migration/briefs/$ID.md (commit + informe rust-migration/reports/$ID-r1.md)."
+CONT="Continúa exactamente donde lo dejaste: la ejecución se cortó. Revisa git status y git log de esta rama, ejecuta de nuevo lo que falte y termina la tarea de rust-migration/briefs/$ID.md (commit + informe rust-migration/reports/$ID-r1.md con la verificación real, sin «pendiente»)."
+MODEL="opencode-go/deepseek-v4.1-flash#max"
+
+session_id() {
+  opencode session list 2>/dev/null | awk -v t="$ID-s1" '$2 == t { print $1; exit }'
+}
 
 cd "$DIR" || exit 1
+if [ "$MODE" = "resume" ] && [ -f "$REPORT" ]; then
+  mv "$REPORT" "${REPORT%.md}.parcial.md"
+fi
 for attempt in $(seq 1 $MAX); do
   LOG="$LOG_DIR/$ID-sup$attempt.log"
+  [ "$MODE" = "resume" ] && LOG="$LOG_DIR/$ID-resume$attempt.log"
   : > "$LOG"
-  if [ "$attempt" -eq 1 ]; then
-    opencode run --model "opencode-go/deepseek-v4.1-flash#max" --title "$ID-s$attempt" --auto "$PROMPT" > "$LOG" 2>&1 &
+  SESSION="$(session_id)"
+  if [ "$attempt" -eq 1 ] && [ "$MODE" != "resume" ]; then
+    opencode run --model "$MODEL" --title "$ID-s1" --auto "$PROMPT" > "$LOG" 2>&1 &
+  elif [ -n "$SESSION" ]; then
+    opencode run --session "$SESSION" --model "$MODEL" --auto "$CONT" > "$LOG" 2>&1 &
   else
-    opencode run --continue --model "opencode-go/deepseek-v4.1-flash#max" --auto "$CONT" > "$LOG" 2>&1 &
+    echo "[$ID] no encuentro la sesión $ID-s1; empiezo una nueva"
+    opencode run --model "$MODEL" --title "$ID-s1" --auto "$PROMPT" > "$LOG" 2>&1 &
   fi
   PID=$!
   START=$(date +%s)
