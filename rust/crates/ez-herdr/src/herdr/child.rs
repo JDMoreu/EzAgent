@@ -29,6 +29,9 @@ const PLACE_RETRY_LIMIT_S: f64 = 15.0;
 /// Aviso que aparece cuando el padre no tiene panel en el que abrirlo.
 const NO_PANE_WARNING: &str = "El agente padre no tiene panel; abrí el subagente en una pestaña.";
 
+/// Aviso que aparece cuando el padre no está en un espacio de Herdr.
+const NO_SPACE_WARNING: &str = "El agente padre no está en un espacio de Herdr; abrí el subagente en la pestaña del espacio a la vista.";
+
 /// Dónde se ve un subagente en Herdr (§8 del diseño).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Placement {
@@ -361,7 +364,7 @@ impl Herdr {
     fn place_child(&self, terminal: &str, parent: &str, show: Placement) -> Placed {
         match show {
             Placement::Tree => Placed::tree(),
-            Placement::Tab => self.keep_child(terminal, Placement::Tab),
+            Placement::Tab => self.keep_child_in_parent_space(terminal, parent),
             placement => match self.focus_pane(parent) {
                 Ok(()) => self.keep_child(terminal, placement),
                 Err(_) => {
@@ -371,6 +374,62 @@ impl Herdr {
                 }
             },
         }
+    }
+
+    /// Abre la pestaña del subagente en el espacio donde está su padre.
+    ///
+    /// `terminal.keep --place tab` usa el espacio que está a la vista, no el
+    /// del padre: por eso el hijo recibe antes la etiqueta `herdr.space` del
+    /// padre (sin `herdr.tab`: Herdr crea la pestaña en ese espacio). El foco
+    /// de la persona no se mueve.
+    fn keep_child_in_parent_space(&self, terminal: &str, parent: &str) -> Placed {
+        let Some(space) = self.parent_space(parent) else {
+            let mut placed = self.keep_child(terminal, Placement::Tab);
+            placed.warnings.insert(0, NO_SPACE_WARNING.to_string());
+            return placed;
+        };
+        if let Err(error) = self.label_space(terminal, &space) {
+            let mut placed = self.keep_child(terminal, Placement::Tab);
+            placed.warnings.insert(0, format!(
+                "No pude abrir la pestaña en el espacio del padre ({}); quedó en la del espacio a la vista.",
+                error.message()
+            ));
+            return placed;
+        }
+        self.keep_child(terminal, Placement::Tab)
+    }
+
+    /// El espacio de Herdr donde está el padre (`herdr.space`).
+    fn parent_space(&self, parent: &str) -> Option<String> {
+        let data = self.hc_get(parent)?;
+        let space = data.get("labels")?.get("herdr.space")?.as_str()?;
+        let space = space.trim();
+        if space.is_empty() {
+            None
+        } else {
+            Some(space.to_string())
+        }
+    }
+
+    /// `hc label <hijo> herdr.space=<espacio>`.
+    fn label_space(&self, terminal: &str, space: &str) -> Result<(), HerdrError> {
+        let args = vec![
+            "label".to_string(),
+            terminal.to_string(),
+            format!("herdr.space={space}"),
+        ];
+        let completed = self.run(&args, 15.0)?;
+        if completed.returncode != 0 {
+            let stderr = py_strip(&completed.stderr).trim().to_string();
+            let stdout = py_strip(&completed.stdout).trim().to_string();
+            let message = if stderr.is_empty() { stdout } else { stderr };
+            return Err(HerdrError::failed(if message.is_empty() {
+                "hc label no devolvió nada".to_string()
+            } else {
+                message
+            }));
+        }
+        Ok(())
     }
 
     /// `terminal.keep` con reintentos (Herdr tarda en ver la terminal nueva).
@@ -487,6 +546,9 @@ impl Herdr {
     }
 
     /// `hc run --json`: distingue el error de «nombre ocupado».
+    ///
+    /// DECISION: `hc` escribe el JSON de error en `stderr` (verificado en
+    /// vivo el 19-nov), así que se lee el que venga en cualquiera de los dos.
     fn hc_run_json(&self, args: &[String], timeout: f64) -> Result<Value, Map<String, Value>> {
         let mut argv = vec![self.hc_path()];
         argv.extend_from_slice(args);
@@ -495,22 +557,10 @@ impl Herdr {
             Err(error) => return Err(error_row(error.message())),
         };
         let stdout = py_strip(&completed.stdout).to_string();
-        if stdout.is_empty() {
-            let message = if completed.stderr.is_empty() {
-                "hc run no devolvió nada".to_string()
-            } else {
-                completed.stderr.clone()
-            };
-            return Err(error_row(py_strip(&message).to_string()));
-        }
-        let data = match ez_core::pyloads::loads(&stdout) {
-            Ok(data) => data,
-            Err(_) => {
-                return Err(error_row(format!(
-                    "hc run devolvió algo que no es JSON: {}",
-                    head_chars(&stdout, 300)
-                )))
-            }
+        let stderr = py_strip(&completed.stderr).to_string();
+        let data = match parse_json(&stdout).or_else(|| parse_json(&stderr)) {
+            Some(data) => data,
+            None => return Err(error_row(unreadable_output(&stdout, &stderr))),
         };
         if let Some(error) = data.get("error").filter(|value| truthy(value)) {
             let mut row = error_row(error_message(error));
@@ -563,6 +613,29 @@ fn error_kind(error: &Value) -> Option<&str> {
         .as_object()
         .and_then(|spec| spec.get("kind"))
         .and_then(Value::as_str)
+}
+
+/// El JSON de `hc`, venga por `stdout` o por `stderr`.
+fn parse_json(text: &str) -> Option<Value> {
+    let text = py_strip(text);
+    if text.is_empty() {
+        return None;
+    }
+    ez_core::pyloads::loads(text).ok()
+}
+
+/// El motivo del fallo cuando `hc` no devolvió JSON en ninguna de las dos.
+fn unreadable_output(stdout: &str, stderr: &str) -> String {
+    if !stdout.is_empty() {
+        format!(
+            "hc run devolvió algo que no es JSON: {}",
+            head_chars(stdout, 300)
+        )
+    } else if !stderr.is_empty() {
+        stderr.to_string()
+    } else {
+        "hc run no devolvió nada".to_string()
+    }
 }
 
 #[cfg(test)]

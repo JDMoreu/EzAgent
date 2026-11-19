@@ -1,5 +1,6 @@
 //! Pruebas del vigilante: `hc` y reloj falsos, sin Herdr ni esperas reales.
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::subagents::{Record, Registry, TaskState};
@@ -17,6 +18,8 @@ struct FakeState {
     ls: String,
     /// La respuesta de `hc get`.
     get: String,
+    /// La respuesta de `hc run` (código, `stdout` y `stderr`).
+    run: Option<(i64, String, String)>,
     /// Si `hc send` falla.
     send_fails: bool,
     /// Los mensajes enviados al padre.
@@ -41,6 +44,13 @@ impl Fake {
 
     fn with_get(self: &Arc<Self>, get: &str) -> Arc<Fake> {
         self.state.lock().expect("estado").get = get.to_string();
+        Arc::clone(self)
+    }
+
+    /// La respuesta de `hc run`.
+    fn with_run(self: &Arc<Self>, code: i64, stdout: &str, stderr: &str) -> Arc<Fake> {
+        self.state.lock().expect("estado").run =
+            Some((code, stdout.to_string(), stderr.to_string()));
         Arc::clone(self)
     }
 
@@ -74,6 +84,18 @@ impl WatchRuntime for Fake {
                 stdout: state.get.clone(),
                 stderr: String::new(),
             }),
+            "run" => {
+                let (code, stdout, stderr) =
+                    state
+                        .run
+                        .clone()
+                        .unwrap_or((0, "{}".to_string(), String::new()));
+                Ok(HcOutput {
+                    code,
+                    stdout,
+                    stderr,
+                })
+            }
             "send" => {
                 if state.send_fails {
                     return Ok(HcOutput {
@@ -307,4 +329,56 @@ fn el_vigilante_usa_la_etiqueta_del_padre_para_preguntar_a_hc() {
     assert!(ls.contains(&"--all".to_string()));
     assert!(ls.contains(&"ez.parent=t6h".to_string()));
     let _ = std::fs::remove_dir_all(&root);
+}
+
+// ------------------------------------------------------------- arranque del vigilante
+
+/// La preparación del vigilante de un padre.
+fn setup() -> WatcherSetup {
+    WatcherSetup {
+        parent: "t6h".to_string(),
+        root: PathBuf::from("C:\\registros"),
+        hc: "hc".to_string(),
+        ez: PathBuf::from("ez.exe"),
+    }
+}
+
+/// El JSON de error que `hc` escribe en `stderr` cuando el nombre está ocupado.
+const NAME_TAKEN: &str = r#"{"error":{"hint":"pick another name","kind":"name_taken","message":"a live terminal is already named \"ez-watch-t6h\""}}"#;
+
+#[test]
+fn un_vigilante_ya_corriendo_no_es_un_error() {
+    let fake = Fake::new().with_run(1, "", NAME_TAKEN);
+    assert_eq!(
+        ensure_watcher(&*fake, &setup()),
+        WatcherState::AlreadyRunning
+    );
+}
+
+#[test]
+fn un_vigilante_ya_corriendo_tampoco_lo_es_con_el_error_por_stdout() {
+    let fake = Fake::new().with_run(1, NAME_TAKEN, "");
+    assert_eq!(
+        ensure_watcher(&*fake, &setup()),
+        WatcherState::AlreadyRunning
+    );
+}
+
+#[test]
+fn el_error_por_stderr_dice_el_mensaje_y_no_el_json() {
+    let fake = Fake::new().with_run(
+        1,
+        "",
+        r#"{"error":{"kind":"invalid_params","message":"falta el padre"}}"#,
+    );
+    match ensure_watcher(&*fake, &setup()) {
+        WatcherState::Failed(message) => assert_eq!(message, "falta el padre"),
+        other => panic!("se esperaba un fallo: {other:?}"),
+    }
+}
+
+#[test]
+fn un_vigilante_nuevo_arranca() {
+    let fake = Fake::new().with_run(0, r#"{"address":"t12"}"#, "");
+    assert_eq!(ensure_watcher(&*fake, &setup()), WatcherState::Started);
 }

@@ -48,6 +48,21 @@ impl Reply {
             stderr: String::new(),
         }
     }
+
+    /// El mismo error, pero escrito por `stderr` (como lo hace `hc`).
+    fn name_taken_on_stderr(name: &str) -> Self {
+        Self {
+            rc: 1,
+            stdout: String::new(),
+            stderr: json!({
+                "error": {
+                    "kind": "name_taken",
+                    "message": format!("a live terminal is already named \"{name}\""),
+                }
+            })
+            .to_string(),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -379,6 +394,35 @@ fn un_nombre_ocupado_prueba_el_siguiente() {
         .expect("delegación");
     assert_eq!(fake.count_of("hc", "run"), 2);
     assert_eq!(result["ok"], true);
+}
+
+#[test]
+fn un_nombre_ocupado_por_stderr_prueba_el_siguiente() {
+    let fake = Fake::new()
+        .route(
+            "hc:run",
+            vec![Reply::name_taken_on_stderr("dev1-opencode"), hc_run_ok()],
+        )
+        .route("hc:get", vec![hc_get_ok("dev1-opencode")]);
+    let herdr = herdr_de(&fake);
+    let result = herdr
+        .delegate(Launcher::default(), &accepted, &request(), None)
+        .expect("delegación");
+    assert_eq!(result["ok"], true);
+    let runs: Vec<Vec<String>> = fake
+        .calls()
+        .into_iter()
+        .filter(|call| call.get(1).map(String::as_str) == Some("run"))
+        .collect();
+    assert_eq!(runs.len(), 2, "debe reintentar con el nombre siguiente");
+    assert_eq!(
+        arg_after(&runs[0], "--name").as_deref(),
+        Some("dev1-opencode")
+    );
+    assert_eq!(
+        arg_after(&runs[1], "--name").as_deref(),
+        Some("dev2-opencode")
+    );
 }
 
 #[test]

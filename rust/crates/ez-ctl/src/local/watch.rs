@@ -47,12 +47,9 @@ pub(crate) fn run_watch(
     err: &mut dyn Write,
 ) -> i32 {
     let registry = ez_herdr::subagents::Registry::at(&command.dir);
-    let hc = command
-        .hc
-        .clone()
-        .filter(|path| !path.trim().is_empty())
-        .unwrap_or_else(|| context.hc.clone());
-    let runtime = HcRuntime::new(ez_herdr::herdr::system_runtime(), hc);
+    // DECISION: la ruta de `hc` ya viene resuelta en el contexto (el `--hc`
+    // del vigilante): no hace falta leer la configuración real.
+    let runtime = HcRuntime::new(ez_herdr::herdr::system_runtime(), context.hc.clone());
     // DECISION: los tiempos del vigilante salen del entorno: así una prueba
     // puede esperarlo sin tardar diez minutos.
     let config = WatchConfig {
@@ -113,4 +110,84 @@ fn terminal_parent(context: &Context, terminal: &str) -> Option<String> {
     data.get("parent")
         .and_then(Value::as_str)
         .map(str::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::sync::Mutex;
+
+    use ez_core::config::VoiceConfig;
+
+    use super::super::state::hc_path_with;
+    use super::*;
+
+    /// El `APPDATA` de las pruebas: una sola prueba a la vez lo cambia.
+    static APPDATA: Mutex<()> = Mutex::new(());
+
+    /// Una carpeta temporal con nombre único.
+    fn temp_folder(tag: &str) -> std::path::PathBuf {
+        let folder = std::env::temp_dir().join(format!(
+            "ez-watch-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|value| value.as_nanos())
+                .unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&folder).expect("carpeta temporal");
+        folder
+    }
+
+    #[test]
+    fn con_la_ruta_dada_no_se_lee_la_configuracion() {
+        let env = |_: &str| None;
+        let llamadas = Cell::new(0);
+        let ruta = hc_path_with(&env, Some("C:\\herdr\\hc.exe"), &|| {
+            llamadas.set(llamadas.get() + 1);
+            None
+        });
+        assert_eq!(ruta, "C:\\herdr\\hc.exe");
+        assert_eq!(llamadas.get(), 0, "no debe leer la configuración");
+    }
+
+    #[test]
+    fn sin_la_ruta_dada_se_lee_la_configuracion() {
+        let env = |_: &str| None;
+        let llamadas = Cell::new(0);
+        let ruta = hc_path_with(&env, None, &|| {
+            llamadas.set(llamadas.get() + 1);
+            None
+        });
+        assert_eq!(ruta, "hc");
+        assert_eq!(llamadas.get(), 1, "debe leer la configuración");
+    }
+
+    #[test]
+    fn el_vigilante_no_necesita_el_voice_json_de_la_persona() {
+        let _guard = APPDATA.lock().expect("APPDATA");
+        let folder = temp_folder("appdata");
+        let antes = std::env::var_os("APPDATA");
+        std::env::set_var("APPDATA", &folder);
+        // La carpeta no tiene `EzAgent/voice.json`: la configuración real de
+        // la persona no está y no hace falta.
+        assert!(!folder.join("EzAgent").join("voice.json").exists());
+        let config = VoiceConfig::load(None).expect("configuración de fábrica");
+        assert_eq!(
+            config.get("hc_path").and_then(Value::as_str),
+            Some("hc"),
+            "sin voice.json solo queda el valor de fábrica"
+        );
+        let env = |name: &str| match name {
+            "EZ_SUBAGENTS_DIR" => Some(folder.join("subagentes").to_string_lossy().into_owned()),
+            _ => None,
+        };
+        let context = Context::with_hc(&env, Some("C:\\herdr\\hc.exe"));
+        assert_eq!(context.hc, "C:\\herdr\\hc.exe");
+        match antes {
+            Some(value) => std::env::set_var("APPDATA", value),
+            None => std::env::remove_var("APPDATA"),
+        }
+        let _ = std::fs::remove_dir_all(&folder);
+    }
 }

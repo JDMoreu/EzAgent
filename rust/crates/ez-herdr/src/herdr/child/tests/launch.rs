@@ -180,6 +180,77 @@ fn en_pestana_se_llama_a_terminal_keep() {
 }
 
 #[test]
+fn en_pestana_el_hijo_hereda_el_espacio_del_padre() {
+    let fake = Fake::new()
+        .route("hc:run", vec![hc_run_ok()])
+        .route(
+            "hc:get",
+            vec![hc_get_with_space("t6h", "sp123"), hc_get_ok("t6h")],
+        )
+        .route(
+            "app:terminal.keep",
+            vec![Reply::json(&json!({"ok": true, "tab": "t12"}))],
+        );
+    let result = herdr_de(&fake)
+        .run_agent(
+            Driver::default(),
+            RunAgent {
+                agent: "claude",
+                parent: Some("t6h"),
+                show: Placement::Tab,
+                ..RunAgent::default()
+            },
+        )
+        .expect("sin proceso");
+    assert_eq!(result["placed"], "tab");
+    let label = fake.argv_of("hc", "label").expect("hc label");
+    assert_eq!(
+        label,
+        vec![
+            "hc".to_string(),
+            "label".to_string(),
+            "t12".to_string(),
+            "herdr.space=sp123".to_string(),
+        ]
+    );
+    // DECISION: sin `herdr.tab`: Herdr crea la pestaña en ese espacio.
+    assert!(!label.iter().any(|part| part.starts_with("herdr.tab")));
+    // El foco no se mueve: no se enfoca ningún panel.
+    assert!(fake.app_calls("pane.focus").is_empty());
+}
+
+#[test]
+fn sin_espacio_del_padre_la_pestana_avisa_y_no_etiqueta() {
+    let fake = Fake::new()
+        .route("hc:run", vec![hc_run_ok()])
+        .route("hc:get", vec![hc_get_ok("t6h")])
+        .route(
+            "app:terminal.keep",
+            vec![Reply::json(&json!({"ok": true, "tab": "t12"}))],
+        );
+    let result = herdr_de(&fake)
+        .run_agent(
+            Driver::default(),
+            RunAgent {
+                agent: "claude",
+                parent: Some("t6h"),
+                show: Placement::Tab,
+                ..RunAgent::default()
+            },
+        )
+        .expect("sin proceso");
+    assert_eq!(result["placed"], "tab");
+    assert!(fake.argv_of("hc", "label").is_none());
+    let warnings = result["warnings"].as_array().expect("avisos");
+    assert!(
+        warnings.iter().any(|warning| warning
+            == "El agente padre no está en un espacio de Herdr; \
+                   abrí el subagente en la pestaña del espacio a la vista."),
+        "{warnings:?}"
+    );
+}
+
+#[test]
 fn terminal_keep_reintenta_mientras_herdr_no_ve_la_terminal() {
     let fake = Fake::new()
         .ticking(5.0)
@@ -412,6 +483,28 @@ fn un_nombre_ocupado_vuelve_como_error() {
             }
         }))],
     );
+    let result = herdr_de(&fake)
+        .run_agent(
+            Driver::default(),
+            RunAgent {
+                agent: "claude",
+                parent: Some("t6h"),
+                hc_name: Some("dev1-opencode"),
+                ..RunAgent::default()
+            },
+        )
+        .expect("sin proceso");
+    assert_eq!(result["ok"], false);
+    assert_eq!(result["name_taken"], true);
+    assert_eq!(
+        result["error"],
+        "a live terminal is already named \"dev1-opencode\""
+    );
+}
+
+#[test]
+fn un_nombre_ocupado_por_stderr_tambien_se_reconoce() {
+    let fake = Fake::new().route("hc:run", vec![Reply::name_taken_on_stderr("dev1-opencode")]);
     let result = herdr_de(&fake)
         .run_agent(
             Driver::default(),

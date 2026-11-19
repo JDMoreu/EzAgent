@@ -49,6 +49,21 @@ impl Reply {
             stderr: text.to_string(),
         }
     }
+
+    /// El error de «nombre ocupado» como lo escribe `hc`: por `stderr`.
+    fn name_taken_on_stderr(name: &str) -> Self {
+        Self {
+            rc: 1,
+            stdout: String::new(),
+            stderr: json!({
+                "error": {
+                    "kind": "name_taken",
+                    "message": format!("a live terminal is already named \"{name}\""),
+                }
+            })
+            .to_string(),
+        }
+    }
 }
 
 struct FakeState {
@@ -248,6 +263,17 @@ fn hc_get_ok(parent: &str) -> Reply {
         "name": "dev1-opencode",
         "parent": parent,
         "labels": {"agent": "opencode", "ez.role": "developer"},
+        "state": "live",
+    }))
+}
+
+/// La respuesta de `hc get` de un padre que está en un espacio de Herdr.
+fn hc_get_with_space(parent: &str, space: &str) -> Reply {
+    Reply::json(&json!({
+        "address": parent,
+        "name": "padre",
+        "parent": "t1",
+        "labels": {"agent": "claude", "herdr.space": space},
         "state": "live",
     }))
 }
