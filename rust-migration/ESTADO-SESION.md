@@ -117,9 +117,11 @@ usuario, EzAgent = árbitro (`ez`). Diseño: `docs/designs/espacio-elefante.md`.
 - **Autorización del usuario (22:40):** seguir trabajando sin pausar y **apagar el PC al
   terminar** («tienes la capacidad de apagar el pc si me voy a dormir»). Vale solo para
   esta noche.
-- Apagado de seguridad programado: `shutdown /s` para el **19/11 08:38** (por si Claude se
-  queda sin cuota o bloqueado). Al terminar: `shutdown /a` y luego
-  `shutdown /s /t 300 /c ...` tras guardar todo.
+- **Apagado rodante (pedido del usuario, 22:43):** programado para las **00:00**; mientras
+  Claude siga trabajando, lo corre **1 h más** antes de cada hora límite (`shutdown /a` y
+  `shutdown /s /t <segundos hasta la nueva hora>`). Un temporizador en segundo plano avisa
+  15 min antes de cada hora límite. Si Claude se queda sin límite de uso, no lo corre y el
+  PC se apaga solo. Al terminar: guardar todo, `shutdown /a` y `shutdown /s /t 300`.
 - Plan de la noche: ECO-R1 → ECO-4c + ECO-2d → ECO-6c → ECO-6b → ECO-8 (agentes falsos y
   hc real), cada uno con puerta, verificación y fusión. **No** lanzar la prueba con CLIs
   reales (gasta cuotas: preguntar). Si algo necesita una decisión del usuario, decidir lo
