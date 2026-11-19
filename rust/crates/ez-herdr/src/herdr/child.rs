@@ -16,6 +16,8 @@ use serde_json::{Map, Value};
 use super::actions::{wrapped_argv, LaunchPlan, LaunchStep};
 use super::{error_row, python_text, value_or_text, Herdr, HerdrError};
 
+mod space;
+
 /// Máximo de caracteres de un nombre de `hc`.
 const MAX_HC_NAME: usize = 32;
 
@@ -28,9 +30,6 @@ const PLACE_RETRY_LIMIT_S: f64 = 15.0;
 
 /// Aviso que aparece cuando el padre no tiene panel en el que abrirlo.
 const NO_PANE_WARNING: &str = "El agente padre no tiene panel; abrí el subagente en una pestaña.";
-
-/// Aviso que aparece cuando el padre no está en un espacio de Herdr.
-const NO_SPACE_WARNING: &str = "El agente padre no está en un espacio de Herdr; abrí el subagente en la pestaña del espacio a la vista.";
 
 /// Dónde se ve un subagente en Herdr (§8 del diseño).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -374,62 +373,6 @@ impl Herdr {
                 }
             },
         }
-    }
-
-    /// Abre la pestaña del subagente en el espacio donde está su padre.
-    ///
-    /// `terminal.keep --place tab` usa el espacio que está a la vista, no el
-    /// del padre: por eso el hijo recibe antes la etiqueta `herdr.space` del
-    /// padre (sin `herdr.tab`: Herdr crea la pestaña en ese espacio). El foco
-    /// de la persona no se mueve.
-    fn keep_child_in_parent_space(&self, terminal: &str, parent: &str) -> Placed {
-        let Some(space) = self.parent_space(parent) else {
-            let mut placed = self.keep_child(terminal, Placement::Tab);
-            placed.warnings.insert(0, NO_SPACE_WARNING.to_string());
-            return placed;
-        };
-        if let Err(error) = self.label_space(terminal, &space) {
-            let mut placed = self.keep_child(terminal, Placement::Tab);
-            placed.warnings.insert(0, format!(
-                "No pude abrir la pestaña en el espacio del padre ({}); quedó en la del espacio a la vista.",
-                error.message()
-            ));
-            return placed;
-        }
-        self.keep_child(terminal, Placement::Tab)
-    }
-
-    /// El espacio de Herdr donde está el padre (`herdr.space`).
-    fn parent_space(&self, parent: &str) -> Option<String> {
-        let data = self.hc_get(parent)?;
-        let space = data.get("labels")?.get("herdr.space")?.as_str()?;
-        let space = space.trim();
-        if space.is_empty() {
-            None
-        } else {
-            Some(space.to_string())
-        }
-    }
-
-    /// `hc label <hijo> herdr.space=<espacio>`.
-    fn label_space(&self, terminal: &str, space: &str) -> Result<(), HerdrError> {
-        let args = vec![
-            "label".to_string(),
-            terminal.to_string(),
-            format!("herdr.space={space}"),
-        ];
-        let completed = self.run(&args, 15.0)?;
-        if completed.returncode != 0 {
-            let stderr = py_strip(&completed.stderr).trim().to_string();
-            let stdout = py_strip(&completed.stdout).trim().to_string();
-            let message = if stderr.is_empty() { stdout } else { stderr };
-            return Err(HerdrError::failed(if message.is_empty() {
-                "hc label no devolvió nada".to_string()
-            } else {
-                message
-            }));
-        }
-        Ok(())
     }
 
     /// `terminal.keep` con reintentos (Herdr tarda en ver la terminal nueva).

@@ -7,7 +7,7 @@
 //! (`EZ_SUBAGENTS_DIR`). La configuración real del usuario no se lee ni se
 //! escribe.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde_json::{json, Map, Value};
 
@@ -180,19 +180,6 @@ pub fn prepare() -> Result<Sandbox, SetupError> {
     Ok(sandbox)
 }
 
-/// La ruta del agente falso con barras normales.
-///
-/// DECISION: `ez-herdr` envuelve en PowerShell el comando de los agentes que
-/// llevan variables de entorno (OpenCode) y cita el programa entre comillas
-/// simples cuando su ruta no es «simple». En PowerShell, un programa citado no
-/// se puede ejecutar con argumentos sin el operador `&`, así que el
-/// envoltorio no arranca (`text.rs::command_line`). Con barras normales la
-/// ruta sí es «simple» y el envoltorio funciona; el producto queda igual que
-/// con el catálogo de fábrica, donde los comandos son nombres sueltos.
-fn fake_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
 /// El `voice.json` de la prueba: los agentes falsos y las rutas de Herdr.
 fn write_config(sandbox: &Sandbox) -> Result<(), SetupError> {
     let mut agents = Map::new();
@@ -200,7 +187,7 @@ fn write_config(sandbox: &Sandbox) -> Result<(), SetupError> {
         "claude", "opencode", "mcode", "minimax", "codex", "pi", "qwen",
     ] {
         let mut command = vec![
-            fake_path(&sandbox.fake),
+            sandbox.fake.to_string_lossy().into_owned(),
             "--echo".to_string(),
             sandbox.registros.to_string_lossy().into_owned(),
         ];

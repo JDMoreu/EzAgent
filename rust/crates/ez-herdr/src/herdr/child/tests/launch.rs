@@ -138,8 +138,10 @@ fn en_el_arbol_no_se_llama_a_herdr_app() {
     assert!(fake.app_calls("pane.focus").is_empty());
 }
 
+/// Sin `herdr.space` en el padre no hay adopción: el `terminal.keep` de
+/// siempre (con su aviso) es el que abre la pestaña.
 #[test]
-fn en_pestana_se_llama_a_terminal_keep() {
+fn sin_espacio_del_padre_se_llama_a_terminal_keep() {
     let fake = Fake::new()
         .route("hc:run", vec![hc_run_ok()])
         .route("hc:get", vec![hc_get_ok("t6h")])
@@ -182,15 +184,13 @@ fn en_pestana_se_llama_a_terminal_keep() {
 #[test]
 fn en_pestana_el_hijo_hereda_el_espacio_del_padre() {
     let fake = Fake::new()
+        .ticking(5.0)
         .route("hc:run", vec![hc_run_ok()])
         .route(
             "hc:get",
             vec![hc_get_with_space("t6h", "sp123"), hc_get_ok("t6h")],
         )
-        .route(
-            "app:terminal.keep",
-            vec![Reply::json(&json!({"ok": true, "tab": "t12"}))],
-        );
+        .route("app:ls", vec![app_ls_with_tab("sp123", "tb9", "t12")]);
     let result = herdr_de(&fake)
         .run_agent(
             Driver::default(),
@@ -203,6 +203,7 @@ fn en_pestana_el_hijo_hereda_el_espacio_del_padre() {
         )
         .expect("sin proceso");
     assert_eq!(result["placed"], "tab");
+    assert_eq!(result["tab"], "tb9");
     let label = fake.argv_of("hc", "label").expect("hc label");
     assert_eq!(
         label,
@@ -215,7 +216,8 @@ fn en_pestana_el_hijo_hereda_el_espacio_del_padre() {
     );
     // DECISION: sin `herdr.tab`: Herdr crea la pestaña en ese espacio.
     assert!(!label.iter().any(|part| part.starts_with("herdr.tab")));
-    // El foco no se mueve: no se enfoca ningún panel.
+    // El foco no se mueve: ni `terminal.keep` ni `pane.focus`.
+    assert!(fake.app_calls("terminal.keep").is_empty());
     assert!(fake.app_calls("pane.focus").is_empty());
 }
 

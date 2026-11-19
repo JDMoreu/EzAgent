@@ -175,36 +175,11 @@ pub fn open_parent(sandbox: &Sandbox, report: &mut Report) -> Option<Parent> {
         "el espacio de la prueba",
         format!("espacio {} con el padre {}", space_id, address),
     );
-    select_space(sandbox, &space_id, report);
     Some(Parent {
         address,
         space_id,
         focus,
     })
-}
-
-/// Muestra el espacio de la prueba.
-///
-/// DECISION: `terminal.keep --place tab` abre la pestaña en el espacio que
-/// está a la vista. Como el espacio de la prueba se crea sin robar el foco
-/// (`--focus false`), sin esto la primera pestaña del hijo se abriría en el
-/// espacio de la persona. El foco se devuelve al final (la limpieza).
-fn select_space(sandbox: &Sandbox, space_id: &str, report: &mut Report) {
-    if space_id.is_empty() {
-        return;
-    }
-    let args = vec![
-        "do".to_string(),
-        "space.select".to_string(),
-        "--id".to_string(),
-        space_id.to_string(),
-    ];
-    let output = proc::run(&sandbox.app, &args, &EnvVars::default(), None);
-    report.check(
-        "el espacio de la prueba está a la vista",
-        output.ok(),
-        format!("código {}: {}", output.code, output.message()),
-    );
 }
 
 /// Hace las seis delegaciones y devuelve los hijos.
@@ -334,9 +309,24 @@ pub fn check_children(sandbox: &Sandbox, parent: &Parent, children: &[Child], re
             );
             continue;
         }
+        check_watcher_warning(child, report);
         check_labels(sandbox, parent, child, report);
         check_record(sandbox, child, report);
     }
+}
+
+/// El vigilante del padre ya está corriendo: arrancarlo otra vez no es un
+/// error y no debe dejar aviso.
+fn check_watcher_warning(child: &Child, report: &mut Report) {
+    let espurio = child
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("No pude arrancar el vigilante"));
+    report.check(
+        &format!("el vigilante de {} arrancó sin avisos", child.name),
+        !espurio,
+        child.warnings.join(" | "),
+    );
 }
 
 /// Las etiquetas y el padre real de la terminal (§3).
