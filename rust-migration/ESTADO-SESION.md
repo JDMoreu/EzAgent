@@ -94,3 +94,11 @@ usuario, EzAgent = árbitro (`ez`). Diseño: `docs/designs/espacio-elefante.md`.
   fusionar en `eco/main`, borrar el worktree. Luego ola 2 (integración, nota de voz, E2E).
 - El elefante (Claude) no escribe código de producción: solo diseño, contratos,
   plantillas, encargos, verificación e integración de ramas.
+- **2026-11-18 20:22: cuota de 5 h de OpenCode Go agotada.** Revisión ECO-REV0 hecha
+  (veredictos en el diseño §14). ECO-3 fusionado en `eco/main`. ECO-4 pasó la puerta
+  (sin fusionar; su verificador ECO-4V no terminó y su falla inyectada ya se deshizo).
+  ECO-1, ECO-2, ECO-5 y ECO-3b (worktree `ECO-3`, rama `work/ECO-3b`) quedaron a medias
+  **sin commit** en sus worktrees: retomar con
+  `supervise2.sh <ID> <worktree> <prompt> resume` (continúa su sesión `<ID>-s1`).
+  Encargos de corrección listos: ECO-1b, ECO-3b (en curso), ECO-4b; faltan ECO-2b (cuando
+  termine ECO-2) y, si hace falta, ECO-5b.
