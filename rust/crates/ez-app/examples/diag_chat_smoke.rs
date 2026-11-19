@@ -239,8 +239,7 @@ fn poke_chat_window() {
             continue;
         }
         let (width, height) = (rect.right.max(2), rect.bottom.max(2));
-        let point =
-            |x: i32, y: i32| LPARAM((((y as isize) << 16) | (x as isize & 0xffff)) as isize);
+        let point = |x: i32, y: i32| LPARAM(((y as isize) << 16) | (x as isize & 0xffff));
         // Moverse por el historial y bajar hasta el campo de texto.
         for (x, y) in [
             (width / 2, height / 2),
@@ -326,9 +325,8 @@ fn click_bar(app: &VoiceApp, item: &str) -> bool {
     let bs = app.hud().inner().bs();
     // Los botones solo se muestran con el puntero encima: primero se acerca
     // el ratón a la forma y se deja que la animación los despliegue.
-    let center = LPARAM(
-        ((((rect.bottom / 2) as isize) << 16) | ((rect.right / 2) as isize & 0xffff)) as isize,
-    );
+    let center =
+        LPARAM((((rect.bottom / 2) as isize) << 16) | (((rect.right / 2) as isize) & 0xffff));
     // SAFETY: mensaje propio a una ventana de este proceso.
     unsafe {
         let _ = PostMessageW(Some(hwnd), WM_MOUSEMOVE, WPARAM(0), center);
@@ -361,7 +359,7 @@ fn click_bar(app: &VoiceApp, item: &str) -> bool {
         eprintln!("no encontré el botón {item} en la barra");
         return false;
     };
-    let point = LPARAM((((y as isize) << 16) | (x as isize & 0xffff)) as isize);
+    let point = LPARAM(((y as isize) << 16) | (x as isize & 0xffff));
     // SAFETY: mensajes propios a una ventana de este proceso.
     unsafe {
         let _ = PostMessageW(Some(hwnd), WM_MOUSEMOVE, WPARAM(0), point);
@@ -440,7 +438,7 @@ fn fuzz_windows(rounds: usize) {
             let message = FUZZ_MESSAGES[next() as usize % FUZZ_MESSAGES.len()];
             let x = next() % 4000;
             let y = next() % 3000;
-            let lparam = LPARAM((((y as isize) << 16) | (x as isize & 0xffff)) as isize);
+            let lparam = LPARAM(((y as isize) << 16) | (x as isize & 0xffff));
             let wparam = if message == 0x02E0 {
                 WPARAM((48 + next() % 550) as usize)
             } else {
@@ -570,7 +568,7 @@ fn main() {
         // `monkey`: entrega mensajes de ratón a la ventana del chat como los
         // entrega Windows (el panel nace bajo el puntero). Sin `SendInput`: no
         // se mueve el ratón de la persona ni se toca otra ventana.
-        if mode == "fuzz" && ticks % 20 == 0 {
+        if mode == "fuzz" && ticks.is_multiple_of(20) {
             fuzz_windows(30);
         }
         if (mode == "monkey" || mode == "real") && ticks >= 5 && !poked {

@@ -13,18 +13,23 @@
 //! cargo run --release -p ez-hud --example panic_boundary
 //! ```
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ez_hud::win::layered::{LayeredWindow, RgbaFrame, WindowHooks, WindowOptions};
 use windows::Win32::Foundation::{LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_LBUTTONDOWN};
+
+/// El clic llegó al callback (antes del pánico, para poder esperarlo).
+static HIT: AtomicBool = AtomicBool::new(false);
 
 /// Un callback que entra en pánico, como el que tumbó la app.
 struct PanicHook;
 
 impl WindowHooks for PanicHook {
     fn on_pointer_down(&mut self, _x: i32, _y: i32) -> bool {
+        HIT.store(true, Ordering::SeqCst);
         panic!("DX-1d: pánico de prueba dentro de un callback de Windows")
     }
 }
@@ -63,21 +68,20 @@ fn main() {
         std::process::exit(2);
     }
     let point = LPARAM(((10_isize) << 16) | 10);
-    // SAFETY: la ventana es propia y el mensaje es uno que atiende su WndProc.
-    unsafe {
-        let _ = PostMessageW(
-            Some(windows::Win32::Foundation::HWND(hwnd as *mut _)),
-            WM_LBUTTONDOWN,
-            WPARAM(1),
-            point,
-        );
+    let window_handle = windows::Win32::Foundation::HWND(hwnd as *mut _);
+    // Se reintenta: el primer fotograma puede no estar presentado todavía y
+    // `WM_LBUTTONDOWN` solo llega al callback si el píxel tiene alfa.
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !HIT.load(Ordering::SeqCst) && Instant::now() < deadline {
+        // SAFETY: la ventana es propia y el mensaje lo atiende su WndProc.
+        unsafe {
+            let _ = PostMessageW(Some(window_handle), WM_LBUTTONDOWN, WPARAM(1), point);
+        }
+        std::thread::sleep(Duration::from_millis(150));
     }
+    // El hook escribe la línea antes de desenrollar: si el proceso sigue vivo
+    // y la línea está, el pánico no cruzó la frontera FFI.
     std::thread::sleep(Duration::from_millis(300));
-
-    // Si el proceso sigue aquí, el pánico no cruzó la frontera FFI.
-    println!("VIVO: el pánico quedó atrapado en el callback");
-    window.stop(true);
-
     let mut found = false;
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for entry in entries.flatten() {
@@ -90,8 +94,10 @@ fn main() {
             }
         }
     }
+    window.stop(true);
     if !found {
-        eprintln!("no encontré la línea del pánico en {}", dir.display());
+        eprintln!("el clic no llegó a un callback que entre en pánico");
         std::process::exit(1);
     }
+    println!("VIVO: el pánico quedó atrapado en el callback");
 }

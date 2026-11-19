@@ -582,3 +582,68 @@ fn closing_paints_intermediate_frames_before_removing_the_window() {
         "la ventana siguió tras terminar el cierre"
     );
 }
+
+/// Un parser que entra en pánico: la maquetación del historial falla.
+struct PanicHost;
+
+impl crate::paint::chat::ChatHost for PanicHost {
+    fn parse(&self, _: &str) -> Vec<crate::paint::chat::Block> {
+        panic!("DX-1d: pánico de maquetación")
+    }
+
+    fn resolve_target(&self, _: &str, _: &[std::path::PathBuf]) -> Option<std::path::PathBuf> {
+        None
+    }
+
+    fn file_info(
+        &self,
+        _: Option<&std::path::Path>,
+        _: Option<&[std::path::PathBuf]>,
+    ) -> Option<crate::paint::chat::FileInfo> {
+        None
+    }
+
+    fn load_image(&self, _: &crate::paint::chat::FileInfo) -> Option<ez_gfx::raster::Image> {
+        None
+    }
+
+    fn text_preview(&self, _: &crate::paint::chat::FileInfo) -> Option<(String, bool)> {
+        None
+    }
+}
+
+impl crate::model::chat::view::ViewHost for PanicHost {
+    fn parse_inline(&self, _: &str) -> Vec<crate::paint::chat::Span> {
+        panic!("DX-1d: pánico de maquetación")
+    }
+}
+
+/// DX-1d: si la maquetación de un mensaje entra en pánico, la vista vuelve al
+/// panel y el cuadro siguiente se pinta. Antes la vista se perdía y el chat se
+/// quedaba muerto en 1×1 para siempre.
+#[test]
+fn a_panicking_layout_keeps_the_view_and_the_panel_recovers() {
+    let mut view = ChatView::new(
+        Box::new(FakeModel {
+            messages: vec![ChatMessage::new(1, Role::Assistant, "hola".to_string())],
+            ..FakeModel::default()
+        }),
+        Box::new(PanicHost),
+        Box::new(FakeInput::default()),
+    );
+    view.configure(
+        100.0,
+        100.0,
+        1.0,
+        "dark",
+        crate::tokens::palette("dark").expect("the dark palette exists"),
+    );
+    let (panel, _) = open_panel(view);
+    let frame = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| panel.render()));
+    let frame = frame.expect("la maquetación fallida tumbó el cuadro");
+    assert!(
+        panel.state.lock().view.is_some(),
+        "la vista se perdió al desenrollar"
+    );
+    assert_eq!((frame.width, frame.height), (120, 120));
+}

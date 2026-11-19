@@ -415,6 +415,8 @@ pub(super) fn composite_caret(
     canvas: &mut Array3<f32>,
     content: &[f32],
     content_width: usize,
+    content_columns: usize,
+    content_rows: usize,
     patch: &[f32],
     patch_width: usize,
     patch_height: usize,
@@ -432,7 +434,13 @@ pub(super) fn composite_caret(
     let clips: Vec<(usize, Span)> = (0..patch_height)
         .filter_map(|row| {
             let source_row = patch_y + row;
-            if source_row >= coverage_height || source_row >= mask.len() {
+            // DX-1d: el parche del cursor no puede salirse de la capa de
+            // contenido: el `span` solo recorta contra el lienzo y un índice
+            // mayor que la capa entraba en pánico.
+            if source_row >= coverage_height
+                || source_row >= mask.len()
+                || source_row >= content_rows
+            {
                 return None;
             }
             span(
@@ -440,7 +448,7 @@ pub(super) fn composite_caret(
                 x0,
                 y0,
                 patch_x,
-                patch_x + patch_width,
+                (patch_x + patch_width).min(content_columns),
                 source_row,
                 source_row + 1,
             )

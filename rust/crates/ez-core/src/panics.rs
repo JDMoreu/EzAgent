@@ -152,7 +152,13 @@ fn existing_daily(dir: &Path) -> Option<PathBuf> {
         let Ok(modified) = entry.metadata().and_then(|meta| meta.modified()) else {
             continue;
         };
-        if newest.as_ref().is_none_or(|(stamp, _)| modified > *stamp) {
+        // DX-1d: dos archivos escritos en el mismo tic pueden compartir la
+        // fecha de modificación; el nombre (la fecha) desempata para que el
+        // elegido sea siempre el más reciente.
+        if newest
+            .as_ref()
+            .is_none_or(|(stamp, old)| (modified, &path) > (*stamp, old))
+        {
             newest = Some((modified, path));
         }
     }
@@ -235,7 +241,11 @@ mod tests {
         let newer = dir.join("ezagent.log.2021-01-01");
         std::fs::write(&newer, "nuevo").unwrap();
         let found = existing_daily(&dir).unwrap();
-        assert!(found.ends_with("2021-01-01"), "{}", found.display());
+        assert!(
+            found.ends_with("ezagent.log.2021-01-01"),
+            "{}",
+            found.display()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
