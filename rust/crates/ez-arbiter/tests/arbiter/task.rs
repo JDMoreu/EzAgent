@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use ez_arbiter::{Caller, Command, Outcome, Rejection, Verdict};
+use ez_arbiter::{Caller, Command, FishKey, Outcome, Rejection, Verdict};
 use ez_team::Role;
 
 use super::support::Fixture;
@@ -36,9 +36,15 @@ pub fn clean_round(f: &Fixture, n: u32) {
 #[test]
 fn r1_fish_cannot_use_elephant_commands() {
     let f = Fixture::new("r1-elefante");
+    let unknown = Caller::Fish(FishKey {
+        space: "s1".into(),
+        task: "t000000000000".into(),
+        fish: "dev-r1-1".into(),
+        attempt: 1,
+    });
     let error = f
         .arbiter
-        .execute(&Fixture::as_fish("dev-r1-1"), Command::RoundStart)
+        .execute(&unknown, Command::RoundStart)
         .expect_err("un pez no abre rondas");
     assert_eq!(error.rule, "R1");
     assert!(error.message.contains("elefante"));
@@ -63,13 +69,16 @@ fn r1_elephant_cannot_report_and_fish_is_its_own_identity() {
         )
         .expect_err("el elefante no informa");
     assert_eq!(error.rule, "R1");
-    let _ = f.setup();
+    let task = f.setup();
     let error = f
         .arbiter
         .execute(
-            &Caller::Fish {
+            &Caller::Fish(FishKey {
+                space: "s1".into(),
+                task,
                 fish: "otro".into(),
-            },
+                attempt: 1,
+            }),
             Command::Verify,
         )
         .expect_err("pez desconocido");

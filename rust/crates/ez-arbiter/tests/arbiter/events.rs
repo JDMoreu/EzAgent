@@ -32,6 +32,8 @@ fn r12_bitacora_has_one_event_per_action_and_rejections() {
             "team_proposed",
             "team_approved",
             "round_started",
+            "fish_launched",
+            "fish_reported",
         ]
     );
     let error = f
@@ -50,6 +52,7 @@ fn r12_elephant_events_arrive_in_order_and_timeout() {
     let _ = f.setup();
     assert_eq!(next(&f), "task_approved");
     assert_eq!(next(&f), "team_approved");
+    assert_eq!(next(&f), "fish_reported");
     f.launch(Role::Developer);
     f.report("dev-r1-1", Verdict::Pass, None, None)
         .expect("informe del desarrollador");
@@ -81,8 +84,11 @@ fn r12_subscribers_see_fish_launch_and_signals() {
     let receiver = f.arbiter.subscribe();
     let task = f.setup();
     let fish = f.launch(Role::Developer);
-    f.arbiter.fish_blocked(&fish, Some("working"));
-    f.arbiter.fish_exited(&fish);
+    f.report(&fish, Verdict::Pass, None, None)
+        .expect("informe del desarrollador");
+    let key = f.fish_key(&fish);
+    f.arbiter.fish_blocked(&key, Some("working"));
+    f.arbiter.fish_exited(&key);
     let kinds: Vec<String> = receiver.try_iter().map(|event| event.kind).collect();
     assert!(kinds.contains(&"task_proposed".to_string()));
     assert!(kinds.contains(&"fish_launched".to_string()));
@@ -113,7 +119,8 @@ fn r12_reload_keeps_unfinished_task_and_trace() {
     assert_eq!(snapshot["task"], task);
     assert_eq!(snapshot["status"], "in_round");
     assert_eq!(snapshot["round"], 1);
-    assert_eq!(snapshot["fish"][0]["id"], "dev-r1-1");
-    assert_eq!(snapshot["fish"][0]["reported"], true);
-    assert_eq!(f.bitacora(&task).len(), 7);
+    assert_eq!(snapshot["fish"][0]["id"], "plan-r1");
+    assert_eq!(snapshot["fish"][1]["id"], "dev-r1-1");
+    assert_eq!(snapshot["fish"][1]["attempt"], 1);
+    assert_eq!(f.bitacora(&task).len(), 9);
 }

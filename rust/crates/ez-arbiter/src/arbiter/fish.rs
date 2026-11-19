@@ -318,10 +318,11 @@ impl Arbiter {
         {
             return Err(Rejection::new("R5", texts::QA_STARTED));
         }
-        let live = task.fish_in_round(round).filter(|fish| fish.role == role).any(|fish| {
-            task.work_for_key(&fish.key)
-                .is_some_and(|item| item.state != WorkState::Failed)
-        });
+        let live = (role.is_verifier() || role == Role::Planner)
+            && task.fish_in_round(round).filter(|fish| fish.role == role).any(|fish| {
+                task.work_for_key(&fish.key)
+                    .is_some_and(|item| item.state != WorkState::Failed)
+            });
         if live {
             return Err(Rejection::new("R5", texts::already_in_round(role.id())));
         }
@@ -332,10 +333,11 @@ impl Arbiter {
                 }
             }
             Role::Developer => {
-                if !self.role_passed(task, Role::Planner, round) {
+                if round == 1 && !self.role_passed(task, Role::Planner, round) {
                     return Err(Rejection::new("R5", texts::waiting_for(&[format!("plan-r{round}")])));
                 }
-                if task.seat(Role::PlanReviewer).is_some()
+                if round == 1
+                    && task.seat(Role::PlanReviewer).is_some()
                     && !self.role_passed(task, Role::PlanReviewer, round)
                 {
                     return Err(Rejection::new(
@@ -358,7 +360,11 @@ impl Arbiter {
             }
             Role::Qa => self.check_qa_order(task, round)?,
             Role::QaValidator => {
-                if !self.role_passed(task, Role::Qa, round) {
+                let qa_reported = task
+                    .fish_in_round(round)
+                    .filter(|fish| fish.role == Role::Qa)
+                    .any(|fish| fish.report.is_some());
+                if !qa_reported {
                     return Err(Rejection::new("R5", texts::waiting_for(&[format!("qa-r{round}")])));
                 }
             }
@@ -380,6 +386,9 @@ impl Arbiter {
             .fish_in_round(round)
             .filter(|fish| fish.role == Role::Developer)
             .collect();
+        if developers.is_empty() && round == 1 {
+            return Err(Rejection::new("R5", texts::waiting_for(&[format!("dev-r{round}-1")])));
+        }
         if !developers.is_empty() {
             let waiting: Vec<String> = developers
                 .iter()
@@ -515,6 +524,8 @@ impl Arbiter {
         };
         let report_file = paths::inside(&task.space.folder, &input.file)
             .map_err(|_| Rejection::new("R7", texts::outside_folder(&input.file)))?;
+        let expected = paths::inside(&task.space.folder, &expected)
+            .map_err(|_| Rejection::new("R7", texts::wrong_report_path(&expected)))?;
         if report_file != expected {
             return Err(Rejection::new("R7", texts::wrong_report_path(&expected)));
         }

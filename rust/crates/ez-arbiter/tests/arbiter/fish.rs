@@ -1,6 +1,8 @@
 //! R4 (empezar ronda), R5 (peces), R6 (correcciones) y R7 (informes).
 
-use ez_arbiter::{Caller, Command, Verdict};
+use std::fs;
+
+use ez_arbiter::{Caller, Command, FishKey, Verdict};
 use ez_team::Role;
 
 use super::support::Fixture;
@@ -130,11 +132,15 @@ fn r5_launch_request_has_identity_labels_and_instructions() {
     let fish = f.launch(Role::Developer);
     assert_eq!(fish, "dev-r1-1");
     let requests = f.launcher.requests();
-    let request = &requests[0];
+    let request = requests
+        .iter()
+        .find(|item| item.fish == fish)
+        .expect("lanzamiento del desarrollador");
     assert_eq!(
         request.hc_name,
-        format!("ez-{}-dev-r1-1", &task[task.len() - 4..])
+        format!("ez-{}-dev-r1-1", &task[1..9])
     );
+    assert_eq!(request.labels["ez_attempt"], "1");
     assert_eq!(request.env["EZ_ROLE"], "fish");
     assert_eq!(request.env["EZ_FISH"], fish);
     assert!(request.env["EZ_TOKEN"].len() == 32);
@@ -156,10 +162,14 @@ fn r5_launch_request_has_identity_labels_and_instructions() {
     let events = f.bitacora(&task);
     let launched = events
         .iter()
-        .find(|event| event["kind"] == "fish_launched")
+        .find(|event| event["kind"] == "fish_launched" && event["data"]["fish"] == fish)
         .expect("evento de lanzamiento");
     assert_eq!(launched["data"]["fish"], fish);
-    assert_eq!(launched["data"]["token"], "***");
+    assert!(launched["data"].get("token").is_none());
+    assert!(!fs::read_to_string(f.data_dir.join("tareas").join(&task).join("estado.json"))
+        .expect("estado")
+        .contains(&request.token));
+    assert!(!f.bitacora(&task).iter().any(|event| event.to_string().contains(&request.token)));
 }
 
 #[test]
@@ -218,8 +228,8 @@ fn r6_live_developer_gets_the_exact_correction_line() {
     assert!(outcome.message.contains("dev-r1-1"));
     let sent = f.launcher.sent();
     assert_eq!(sent.len(), 1);
-    assert!(sent[0].1.starts_with("Corrección de la ronda 1: lee "));
-    assert!(sent[0].1.ends_with("y vuelve a informar con ez report."));
+    assert!(sent[0].1.starts_with("Corrección 1 de la ronda 1: lee "));
+    assert!(sent[0].1.contains("y al terminar informa con ez report usando --file \""));
     let error = f
         .arbiter
         .execute(
@@ -261,7 +271,7 @@ fn r7_verifier_reports_once_and_validator_needs_mutations() {
     let error = f
         .arbiter
         .execute(
-            &Fixture::as_fish("valqa-r1"),
+            &f.as_fish("valqa-r1"),
             Command::Report {
                 verdict: Verdict::Pass,
                 file: outside.clone(),
@@ -283,9 +293,12 @@ fn r7_unknown_fish_cannot_report() {
     let error = f
         .arbiter
         .execute(
-            &Caller::Fish {
-                fish: "dev-r9-9".to_string(),
-            },
+            &Caller::Fish(FishKey {
+                space: "s1".into(),
+                task: "t000000000000".into(),
+                fish: "dev-r9-9".into(),
+                attempt: 1,
+            }),
             Command::Report {
                 verdict: Verdict::Pass,
                 file: f.brief(),
