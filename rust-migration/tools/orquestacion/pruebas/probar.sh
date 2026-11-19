@@ -65,7 +65,11 @@ addrs_for() { # direcciones de terminales con la etiqueta ez.brief=<id>
     | $PYTHON -c "import json,sys; print(' '.join(t['address'] for t in json.load(sys.stdin).get('terminals',[])))"
 }
 
-field() { hc get "$1" --json 2>/dev/null | $PYTHON -c "import json,sys; d=json.load(sys.stdin); print($2)"; }
+field() { hc get "$1" --json 2>/dev/null | $PYTHON -c "import json,sys
+try:
+    d=json.load(sys.stdin); print($2)
+except Exception:
+    print('')"; }
 
 regfile() { # regfile <id> — ruta del registro §13 de ese trabajador
   local p; p="$(printf '%s' "$HC_TERMINAL_ID" | tr '/' '_')"
@@ -126,14 +130,14 @@ humo_real() { # C0-HUMO: OpenCode real sin encargo, sin escribir en la interfaz
   waited=0
   st=""
   while [ "$waited" -lt 15 ]; do
-    st="$(field "$addr" "str(t.get('status','') or '')")"
+    st="$(field "$addr" "str(d.get('status','') or '')")"
     [ "$st" = "idle" ] && break
     sleep 1
     waited=$((waited+1))
   done
   echo "[humo] tras ${waited}s: status=$st"
   check "humo idle" "$st" "idle"
-  check "humo sin error" "$(field "$addr" "str(t.get('state',''))")" "live"
+  check "humo sin error" "$(field "$addr" "str(d.get('state',''))")" "live"
   hc kill "$addr" >/dev/null 2>&1
   hc rm "$addr" >/dev/null 2>&1
   echo "[humo] cerrada $addr"
@@ -152,6 +156,13 @@ run_case() { # run_case <id> <carpeta> <modo> <variables-de-entorno...>
 }
 
 echo "[pruebas] terminal padre falso: $HC_TERMINAL_ID"
+
+# EZ_SOLO_HUMO=1: solo el caso opt-in, para repetir el humo sin la suite completa.
+if [ "${EZ_SOLO_HUMO:-0}" = "1" ]; then
+  [ "${EZ_HUMO_REAL:-0}" = "1" ] && humo_real
+  echo "[pruebas] resultado: $([ "$FAIL" -eq 0 ] && echo VERDE || echo ROJO)"
+  exit "$FAIL"
+fi
 
 echo "[pruebas] caso 1: opencode interactivo falso, argv/env, informe, registro y aviso"
 run_case HD0T1 "$WORK/opencode" exit EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd"
