@@ -4,6 +4,7 @@
 # que no sea de un worker activo. Las ramas de git se conservan.
 cd /c/Users/JDMoreu/Documents/EzAgent || exit 1
 ACTIVE=" P-IMP-BARGEIN P-IMP-NAMES EGM-REV-A EGM-REV-B "
+BASE="${BASE:-rust/main}"   # rama de integración (eco/main para el espacio de trabajo)
 apply=0; [ "$1" = "--apply" ] && apply=1
 remove=0; keep=0
 git worktree list --porcelain | awk '/^worktree /{p=$2} /^branch /{print p" "$2}' | while read -r path ref; do
@@ -18,7 +19,7 @@ git worktree list --porcelain | awk '/^worktree /{p=$2} /^branch /{print p" "$2}
     [ -n "$dirty" ] && reason="cambios sin commit: $(echo $dirty | tr '\n' ' ')"
   fi
   if [ -z "$reason" ]; then
-    git merge-base --is-ancestor "$branch" rust/main || reason="rama no integrada en rust/main"
+    git merge-base --is-ancestor "$branch" "$BASE" || reason="rama no integrada en $BASE"
   fi
   if [ -n "$reason" ]; then
     echo "CONSERVO  $name  ($reason)"
