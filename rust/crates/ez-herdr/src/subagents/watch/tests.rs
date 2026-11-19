@@ -170,6 +170,19 @@ fn temp_root(tag: &str) -> std::path::PathBuf {
     folder
 }
 
+/// `uso.json` del registro, como JSON.
+fn usage(root: &std::path::Path) -> serde_json::Value {
+    let text = std::fs::read_to_string(root.join("uso.json")).expect("uso.json");
+    serde_json::from_str(&text).expect("uso.json válido")
+}
+
+/// Los hijos vivos del padre, con el estado del agente pedido.
+fn live_children(agent_state: &str) -> String {
+    format!(
+        r#"{{"terminals":[{{"address":"t12","state":"live","status":{{"state":"{agent_state}","app":"opencode"}}}}]}}"#
+    )
+}
+
 /// Un registro en proceso del padre `t6h`.
 fn record(name: &str, terminal: &str) -> Record {
     Record {
@@ -418,3 +431,4 @@ fn un_vigilante_nuevo_arranca() {
 }
 
 mod novelties;
+mod pantalla;

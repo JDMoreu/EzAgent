@@ -88,9 +88,11 @@ fn limit_patterns_only_look_at_the_last_fifteen_lines() {
 }
 
 #[test]
-fn last_lines_keeps_the_tail() {
+fn last_lines_keeps_the_tail_with_text() {
     assert_eq!(last_lines("a\nb\nc", 2), "b\nc");
     assert_eq!(last_lines("a", 0), "");
+    assert_eq!(last_lines("uno\n\n┃\n╹▀▀▀\ndos", 2), "uno\ndos");
+    assert_eq!(last_lines("┃\n╹▀▀▀\n", 5), "");
     let long: String = (0..20).map(|index| format!("l{index}\n")).collect();
     let tail = last_lines(&long, LIMIT_TAIL_LINES);
     assert_eq!(tail.lines().count(), LIMIT_TAIL_LINES);

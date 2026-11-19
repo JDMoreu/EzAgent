@@ -12,9 +12,10 @@
 //! stall_min = 10
 //! ```
 //!
-//! Un límite solo se busca en las últimas [`LIMIT_TAIL_LINES`] líneas de la
-//! pantalla y solo cuenta con el agente parado: quien escribe o lee sobre
-//! límites de uso no está bloqueado.
+//! Un límite solo se busca en las últimas [`LIMIT_TAIL_LINES`] líneas **con
+//! texto** de la pantalla y solo cuenta con el agente parado y la pantalla
+//! repetida en dos vueltas: quien escribe o lee sobre límites de uso no está
+//! bloqueado.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -197,9 +198,16 @@ pub(super) fn screen_tail(text: &str, max: usize) -> String {
     text.chars().skip(count - max).collect()
 }
 
-/// Las últimas `count` líneas de la pantalla, unidas con `\n`.
+/// Las últimas `count` líneas **con texto** de la pantalla, unidas con `\n`.
+///
+/// El TUI deja muchas filas vacías y de bordes (`┃`, `╹▀▀▀`) debajo de la
+/// conversación; no cuentan: una línea con texto tiene al menos una letra o
+/// un dígito (§3, caso real de `hc read --lines 0` en OpenCode).
 pub(super) fn last_lines(text: &str, count: usize) -> String {
-    let lines: Vec<&str> = text.lines().collect();
+    let lines: Vec<&str> = text
+        .lines()
+        .filter(|line| line.chars().any(char::is_alphanumeric))
+        .collect();
     lines[lines.len().saturating_sub(count)..].join("\n")
 }
 
@@ -331,10 +339,11 @@ impl Watcher {
         now: u64,
         tick: &mut Tick,
     ) {
-        let changed = self.observe_screen(&record.name, screen, now);
+        let change = self.observe_screen(&record.name, screen, now);
         // §3: un límite solo cuenta con el agente parado y la pantalla quieta
         // desde la vuelta anterior; si está trabajando, la pantalla es dato.
-        if child.agent_state != "working" && !changed {
+        // La primera lectura no es estable: hace falta verla dos veces iguales.
+        if child.agent_state != "working" && change == Some(false) {
             if let Some(hit) = novelties.limit_hit(&record.agent, screen, now) {
                 let detail = hit.detail();
                 if self.block(record, &detail) {
@@ -358,7 +367,7 @@ impl Watcher {
             }
             return;
         }
-        if child.agent_state == "idle" && !changed {
+        if child.agent_state == "idle" && change != Some(true) {
             self.check_stall(record, novelties.stall_min, now, tick);
         }
     }
@@ -373,7 +382,7 @@ impl Watcher {
         tick: &mut Tick,
     ) {
         let hit = novelties.limit_hit(&record.agent, screen, now);
-        let changed = self.observe_screen(&record.name, screen, now);
+        let changed = self.observe_screen(&record.name, screen, now) == Some(true);
         if child.agent_state != "working" && !(changed && hit.is_none()) {
             return;
         }
@@ -431,16 +440,19 @@ impl Watcher {
     }
 
     /// Guarda la pantalla y dice si cambió desde la vuelta anterior.
-    fn observe_screen(&mut self, name: &str, screen: &str, now: u64) -> bool {
+    ///
+    /// `None` en la primera lectura de un hijo: todavía no hay vuelta anterior
+    /// con la que comparar, así que no cuenta como pantalla estable (§3).
+    fn observe_screen(&mut self, name: &str, screen: &str, now: u64) -> Option<bool> {
         match self.screens.get_mut(name) {
             Some(memory) => {
                 if memory.screen == screen {
-                    return false;
+                    return Some(false);
                 }
                 memory.screen = screen.to_string();
                 memory.changed_at = now;
                 memory.stall_notified = false;
-                true
+                Some(true)
             }
             None => {
                 self.screens.insert(
@@ -451,7 +463,7 @@ impl Watcher {
                         stall_notified: false,
                     },
                 );
-                false
+                None
             }
         }
     }

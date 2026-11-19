@@ -6,12 +6,6 @@ use super::*;
 
 const NOW: u64 = 1_700_000_000_000;
 
-/// `uso.json` del registro, como JSON.
-fn usage(root: &std::path::Path) -> serde_json::Value {
-    let text = std::fs::read_to_string(root.join("uso.json")).expect("uso.json");
-    serde_json::from_str(&text).expect("uso.json válido")
-}
-
 /// Un registro del agente y modelo pedidos; el resto como [`record`].
 fn record_of(name: &str, terminal: &str, agent: &str, label: &str, model: &str) -> Record {
     let mut saved = record(name, terminal);
@@ -19,13 +13,6 @@ fn record_of(name: &str, terminal: &str, agent: &str, label: &str, model: &str) 
     saved.label = label.to_string();
     saved.model = Some(model.to_string());
     saved
-}
-
-/// Los hijos vivos del padre, con el estado del agente pedido.
-fn live_children(agent_state: &str) -> String {
-    format!(
-        r#"{{"terminals":[{{"address":"t12","state":"live","status":{{"state":"{agent_state}","app":"opencode"}}}}]}}"#
-    )
 }
 
 #[test]
@@ -44,6 +31,7 @@ fn un_limite_de_opencode_lo_bloquea_y_anota_la_hora() {
             "Free limit reached. Resets at 7:00 p.m.\nUse /models to change.",
         );
     let mut watcher = make_watcher(&fake, Registry::at(&root));
+    watcher.tick();
     let tick = watcher.tick();
 
     assert_eq!(tick.blocked, vec!["dev1-opencode".to_string()]);
@@ -57,12 +45,14 @@ fn un_limite_de_opencode_lo_bloquea_y_anota_la_hora() {
     assert!(change.detail.contains("plan gratuito"), "{}", change.detail);
 
     let sent = fake.sent();
-    assert_eq!(sent.len(), 1, "un solo aviso");
-    assert!(sent[0].contains("está bloqueado"), "{}", sent[0]);
     assert!(
-        sent[0].contains("ez retry dev1-opencode --auto"),
-        "{}",
-        sent[0]
+        sent.iter().any(|text| text.contains("está bloqueado")),
+        "{sent:?}"
+    );
+    assert!(
+        sent.iter()
+            .any(|text| text.contains("ez retry dev1-opencode --auto")),
+        "{sent:?}"
     );
 
     let usage = usage(&root);
@@ -97,13 +87,17 @@ fn un_limite_de_codex_sin_hora_queda_sin_hasta() {
         .with_get(r#"{"address":"t6h","state":"live"}"#)
         .with_screen("t12", "You've hit your usage limit.");
     let mut watcher = make_watcher(&fake, Registry::at(&root));
+    watcher.tick();
     let tick = watcher.tick();
 
     assert_eq!(tick.blocked, vec!["dev1-codex".to_string()]);
     let usage = usage(&root);
     assert_eq!(usage[0]["agente"], "codex");
     assert!(usage[0]["hasta"].is_null());
-    assert!(fake.sent()[0].contains("límite de uso"));
+    assert!(fake
+        .sent()
+        .iter()
+        .any(|text| text.contains("límite de uso")));
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -126,6 +120,7 @@ fn un_limite_de_claude_con_horas_de_espera_trae_la_hora() {
         .with_get(r#"{"address":"t6h","state":"live"}"#)
         .with_screen("t12", "5 hour usage limit reached. Resets in 2h.");
     let mut watcher = make_watcher(&fake, Registry::at(&root));
+    watcher.tick();
     let tick = watcher.tick();
 
     assert_eq!(tick.blocked, vec!["dev1-claude".to_string()]);
@@ -249,6 +244,7 @@ fn al_volver_a_trabajar_sigue_en_proceso_y_lo_avisa() {
         .with_screen("t12", "Free limit reached. Resets at 7:00 p.m.");
     let mut watcher = make_watcher(&fake, Registry::at(&root));
     watcher.tick();
+    watcher.tick();
     assert_eq!(
         registry
             .get("t6h", "dev1-opencode")
@@ -298,7 +294,16 @@ fn cada_episodio_de_bloqueo_se_avisa_una_vez() {
     let mut watcher = make_watcher(&fake, Registry::at(&root));
     watcher.tick();
     watcher.tick();
-    assert_eq!(fake.sent().len(), 1, "el bloqueo se avisa una vez");
+    watcher.tick();
+    let blocked = fake
+        .sent()
+        .iter()
+        .filter(|text| text.contains("está bloqueado"))
+        .count();
+    assert_eq!(blocked, 1, "el bloqueo se avisa una vez");
+    let before = fake.sent().len();
+    watcher.tick();
+    assert_eq!(fake.sent().len(), before, "el aviso no se repite");
 
     fake.with_screen("t12", "❯ otra vez")
         .with_ls(&live_children("working"));
