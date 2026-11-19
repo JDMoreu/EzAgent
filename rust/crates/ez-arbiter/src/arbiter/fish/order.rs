@@ -104,16 +104,24 @@ impl ArbiterShared {
             .iter()
             .filter(|item| item.round == round && item.state == WorkState::Pending)
             .filter(|item| {
-                task.fish_by_key(&item.key)
-                    .is_some_and(|fish| task.stage_of(&fish.role) < stage)
+                task.fish_by_key(&item.key).is_some_and(|fish| {
+                    task.stage_of(&fish.role) < stage
+                        && (round == 1
+                            || task
+                                .role_def(&fish.role)
+                                .is_some_and(|def| !def.first_round_only))
+                })
             })
             .map(|item| item.key.fish.clone())
             .collect();
-        for seat in task
-            .team
-            .iter()
-            .filter(|seat| seat.stage < stage && task.is_verifier(&seat.role))
-        {
+        for seat in task.team.iter().filter(|seat| {
+            seat.stage < stage
+                && task.is_verifier(&seat.role)
+                && (round == 1
+                    || task
+                        .role_def(&seat.role)
+                        .is_some_and(|def| !def.first_round_only))
+        }) {
             let reported = task
                 .fish_in_round(round)
                 .any(|fish| fish.role == seat.role && fish.report.is_some());
