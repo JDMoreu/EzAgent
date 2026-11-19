@@ -10,60 +10,82 @@
   </head>
   <body>
     <div id="app">
-      <aside id="spaces" class="panel-column">
+      <aside id="left" class="panel-column">
         <header class="column-header">
           <h1 id="app-title">EzAgent</h1>
-          <span id="spaces-title">Espacios</span>
+          <span id="spaces-title" data-text="spacesTitle">Espacios</span>
         </header>
-        <div id="space-list" class="space-list"></div>
-        <button id="new-space" class="wide-button" type="button">+ Nuevo espacio</button>
-        <form id="space-form" class="space-form" hidden>
+        <div id="tree" class="tree"></div>
+        <div class="tree-actions">
+          <button id="new-main" type="button" data-text="newMain">+ Agente principal</button>
+          <button id="new-space" type="button" data-text="newSpace">+ Espacio</button>
+        </div>
+        <form id="space-form" class="side-form" hidden>
           <label for="space-name" data-text="name">Nombre</label>
           <input id="space-name" type="text" required />
           <label for="space-folder" data-text="folder">Carpeta</label>
           <input id="space-folder" type="text" required />
-          <label for="space-agent" data-text="elephant">Elefante</label>
-          <select id="space-agent">
-            <option value="claude">Claude Code</option>
-            <option value="opencode">OpenCode</option>
-            <option value="codex">Codex</option>
-          </select>
           <p id="space-error" class="form-error" role="alert"></p>
           <div class="form-actions">
-            <button id="space-create" type="submit" data-text="create">Crear</button>
+            <button id="space-create" type="submit" class="primary" data-text="create">Crear</button>
             <button id="space-cancel" type="button" data-text="cancel">Cancelar</button>
+          </div>
+        </form>
+        <form id="main-form" class="side-form" hidden>
+          <label for="main-name" data-text="name">Nombre</label>
+          <input id="main-name" type="text" required />
+          <label for="main-agent" data-text="agent">Agente</label>
+          <select id="main-agent"></select>
+          <label for="main-model" data-text="model">Modelo</label>
+          <select id="main-model" hidden></select>
+          <input id="main-model-text" type="text" />
+          <label for="main-effort" data-text="effort">Esfuerzo</label>
+          <input id="main-effort" type="text" placeholder="Opcional" />
+          <p id="main-error" class="form-error" role="alert"></p>
+          <div class="form-actions">
+            <button id="main-create" type="submit" class="primary" data-text="create">Crear</button>
+            <button id="main-cancel" type="button" data-text="cancel">Cancelar</button>
           </div>
         </form>
       </aside>
 
       <main id="center" class="panel-column">
-        <header id="elephant-header" class="column-header">Elefante</header>
-        <div id="elephant-view" class="terminal-host"></div>
+        <div id="status-strip" class="status-strip" role="status" hidden></div>
+        <div class="tabs-bar">
+          <div id="tab-list" class="tab-list"></div>
+          <button id="split-tab" type="button" data-text="split">Dividir</button>
+        </div>
+        <div id="terminals" class="terminals">
+          <div class="terminal-slot" data-slot="0"><div class="terminal-host"></div></div>
+          <div class="terminal-slot" data-slot="1" hidden><div class="terminal-host"></div></div>
+        </div>
         <div id="input-bar">
           <div id="input-notice" class="input-notice" role="status"></div>
-          <textarea id="input-text" rows="3" spellcheck="false"></textarea>
+          <textarea id="input-text" rows="3" spellcheck="false" data-placeholder="placeholder"></textarea>
           <div class="voice-meter" id="voice-meter" hidden>
             <span class="voice-dot"></span>
             <span class="voice-level"><span id="voice-level-fill"></span></span>
           </div>
           <div class="input-actions">
-            <button id="btn-voice" type="button">Nota de voz</button>
-            <button id="btn-call" type="button" title="Disponible pronto" disabled>Llamar</button>
-            <button id="btn-send" class="primary" type="button">Enviar</button>
+            <button id="btn-voice" type="button" data-text="voiceNote">Nota de voz</button>
+            <button id="btn-call" type="button" title="Disponible pronto" disabled data-text="call">Llamar</button>
+            <button id="btn-send" class="primary" type="button" data-text="send">Enviar</button>
           </div>
         </div>
       </main>
 
       <section id="right" class="panel-column">
+        <header class="column-header right-header">
+          <button id="toggle-right" type="button" class="collapse-button" title="Ocultar panel" data-text="collapse">Ocultar panel</button>
+        </header>
         <nav class="tab-bar">
-          <button id="tab-fish" class="tab active" type="button" data-text="fishTab">Peces</button>
-          <button id="tab-trace" class="tab" type="button" data-text="traceTab">Traza</button>
+          <button id="tab-trace" class="tab active" type="button" data-text="traceTab">Traza</button>
+          <button id="tab-cards" class="tab" type="button" data-text="cardsTab">Tarjetas</button>
         </nav>
-        <div id="fish-pane" class="tab-pane"></div>
-        <div id="trace-pane" class="tab-pane" hidden>
-          <h2 data-text="timeline">Traza</h2>
+        <div id="trace-pane" class="tab-pane">
           <div id="timeline-list" class="timeline-list"></div>
-          <h2 data-text="cards">Aprobaciones</h2>
+        </div>
+        <div id="cards-pane" class="tab-pane" hidden>
           <div id="card-list" class="card-list"></div>
         </div>
       </section>

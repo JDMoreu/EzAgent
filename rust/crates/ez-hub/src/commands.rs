@@ -216,6 +216,13 @@ impl AppState {
         session.write(data).map_err(|error| error.to_string())
     }
 
+    /// Envía el texto de la barra a una vista PTY directa (modo demostración).
+    // DECISION: `agent_send` necesita el motor, que no existe en `--demo`; esta
+    // vista directa mantiene la barra usable en el ejemplo sin tocar el motor.
+    pub fn send_view_text(&self, id: &str, text: &str) -> Result<(), String> {
+        self.write_view(id, &input::encode_input(text))
+    }
+
     /// Redimensiona una terminal.
     pub fn resize_view(&self, id: &str, size: Size) -> Result<(), String> {
         let session = self.session(id)?;
@@ -330,6 +337,12 @@ pub fn view_open(
 #[tauri::command]
 pub fn view_write(state: State<'_, AppState>, id: String, data: String) -> Result<(), String> {
     state.write_view(&id, data.as_bytes())
+}
+
+/// Manda el texto de la barra a una vista PTY directa (demostración).
+#[tauri::command]
+pub fn view_send(state: State<'_, AppState>, id: String, text: String) -> Result<(), String> {
+    state.send_view_text(&id, &text)
 }
 
 /// Redimensiona la vista.
@@ -516,10 +529,10 @@ mod tests {
         let state = AppState::with_selfcheck(true, Some(path.clone()));
         assert!(state.selfcheck_path().is_some());
         let report = SelfcheckReport {
-            cabecera: "Agente principal · PowerShell".to_string(),
-            terminales: 3,
-            peces: 2,
-            eventos: 5,
+            nodos: 7,
+            pestanas: 2,
+            terminales_con_datos: 2,
+            eventos: 6,
             tarjetas: 1,
             ..SelfcheckReport::default()
         };
@@ -528,7 +541,7 @@ mod tests {
         let saved: SelfcheckReport = serde_json::from_str(&text).expect("json");
         assert_eq!(saved, report);
         let bad = SelfcheckReport {
-            terminales: 1,
+            terminales_con_datos: 1,
             ..report
         };
         assert!(!state.submit_selfcheck(&bad).expect("informe malo"));

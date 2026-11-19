@@ -8,6 +8,7 @@ use std::thread;
 use std::time::Duration;
 
 pub mod commands;
+pub mod demo;
 pub mod hub;
 pub mod input;
 pub mod pty;
@@ -54,6 +55,7 @@ pub fn run(demo: bool, selfcheck: Option<PathBuf>) -> tauri::Result<()> {
             commands::space_create,
             commands::view_open,
             commands::view_write,
+            commands::view_send,
             commands::view_resize,
             commands::view_close,
             commands::elephant_input,

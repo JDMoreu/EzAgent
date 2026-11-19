@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::commands::AppState;
+use crate::demo;
 use crate::runtime::spaces::MainChoice;
 use crate::runtime::{MainAgentInfo, SpaceTree};
 
@@ -41,8 +42,12 @@ impl AppState {
             .main_agent_remove(space, elephant)
     }
 
-    /// Árbol de agentes principales y subagentes de un espacio.
+    /// Árbol de agentes principales y subagentes de un espacio. En demostración
+    /// se devuelve el árbol de ejemplo, sin herdr-core.
     pub fn space_tree(&self, space: &str) -> Result<SpaceTree, String> {
+        if self.demo {
+            return Ok(demo::tree());
+        }
         self.runtime
             .as_ref()
             .ok_or_else(|| NO_RUNTIME.to_string())?
@@ -65,11 +70,12 @@ impl AppState {
             .agent_send(address, text)
     }
 
-    /// Traza y tarjetas del agente principal. En demostración devuelve el estado
-    /// en memoria con la forma que ya pinta la vista; ECO-6b adapta la otra forma.
+    /// Traza y tarjetas del agente principal. En demostración devuelve los seis
+    /// eventos y la tarjeta de ejemplo con la forma del motor: `{eventos,
+    /// tarjetas, tarea}`.
     pub fn hub_state_for(&self, space: &str, elephant: Option<&str>) -> Value {
         if self.demo {
-            return json!(self.hub_state(space));
+            return demo::trace();
         }
         let id = elephant
             .map(str::to_owned)
