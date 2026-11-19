@@ -25,6 +25,19 @@ impl ArbiterApi for FakeArbiter {
     fn snapshot(&self, _space: &str) -> Option<Value> {
         Some(json!({ "title": "Tarea de prueba" }))
     }
+
+    fn worktree(&self, _space: &str, _elephant: &str) -> Option<PathBuf> {
+        None
+    }
+
+    fn card_action(
+        &self,
+        _card: &str,
+        _action: &str,
+        _comment: Option<&str>,
+    ) -> Result<ez_arbiter::Outcome, ez_arbiter::Rejection> {
+        Ok(ez_arbiter::Outcome::new("hecho"))
+    }
 }
 
 fn handler(api: Arc<FakeArbiter>) -> (ArbiterHandler, crate::testutil::TempDir) {
@@ -48,6 +61,7 @@ fn handler(api: Arc<FakeArbiter>) -> (ArbiterHandler, crate::testutil::TempDir) 
 fn elephant_call() -> Caller {
     Caller::Elephant {
         space: "s1".to_string(),
+        elephant: "e00000000".to_string(),
     }
 }
 
@@ -55,8 +69,10 @@ fn fish_call() -> Caller {
     Caller::Fish {
         space: "s1".to_string(),
         task: "t1".to_string(),
+        elephant: "e00000000".to_string(),
         fish: "dev-r1-1".to_string(),
         attempt: 1,
+        parent: None,
     }
 }
 
@@ -100,9 +116,10 @@ fn handler_translates_elephant_commands() {
     let calls = api.calls.lock();
     assert_eq!(calls.len(), 7);
     assert!(calls.iter().all(|(caller, _)| caller
-        == &ArbiterCaller::Elephant {
-            space: "s1".to_string()
-        }));
+        == &ArbiterCaller::Elephant(ElephantKey {
+            space: "s1".to_string(),
+            elephant: "e00000000".to_string(),
+        })));
 }
 
 #[test]
@@ -148,8 +165,10 @@ fn handler_translates_fish_commands_and_the_fish_caller() {
         ArbiterCaller::Fish(FishKey {
             space: "s1".to_string(),
             task: "t1".to_string(),
+            elephant: "e00000000".to_string(),
             fish: "dev-r1-1".to_string(),
             attempt: 1,
+            parent: None,
         })
     );
     assert!(matches!(calls[2].1, Command::Report { .. }));
@@ -311,10 +330,20 @@ fn handler_lists_the_builtin_roles() {
     assert!(reply.ok, "{reply:?}");
     let lines: Vec<&str> = reply.message.lines().collect();
     assert_eq!(lines.len(), 5, "{}", reply.message);
-    assert!(lines[0].starts_with("planner · Planificador · ejecutor · "));
-    assert!(lines[2].starts_with("developer · Desarrollador · ejecutor · "));
-    assert!(lines[3].starts_with("qa · QA · verificador · "));
-    assert!(lines[4].starts_with("qa_validator · Validador de QA · verificador · "));
+    for line in [
+        "- planner · Planificador · ejecutor",
+        "- developer · Desarrollador · ejecutor",
+        "- qa · QA · verificador",
+        "- qa_validator · Validador de QA · verificador",
+        "- plan_reviewer · Revisor del plan · verificador",
+    ] {
+        assert!(
+            lines.iter().any(|actual| actual.starts_with(line)),
+            "falta {line} en {}",
+            reply.message
+        );
+    }
+    assert!(lines.iter().all(|line| line.contains("(incluido):")));
 }
 
 fn real_arbiter(dir: &crate::testutil::TempDir) -> Arc<ez_arbiter::Arbiter> {

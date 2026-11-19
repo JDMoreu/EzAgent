@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use serde::Serialize;
+use serde_json::{json, Value};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
@@ -13,7 +14,10 @@ use uuid::Uuid;
 use crate::hub::{self, HubState};
 use crate::input;
 use crate::pty::{self, EventSink, PtyEvent, Session, Size};
-use crate::runtime::{FishInfo, HubRuntime, RuntimeStatus};
+use crate::runtime::{
+    FishInfo, HubRuntime, MainAgentInfo, RuntimeStatus, SpaceTree,
+};
+use crate::runtime::spaces::MainChoice;
 use crate::selfcheck::{self, SelfcheckReport};
 use crate::space::{self, Space, SpaceStore};
 use crate::texts;
@@ -97,12 +101,58 @@ impl AppState {
         }
     }
 
-    /// Dirección hc del elefante del espacio (lo lanza si hace falta).
+    /// Dirección hc del agente principal por omisión (lo lanza si hace falta).
     pub fn space_elephant(&self, space: &str) -> Result<String, String> {
+        let id = ez_arbiter::ElephantKey::default_for(space).elephant;
         self.runtime
             .as_ref()
             .ok_or_else(|| "El motor del espacio de trabajo no está disponible.".to_string())?
-            .ensure_elephant(space)
+            .ensure_main_agent(space, &id)
+    }
+
+    /// Crea un agente principal con worktree y lo lanza.
+    pub fn main_agent_create(
+        &self,
+        space: &str,
+        name: &str,
+        choice: &MainChoice,
+    ) -> Result<MainAgentInfo, String> {
+        self.runtime
+            .as_ref()
+            .ok_or_else(|| "El motor del espacio de trabajo no está disponible.".to_string())?
+            .main_agent_create(space, name, choice)
+    }
+
+    /// Quita un agente principal y su worktree.
+    pub fn main_agent_remove(&self, space: &str, elephant: &str) -> Result<(), String> {
+        self.runtime
+            .as_ref()
+            .ok_or_else(|| "El motor del espacio de trabajo no está disponible.".to_string())?
+            .main_agent_remove(space, elephant)
+    }
+
+    /// Árbol de agentes principales y subagentes de un espacio.
+    pub fn space_tree(&self, space: &str) -> Result<SpaceTree, String> {
+        self.runtime
+            .as_ref()
+            .ok_or_else(|| "El motor del espacio de trabajo no está disponible.".to_string())?
+            .space_tree(space)
+    }
+
+    /// Dirección hc de un nodo del árbol (lanza el principal si hace falta).
+    pub fn node_address(&self, space: &str, node: &str) -> Result<String, String> {
+        self.runtime
+            .as_ref()
+            .ok_or_else(|| "El motor del espacio de trabajo no está disponible.".to_string())?
+            .node_address(space, node)
+    }
+
+    /// Envía texto crudo a una dirección hc.
+    pub fn agent_send(&self, address: &str, text: &str) -> Result<(), String> {
+        self.runtime
+            .as_ref()
+            .ok_or_else(|| "El motor del espacio de trabajo no está disponible.".to_string())?
+            .agent_send(address, text)
     }
 
     /// Peces vivos del espacio.
@@ -156,7 +206,10 @@ impl AppState {
     }
 
     /// Crea un espacio y lo guarda; en demostración solo vive en memoria.
-    pub fn create_space(&self, nombre: &str, carpeta: &str, agente: &str) -> Result<Space, String> {
+    pub fn create_space(&self, nombre: &str, carpeta: &str, agente: Option<&str>) -> Result<Space, String> {
+        // DECISION: la elección de agente pasa a `main_agent_create`; si la vista
+        // antigua envía `agente`, se usa solo para el espacio de demostración.
+        let agente = agente.filter(|value| !value.trim().is_empty()).unwrap_or("opencode");
         let space = space::create_space(nombre, carpeta, agente)?;
         let mut next = self.spaces.lock().clone();
         next.push(space.clone());
@@ -249,12 +302,74 @@ impl AppState {
         self.write_view(&view, &input::encode_input(text))
     }
 
-    /// Peces, traza y tarjetas del espacio.
+    /// Peces, traza y tarjetas del espacio (estado de demostración).
     pub fn hub_state(&self, space: &str) -> HubState {
         if self.demo && space == hub::DEMO_SPACE_ID {
             return self.hub.lock().clone();
         }
         HubState::default()
+    }
+
+    /// Traza y tarjetas del agente principal. En demostración devuelve el estado
+    /// en memoria con la forma que ya pinta la vista; ECO-6b adapta la otra forma.
+    pub fn hub_state_for(&self, space: &str, elephant: Option<&str>) -> Value {
+        if self.demo {
+            return json!(self.hub_state(space));
+        }
+        let id = elephant
+            .map(str::to_owned)
+            .unwrap_or_else(|| ez_arbiter::ElephantKey::default_for(space).elephant);
+        match &self.runtime {
+            Some(runtime) => runtime
+                .hub_state(space, &id)
+                .unwrap_or_else(|error| json!({ "error": error })),
+            None => json!({ "error": "El motor del espacio de trabajo no está disponible." }),
+        }
+    }
+
+    /// Resuelve una tarjeta: en demostración usa la memoria; si no, el árbitro.
+    pub fn card_action_for(
+        &self,
+        card: &str,
+        action: &str,
+        comment: Option<&str>,
+    ) -> Result<Value, String> {
+        if !self.demo {
+            let runtime = self
+                .runtime
+                .as_ref()
+                .ok_or_else(|| "El motor del espacio de trabajo no está disponible.".to_string())?;
+            return runtime.card_action(card, action, comment);
+        }
+        self.card_action(card, action, comment)?;
+        Ok(json!({}))
+    }
+
+    /// Lista de papeles disponibles (los mismos datos que `ez roles`).
+    pub fn roles_list(&self, space: Option<&str>, elephant: Option<&str>) -> Value {
+        let Some(runtime) = self.runtime.as_ref() else {
+            return Value::String(String::new());
+        };
+        let space = space
+            .map(str::to_owned)
+            .or_else(|| self.spaces().first().map(|space| space.id.clone()))
+            .unwrap_or_default();
+        let id = elephant
+            .map(str::to_owned)
+            .unwrap_or_else(|| ez_arbiter::ElephantKey::default_for(&space).elephant);
+        runtime
+            .roles_list(&space, &id)
+            .unwrap_or_else(|_| Value::String(String::new()))
+    }
+
+    /// Inventario de agentes (los mismos datos que `ez inventory`).
+    pub fn inventory(&self) -> Value {
+        match &self.runtime {
+            Some(runtime) => runtime
+                .inventory()
+                .unwrap_or_else(|_| json!({ "message": "", "data": [] })),
+            None => json!({ "message": "", "data": [] }),
+        }
     }
 
     /// Resuelve una tarjeta; rechazar exige comentario.
@@ -296,15 +411,16 @@ pub fn spaces_list(state: State<'_, AppState>) -> Vec<Space> {
     state.spaces()
 }
 
-/// Crea un espacio con nombre, carpeta existente y agente.
+/// Crea un espacio con nombre y carpeta existente. `agente` es opcional: la
+/// elección real del agente principal se hace con `main_agent_create` (§15.1).
 #[tauri::command]
 pub fn space_create(
     state: State<'_, AppState>,
     nombre: String,
     carpeta: String,
-    agente: String,
+    agente: Option<String>,
 ) -> Result<Space, String> {
-    state.create_space(&nombre, &carpeta, &agente)
+    state.create_space(&nombre, &carpeta, agente.as_deref())
 }
 
 /// Abre una vista PTY. `space` la registra como la terminal del elefante.
@@ -356,13 +472,17 @@ pub fn elephant_input(
     state.elephant_input(&space, &text)
 }
 
-/// Peces, traza y tarjetas del espacio.
+/// Traza y tarjetas de la tarea del agente principal.
 #[tauri::command]
-pub fn hub_state(state: State<'_, AppState>, space: String) -> HubState {
-    state.hub_state(&space)
+pub fn hub_state(
+    state: State<'_, AppState>,
+    space: String,
+    elephant: Option<String>,
+) -> Value {
+    state.hub_state_for(&space, elephant.as_deref())
 }
 
-/// Aprueba o rechaza una tarjeta y avisa a la vista.
+/// Resuelve una tarjeta; `merge` y `keep` integran o dejan la rama del principal.
 #[tauri::command]
 pub fn card_action(
     app: AppHandle,
@@ -370,12 +490,82 @@ pub fn card_action(
     card: String,
     action: String,
     comment: Option<String>,
-) -> Result<(), String> {
-    state.card_action(&card, &action, comment.as_deref())?;
+) -> Result<Value, String> {
+    let result = state.card_action_for(&card, &action, comment.as_deref())?;
     if let Err(error) = app.emit("hub://changed", ()) {
         tracing::warn!(%error, "no pude avisar a la vista");
     }
-    Ok(())
+    Ok(result)
+}
+
+/// Crea un agente principal con su worktree y lo lanza (§15.1).
+#[tauri::command]
+pub fn main_agent_create(
+    state: State<'_, AppState>,
+    space: String,
+    nombre: String,
+    agente: String,
+    modelo: String,
+    esfuerzo: Option<String>,
+) -> Result<MainAgentInfo, String> {
+    let choice = MainChoice {
+        agent: agente,
+        model: modelo,
+        effort: esfuerzo,
+    };
+    state.main_agent_create(&space, &nombre, &choice)
+}
+
+/// Quita un agente principal y su worktree.
+#[tauri::command]
+pub fn main_agent_remove(
+    state: State<'_, AppState>,
+    space: String,
+    elephant: String,
+) -> Result<(), String> {
+    state.main_agent_remove(&space, &elephant)
+}
+
+/// Árbol de agentes principales y subagentes de un espacio.
+#[tauri::command]
+pub fn space_tree(state: State<'_, AppState>, space: String) -> Result<SpaceTree, String> {
+    state.space_tree(&space)
+}
+
+/// Dirección hc de un nodo; lanza el agente principal si hace falta.
+#[tauri::command]
+pub fn node_address(
+    state: State<'_, AppState>,
+    space: String,
+    node: String,
+) -> Result<String, String> {
+    state.node_address(&space, &node)
+}
+
+/// Envía el texto de la barra a la terminal activa, principal o subagente.
+#[tauri::command]
+pub fn agent_send(
+    state: State<'_, AppState>,
+    address: String,
+    text: String,
+) -> Result<(), String> {
+    state.agent_send(&address, &text)
+}
+
+/// Papeles disponibles: los mismos datos que `ez roles`.
+#[tauri::command]
+pub fn roles_list(
+    state: State<'_, AppState>,
+    space: Option<String>,
+    elephant: Option<String>,
+) -> Value {
+    state.roles_list(space.as_deref(), elephant.as_deref())
+}
+
+/// Inventario de agentes: los mismos datos que `ez inventory`.
+#[tauri::command]
+pub fn inventory(state: State<'_, AppState>) -> Value {
+    state.inventory()
 }
 
 /// Estado del motor del espacio de trabajo (normal, degradado o demo).
@@ -484,7 +674,7 @@ mod tests {
             .ok();
         let dir = TempDir::new("demo-create");
         let space = state
-            .create_space("Nuevo", &dir.path().display().to_string(), "claude")
+            .create_space("Nuevo", &dir.path().display().to_string(), Some("claude"))
             .expect("crear en memoria");
         let after = std::fs::metadata(state.store.path())
             .and_then(|meta| meta.modified())

@@ -7,19 +7,21 @@ use std::time::Duration;
 
 use ez_arbiter::{
     Delivery as ArbiterDelivery, FishLauncher, InstructionWriter, LaunchRequest, Launched,
+    MainAgent,
 };
 use ez_ctl::{Caller, Tokens};
 use ez_team::{
-    builtin, builtin_roles, AgentProfile, InstructionContext, LaunchCommand, RoleId, Seat,
+    builtin, library_dir, load_roles, AgentProfile, InstructionContext, LaunchCommand, RoleId,
+    Seat,
 };
 use ez_term::{Delivery as TermDelivery, HcClient, RunSpec, Terminal};
 use parking_lot::RwLock;
 
-use crate::runtime::spaces::SpaceConfig;
+use crate::runtime::spaces::MainChoice;
 
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
-const HC_MISSING_MODEL: &str =
-    "El espacio necesita configurar el modelo del agente principal en agentes.toml.";
+const MISSING_MODEL: &str =
+    "El agente principal necesita configurar su modelo en el formulario.";
 
 /// Operaciones sobre terminales que necesita el motor. `HcClient` las cumple;
 /// las pruebas usan un doble que no abre procesos.
@@ -93,17 +95,22 @@ pub struct RuntimeLauncher {
 }
 
 impl RuntimeLauncher {
-    /// Lanza el elefante de `space` y devuelve la dirección de su terminal.
-    pub fn launch_elephant(&self, space: &SpaceConfig, token: &str) -> Result<String, String> {
-        if space.model.trim().is_empty() {
-            return Err(HC_MISSING_MODEL.to_string());
+    /// Lanza un agente principal en su worktree y devuelve la dirección hc.
+    pub fn launch_main(
+        &self,
+        agent: &MainAgent,
+        choice: &MainChoice,
+        token: &str,
+    ) -> Result<String, String> {
+        if choice.model.trim().is_empty() {
+            return Err(MISSING_MODEL.to_string());
         }
-        let profile = self.profile(&space.agent)?;
+        let profile = self.profile(&choice.agent)?;
         let seat = Seat {
             role: RoleId::parse(builtin::DEVELOPER).expect("id del papel"),
-            agent: space.agent.clone(),
-            model: space.model.clone(),
-            effort: space.effort.clone(),
+            agent: choice.agent.clone(),
+            model: choice.model.clone(),
+            effort: choice.effort.clone(),
             count: 1,
             stage: 1,
             delegates_to: Vec::new(),
@@ -111,8 +118,8 @@ impl RuntimeLauncher {
         let command = ez_team::launch::command(profile, &seat);
         let mut extra = BTreeMap::new();
         if command.prelaunch.as_deref() == Some("opencode_state") {
-            let effort = space.effort.as_deref().unwrap_or_default();
-            for (name, value) in ez_herdr::prelaunch::prepare_opencode_state(&space.model, effort) {
+            let effort = choice.effort.as_deref().unwrap_or_default();
+            for (name, value) in ez_herdr::prelaunch::prepare_opencode_state(&choice.model, effort) {
                 if let Some(text) = value.as_str() {
                     extra.insert(name, text.to_string());
                 }
@@ -120,15 +127,16 @@ impl RuntimeLauncher {
         }
         let mut labels = BTreeMap::new();
         labels.insert("ez".to_string(), "1".to_string());
-        labels.insert("ez_space".to_string(), space.id.clone());
+        labels.insert("ez_space".to_string(), agent.key.space.clone());
+        labels.insert("ez_elephant".to_string(), agent.key.elephant.clone());
         labels.insert("ez_role".to_string(), "main".to_string());
-        labels.insert("ez_agent".to_string(), space.agent.clone());
-        labels.insert("ez_model".to_string(), space.model.clone());
+        labels.insert("ez_agent".to_string(), choice.agent.clone());
+        labels.insert("ez_model".to_string(), choice.model.clone());
         let env = self.environment(&extra, &command, token, "main");
         let spec = RunSpec {
             argv: command.argv,
-            cwd: Some(space.folder.clone()),
-            name: Some(elephant_name(&space.id)),
+            cwd: Some(agent.worktree.clone()),
+            name: Some(main_agent_name(&agent.key.elephant)),
             labels,
             env,
             size: None,
@@ -268,7 +276,12 @@ pub struct TeamInstructionWriter;
 
 impl InstructionWriter for TeamInstructionWriter {
     fn render(&self, context: &InstructionContext) -> Result<String, String> {
-        let def = builtin_roles()
+        // DECISION: los papeles de la tarea viven en el worktree; se cargan desde
+        // ahí para que sus instrucciones usen el cuerpo definido por la persona.
+        let folder = context.folder.join(".ez").join("borrador").join("papeles");
+        let roles = load_roles(Some(&folder), &library_dir())
+            .map_err(|error| error.to_string())?;
+        let def = roles
             .into_iter()
             .find(|def| def.id == context.role)
             .ok_or_else(|| format!("No hay una definición para el papel «{}».", context.role))?;
@@ -286,12 +299,18 @@ fn caller_from_labels(request: &LaunchRequest) -> Caller {
     Caller::Fish {
         space: request.labels.get("ez_space").cloned().unwrap_or_default(),
         task: request.labels.get("ez_task").cloned().unwrap_or_default(),
+        elephant: request
+            .labels
+            .get("ez_elephant")
+            .cloned()
+            .unwrap_or_default(),
         fish: request.labels.get("ez_fish").cloned().unwrap_or_default(),
         attempt: request
             .labels
             .get("ez_attempt")
             .and_then(|value| value.parse().ok())
             .unwrap_or(1),
+        parent: request.labels.get("ez_parent").cloned(),
     }
 }
 
@@ -310,8 +329,8 @@ fn check_delivery(delivery: TermDelivery) -> Result<(), String> {
     }
 }
 
-fn elephant_name(space: &str) -> String {
-    let chars = space.chars().count();
-    let tail: String = space.chars().skip(chars.saturating_sub(8)).collect();
+fn main_agent_name(elephant: &str) -> String {
+    let chars = elephant.chars().count();
+    let tail: String = elephant.chars().skip(chars.saturating_sub(15)).collect();
     format!("ez-el-{tail}")
 }
