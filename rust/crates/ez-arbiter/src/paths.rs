@@ -115,3 +115,8 @@ pub fn resolve_inside(folder: &Path, candidate: &Path) -> Option<PathBuf> {
         None
     }
 }
+
+/// Carpeta de estado de una tarea dentro de los datos de la app.
+pub fn data_task_dir(data_dir: &Path, task: &str) -> PathBuf {
+    data_dir.join("tareas").join(task)
+}

@@ -117,46 +117,6 @@ impl Arbiter {
     fn dispatch(&self, caller: &Caller, command: Command) -> Result<Outcome, Rejection> {
         match command {
             Command::Status => self.status(caller),
-            Command::TaskNew {
-                title,
-                brief,
-                criteria,
-            } => {
-                let space = self.elephant_space(caller)?;
-                self.task_new(&space, title, brief, criteria)
-            }
-            Command::TeamPropose { seats, card } => {
-                let space = self.elephant_space(caller)?;
-                self.team_propose(&space, seats, card)
-            }
-            Command::RoundStart => {
-                let space = self.elephant_space(caller)?;
-                self.round_start(&space)
-            }
-            Command::FishNew { role, brief } => {
-                let space = self.elephant_space(caller)?;
-                self.fish_new(&space, role, brief)
-            }
-            Command::FishSend { fish, file } => {
-                let space = self.elephant_space(caller)?;
-                self.fish_send(&space, &fish, file)
-            }
-            Command::Verify => {
-                let space = self.elephant_space(caller)?;
-                self.verify(&space)
-            }
-            Command::RoundClose => {
-                let space = self.elephant_space(caller)?;
-                self.round_close(&space)
-            }
-            Command::TaskClose => {
-                let space = self.elephant_space(caller)?;
-                self.task_close(&space)
-            }
-            Command::Pause { reason } => {
-                let space = self.elephant_space(caller)?;
-                self.pause_command(&space, reason)
-            }
             Command::Report {
                 verdict,
                 file,
@@ -179,6 +139,30 @@ impl Arbiter {
                         mutations_caught,
                     },
                 )
+            }
+            other => self.dispatch_elephant(caller, other),
+        }
+    }
+
+    /// Los comandos restantes son del elefante del espacio (R1).
+    fn dispatch_elephant(&self, caller: &Caller, command: Command) -> Result<Outcome, Rejection> {
+        let space = self.elephant_space(caller)?;
+        match command {
+            Command::TaskNew {
+                title,
+                brief,
+                criteria,
+            } => self.task_new(&space, title, brief, criteria),
+            Command::TeamPropose { seats, card } => self.team_propose(&space, seats, card),
+            Command::RoundStart => self.round_start(&space),
+            Command::FishNew { role, brief } => self.fish_new(&space, role, brief),
+            Command::FishSend { fish, file } => self.fish_send(&space, &fish, file),
+            Command::Verify => self.verify(&space),
+            Command::RoundClose => self.round_close(&space),
+            Command::TaskClose => self.task_close(&space),
+            Command::Pause { reason } => self.pause_command(&space, reason),
+            Command::Status | Command::Report { .. } => {
+                Err(Rejection::new("R1", texts::ELEPHANT_ONLY))
             }
         }
     }

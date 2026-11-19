@@ -116,6 +116,36 @@ impl Arbiter {
             return Err(self.pause_task(task, "R3", "criterios_modificados", rejection.message));
         }
         let round = task.round;
+        self.require_reports(&task, round)?;
+        let criteria = self.load_criteria(&task)?;
+        let checks = verify::run_all(&task.space.folder, &criteria);
+        self.write_verification(&task, &checks)?;
+        let (clean, reasons) = evaluate(&task, round, &criteria, &checks);
+        let close =
+            git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R9", message))?;
+        self.record_close(&mut task, clean, &reasons, &checks, close);
+        let mut message = if clean {
+            texts::round_clean(round)
+        } else {
+            texts::round_dirty(round, &reasons)
+        };
+        // DECISION: la ronda ya cerró; las paradas posteriores se informan en
+        // el mensaje con Ok, no se devuelven como rechazo del comando.
+        let paused = self.apply_stop_conditions(&mut task, &criteria, &checks);
+        if let Some((_, text)) = &paused {
+            message.push(' ');
+            message.push_str(text);
+        }
+        let effects = self.close_effects(&task, round, clean, &reasons, &checks, paused);
+        self.commit(&task, effects);
+        Ok(Outcome {
+            message,
+            data: serde_json::json!({ "round": round, "clean": clean }),
+        })
+    }
+
+    /// El cierre exige los informes del QA y del validador de QA.
+    fn require_reports(&self, task: &Task, round: u32) -> Result<(), Rejection> {
         let mut missing = Vec::new();
         if !task
             .fish_in_round(round)
@@ -129,20 +159,27 @@ impl Arbiter {
         {
             missing.push(format!("valqa-r{round}"));
         }
-        if !missing.is_empty() {
-            return Err(Rejection::new("R9", texts::close_needs(&missing)));
+        if missing.is_empty() {
+            Ok(())
+        } else {
+            Err(Rejection::new("R9", texts::close_needs(&missing)))
         }
-        let criteria = self.load_criteria(&task)?;
-        let checks = verify::run_all(&task.space.folder, &criteria);
-        self.write_verification(&task, &checks)?;
-        let (clean, reasons) = evaluate(&task, round, &criteria, &checks);
-        let close =
-            git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R9", message))?;
+    }
+
+    /// Cierra el registro de la ronda y actualiza la racha y el estado.
+    fn record_close(
+        &self,
+        task: &mut Task,
+        clean: bool,
+        reasons: &[String],
+        checks: &[CheckRecord],
+        close: git::GitSnapshot,
+    ) {
         if let Some(record) = task.open_round_mut() {
             record.closed = Some(self.now());
             record.clean = clean;
-            record.verification = checks.clone();
-            record.reasons = reasons.clone();
+            record.verification = checks.to_vec();
+            record.reasons = reasons.to_vec();
             record.close = Some(close.clone());
         }
         task.last_close = Some(close);
@@ -152,47 +189,45 @@ impl Arbiter {
             0
         };
         task.status = Status::BetweenRounds;
-        let mut message = if clean {
-            texts::round_clean(round)
-        } else {
-            texts::round_dirty(round, &reasons)
-        };
-        let paused = self.apply_stop_conditions(&mut task, &criteria, &checks);
-        if let Some((_, text)) = &paused {
-            message.push(' ');
-            message.push_str(text);
-        }
+    }
+
+    /// Eventos del cierre: verificación, ronda y pausa si corresponde.
+    fn close_effects(
+        &self,
+        task: &Task,
+        round: u32,
+        clean: bool,
+        reasons: &[String],
+        checks: &[CheckRecord],
+        paused: Option<(&'static str, String)>,
+    ) -> Effects {
         let mut effects = Effects::default();
         effects.event(self.event(
-            &task,
+            task,
             "verification",
             serde_json::json!({ "ok": checks.iter().all(|check| check.ok), "criterios": checks }),
         ));
         effects.event(self.event(
-            &task,
+            task,
             "round_closed",
             serde_json::json!({ "round": round, "clean": clean, "reasons": reasons }),
         ));
         if let Some((code, text)) = &paused {
             effects.both(
                 self.event(
-                    &task,
+                    task,
                     "paused",
                     serde_json::json!({ "reason": code, "message": text }),
                 ),
                 self.elephant_event(
-                    &task,
+                    task,
                     "paused",
                     text.clone(),
                     serde_json::json!({ "reason": code, "message": text }),
                 ),
             );
         }
-        self.commit(&task, effects);
-        Ok(Outcome {
-            message,
-            data: serde_json::json!({ "round": round, "clean": clean }),
-        })
+        effects
     }
 
     /// Lee los criterios congelados que se están usando.

@@ -195,6 +195,8 @@ impl Task {
     }
 
     /// Archivos atribuidos al QA en rondas anteriores a `round`.
+    // DECISION: se compara por ruta exacta; el cambio de contenido de un
+    // archivo sin seguimiento no aparece en `git status` y no se atribuye.
     pub fn protected_files(&self, round: u32) -> BTreeSet<String> {
         let mut files = BTreeSet::new();
         for record in &self.rounds {

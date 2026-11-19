@@ -1,6 +1,6 @@
 //! Tareas, aprobaciones de la persona y estado.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::criteria;
 use crate::git;
@@ -32,24 +32,57 @@ impl Arbiter {
                 return Err(Rejection::new("R2", texts::ACTIVE_TASK));
             }
         }
-        let brief_abs = paths::resolve_inside(&space.folder, &brief)
-            .ok_or_else(|| Rejection::new("R2", texts::outside_folder(&brief)))?;
+        let (task, card) = self.build_task(&space, title, brief, criteria_path)?;
+        let mut effects = Effects::default();
+        effects.event(self.event(
+            &task,
+            "task_proposed",
+            serde_json::json!({ "title": task.title, "card": card }),
+        ));
+        let id = task.id.clone();
+        self.commit(&task, effects);
+        Ok(Outcome {
+            message: card,
+            data: serde_json::json!({ "task": id, "status": "pending_approval" }),
+        })
+    }
+
+    /// Comprueba encargo, criterios y git antes de tocar nada.
+    fn validate_inputs(
+        &self,
+        space: &crate::types::Space,
+        brief: &Path,
+        criteria_path: &Path,
+    ) -> Result<(PathBuf, PathBuf, criteria::Criteria), Rejection> {
+        let brief_abs = paths::resolve_inside(&space.folder, brief)
+            .ok_or_else(|| Rejection::new("R2", texts::outside_folder(brief)))?;
         if !brief_abs.is_file() {
-            return Err(Rejection::new("R2", texts::brief_missing(&brief)));
+            return Err(Rejection::new("R2", texts::brief_missing(brief)));
         }
-        let criteria_abs = paths::resolve_inside(&space.folder, &criteria_path)
-            .ok_or_else(|| Rejection::new("R2", texts::outside_folder(&criteria_path)))?;
+        let criteria_abs = paths::resolve_inside(&space.folder, criteria_path)
+            .ok_or_else(|| Rejection::new("R2", texts::outside_folder(criteria_path)))?;
         if !criteria_abs.is_file() {
-            return Err(Rejection::new(
-                "R2",
-                texts::criteria_missing(&criteria_path),
-            ));
+            return Err(Rejection::new("R2", texts::criteria_missing(criteria_path)));
         }
         let parsed = criteria::load(&criteria_abs, &space.folder)
             .map_err(|message| Rejection::new("R2", message))?;
         if !git::is_repo(&space.folder) {
             return Err(Rejection::new("R2", texts::GIT_NOT_REPO));
         }
+        Ok((brief_abs, criteria_abs, parsed))
+    }
+
+    /// Copia los artefactos y construye la tarea en espera de aprobación.
+    fn build_task(
+        &self,
+        space: &crate::types::Space,
+        title: String,
+        brief: PathBuf,
+        criteria_path: PathBuf,
+    ) -> Result<(Task, String), Rejection> {
+        let (brief_abs, criteria_abs, parsed) =
+            self.validate_inputs(space, &brief, &criteria_path)?;
+        // DECISION: el título vacío recibe uno fijo para que la tarjeta lega.
         let title = if title.trim().is_empty() {
             "Tarea".to_string()
         } else {
@@ -90,17 +123,7 @@ impl Arbiter {
             rounds: Vec::new(),
             fish: Vec::new(),
         };
-        let mut effects = Effects::default();
-        effects.event(self.event(
-            &task,
-            "task_proposed",
-            serde_json::json!({ "title": title, "card": card }),
-        ));
-        self.commit(&task, effects);
-        Ok(Outcome {
-            message: card,
-            data: serde_json::json!({ "task": id, "status": "pending_approval" }),
-        })
+        Ok((task, card))
     }
 
     /// Estado resumido para el elefante o para un pez.

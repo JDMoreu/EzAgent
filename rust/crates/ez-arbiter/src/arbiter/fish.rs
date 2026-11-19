@@ -43,78 +43,13 @@ impl Arbiter {
             .cloned()
             .ok_or_else(|| Rejection::new("R5", texts::role_not_in_team(role.id())))?;
         self.check_order(&task, role, round, seat.count)?;
-        let brief_abs = paths::resolve_inside(&task.space.folder, &brief)
-            .ok_or_else(|| Rejection::new("R5", texts::outside_folder(&brief)))?;
-        if !brief_abs.is_file() {
-            return Err(Rejection::new("R5", texts::fish_brief_missing(&brief)));
-        }
-        let index = task
-            .fish_in_round(round)
-            .filter(|fish| fish.role == Role::Developer)
-            .count() as u32
-            + 1;
-        let fish = fish_id(role, round, index);
+        let (fish, fish_brief, start) = self.fish_identity(&task, role, brief)?;
         let folder = paths::round_dir(&task.space.folder, &task.id, round);
-        let fish_brief = folder.join(format!("{fish}.encargo.md"));
-        paths::copy_file(&brief_abs, &fish_brief).map_err(|error| {
-            Rejection::new(
-                "R5",
-                format!("No se pudo copiar el encargo del pez: {error}."),
-            )
-        })?;
-        let start =
-            git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R5", message))?;
         let instructions = folder.join(format!("{fish}.instrucciones.md"));
-        let qa_report = task
-            .fish_in_round(round)
-            .find(|record| record.role == Role::Qa)
-            .map(|record| folder.join(format!("{}.informe.md", record.id)));
-        let context = InstructionContext {
-            role,
-            fish: fish.clone(),
-            round,
-            folder: task.space.folder.clone(),
-            brief: paths::task_dir(&task.space.folder, &task.id).join("encargo.md"),
-            criteria: paths::task_dir(&task.space.folder, &task.id).join("criterios.toml"),
-            plan: paths::task_dir(&task.space.folder, &task.id).join("plan.md"),
-            fish_brief,
-            report: folder.join(format!("{fish}.informe.md")),
-            qa_report,
-            min_mutations: self.load_criteria(&task)?.validacion.mutaciones_minimas,
-        };
-        let rendered = self.writer.render(&context).map_err(|detail| {
-            Rejection::new(
-                "R5",
-                format!("No se pudieron escribir las instrucciones de {fish}: {detail}."),
-            )
-        })?;
-        std::fs::write(&instructions, rendered).map_err(|error| {
-            Rejection::new(
-                "R5",
-                format!("No se pudo guardar el archivo de instrucciones: {error}."),
-            )
-        })?;
+        let context = self.instruction_context(&task, role, &fish, round, fish_brief, &folder)?;
+        self.write_instructions(&context, &instructions, &fish)?;
         let token = new_token();
-        let mut env = std::collections::BTreeMap::new();
-        env.insert("EZ_ROLE".to_string(), "fish".to_string());
-        env.insert("EZ_FISH".to_string(), fish.clone());
-        env.insert("EZ_TOKEN".to_string(), token.clone());
-        let mut labels = std::collections::BTreeMap::new();
-        labels.insert("ez".to_string(), "1".to_string());
-        labels.insert("ez_space".to_string(), task.space.id.clone());
-        labels.insert("ez_task".to_string(), task.id.clone());
-        labels.insert("ez_role".to_string(), role.id().to_string());
-        labels.insert("ez_fish".to_string(), fish.clone());
-        let request = crate::types::LaunchRequest {
-            fish: fish.clone(),
-            hc_name: hc_name(&task.id, &fish),
-            role,
-            seat: seat.clone(),
-            cwd: task.space.folder.clone(),
-            env,
-            labels,
-            first_line: self.writer.first_line(role, &instructions),
-        };
+        let request = self.launch_request(&task, role, &seat, &fish, &instructions, &token);
         let terminal = self
             .launcher
             .launch(&request)
@@ -146,6 +81,120 @@ impl Arbiter {
         })
     }
 
+    /// Id del pez, copia de su encargo y foto de git antes del lanzamiento.
+    fn fish_identity(
+        &self,
+        task: &crate::state::Task,
+        role: Role,
+        brief: PathBuf,
+    ) -> Result<(String, PathBuf, git::GitSnapshot), Rejection> {
+        let brief_abs = paths::resolve_inside(&task.space.folder, &brief)
+            .ok_or_else(|| Rejection::new("R5", texts::outside_folder(&brief)))?;
+        if !brief_abs.is_file() {
+            return Err(Rejection::new("R5", texts::fish_brief_missing(&brief)));
+        }
+        let index = task
+            .fish_in_round(task.round)
+            .filter(|fish| fish.role == Role::Developer)
+            .count() as u32
+            + 1;
+        let fish = fish_id(role, task.round, index);
+        let folder = paths::round_dir(&task.space.folder, &task.id, task.round);
+        let fish_brief = folder.join(format!("{fish}.encargo.md"));
+        paths::copy_file(&brief_abs, &fish_brief).map_err(|error| {
+            Rejection::new(
+                "R5",
+                format!("No se pudo copiar el encargo del pez: {error}."),
+            )
+        })?;
+        let start =
+            git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R5", message))?;
+        Ok((fish, fish_brief, start))
+    }
+
+    /// Contexto de las plantillas de `ez-team` para este pez.
+    fn instruction_context(
+        &self,
+        task: &crate::state::Task,
+        role: Role,
+        fish: &str,
+        round: u32,
+        fish_brief: PathBuf,
+        folder: &std::path::Path,
+    ) -> Result<InstructionContext, Rejection> {
+        let qa_report = task
+            .fish_in_round(round)
+            .find(|record| record.role == Role::Qa)
+            .map(|record| folder.join(format!("{}.informe.md", record.id)));
+        let task_dir = paths::task_dir(&task.space.folder, &task.id);
+        Ok(InstructionContext {
+            role,
+            fish: fish.to_string(),
+            round,
+            folder: task.space.folder.clone(),
+            brief: task_dir.join("encargo.md"),
+            criteria: task_dir.join("criterios.toml"),
+            plan: task_dir.join("plan.md"),
+            fish_brief,
+            report: folder.join(format!("{fish}.informe.md")),
+            qa_report,
+            min_mutations: self.load_criteria(task)?.validacion.mutaciones_minimas,
+        })
+    }
+
+    /// Renderiza y guarda `<pez>.instrucciones.md`.
+    fn write_instructions(
+        &self,
+        context: &InstructionContext,
+        path: &std::path::Path,
+        fish: &str,
+    ) -> Result<(), Rejection> {
+        let rendered = self.writer.render(context).map_err(|detail| {
+            Rejection::new(
+                "R5",
+                format!("No se pudieron escribir las instrucciones de {fish}: {detail}."),
+            )
+        })?;
+        std::fs::write(path, rendered).map_err(|error| {
+            Rejection::new(
+                "R5",
+                format!("No se pudo guardar el archivo de instrucciones: {error}."),
+            )
+        })
+    }
+
+    /// Identidad, etiquetas y primer mensaje del pez.
+    fn launch_request(
+        &self,
+        task: &crate::state::Task,
+        role: Role,
+        seat: &ez_team::Seat,
+        fish: &str,
+        instructions: &std::path::Path,
+        token: &str,
+    ) -> crate::types::LaunchRequest {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("EZ_ROLE".to_string(), "fish".to_string());
+        env.insert("EZ_FISH".to_string(), fish.to_string());
+        env.insert("EZ_TOKEN".to_string(), token.to_string());
+        let mut labels = std::collections::BTreeMap::new();
+        labels.insert("ez".to_string(), "1".to_string());
+        labels.insert("ez_space".to_string(), task.space.id.clone());
+        labels.insert("ez_task".to_string(), task.id.clone());
+        labels.insert("ez_role".to_string(), role.id().to_string());
+        labels.insert("ez_fish".to_string(), fish.to_string());
+        crate::types::LaunchRequest {
+            fish: fish.to_string(),
+            hc_name: hc_name(&task.id, fish),
+            role,
+            seat: seat.clone(),
+            cwd: task.space.folder.clone(),
+            env,
+            labels,
+            first_line: self.writer.first_line(role, instructions),
+        }
+    }
+
     /// Orden de papeles y límite de peces vivos en una ronda (R5).
     fn check_order(
         &self,
@@ -159,13 +208,25 @@ impl Arbiter {
         }
         match role {
             Role::Qa => {
-                let waiting: Vec<String> = task
+                let developers: Vec<_> = task
                     .fish_in_round(round)
-                    .filter(|fish| fish.role == Role::Developer && fish.pending)
+                    .filter(|fish| fish.role == Role::Developer)
+                    .collect();
+                let waiting: Vec<String> = developers
+                    .iter()
+                    .filter(|fish| fish.pending)
                     .map(|fish| fish.id.clone())
                     .collect();
                 if !waiting.is_empty() {
                     return Err(Rejection::new("R5", texts::waiting_for(&waiting)));
+                }
+                // DECISION: sin ningún desarrollador informado, el QA todavía
+                // no entra: «todos informaron» exige al menos uno.
+                if !developers.iter().any(|fish| fish.report.is_some()) {
+                    return Err(Rejection::new(
+                        "R5",
+                        texts::waiting_for(&[format!("dev-r{round}-1")]),
+                    ));
                 }
             }
             Role::QaValidator => {

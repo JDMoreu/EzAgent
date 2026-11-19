@@ -123,7 +123,7 @@ impl Arbiter {
     }
 
     fn save_state(&self, task: &Task) {
-        let path = crate::paths::task_dir(&self.data_dir, &task.id).join("estado.json");
+        let path = crate::paths::data_task_dir(&self.data_dir, &task.id).join("estado.json");
         match serde_json::to_vec_pretty(task) {
             Ok(bytes) => {
                 if let Err(error) = crate::paths::write_atomic(&path, &bytes) {
@@ -138,7 +138,7 @@ impl Arbiter {
         let Some(task) = &event.task else {
             return;
         };
-        let path = crate::paths::task_dir(&self.data_dir, task).join("bitacora.jsonl");
+        let path = crate::paths::data_task_dir(&self.data_dir, task).join("bitacora.jsonl");
         match serde_json::to_string(&event.redacted()) {
             Ok(line) => {
                 if let Err(error) = crate::paths::append_line(&path, &line) {
@@ -194,6 +194,6 @@ impl Arbiter {
 
     /// Ruta de un archivo de datos de la tarea.
     pub(crate) fn task_path(&self, task: &Task, name: &str) -> std::path::PathBuf {
-        crate::paths::task_dir(&self.data_dir, &task.id).join(name)
+        crate::paths::data_task_dir(&self.data_dir, &task.id).join(name)
     }
 }
