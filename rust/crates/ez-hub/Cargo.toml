@@ -19,6 +19,8 @@ tauri-build = { workspace = true }
 
 [dependencies]
 ez-core = { path = "../ez-core" }
+ez-audio = { path = "../ez-audio" }
+ez-stt = { path = "../ez-stt" }
 tauri = { workspace = true }
 portable-pty = { workspace = true }
 serde = { workspace = true }
