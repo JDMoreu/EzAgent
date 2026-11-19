@@ -17,8 +17,8 @@ use super::{normalize_scope, scope, ArbiterShared, Job, JobValue};
 /// El árbitro de un proceso: una tarea activa por espacio.
 ///
 /// Los comandos, las acciones de la persona y las señales de los peces pasan
-/// por el ejecutor secuencial del espacio; `wait_for_elephant`, `subscribe` y
-/// `snapshot` leen directamente (§14.5).
+/// por el ejecutor secuencial del espacio; `wait_for_main`, `wait_for_fish`,
+/// `subscribe` y `snapshot` leen directamente (§14.5).
 #[derive(Clone)]
 pub struct Arbiter {
     shared: Arc<ArbiterShared>,
@@ -213,11 +213,6 @@ impl Arbiter {
             }
             Ok(Outcome::new(""))
         });
-    }
-
-    /// Espera una novedad del elefante; `None` si vence el tope.
-    pub fn wait_for_elephant(&self, space: &str, timeout: Duration) -> Option<ElephantEvent> {
-        self.shared.wait_for_elephant(space, timeout)
     }
 
     /// Novedades de un agente principal concreto (§15.1).

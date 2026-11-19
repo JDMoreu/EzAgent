@@ -5,6 +5,7 @@ use super::*;
 #[derive(Default)]
 struct FakeArbiter {
     calls: Mutex<Vec<(ArbiterCaller, Command)>>,
+    waits: Mutex<Vec<ArbiterCaller>>,
     event: Mutex<Option<ez_arbiter::ElephantEvent>>,
 }
 
@@ -18,7 +19,12 @@ impl ArbiterApi for FakeArbiter {
         Ok(ez_arbiter::Outcome::new("hecho"))
     }
 
-    fn wait(&self, _space: &str, _timeout: Duration) -> Option<ez_arbiter::ElephantEvent> {
+    fn wait(
+        &self,
+        caller: &ArbiterCaller,
+        _timeout: Duration,
+    ) -> Option<ez_arbiter::ElephantEvent> {
+        self.waits.lock().push(caller.clone());
         self.event.lock().clone()
     }
 
@@ -197,6 +203,31 @@ fn handler_wait_without_and_with_an_event() {
         .data
         .get("event")
         .is_some_and(|value| !value.is_null()));
+}
+
+#[test]
+fn handler_wait_routes_each_caller_to_its_own_queue() {
+    let api = Arc::new(FakeArbiter::default());
+    let (h, _) = handler(Arc::clone(&api));
+    assert!(call(&h, &elephant_call(), "wait", json!({})).ok);
+    assert!(call(&h, &fish_call(), "wait", json!({})).ok);
+    assert_eq!(
+        *api.waits.lock(),
+        vec![
+            ArbiterCaller::Elephant(ElephantKey {
+                space: "s1".to_string(),
+                elephant: "e00000000".to_string(),
+            }),
+            ArbiterCaller::Fish(FishKey {
+                space: "s1".to_string(),
+                task: "t1".to_string(),
+                elephant: "e00000000".to_string(),
+                fish: "dev-r1-1".to_string(),
+                attempt: 1,
+                parent: None,
+            }),
+        ]
+    );
 }
 
 #[test]

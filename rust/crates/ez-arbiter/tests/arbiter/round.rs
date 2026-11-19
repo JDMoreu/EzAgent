@@ -111,6 +111,52 @@ fn r9_clean_round_accumulates_streak() {
     assert_eq!(f.snapshot()["clean_streak"], 1);
 }
 
+#[test]
+fn r9_verification_round_ignores_first_round_only_roles() {
+    let f = Fixture::new("r9-solo-verificacion");
+    let task = f.propose();
+    f.arbiter.approve_task("s1").expect("aprobar tarea");
+    let mut seats = Fixture::tasks();
+    seats.push(Fixture::seat(role(builtin::PLAN_REVIEWER), 1));
+    f.team(seats);
+    f.arbiter
+        .approve_team("s1")
+        .expect("aprobar equipo con revisor del plan");
+    f.arbiter
+        .execute(&Fixture::elephant(), Command::RoundStart)
+        .expect("abrir ronda 1");
+    let plan = f.launch(role(builtin::PLANNER));
+    f.report(&plan, Verdict::Pass, None, None)
+        .expect("planificador");
+    let review = f.launch(role(builtin::PLAN_REVIEWER));
+    f.report(&review, Verdict::Pass, None, None)
+        .expect("revisor del plan");
+    let dev = f.launch(role(builtin::DEVELOPER));
+    f.report(&dev, Verdict::Pass, None, None)
+        .expect("desarrollador");
+    let qa = f.launch(role(builtin::QA));
+    f.report(&qa, Verdict::Pass, None, None).expect("QA");
+    let val = f.launch(role(builtin::QA_VALIDATOR));
+    f.report(&val, Verdict::Pass, Some(3), Some(3))
+        .expect("validador");
+    f.close_round().expect("ronda 1 limpia");
+
+    f.arbiter
+        .execute(&Fixture::elephant(), Command::RoundStart)
+        .expect("abrir ronda 2 solo de verificación");
+    f.launch(role(builtin::QA));
+    f.report("qa-r2", Verdict::Pass, None, None)
+        .expect("QA de la ronda 2");
+    f.launch(role(builtin::QA_VALIDATOR));
+    f.report("valqa-r2", Verdict::Pass, Some(3), Some(3))
+        .expect("validador de la ronda 2");
+    let outcome = f.close_round().expect("cerrar la ronda 2");
+    assert!(outcome.message.contains("limpia"), "{}", outcome.message);
+    let state = f.state_json(&task);
+    assert_eq!(state["clean_streak"], 2);
+    assert_eq!(state["rounds"][1]["clean"], true);
+}
+
 /// Informes necesarios para cerrar una ronda sucia por una causa elegida.
 fn dirty_reports(f: &Fixture, qa_fails: bool, tried: Option<u32>) {
     f.launch(role(builtin::DEVELOPER));

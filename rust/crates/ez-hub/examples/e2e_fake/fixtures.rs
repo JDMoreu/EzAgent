@@ -8,9 +8,6 @@ use uuid::Uuid;
 
 use super::scenario;
 
-/// Espacio con id fijo para usar el agente principal por omisión (ECO-8).
-pub const ELEPHANT: &str = "e00000000";
-
 /// Todo lo que el ejemplo crea y debe limpiar al terminar.
 pub struct Layout {
     /// Carpeta temporal única, se borra al terminar.
@@ -19,12 +16,12 @@ pub struct Layout {
     pub repo: PathBuf,
     /// Datos privados de la app (`%APPDATA%\EzAgent\hub` simulado).
     pub data: PathBuf,
-    /// Worktree del agente principal.
-    pub worktree: PathBuf,
     /// Carpeta con `ez.exe` y `fake-ws-agent.exe`.
     pub bins: PathBuf,
     /// Id del espacio.
     pub space: String,
+    /// Id del agente principal, lo asigna el árbitro al crearlo.
+    pub elephant: String,
     /// Token del agente principal.
     pub token: String,
 }
@@ -128,29 +125,25 @@ pub fn prepare() -> Result<Layout, String> {
     std::fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     let repo = root.join("repo");
     let data = root.join("datos");
-    let worktree = root.join("wt");
     let script = root.join("guion.toml");
     let space = format!("e2e{}", &Uuid::new_v4().simple().to_string()[..8]);
     let token = ez_ctl::new_token();
-    let base_branch = init_repo(&repo, &worktree)?;
+    init_repo(&repo)?;
     write(&script, &scenario::script())?;
     write_data(Seed {
         data: &data,
         space: &space,
         repo: &repo,
-        worktree: &worktree,
-        base_branch: &base_branch,
         fake: &fake,
         script: &script,
-        token: &token,
     })?;
     Ok(Layout {
         root,
         repo,
         data,
-        worktree,
         bins,
         space,
+        elephant: String::new(),
         token,
     })
 }
@@ -165,7 +158,7 @@ fn tools() -> Result<(PathBuf, PathBuf), String> {
     Ok((bins, fake))
 }
 
-fn init_repo(repo: &Path, worktree: &Path) -> Result<String, String> {
+fn init_repo(repo: &Path) -> Result<(), String> {
     std::fs::create_dir_all(repo).map_err(|error| error.to_string())?;
     write(&repo.join("README.md"), "Repositorio de prueba ECO-8.\n")?;
     git(repo, &["init", "-q"])?;
@@ -173,20 +166,7 @@ fn init_repo(repo: &Path, worktree: &Path) -> Result<String, String> {
     git(repo, &["config", "user.name", "EzAgent E2E"])?;
     git(repo, &["add", "README.md"])?;
     git(repo, &["commit", "-q", "-m", "inicial"])?;
-    let base = git(repo, &["rev-parse", "--abbrev-ref", "HEAD"])?;
-    let branch = format!("ez/{ELEPHANT}");
-    git(
-        repo,
-        &[
-            "worktree",
-            "add",
-            "-q",
-            "-b",
-            &branch,
-            &worktree.to_string_lossy(),
-        ],
-    )?;
-    Ok(base)
+    Ok(())
 }
 
 /// Datos con los que se siembra la carpeta privada de la app.
@@ -194,11 +174,8 @@ struct Seed<'a> {
     data: &'a Path,
     space: &'a str,
     repo: &'a Path,
-    worktree: &'a Path,
-    base_branch: &'a str,
     fake: &'a Path,
     script: &'a Path,
-    token: &'a str,
 }
 
 fn write_data(seed: Seed<'_>) -> Result<(), String> {
@@ -206,34 +183,15 @@ fn write_data(seed: Seed<'_>) -> Result<(), String> {
         data,
         space,
         repo,
-        worktree,
-        base_branch,
         fake,
         script,
-        token,
     } = seed;
     write(&data.join("espacios.json"), &spaces(space, repo))?;
     write(&data.join("agentes.toml"), &profiles(fake, script))?;
     write(
         &data.join("suscripciones.toml"),
         "[[suscripcion]]\nnombre = \"Falsos\"\nagentes = [\"fake_main\", \"fake_exec\", \"fake_verify\"]\n",
-    )?;
-    let agents = serde_json::json!({
-        "agents": [{
-            "key": { "space": space, "elephant": ELEPHANT },
-            "name": "Principal falso",
-            "worktree": worktree,
-            "branch": format!("ez/{ELEPHANT}"),
-            "base_branch": base_branch,
-        }]
-    });
-    write(&data.join("agentes.json"), &agents.to_string())?;
-    let tokens = serde_json::json!({ ELEPHANT: token });
-    write(&data.join("elefantes.json"), &tokens.to_string())?;
-    let choices = serde_json::json!({
-        ELEPHANT: { "agente": "fake_main", "modelo": "main-1" }
-    });
-    write(&data.join("principales.json"), &choices.to_string())
+    )
 }
 
 fn spaces(space: &str, repo: &Path) -> String {

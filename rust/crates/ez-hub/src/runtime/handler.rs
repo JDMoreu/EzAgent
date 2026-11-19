@@ -26,8 +26,8 @@ const DEFAULT_WAIT_SECONDS: u64 = 170;
 pub trait ArbiterApi: Send + Sync {
     /// Ejecuta un comando en nombre de `caller`.
     fn execute(&self, caller: &ArbiterCaller, command: Command) -> Result<Outcome, Rejection>;
-    /// Espera una novedad del elefante.
-    fn wait(&self, space: &str, timeout: Duration) -> Option<ElephantEvent>;
+    /// Espera una novedad del agente principal o del pez que llama (§15.1).
+    fn wait(&self, caller: &ArbiterCaller, timeout: Duration) -> Option<ElephantEvent>;
     /// Estado serializado de la tarea activa de `space`.
     fn snapshot(&self, space: &str) -> Option<Value>;
     /// Worktree del agente principal, si está registrado en el árbitro.
@@ -46,8 +46,11 @@ impl ArbiterApi for ez_arbiter::Arbiter {
         ez_arbiter::Arbiter::execute(self, caller, command)
     }
 
-    fn wait(&self, space: &str, timeout: Duration) -> Option<ElephantEvent> {
-        self.wait_for_elephant(space, timeout)
+    fn wait(&self, caller: &ArbiterCaller, timeout: Duration) -> Option<ElephantEvent> {
+        match caller {
+            ArbiterCaller::Elephant(key) => self.wait_for_main(key, timeout),
+            ArbiterCaller::Fish(key) => self.wait_for_fish(key, timeout),
+        }
     }
 
     fn snapshot(&self, space: &str) -> Option<Value> {
@@ -203,12 +206,12 @@ impl ArbiterHandler {
             .unwrap_or_default()
     }
 
-    fn wait(&self, space: &str, args: &Value) -> Reply {
+    fn wait(&self, caller: &ArbiterCaller, args: &Value) -> Reply {
         let seconds = args
             .get("timeout")
             .and_then(Value::as_u64)
             .unwrap_or(DEFAULT_WAIT_SECONDS);
-        match self.arbiter.wait(space, Duration::from_secs(seconds)) {
+        match self.arbiter.wait(caller, Duration::from_secs(seconds)) {
             Some(event) => {
                 let message = event.message.clone();
                 Reply::ok(message, json!({ "event": event }))
@@ -244,7 +247,7 @@ impl ArbiterHandler {
                 Ok(Reply::ok(found.text(), found.json()))
             }
             "roles" => Ok(Reply::ok(self.roles_message(&space, &elephant)?, json!({}))),
-            "wait" => Ok(self.wait(&space, args)),
+            "wait" => Ok(self.wait(&arbiter_caller, args)),
             "task.new" => Ok(self.execute(
                 &arbiter_caller,
                 Command::TaskNew {

@@ -323,15 +323,6 @@ impl ArbiterShared {
             .insert(key.storage_key(), token.to_string());
     }
 
-    /// Espera una novedad del elefante; `None` si vence el tope.
-    pub(crate) fn wait_for_elephant(
-        &self,
-        space: &str,
-        timeout: Duration,
-    ) -> Option<ElephantEvent> {
-        self.wait_for_main(&ElephantKey::default_for(space), timeout)
-    }
-
     /// Espera una novedad de un agente principal concreto (§15.1).
     pub(crate) fn wait_for_main(
         &self,

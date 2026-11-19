@@ -28,7 +28,6 @@ modelo = \"exec-1\"
 papel = \"plan_reviewer\"
 agente = \"fake_verify\"
 modelo = \"verify-1\"
-etapa = 5
 
 [[papel]]
 papel = \"developer\"
@@ -123,15 +122,15 @@ pub fn script() -> String {
         ".ez/borrador/equipo.toml",
     ]));
     text.push_str(&step_wait("team_approved"));
-    // DECISION: el revisor del plan va en la etapa 5 para que una ronda solo
-    // de verificación no espere su informe (ver el informe ECO-8-r1).
+    // Las etapas sugeridas son planner 1, plan_reviewer 2, developer 3,
+    // qa 4 y qa_validator 5; la ronda 2 solo de verificación no las espera.
     round(
         &mut text,
         &[
             "planner",
+            "plan_reviewer",
             "developer",
             "qa",
-            "plan_reviewer",
             "qa_validator",
         ],
     );
@@ -161,6 +160,13 @@ mod tests {
         assert!(text.contains("ez = [\"close\"]"));
         assert_eq!(text.matches("ez = [\"delegate\"").count(), 7);
         assert_eq!(text.matches("wait = \"fish_reported\"").count(), 7);
+        assert!(!EQUIPO.contains("etapa"), "el equipo no fija etapas");
+        let review = text.find("ez = [\"delegate\", \"plan_reviewer\"");
+        let dev = text.find("ez = [\"delegate\", \"developer\"");
+        assert!(
+            review.is_some() && dev.is_some() && review < dev,
+            "el revisor del plan va antes del desarrollador"
+        );
     }
 
     #[test]

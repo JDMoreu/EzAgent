@@ -18,12 +18,13 @@ use std::process::ExitCode;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
+use ez_hub::runtime::spaces::MainChoice;
 use ez_hub::runtime::{HubRuntime, RuntimeOptions};
 use ez_term::locate_hc;
 use ez_term::HcClient;
 use serde_json::Value;
 
-use fixtures::{command, prepare, Layout, ELEPHANT};
+use fixtures::{command, prepare, Layout};
 use watch::DiskCheck;
 
 const DEADLINE: Duration = Duration::from_secs(600);
@@ -64,13 +65,14 @@ fn tail_text(tail: &[Value]) -> String {
     serde_json::to_string(tail).unwrap_or_else(|_| "sin eventos legibles".to_string())
 }
 
-fn run_flow(layout: &Layout) -> Result<String, String> {
-    let runtime = start_engine(layout)?;
+fn run_flow(layout: &mut Layout) -> Result<String, String> {
+    let (runtime, elephant) = start_engine(layout)?;
+    layout.elephant = elephant;
     drive(&runtime, layout)?;
     verify(layout)
 }
 
-fn start_engine(layout: &Layout) -> Result<HubRuntime, String> {
+fn start_engine(layout: &Layout) -> Result<(HubRuntime, String), String> {
     let options = RuntimeOptions {
         ez_dir: Some(layout.bins.clone()),
     };
@@ -78,13 +80,22 @@ fn start_engine(layout: &Layout) -> Result<HubRuntime, String> {
     if runtime.status().mode != "normal" {
         return Err(format!("el motor no arrancó: {}", runtime.status().reason));
     }
+    let choice = MainChoice {
+        agent: "fake_main".to_string(),
+        model: "main-1".to_string(),
+        effort: None,
+    };
+    let agent = runtime.main_agent_create(&layout.space, "Principal falso", &choice)?;
     emit(&format!(
-        "Motor normal en {}; agente principal {ELEPHANT}.",
-        runtime.status().url
+        "Motor normal en {}; agente principal {}.",
+        runtime.status().url,
+        agent.id
     ));
-    let address = runtime.ensure_main_agent(&layout.space, ELEPHANT)?;
-    emit(&format!("Agente principal lanzado en {address}."));
-    Ok(runtime)
+    emit(&format!(
+        "Agente principal {} lanzado en {}.",
+        agent.id, agent.address
+    ));
+    Ok((runtime, agent.id))
 }
 
 fn drive(runtime: &HubRuntime, layout: &Layout) -> Result<(), String> {
@@ -93,11 +104,11 @@ fn drive(runtime: &HubRuntime, layout: &Layout) -> Result<(), String> {
     let mut closed = false;
     let mut integrated = false;
     loop {
-        let seen = watch::read(runtime, &layout.space, ELEPHANT)?;
+        let seen = watch::read(runtime, &layout.space, &layout.elephant)?;
         let tail = seen.tail;
         for card in seen.cards {
             if handled.insert(card.id.clone()) {
-                handle_card(runtime, layout, &card, &tail)?;
+                handle_card(runtime, &card, &tail)?;
             }
         }
         if seen.kinds.contains("rejected") {
@@ -121,27 +132,13 @@ fn drive(runtime: &HubRuntime, layout: &Layout) -> Result<(), String> {
     }
 }
 
-fn handle_card(
-    runtime: &HubRuntime,
-    layout: &Layout,
-    card: &watch::Card,
-    tail: &[Value],
-) -> Result<(), String> {
+fn handle_card(runtime: &HubRuntime, card: &watch::Card, tail: &[Value]) -> Result<(), String> {
     match card.kind.as_str() {
         "task" | "team" => {
             runtime.card_action(&card.id, "approve", None)?;
             emit(&format!("Aprobada la tarjeta {} ({}).", card.id, card.kind));
         }
         "integrate" => {
-            // DECISION: `git merge` no lleva cambios sin confirmar; el banco de
-            // pruebas confirma el archivo del doble antes de integrar.
-            if layout.worktree.join("fake").is_dir() {
-                git_head(&layout.worktree, &["add", "fake"])?;
-                git_head(
-                    &layout.worktree,
-                    &["commit", "-q", "-m", "EzAgent: trabajo del subagente falso"],
-                )?;
-            }
             runtime.card_action(&card.id, "merge", None)?;
             emit(&format!("Integrada la rama desde la tarjeta {}.", card.id));
         }
@@ -221,7 +218,7 @@ fn execute() -> i32 {
         emit("Falta herdr-core (hc). Instálalo y vuelve a ejecutar el ejemplo.");
         return 2;
     };
-    let layout = match prepare() {
+    let mut layout = match prepare() {
         Ok(layout) => layout,
         Err(error) => {
             emit(&format!("No pude preparar el ejemplo: {error}"));
@@ -233,7 +230,7 @@ fn execute() -> i32 {
         space: layout.space.clone(),
         root: layout.root.clone(),
     };
-    match run_flow(&layout) {
+    match run_flow(&mut layout) {
         Ok(summary) => {
             emit(&summary);
             0

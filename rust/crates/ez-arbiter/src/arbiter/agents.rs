@@ -101,6 +101,55 @@ fn remove(space_folder: &Path, worktree: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Añade `.ez/` a `info/exclude` del repositorio común si no está (§15.1).
+/// El archivo es común a todos los worktrees, así los artefactos nunca se confirman.
+fn exclude_ez(space_folder: &Path) -> Result<(), String> {
+    let reported = git(space_folder, &["rev-parse", "--git-path", "info/exclude"])?;
+    let path = PathBuf::from(reported.trim());
+    let path = if path.is_absolute() {
+        path
+    } else {
+        space_folder.join(path)
+    };
+    let previous = std::fs::read_to_string(&path).unwrap_or_default();
+    if previous.lines().any(|line| line.trim() == ".ez/") {
+        return Ok(());
+    }
+    let mut text = previous;
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text.push_str(".ez/\n");
+    std::fs::write(&path, text).map_err(|error| error.to_string())
+}
+
+/// Confirma en la rama `ez/<id>` el trabajo sin confirmar del worktree.
+/// Devuelve `false` si no había cambios; los artefactos bajo `.ez/` nunca entran.
+pub(crate) fn commit_work(worktree: &Path, title: &str, round: u32) -> Result<bool, String> {
+    // DECISION: la forma `:(exclude):(top).ez` evita que git rechace excluir
+    // una ruta ya ignorada por `info/exclude` (la de §15.1); `exclude_ez`
+    // garantiza esa condición también en worktrees heredados.
+    exclude_ez(worktree)?;
+    git(worktree, &["add", "-A", "--", ".", ":(exclude):(top).ez"])?;
+    let check = crate::exec::command("git")
+        .arg("-C")
+        .arg(worktree)
+        .args(["diff", "--cached", "--quiet"])
+        .output()
+        .map_err(|error| texts::git_failed(&error.to_string()))?;
+    match check.status.code() {
+        Some(0) => Ok(false),
+        Some(1) => {
+            let message = format!("EzAgent: «{title}» (ronda {round}, dos rondas limpias)");
+            git(worktree, &["commit", "-q", "-m", &message])?;
+            Ok(true)
+        }
+        _ => Err(texts::git_failed(
+            String::from_utf8_lossy(&check.stderr).trim(),
+        )),
+    }
+}
+
 /// Integra la rama del agente en la rama base del espacio, sin fast-forward.
 pub(crate) fn merge(space_folder: &Path, branch: &str, title: &str) -> Result<(), String> {
     let message = format!("EzAgent: integra «{title}»");
@@ -133,6 +182,7 @@ impl ArbiterShared {
             branch: format!("ez/{}", key.elephant),
             base_branch,
         };
+        exclude_ez(&space_info.folder).map_err(|message| Rejection::new("R12", message))?;
         add(&space_info.folder, &agent).map_err(|message| Rejection::new("R12", message))?;
         let scope = key.storage_key();
         let mut inner = self.inner.lock();
@@ -211,7 +261,7 @@ impl ArbiterShared {
 
 #[cfg(test)]
 mod tests {
-    use super::{current_branch, merge};
+    use super::{commit_work, current_branch, merge};
     use std::path::Path;
 
     fn run(folder: &Path, args: &[&str]) {
@@ -246,6 +296,26 @@ mod tests {
         run(&root, &["checkout", "-q", &branch]);
         merge(&root, "ez/prueba", "Tarea").expect("integrar");
         assert!(root.join("nuevo.txt").is_file());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn commit_work_ignores_ez_and_reports_whether_there_were_changes() {
+        let root = repo("confirmar");
+        std::fs::create_dir_all(root.join(".ez/tareas")).expect("crear .ez");
+        std::fs::write(root.join(".ez/tareas/x"), "secreto").expect("artefacto");
+        std::fs::write(root.join("obra.txt"), "hecho").expect("obra");
+        assert!(commit_work(&root, "Tarea", 2).expect("confirmar"));
+        let output = crate::exec::command("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["ls-tree", "-r", "--name-only", "HEAD"])
+            .output()
+            .expect("git ls-tree");
+        let tree = String::from_utf8_lossy(&output.stdout);
+        assert!(tree.contains("obra.txt"), "{tree}");
+        assert!(!tree.contains(".ez/"), "{tree}");
+        assert!(!commit_work(&root, "Tarea", 2).expect("sin cambios"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
