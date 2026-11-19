@@ -65,6 +65,7 @@ ez-herdr: test result: ok. 312 passed; 0 failed (lib)
           test result: ok. 2 passed; 0 failed   (metrics_parity)
           test result: ok. 27 passed; 0 failed  (permission)
           test result: ok. 1 passed; 0 failed   (tasks_activity_parity)
+Total de los tres crates: 485 passed; 0 failed.
 ```
 
 Comandos en vivo (solo lectura, esta máquina):
