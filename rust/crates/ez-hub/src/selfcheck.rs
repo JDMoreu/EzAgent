@@ -5,8 +5,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-/// Prefijo que debe tener la cabecera del elefante en la demostración.
-pub const HEADER_PREFIX: &str = "Elefante · ";
+/// Prefijo que debe tener la cabecera del agente principal en la demostración.
+pub const HEADER_PREFIX: &str = "Agente principal · ";
 
 /// Lo que la vista informa 6 s después de cargar en modo `--selfcheck`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -14,11 +14,11 @@ pub const HEADER_PREFIX: &str = "Elefante · ";
 pub struct SelfcheckReport {
     /// Errores de JavaScript capturados desde el primer momento.
     pub errores: Vec<String>,
-    /// Texto de la cabecera del elefante.
+    /// Texto de la cabecera del agente principal.
     pub cabecera: String,
     /// Terminales xterm que recibieron al menos un bloque de bytes del PTY.
     pub terminales: usize,
-    /// Tarjetas de pez pintadas.
+    /// Tarjetas de subagente pintadas.
     pub peces: usize,
     /// Eventos de traza pintados.
     pub eventos: usize,
@@ -35,13 +35,13 @@ pub fn failures(report: &SelfcheckReport) -> Vec<&'static str> {
         out.push("la vista registró errores de JavaScript");
     }
     if !report.cabecera.starts_with(HEADER_PREFIX) {
-        out.push("la cabecera del elefante no es la esperada");
+        out.push("la cabecera del agente principal no es la esperada");
     }
     if report.terminales != 3 {
         out.push("no se montaron 3 terminales con datos");
     }
     if report.peces != 2 {
-        out.push("no se pintaron 2 peces");
+        out.push("no se pintaron 2 subagentes");
     }
     if report.eventos != 5 {
         out.push("no se pintaron 5 eventos de traza");
@@ -122,7 +122,7 @@ mod tests {
     #[test]
     fn wrong_header_and_open_form_fail_the_check() {
         let mut report = good();
-        report.cabecera = "Elefante".to_string();
+        report.cabecera = "Agente principal".to_string();
         report.formulario_abierto = true;
         assert_eq!(failures(&report).len(), 2);
     }

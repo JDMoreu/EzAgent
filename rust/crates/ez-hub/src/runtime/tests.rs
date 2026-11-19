@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use ez_arbiter::{Caller as ArbiterCaller, Command, Delivery, FishKey, LaunchRequest};
 use ez_ctl::{Caller, Handler, Reply, Request, Tokens};
-use ez_team::{AgentProfile, Role, Seat, Subscription};
+use ez_team::{builtin, AgentProfile, RoleId, Seat, Subscription};
 use ez_term::{Delivery as TermDelivery, RunSpec, Terminal};
 use parking_lot::{Mutex, RwLock};
 use serde_json::{json, Value};
@@ -145,11 +145,13 @@ fn profile() -> AgentProfile {
 
 fn seat() -> Seat {
     Seat {
-        role: Role::Developer,
+        role: RoleId::parse(builtin::DEVELOPER).expect("id"),
         agent: "opencode".to_string(),
         model: "opencode-go/deepseek-v4.1-flash".to_string(),
         effort: Some("max".to_string()),
         count: 1,
+        stage: 3,
+        delegates_to: Vec::new(),
     }
 }
 
@@ -158,7 +160,7 @@ fn labels() -> BTreeMap<String, String> {
         ("ez".to_string(), "1".to_string()),
         ("ez_space".to_string(), "s1".to_string()),
         ("ez_task".to_string(), "t1".to_string()),
-        ("ez_role".to_string(), "fish".to_string()),
+        ("ez_role".to_string(), "sub".to_string()),
         ("ez_fish".to_string(), "dev-r1-1".to_string()),
         ("ez_attempt".to_string(), "1".to_string()),
     ])
@@ -178,12 +180,12 @@ fn launch_request(token: &str) -> LaunchRequest {
     LaunchRequest {
         fish: "dev-r1-1".to_string(),
         hc_name: "ez-t1-dev".to_string(),
-        role: Role::Developer,
+        role: RoleId::parse(builtin::DEVELOPER).expect("id"),
         seat: seat(),
         cwd: PathBuf::from("C:\\proyecto"),
         env: BTreeMap::from([("EXTRA".to_string(), "valor".to_string())]),
         labels: labels(),
-        first_line: "Eres un pez dorado.".to_string(),
+        first_line: "Eres un subagente de EzAgent.".to_string(),
         token: token.to_string(),
     }
 }
@@ -227,7 +229,7 @@ fn launcher_registers_the_token_before_launching_and_builds_the_environment() {
     );
     assert_eq!(
         record.spec.env.get("EZ_ROLE").map(String::as_str),
-        Some("fish")
+        Some("sub")
     );
     assert_eq!(
         record.spec.env.get("EXTRA").map(String::as_str),
@@ -250,7 +252,7 @@ fn launcher_registers_the_token_before_launching_and_builds_the_environment() {
         record.spec.labels.get("ez_agent").map(String::as_str),
         Some("opencode")
     );
-    assert_eq!(record.first_line, "Eres un pez dorado.");
+    assert_eq!(record.first_line, "Eres un subagente de EzAgent.");
     drop(records);
     assert!(matches!(
         tokens.lookup("tk"),

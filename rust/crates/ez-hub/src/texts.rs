@@ -1,6 +1,6 @@
 //! Textos que ve la persona o el agente. Español neutro latinoamericano.
 
-/// Nombre visible de cada agente que puede ser elefante.
+/// Nombre visible de cada agente que puede ser agente principal.
 pub fn agent_name(agent: &str) -> &str {
     match agent {
         "claude" => "Claude Code",
@@ -10,7 +10,7 @@ pub fn agent_name(agent: &str) -> &str {
     }
 }
 
-/// Nombre visible de cada papel de pez.
+/// Nombre visible de cada papel de subagente.
 pub fn role_name(role: &str) -> &str {
     match role {
         "planner" => "Planificador",
@@ -23,10 +23,11 @@ pub fn role_name(role: &str) -> &str {
 }
 
 pub const SPACE_NAME_EMPTY: &str = "Escribe un nombre para el espacio.";
-pub const ELEPHANT_CLOSED: &str = "La terminal del elefante no está abierta.";
+pub const ELEPHANT_CLOSED: &str = "La terminal del agente principal no está abierta.";
 pub const VIEW_CLOSED: &str = "La terminal se cerró.";
 pub const CARD_ACTION_INVALID: &str = "La acción de la tarjeta debe ser approve o reject.";
-pub const CARD_COMMENT_REQUIRED: &str = "Para rechazar, escribe un comentario para el elefante.";
+pub const CARD_COMMENT_REQUIRED: &str =
+    "Para rechazar, escribe un comentario para el agente principal.";
 pub const SPACES_FILE: &str = "No pude guardar los espacios.";
 
 // Nota de voz (ECO-7): textos de la línea de estado de la barra.
