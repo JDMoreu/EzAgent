@@ -12,7 +12,6 @@
 
 pub mod canvas;
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use ez_core::metrics::monotonic;
@@ -37,7 +36,7 @@ mod types;
 #[cfg(test)]
 pub(crate) mod test_support;
 
-use entries::{Cached, Geometry};
+use entries::{Geometry, LayoutCache};
 pub use types::{
     Action, ActionData, ChatMessage, ChatModel, ConfirmCard, Mode, Move, Role, SessionInfo,
     TextField, ViewHost,
@@ -85,8 +84,8 @@ pub struct ChatView {
     pub hover: Option<String>,
     /// Size, scale, theme and palette of the last `configure`.
     pub(crate) g: Geometry,
-    /// Rich messages already laid out, by message id.
-    pub(crate) cache: BTreeMap<i64, Cached>,
+    /// Rich messages already laid out, by message id, and their heights.
+    pub(crate) cache: LayoutCache,
     /// Clickable zones of the last `render`, in paint order.
     pub(crate) hits: Vec<Zone>,
     /// Visible lines of the input box: `(start, end)` in the text.
@@ -125,7 +124,7 @@ impl ChatView {
             deleting: None,
             hover: None,
             g: Geometry::default(),
-            cache: BTreeMap::new(),
+            cache: LayoutCache::default(),
             hits: Vec::new(),
             input_lines: Vec::new(),
             input_box: Rect::new(0.0, 0.0, 0.0, 0.0),
@@ -170,6 +169,7 @@ impl ChatView {
             height,
             scale,
             theme: theme.to_string(),
+            theme_hash: entries::hash_of(theme.as_bytes()),
             pal,
         };
     }
@@ -274,8 +274,7 @@ impl ChatView {
     }
 
     /// Whether the panel must keep repainting.
-    pub fn animating(&mut self, now: f64) -> bool {
-        let flashing = self.flash.as_ref().is_some_and(|(_, until)| now < *until);
+    pub fn animating(&mut self, now: f64) -> bool {        let flashing = self.flash.as_ref().is_some_and(|(_, until)| now < *until);
         let mut fading = self.deleting.is_some();
         if let Some(deleting) = &self.deleting {
             if now - deleting.2 >= DELETE_SECS {
@@ -284,6 +283,14 @@ impl ChatView {
             }
         }
         self.model.busy() || self.model.confirm().is_some() || flashing || fading
+    }
+
+    /// How many messages have been laid out since the last clear.
+    ///
+    /// It is the measure of the cost of the view: a frame that lays out
+    /// nothing new did not touch the history (DX-1, paso 3).
+    pub fn layouts(&self) -> u64 {
+        self.cache.layouts()
     }
 
     /// Shows for a moment that `text` was copied («COPIADO» where «COPIAR» was).

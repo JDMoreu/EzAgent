@@ -12,6 +12,11 @@ use super::{canvas, ChatMessage, ChatView, Role, GAP, PAD};
 
 impl ChatView {
     /// `_draw_messages`: lays out and paints the current conversation.
+    ///
+    /// DECISION: only the messages on screen get a tile (DX-1, paso 3). The
+    /// total height of the conversation needs the height of every message, but
+    /// the height is cached apart from the tile: before, the view laid out
+    /// the whole history in every frame, even the parts that were off screen.
     pub(crate) fn draw_messages(&mut self, buf: &mut Layer, now: f64, top: f64, bottom: f64) {
         let (_, messages) = self.model.snapshot();
         let viewport = bottom - top;
@@ -20,33 +25,39 @@ impl ChatView {
             self.scroll.set_max(0.0);
             return;
         }
-        let entries: Vec<std::rc::Rc<Entry>> =
-            messages.iter().map(|msg| self.entry(msg, now)).collect();
+        let heights: Vec<f64> = messages.iter().map(|msg| self.height_of(msg, now)).collect();
         let stamps: Vec<f64> = messages.iter().map(labels::stamp_height).collect();
         let mut total = PAD
-            + entries
+            + heights
                 .iter()
                 .zip(&stamps)
-                .map(|(entry, stamp)| entry.height + stamp)
+                .map(|(height, stamp)| height + stamp)
                 .sum::<f64>();
-        total += GAP * (entries.len() as f64 - 1.0) + GAP;
+        total += GAP * (messages.len() as f64 - 1.0) + GAP;
         self.scroll.set_max((total - viewport).max(0.0));
         let mut y = top - (self.scroll.max() - self.scroll.offset()) + PAD;
-        for ((msg, entry), stamp) in messages.iter().zip(&entries).zip(&stamps) {
-            self.draw_message(buf, msg, entry, y, top, bottom, now);
-            if *stamp > 0.0 && y + entry.height >= top && y + entry.height + stamp <= bottom {
-                let width = entry.image.width() as f64 / self.g.scale;
-                let scale = self.g.scale;
-                let ink = self.color("TEXT_3");
-                let bottom_edge = y + entry.height;
-                let mut draw =
-                    |text: &str, style: FontStyle, color: Rgba, x: f64, at: f64, align| {
-                        canvas::text(buf, text, style, color, x, at, scale, align);
-                    };
-                draw_stamp(&mut draw, msg, entry.x, width, bottom_edge, ink, scale);
+        let mut visible: Vec<i64> = Vec::new();
+        for ((msg, height), stamp) in messages.iter().zip(&heights).zip(&stamps) {
+            if y + *height >= top && y <= bottom {
+                let entry = self.entry(msg, now);
+                self.draw_message(buf, msg, &entry, y, top, bottom, now);
+                visible.push(msg.id);
+                if *stamp > 0.0 && y + *height + stamp <= bottom {
+                    let width = entry.image.width() as f64 / self.g.scale;
+                    let scale = self.g.scale;
+                    let ink = self.color("TEXT_3");
+                    let bottom_edge = y + *height;
+                    let mut draw =
+                        |text: &str, style: FontStyle, color: Rgba, x: f64, at: f64, align| {
+                            canvas::text(buf, text, style, color, x, at, scale, align);
+                        };
+                    draw_stamp(&mut draw, msg, entry.x, width, bottom_edge, ink, scale);
+                }
             }
-            y += entry.height + stamp + GAP;
+            y += *height + stamp + GAP;
         }
+        // The tiles that are not on screen anymore are the first to go.
+        self.cache.enforce_budget(&visible);
         if self.scroll.max() > 0.0 {
             self.draw_scrollbar(buf, top, viewport, total);
         }
