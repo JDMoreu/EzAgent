@@ -415,17 +415,22 @@ fn check_record(sandbox: &Sandbox, child: &Child, report: &mut Report) {
     report.check(
         &format!("el primer mensaje de {}", child.name),
         message.contains(&role),
-        format!("{:?}", first_line(&lines)),
+        if message.contains(&role) {
+            "el mensaje trae el papel".to_string()
+        } else {
+            format!("{:?}", first_line(&lines))
+        },
     );
+    let names_parent = !child.parent_hint.is_empty() && message.contains(&child.parent_hint);
     report.check(
         &format!("la terminal del padre en el mensaje de {}", child.name),
-        message.contains(&child.parent_hint),
-        "el mensaje no nombra al padre",
+        names_parent,
+        format!("el mensaje nombra a {}", child.parent_hint),
     );
     report.check(
         &format!("la marca del encargo en {}", child.name),
         message.contains(&child.mark),
-        format!("no aparece {}", child.mark),
+        format!("el mensaje trae {}", child.mark),
     );
     let argv = strings(&record, "argv");
     check_argv(child, &argv, report);

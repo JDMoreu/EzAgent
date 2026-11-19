@@ -84,15 +84,32 @@ fn cases() -> Vec<Case> {
         ),
         usage(
             "una ubicación que no existe",
-            vec!["--show".to_string(), "arriba".to_string()],
+            vec![
+                "--agent".to_string(),
+                "claude".to_string(),
+                "--show".to_string(),
+                "arriba".to_string(),
+            ],
         ),
         usage(
             "un nombre con mayúsculas",
-            vec!["--name".to_string(), "T9".to_string()],
+            vec![
+                "--agent".to_string(),
+                "claude".to_string(),
+                "--name".to_string(),
+                "T9".to_string(),
+            ],
         ),
     ];
-    let mut missing = usage("sin `HC_TERMINAL_ID`", Vec::new());
+    // DECISION: el caso sin `HC_TERMINAL_ID` lleva un tipo válido: si no, el
+    // comando se rechaza antes por el tipo y no se llega a la comprobación.
+    // Su código es el 3 de §4 («sin `hc`/sin `HC_TERMINAL_ID`»), no el 2.
+    let mut missing = usage(
+        "sin `HC_TERMINAL_ID`",
+        vec!["--agent".to_string(), "claude".to_string()],
+    );
     missing.without_terminal = true;
+    missing.code = 3;
     cases.push(missing);
     cases
 }
