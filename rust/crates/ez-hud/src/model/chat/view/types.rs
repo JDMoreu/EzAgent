@@ -142,6 +142,12 @@ pub struct ConfirmCard {
 pub trait ChatModel {
     /// `(version, messages)` of what is shown, copied.
     fn snapshot(&self) -> (i64, Vec<ChatMessage>);
+    /// Version of what is shown, read without copying the history.
+    ///
+    /// DECISION: the content cache only needs the number that changes when the
+    /// history changes; asking for it with `snapshot()` copied the whole
+    /// history twice per frame just to read one `i64` (DX-1).
+    fn version(&self) -> i64;
     /// Saved conversations, newest first.
     fn sessions(&self) -> Vec<SessionInfo>;
     /// The model is answering.

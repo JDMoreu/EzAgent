@@ -69,12 +69,13 @@ impl ChatPanel {
             self.teardown(true);
             return false;
         }
-        // The morph clock starts here, not before: painting the history and
-        // creating the native window can take longer than MORPH_SECS with a
-        // real conversation (measured: +0,42 s and +0,10 s), and the first
-        // painted frame was already the open panel. Python sets
+        // The morph clock starts here, not before: creating the native window
+        // can take longer than MORPH_SECS with a real conversation, and the
+        // first painted frame was already the open panel. Python sets
         // `_Anim("opening", time.monotonic(), 0.0)` after `view.render` and
-        // after building the window for the same reason.
+        // after building the window for the same reason. The history is no
+        // longer painted here (DX-1, paso 1): that work is now the paint
+        // thread's, and it must not delay the morph.
         let now = monotonic();
         self.install_view(SendView(view), form, now);
         window.wake();
@@ -101,16 +102,20 @@ impl ChatPanel {
         true
     }
 
-    /// Configures and pre-paints the view before the morph starts.
+    /// Configures the view before the morph starts.
+    ///
+    /// DECISION: the history is **not** laid out here (DX-1, paso 1). Doing it
+    /// cost ~89 ms per message and it ran in the thread that opens the chat —
+    /// the app's main thread when the panel is opened with the shortcut — so
+    /// the whole interface froze while the history was drawn (the audio kept
+    /// going). The first content frame is painted by the paint thread, which
+    /// is where that work belongs.
     fn prepare_view(&self, view: &mut ChatView, panel: crate::geometry::Rect) {
         self.configure_view(
             view,
             (panel.2 - panel.0) / self.ui.scale(),
             (panel.3 - panel.1) / self.ui.scale(),
         );
-        // Messages are painted before the morph: the first content frame cost
-        // ~100 ms in Python and froze the shape just as it started appearing.
-        view.render(monotonic());
     }
 
     fn install_view(&self, view: SendView, form: crate::geometry::Rect, now: f64) {

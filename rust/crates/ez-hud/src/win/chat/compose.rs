@@ -90,7 +90,10 @@ pub(crate) fn signature(view: &mut ChatView, now: f64, ticking: bool) -> Sig {
     // it private, so the phase is derived from the clock instead.
     let blink = if ticking { (now * 2.0) as i64 % 2 } else { 0 };
     Sig {
-        version: view.model.snapshot().0,
+        // DECISION: the version is read on its own (`ChatModel::version`); with
+        // `snapshot()` the whole history was copied twice per frame just to
+        // read this number (DX-1, paso 6).
+        version: view.model.version(),
         scroll_tenths: (view.scroll.offset() * 10.0).round_ties_even() as i64,
         hover: view.hover.clone(),
         input_text: view.input.text().to_string(),
