@@ -162,10 +162,7 @@ static LOGS_REDIRECT: Once = Once::new();
 
 pub(crate) fn redirect_logs() {
     LOGS_REDIRECT.call_once(|| {
-        let dir = std::env::temp_dir().join(format!(
-            "ezagent-dx2c-logs-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("ezagent-dx2c-logs-{}", std::process::id()));
         std::env::set_var("EZAGENT_LOGS_DIR", &dir);
     });
 }
