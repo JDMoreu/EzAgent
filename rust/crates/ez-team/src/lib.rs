@@ -20,7 +20,7 @@ pub use error::TeamError;
 pub use inventory::{AvailableAgent, Inventory, RealSystem, System};
 pub use launch::LaunchCommand;
 pub use profiles::AgentProfile;
-pub use role_text::builtin_roles;
+pub use role_text::{builtin_roles, library_dir, load_roles, roles_json, roles_text};
 pub use roles::{builtin, RoleDef, RoleId, RoleKind, RoleOrigin};
 pub use subscriptions::Subscription;
 pub use team::TeamCheck;

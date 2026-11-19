@@ -6,7 +6,8 @@ use crate::contract::Seat;
 use crate::error::TeamError;
 use crate::family::family;
 use crate::inventory::Inventory;
-use crate::roles::{builtin, RoleDef, RoleId};
+use crate::role_text::kind_label;
+use crate::roles::{builtin, RoleDef, RoleId, RoleOrigin};
 
 /// Problemas de un equipo propuesto: los errores bloquean, los avisos solo se muestran.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -173,6 +174,19 @@ pub fn validate(seats: &[Seat], inventory: &Inventory, roles: &[RoleDef]) -> Tea
             continue;
         };
         check_agent(seat, def, inventory, &mut check);
+        if seat.count == 0 {
+            check.errors.push(format!(
+                "El papel {} tiene cantidad 0; debe ser al menos 1.",
+                def.name
+            ));
+        }
+        if seat.stage == 0 {
+            check.errors.push(format!(
+                "El papel {} tiene etapa 0; debe ser al menos 1.",
+                def.name
+            ));
+        }
+        check_delegation(seat, def, seats, &mut check);
     }
     let executors: Vec<&Seat> = seats
         .iter()
@@ -208,6 +222,27 @@ pub fn validate(seats: &[Seat], inventory: &Inventory, roles: &[RoleDef]) -> Tea
 
 fn find<'a>(seats: &'a [Seat], role: &str) -> Option<&'a Seat> {
     seats.iter().find(|seat| seat.role.as_str() == role)
+}
+
+/// `delega_en` solo en papeles que pueden delegar y solo con papeles del equipo (§15.3).
+fn check_delegation(seat: &Seat, def: &RoleDef, seats: &[Seat], check: &mut TeamCheck) {
+    if seat.delegates_to.is_empty() {
+        return;
+    }
+    if !def.can_delegate {
+        check.errors.push(format!(
+            "El papel {} no puede delegar (puede_delegar = false).",
+            def.name
+        ));
+    }
+    for target in &seat.delegates_to {
+        if !seats.iter().any(|other| other.role == *target) {
+            check.errors.push(format!(
+                "delega_en del papel {} nombra a «{target}», que no está en el equipo.",
+                seat.role
+            ));
+        }
+    }
 }
 
 fn check_agent(seat: &Seat, def: &RoleDef, inventory: &Inventory, check: &mut TeamCheck) {
@@ -319,6 +354,30 @@ pub fn card(
     }
     for warning in &check.warnings {
         text.push_str(&format!("\nAviso: {warning}"));
+    }
+    // DECISION: solo se listan los papeles de la tarea que usa el equipo; los papeles
+    // de la carpeta de la tarea que nadie usa no necesitan aprobación.
+    let new_roles: Vec<&RoleDef> = seats
+        .iter()
+        .filter_map(|seat| definition(roles, &seat.role))
+        .filter(|def| def.origin == RoleOrigin::Task)
+        .fold(Vec::new(), |mut found: Vec<&RoleDef>, def| {
+            if !found.iter().any(|seen| seen.id == def.id) {
+                found.push(def);
+            }
+            found
+        });
+    if !new_roles.is_empty() {
+        text.push_str("\nPapeles nuevos de esta tarea:");
+        for def in new_roles {
+            text.push_str(&format!(
+                "\n- {} ({}, {}): {}",
+                def.id,
+                def.name,
+                kind_label(def.kind),
+                def.description
+            ));
+        }
     }
     text
 }

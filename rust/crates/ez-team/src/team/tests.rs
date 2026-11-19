@@ -402,3 +402,173 @@ fn seats_compare_by_value() {
         }
     );
 }
+
+fn task_role(id: &str, name: &str, kind: &str, description: &str) -> crate::roles::RoleDef {
+    let content = format!(
+        "+++\nnombre = \"{name}\"\ntipo = \"{kind}\"\ndescripcion = \"{description}\"\n+++\nCuerpo.\n"
+    );
+    crate::role_text::parse(
+        &content,
+        std::path::Path::new(&format!("{id}.md")),
+        crate::roles::RoleOrigin::Task,
+    )
+    .expect("papel de la tarea")
+}
+
+#[test]
+fn validate_rejects_a_role_outside_the_available_list() {
+    let mut seats = parse(team_text(), &roles()).expect("parse");
+    seats[0].role = role("auditor");
+    let check = validate(&seats, &inventory(), &roles());
+    assert!(
+        check
+            .errors
+            .iter()
+            .any(|error| error.contains("no está disponible")),
+        "{check:?}"
+    );
+}
+
+#[test]
+fn validate_requires_an_executor() {
+    let seats = parse(
+        "[[papel]]\npapel = \"qa\"\nagente = \"claude\"\nmodelo = \"opus\"\n",
+        &roles(),
+    )
+    .expect("parse");
+    let check = validate(&seats, &inventory(), &roles());
+    assert!(
+        check.errors.iter().any(|error| error.contains("ejecutor")),
+        "{check:?}"
+    );
+}
+
+#[test]
+fn validate_rejects_zero_count_and_stage() {
+    let mut seats = parse(team_text(), &roles()).expect("parse");
+    seats[0].count = 0;
+    seats[1].stage = 0;
+    let check = validate(&seats, &inventory(), &roles());
+    assert!(
+        check.errors.iter().any(|error| error.contains("cantidad")),
+        "{check:?}"
+    );
+    assert!(
+        check.errors.iter().any(|error| error.contains("etapa")),
+        "{check:?}"
+    );
+}
+
+#[test]
+fn validate_rejects_bad_delegation() {
+    let mut seats = parse(team_text(), &roles()).expect("parse");
+    seats[0].delegates_to = vec![role("auditor")];
+    seats[2].delegates_to = vec![role(builtin::DEVELOPER)];
+    let check = validate(&seats, &inventory(), &roles());
+    assert!(
+        check
+            .errors
+            .iter()
+            .any(|error| error.contains("no está en el equipo")),
+        "{check:?}"
+    );
+    assert!(
+        check
+            .errors
+            .iter()
+            .any(|error| error.contains("no puede delegar")),
+        "{check:?}"
+    );
+}
+
+fn same_family_inventory() -> Inventory {
+    Inventory {
+        agents: vec![
+            available(profile(
+                "opencode",
+                "OpenCode",
+                &["opencode-go/deepseek-v4.1-flash"],
+                None,
+            )),
+            available(profile(
+                "same",
+                "Same Family",
+                &["opencode-go/deepseek-other"],
+                None,
+            )),
+            available(profile(
+                "claude",
+                "Claude Code",
+                &["opus"],
+                Some("anthropic"),
+            )),
+        ],
+    }
+}
+
+#[test]
+fn validator_sharing_a_family_with_an_executor_is_warned() {
+    // Detecta la mutación de quitar los verificadores del aviso de familia: si el
+    // validador dejara de revisarse, no aparecería este aviso (ECO-4b).
+    let mut seats = parse(team_text(), &roles()).expect("parse");
+    seats[3].agent = "same".to_string();
+    seats[3].model = "opencode-go/deepseek-other".to_string();
+    let check = validate(&seats, &same_family_inventory(), &roles());
+    assert!(
+        check
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("misma familia")),
+        "{check:?}"
+    );
+}
+
+#[test]
+fn an_open_verifier_sharing_a_family_is_warned_too() {
+    let mut available_roles = roles();
+    available_roles.push(task_role(
+        "auditor",
+        "Auditor",
+        "verificador",
+        "Busca fallas",
+    ));
+    let text = "[[papel]]\npapel = \"developer\"\nagente = \"opencode\"\nmodelo = \"opencode-go/deepseek-v4.1-flash\"\n\n\
+                [[papel]]\npapel = \"auditor\"\nagente = \"same\"\nmodelo = \"opencode-go/deepseek-other\"\n";
+    let seats = parse(text, &available_roles).expect("parse");
+    let check = validate(&seats, &same_family_inventory(), &available_roles);
+    assert!(
+        check
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("misma familia")),
+        "{check:?}"
+    );
+}
+
+#[test]
+fn card_lists_new_task_roles_at_the_end() {
+    let mut available_roles = roles();
+    available_roles.push(task_role(
+        "auditor",
+        "Auditor",
+        "verificador",
+        "Busca fallas",
+    ));
+    let text = "[[papel]]\npapel = \"developer\"\nagente = \"opencode\"\nmodelo = \"opencode-go/deepseek-v4.1-flash\"\n\n\
+                [[papel]]\npapel = \"qa\"\nagente = \"claude\"\nmodelo = \"opus\"\n\n\
+                [[papel]]\npapel = \"auditor\"\nagente = \"codex\"\nmodelo = \"opencode-go/gpt-6-luna\"\n";
+    let seats = parse(text, &available_roles).expect("parse");
+    let card = card(
+        "T",
+        &seats,
+        &TeamCheck::default(),
+        &inventory(),
+        &available_roles,
+    );
+    assert!(
+        card.ends_with(
+            "Papeles nuevos de esta tarea:\n- auditor (Auditor, verificador): Busca fallas"
+        ),
+        "{card}"
+    );
+}
