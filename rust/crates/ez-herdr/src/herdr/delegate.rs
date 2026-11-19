@@ -7,6 +7,7 @@
 
 mod message;
 mod names;
+mod record;
 #[cfg(test)]
 mod tests;
 
@@ -14,6 +15,7 @@ use ez_core::pyvalue::{python_str, truthy};
 use serde_json::{Map, Value};
 
 use crate::driver::Choice;
+use crate::subagents::{ensure_watcher, DelegateState, HcRuntime, WatcherState};
 
 use super::{value_or_text, Herdr, HerdrError, LaunchSupport, Placement, RunAgent};
 
@@ -98,11 +100,15 @@ impl Herdr {
     ///
     /// `driver_check` valida el tipo, el modelo y el esfuerzo contra el
     /// catálogo (`AgentDriver::validate_choice`); si falla, no se crea nada.
+    ///
+    /// Con `state` se guarda el registro del subagente (§13) y se arranca su
+    /// vigilante; sin él, la delegación no guarda nada.
     pub fn delegate<L: LaunchSupport + Clone + Send + 'static>(
         &self,
         launcher: L,
         driver_check: DriverCheck<'_>,
         request: &DelegateRequest,
+        state: Option<&DelegateState>,
     ) -> Result<Map<String, Value>, DelegateError> {
         let choice = driver_check(
             request.agent.as_str(),
@@ -133,7 +139,9 @@ impl Herdr {
             };
             let result = self.launch_delegate(&launcher, request, &choice, &name)?;
             if result.get("ok").is_some_and(truthy) {
-                return Ok(self.delegate_row(request, &choice, &name, &result, warnings));
+                let mut row = self.delegate_row(request, &choice, &name, &result, warnings);
+                self.track_state(state, request, &choice, &result, &mut row);
+                return Ok(row);
             }
             // DECISION: con el nombre automático se prueba el siguiente número
             // (§6); con un nombre pedido, el choque es un rechazo y ya está.
@@ -142,6 +150,42 @@ impl Herdr {
                 continue;
             }
             return Err(DelegateError::Rejected(error_text(&result)));
+        }
+    }
+
+    /// Guarda el registro del subagente y arranca el vigilante (§13).
+    ///
+    /// Ninguno de los dos falla la delegación: si algo sale mal, el resultado
+    /// lo avisa en `warnings`.
+    fn track_state(
+        &self,
+        state: Option<&DelegateState>,
+        request: &DelegateRequest,
+        choice: &Choice,
+        result: &Map<String, Value>,
+        row: &mut Map<String, Value>,
+    ) {
+        let Some(state) = state else {
+            return;
+        };
+        match record::register(state, request, choice, result) {
+            Ok(record) => {
+                row.insert(
+                    "state".to_string(),
+                    Value::String(record.state.as_str().to_string()),
+                );
+            }
+            Err(message) => push_warning(
+                row,
+                format!("No pude guardar el estado del subagente: {message}"),
+            ),
+        }
+        let Some(setup) = &state.watcher else {
+            return;
+        };
+        let runtime = HcRuntime::new(std::sync::Arc::clone(&self.runtime), self.hc_path());
+        if let WatcherState::Failed(message) = ensure_watcher(&runtime, setup) {
+            push_warning(row, format!("No pude arrancar el vigilante: {message}"));
         }
     }
 
@@ -309,6 +353,16 @@ fn warning_list(value: Option<&Value>) -> Vec<String> {
         Some(value) if truthy(value) => vec![python_str(value)],
         _ => Vec::new(),
     }
+}
+
+/// Añade un aviso al resultado de la delegación.
+fn push_warning(row: &mut Map<String, Value>, message: String) {
+    let mut warnings = warning_list(row.get("warnings"));
+    warnings.push(message);
+    row.insert(
+        "warnings".to_string(),
+        Value::Array(warnings.into_iter().map(Value::String).collect()),
+    );
 }
 
 /// Un fallo de `hc` que no encuentra el programa no es un rechazo.

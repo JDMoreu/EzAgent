@@ -11,8 +11,13 @@ use serde::{Deserialize, Serialize};
 mod registry;
 #[cfg(test)]
 mod tests;
+mod watch;
 
 pub use registry::Registry;
+pub use watch::{
+    ensure_watcher, epoch_ms, watcher_args, watcher_name, DelegateState, HcOutput, HcRuntime,
+    WatchConfig, WatchRuntime, WatchStop, Watcher, WatcherSetup, WatcherState,
+};
 
 /// Estado de una tarea delegada (§13). Serializa como `"en_proceso"`,
 /// `"terminado"`, `"fallido"`, `"validado"`.

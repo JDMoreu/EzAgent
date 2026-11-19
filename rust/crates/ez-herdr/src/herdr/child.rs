@@ -156,7 +156,7 @@ fn collapse_dashes(text: &str) -> String {
 }
 
 /// ¿El nombre tiene forma de dirección (`t7`, `t9n`)? `hc` los rechaza.
-fn looks_like_address(name: &str) -> bool {
+pub(crate) fn looks_like_address(name: &str) -> bool {
     let mut characters = name.chars();
     let Some(first) = characters.next() else {
         return false;
@@ -175,7 +175,7 @@ fn looks_like_address(name: &str) -> bool {
 
 /// ¿Es un nombre que `hc` acepta tal cual (`^[a-z0-9][a-z0-9_.-]{0,31}$` y sin
 /// forma de dirección)?
-fn hc_valid_name(name: &str) -> bool {
+pub(crate) fn hc_valid_name(name: &str) -> bool {
     let mut characters = name.chars();
     let Some(first) = characters.next() else {
         return false;
