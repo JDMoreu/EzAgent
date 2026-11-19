@@ -112,3 +112,16 @@ usuario, EzAgent = árbitro (`ez`). Diseño: `docs/designs/espacio-elefante.md`.
 - Pendientes menores: prueba del aviso de familia del validador (`ez-team`, team.rs);
   usar `ez_herdr::prelaunch::discover_codex_models` para los modelos de Codex.
 - `cleanup_worktrees.sh`: usar `BASE=eco/main`, mirar primero sin `--apply`.
+
+## Noche del 2026-11-18 → 19 (el usuario duerme)
+- **Autorización del usuario (22:40):** seguir trabajando sin pausar y **apagar el PC al
+  terminar** («tienes la capacidad de apagar el pc si me voy a dormir»). Vale solo para
+  esta noche.
+- Apagado de seguridad programado: `shutdown /s` para el **19/11 08:38** (por si Claude se
+  queda sin cuota o bloqueado). Al terminar: `shutdown /a` y luego
+  `shutdown /s /t 300 /c ...` tras guardar todo.
+- Plan de la noche: ECO-R1 → ECO-4c + ECO-2d → ECO-6c → ECO-6b → ECO-8 (agentes falsos y
+  hc real), cada uno con puerta, verificación y fusión. **No** lanzar la prueba con CLIs
+  reales (gasta cuotas: preguntar). Si algo necesita una decisión del usuario, decidir lo
+  más simple y seguro con `// DECISION` y dejarlo anotado aquí para la mañana.
+- Al terminar, dejar un resumen para el usuario en `rust-migration/reports/NOCHE-2026-11-18.md`.
