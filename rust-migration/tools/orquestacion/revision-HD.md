@@ -343,3 +343,30 @@
 - Mutaciones: contar a todos como pesados → 2 fallos; quitar la regla de memoria → 2.
 - Tras fusionar: clippy y 20 suites de `ez-scan`, `ez-ctl`, `ez-herdr` en verde. Worktree
   IR-1 retirado; terminal `ir-1` cerrada. IR-2 lanzado (`ir-2` t1p2, OpenCode + DeepSeek).
+
+### HD-10 + HD-10b — validado y fusionado (9b183a2)
+- HD-10: `list_lenient`, `validation` toda en `null` = `None`, aviso único por ilegible,
+  también `refresh_activity` tolerante. Devuelto una vez (HD-10b): `ez tasks --json` cambiaba
+  de array a objeto cuando había ilegibles (fallo de mi brief); ahora siempre array y los
+  ilegibles a stderr.
+- Corrida del elefante: fmt, clippy, 16 suites de `ez-herdr` + `ez-ctl` en verde; mutación de
+  compatibilidad (`if false`) → falla `a_validation_object_with_every_field_null_is_no_validation`;
+  `ez tasks --parent t6h` real (solo lectura) lista `ir-1` y `nv-1` con código 0.
+- Tras fusionar: clippy y 20 suites de `ez-herdr`, `ez-ctl`, `ez-scan` en verde. Worktree
+  retirado; terminal `hd-10` cerrada.
+
+### HD-0e (supervisor) — revisión 1: devuelto (HD-0f)
+- Corrida del elefante sobre una copia (3d22f61): `probar.sh` 15 casos en verde.
+  Mutaciones: ignorar `working` → caso 15 falla; pantalla entera → caso 14; volver a contar
+  «quota» → caso 12; **quitar la ventana de pantalla quieta → nada falla** (falta prueba).
+- Fallos nuevos: escribe en `…\EzAgent\subagents` (el producto lee `subagentes`);
+  `validation` con campos `null` (forma no canónica); Python en cp1252 por tubería (un
+  resumen con «→» sale vacío, comprobado); «línea con texto» distinta de NV-1c.
+- HD-0f: carpeta y forma canónicas, UTF-8, mismo criterio de líneas, casos 16 (pantalla que
+  cambia), 17 (captura real), 18 (acentos) y `ez tasks` del producto leyendo los registros
+  del supervisor. Sin compilar Rust (usa el `ez.exe` ya compilado).
+
+### DX-3 lanzado (`dx-3` t1pw, OpenCode + DeepSeek)
+- Adenda antes de lanzar: archivos (`ez-stt`, `scripts/stop-voice.ps1`), excepción de
+  `unsafe` solo en `server/job.rs` para el Job Object, humo con `fake-whisper` y procesos de
+  prueba por PID (el `whisper-server` de la persona no se toca).
