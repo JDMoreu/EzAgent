@@ -2,13 +2,20 @@
 setlocal
 rem Agente falso para las pruebas de supervise3.sh: ignora los argv del agente
 rem real, lee .fake-id y .fake-mode de la carpeta de trabajo y escribe el informe.
+rem Ademas registra argv/entorno (C0-1) y permite el modo «retry» (dos intentos).
 set "ID="
 set "MODE="
 for /f "usebackq delims=" %%i in (".fake-id") do set "ID=%%i"
 for /f "usebackq delims=" %%i in (".fake-mode") do set "MODE=%%i"
 if not defined ID exit /b 1
+>>".fake-argv.log" echo ARGS=%*
+>>".fake-argv.log" echo ENV=[%OPENCODE_CONFIG_CONTENT%]
 ping -n 4 127.0.0.1 >nul
 if /i "%MODE%"=="fail" exit /b 0
+if /i "%MODE%"=="retry" if not exist ".fake-attempt2" (
+  >".fake-attempt2" echo 2
+  exit /b 0
+)
 set "REPORT=rust-migration\reports\%ID%-r1.md"
 (
 echo ## Resultado
@@ -16,7 +23,7 @@ echo - Brief/tarea: %ID%
 echo - Estado: completado
 echo - Verificado con el agente falso de HD-0.
 ) > "%REPORT%"
-git add "%REPORT%"
+git add -A
 git -c user.email=hd0@example.com -c user.name=HD0Test commit -q -m "Informe de prueba %ID%" >nul 2>&1
 if /i "%MODE%"=="tui" goto tui
 exit /b 0
