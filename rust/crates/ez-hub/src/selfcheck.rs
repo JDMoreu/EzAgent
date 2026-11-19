@@ -1,12 +1,9 @@
-//! Informe de autocomprobación de la vista y su evaluación (brief ECO-5b).
+//! Informe de autocomprobación de la vista y su evaluación (brief ECO-6b).
 
 use std::fs;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-
-/// Prefijo que debe tener la cabecera del agente principal en la demostración.
-pub const HEADER_PREFIX: &str = "Agente principal · ";
 
 /// Lo que la vista informa 6 s después de cargar en modo `--selfcheck`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -14,18 +11,21 @@ pub const HEADER_PREFIX: &str = "Agente principal · ";
 pub struct SelfcheckReport {
     /// Errores de JavaScript capturados desde el primer momento.
     pub errores: Vec<String>,
-    /// Texto de la cabecera del agente principal.
-    pub cabecera: String,
-    /// Terminales xterm que recibieron al menos un bloque de bytes del PTY.
-    pub terminales: usize,
-    /// Tarjetas de subagente pintadas.
-    pub peces: usize,
-    /// Eventos de traza pintados.
+    /// Nodos del árbol pintados, incluido el espacio (7 en la demostración).
+    pub nodos: usize,
+    /// Pestañas de terminal abiertas (2 en la demostración).
+    #[serde(rename = "pestañas")]
+    pub pestanas: usize,
+    /// Terminales que recibieron al menos un bloque de bytes del PTY.
+    #[serde(rename = "terminales_con_datos")]
+    pub terminales_con_datos: usize,
+    /// Eventos de traza pintados (6 en la demostración).
     pub eventos: usize,
-    /// Tarjetas de aprobación pintadas.
+    /// Tarjetas pintadas (1 en la demostración).
     pub tarjetas: usize,
-    /// Si el formulario «Nuevo espacio» sigue abierto.
-    pub formulario_abierto: bool,
+    /// Apariciones de «elefante», «pez» o «peces» en el texto visible.
+    #[serde(rename = "textos_prohibidos")]
+    pub textos_prohibidos: usize,
 }
 
 /// Motivos por los que un informe no supera la autocomprobación.
@@ -34,23 +34,23 @@ pub fn failures(report: &SelfcheckReport) -> Vec<&'static str> {
     if !report.errores.is_empty() {
         out.push("la vista registró errores de JavaScript");
     }
-    if !report.cabecera.starts_with(HEADER_PREFIX) {
-        out.push("la cabecera del agente principal no es la esperada");
+    if report.nodos != 7 {
+        out.push("el árbol no tiene 7 nodos");
     }
-    if report.terminales != 3 {
-        out.push("no se montaron 3 terminales con datos");
+    if report.pestanas != 2 {
+        out.push("no hay 2 pestañas abiertas");
     }
-    if report.peces != 2 {
-        out.push("no se pintaron 2 subagentes");
+    if report.terminales_con_datos != 2 {
+        out.push("no hay 2 terminales con datos");
     }
-    if report.eventos != 5 {
-        out.push("no se pintaron 5 eventos de traza");
+    if report.eventos != 6 {
+        out.push("no se pintaron 6 eventos de traza");
     }
     if report.tarjetas != 1 {
-        out.push("no se pintó 1 tarjeta de aprobación");
+        out.push("no se pintó 1 tarjeta");
     }
-    if report.formulario_abierto {
-        out.push("el formulario «Nuevo espacio» está abierto");
+    if report.textos_prohibidos != 0 {
+        out.push("hay textos prohibidos visibles");
     }
     out
 }
@@ -81,10 +81,10 @@ mod tests {
 
     fn good() -> SelfcheckReport {
         SelfcheckReport {
-            cabecera: format!("{HEADER_PREFIX}PowerShell"),
-            terminales: 3,
-            peces: 2,
-            eventos: 5,
+            nodos: 7,
+            pestanas: 2,
+            terminales_con_datos: 2,
+            eventos: 6,
             tarjetas: 1,
             ..SelfcheckReport::default()
         }
@@ -109,41 +109,37 @@ mod tests {
 
     #[test]
     fn wrong_counts_fail_the_check() {
-        let mut report = good();
-        report.terminales = 1;
-        report.peces = 0;
-        report.eventos = 4;
-        report.tarjetas = 2;
-        let problems = failures(&report);
-        assert_eq!(problems.len(), 4);
-        assert!(!evaluate(&report));
-    }
-
-    #[test]
-    fn wrong_header_and_open_form_fail_the_check() {
-        let mut report = good();
-        report.cabecera = "Agente principal".to_string();
-        report.formulario_abierto = true;
-        assert_eq!(failures(&report).len(), 2);
+        let bad = SelfcheckReport {
+            nodos: 6,
+            pestanas: 1,
+            terminales_con_datos: 1,
+            eventos: 5,
+            tarjetas: 2,
+            textos_prohibidos: 3,
+            ..good()
+        };
+        assert_eq!(failures(&bad).len(), 6);
+        assert!(!evaluate(&bad));
     }
 
     #[test]
     fn the_report_is_written_with_all_its_fields() {
         let dir = TempDir::new("selfcheck-write");
         let path = dir.path().join("informe.json");
-        let report = good();
+        let mut report = good();
+        report.errores.push("aviso".to_string());
         write_json(&path, &report).expect("escribir informe");
         let text = fs::read_to_string(&path).expect("leer informe");
         let parsed: SelfcheckReport = serde_json::from_str(&text).expect("json válido");
         assert_eq!(parsed, report);
         for key in [
             "errores",
-            "cabecera",
-            "terminales",
-            "peces",
+            "nodos",
+            "pestañas",
+            "terminales_con_datos",
             "eventos",
             "tarjetas",
-            "formulario_abierto",
+            "textos_prohibidos",
         ] {
             assert!(text.contains(key), "falta {key} en {text}");
         }
@@ -157,5 +153,6 @@ mod tests {
         let text = fs::read_to_string(&path).expect("leer informe");
         let parsed: serde_json::Value = serde_json::from_str(&text).expect("json válido");
         assert_eq!(parsed["errores"][0], "la vista no informó");
+        assert!(!evaluate(&serde_json::from_str(&text).expect("informe")));
     }
 }

@@ -1,84 +1,96 @@
-// Arranque de la ventana: espacios, terminal del elefante, peces, traza y tarjetas.
+// Arranque de la ventana: árbol, pestañas, barra, traza y tarjetas (§15.6).
 
-import { TEXTS, agentLabel } from "./texts.js";
-import { loadSpaces, createSpace, renderSpaces, markSelected } from "./spaces.js";
-import { mountTerminal, terminalsWithData } from "./terminal.js";
-import { renderFish, renderTrace } from "./panel.js";
+import { TEXTS, AGENT_NAMES } from "./texts.js";
+import { renderTree, markSelected } from "./tree.js";
+import { openTab, toggleSplit, sendToActive, tabCount, activeTerminalsWithData, fitAll } from "./tabs.js";
+import { renderPanel, reportCardError } from "./panel.js";
 import { wireVoice } from "./voice.js";
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
-
 const byId = (id) => document.getElementById(id);
+
+const loadSpaces = () => invoke("spaces_list");
+const createSpace = ({ nombre, carpeta }) => invoke("space_create", { nombre, carpeta });
+
+let spaces = [];
 let activeSpace = null;
-let elephantView = null;
-let fishViews = [];
+let currentTree = { nodes: [] };
+let activeMain = null;
+let demo = false;
+let inventory = [];
 
 function notice(text) {
   byId("input-notice").textContent = text ?? "";
 }
 
-function fitAll() {
-  if (elephantView) elephantView.fit();
-  for (const view of fishViews) view.fit();
+function applyTexts() {
+  for (const node of document.querySelectorAll("[data-text]")) {
+    node.textContent = TEXTS[node.dataset.text] ?? node.textContent;
+  }
+  for (const node of document.querySelectorAll("[data-placeholder]")) {
+    node.placeholder = TEXTS[node.dataset.placeholder] ?? "";
+  }
 }
 
-async function closeViews() {
-  for (const view of [elephantView, ...fishViews]) {
-    if (view) {
-      try {
-        await view.close();
-      } catch (error) {
-        console.warn(String(error));
-      }
-    }
+function findMain(nodes, id) {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    const inner = findMain(node.children ?? [], id);
+    if (inner) return node;
   }
-  elephantView = null;
-  fishViews = [];
+  return null;
+}
+
+async function loadTree() {
+  if (!activeSpace) return;
+  currentTree = await invoke("space_tree", { space: activeSpace.id });
+  renderTree(byId("tree"), spaces, activeSpace, currentTree.nodes, selectSpace, onNode);
+  markSelected(byId("tree"), activeSpace.id ? `space:${activeSpace.id}` : null);
+}
+
+async function loadTrace() {
+  if (!activeSpace) return;
+  const elephant = activeMain?.id ?? null;
+  const state = await invoke("hub_state", { space: activeSpace.id, elephant });
+  renderPanel(
+    byId("timeline-list"),
+    byId("card-list"),
+    state,
+    (card, action, comment) => invoke("card_action", { card, action, comment }),
+    reportCardError,
+  );
+}
+
+async function refresh() {
+  await loadTree();
+  await loadTrace();
 }
 
 async function selectSpace(space) {
-  await closeViews();
   activeSpace = space;
-  markSelected(byId("space-list"), space.id);
-  byId("elephant-header").textContent = TEXTS.elephantOf(agentLabel(space.elefante.agente));
-  elephantView = await mountTerminal(byId("elephant-view"), {
-    argv: space.elefante.argv,
-    cwd: space.carpeta,
-    space: space.id,
-  });
-  fitAll();
-  await refreshFish();
-  await refreshTrace();
+  activeMain = null;
+  markSelected(byId("tree"), `space:${space.id}`);
+  await loadTree();
+  await loadTrace();
 }
 
-async function refreshFish() {
-  if (!activeSpace) return;
-  const state = await invoke("hub_state", { space: activeSpace.id });
-  fishViews = [];
-  renderFish(
-    byId("fish-pane"),
-    state.fish,
-    async (fish, host) => {
-      const view = await mountTerminal(host, { argv: fish.argv, cwd: fish.cwd });
-      if (view) fishViews.push(view);
-    },
-    fitAll,
-  );
-  fitAll();
+async function onNode(space, node) {
+  if (space.id !== activeSpace?.id) await selectSpace(space);
+  activeMain = findMain(currentTree.nodes, node.id) ?? node;
+  markSelected(byId("tree"), node.id);
+  await openTab(space, node, demo);
+  await loadTrace();
 }
 
-async function refreshTrace() {
-  if (!activeSpace) return;
-  const state = await invoke("hub_state", { space: activeSpace.id });
-  renderTrace(byId("timeline-list"), byId("card-list"), state, async (card, action, comment) => {
-    try {
-      await invoke("card_action", { card, action, comment });
-      await refreshTrace();
-    } catch (error) {
-      notice(String(error));
-    }
-  });
+async function openDefaultTabs() {
+  const first = currentTree.nodes[0];
+  if (!first) return;
+  activeMain = first;
+  await openTab(activeSpace, first, demo);
+  const child = first.children?.[0];
+  if (child) await openTab(activeSpace, child, demo);
+  await loadTrace();
 }
 
 async function sendInput() {
@@ -89,102 +101,197 @@ async function sendInput() {
     return;
   }
   if (!text.trim()) {
-    notice(TEXTS.notice.emptyInput);
+    notice(TEXTS.emptyInput ?? "Escribe algo antes de enviar.");
     return;
   }
   try {
-    await invoke("elephant_input", { space: activeSpace.id, text });
+    await sendToActive(text, demo);
     field.value = "";
     notice("");
   } catch (error) {
-    notice(TEXTS.notice.inputFailed);
+    notice(`${TEXTS.sendFailed}: ${String(error)}`);
   }
 }
 
 function showTab(name) {
-  const fish = name === "fish";
-  byId("fish-pane").hidden = !fish;
-  byId("trace-pane").hidden = fish;
-  byId("tab-fish").classList.toggle("active", fish);
-  byId("tab-trace").classList.toggle("active", !fish);
-  fitAll();
+  const trace = name === "trace";
+  byId("trace-pane").hidden = !trace;
+  byId("cards-pane").hidden = trace;
+  byId("tab-trace").classList.toggle("active", trace);
+  byId("tab-cards").classList.toggle("active", !trace);
 }
 
-function applyTexts() {
-  for (const node of document.querySelectorAll("[data-text]")) {
-    node.textContent = TEXTS[node.dataset.text] ?? node.textContent;
+function toggleForm(id, other) {
+  byId(other).hidden = true;
+  const form = byId(id);
+  form.hidden = !form.hidden;
+  if (!form.hidden) form.querySelector("input")?.focus();
+}
+
+function agentsForForm() {
+  const data = inventory?.data ?? [];
+  if (data.length === 0) {
+    return Object.entries(AGENT_NAMES)
+      .filter(([id]) => id !== "powershell")
+      .map(([id, name]) => ({ id, nombre: name, modelos: [] }));
   }
-  byId("new-space").textContent = TEXTS.newSpace;
-  byId("elephant-header").textContent = TEXTS.elephant;
-  byId("input-text").placeholder = TEXTS.placeholder;
-  byId("btn-voice").textContent = TEXTS.voiceNote;
-  byId("btn-call").textContent = TEXTS.call;
-  byId("btn-send").textContent = TEXTS.send;
-  byId("btn-call").title = TEXTS.soon;
+  return data;
+}
+
+function fillAgents() {
+  const select = byId("main-agent");
+  select.replaceChildren();
+  for (const agent of agentsForForm()) {
+    const option = document.createElement("option");
+    option.value = agent.id ?? agent.agente ?? "";
+    option.textContent = agent.nombre ?? option.value;
+    option.dataset.models = JSON.stringify(agent.modelos ?? agent.models ?? []);
+    select.appendChild(option);
+  }
+  fillModels();
+}
+
+function fillModels() {
+  const option = byId("main-agent").selectedOptions[0];
+  const models = option ? JSON.parse(option.dataset.models ?? "[]") : [];
+  const select = byId("main-model");
+  const text = byId("main-model-text");
+  if (models.length > 0) {
+    select.hidden = false;
+    text.hidden = true;
+    select.replaceChildren();
+    for (const model of models) {
+      const item = document.createElement("option");
+      item.value = model;
+      item.textContent = model;
+      select.appendChild(item);
+    }
+  } else {
+    select.hidden = true;
+    text.hidden = false;
+  }
+}
+
+async function createNewSpace(event) {
+  event.preventDefault();
+  const error = byId("space-error");
+  const carpeta = byId("space-folder").value.trim();
+  if (!carpeta) {
+    error.textContent = TEXTS.needFolder;
+    return;
+  }
+  try {
+    const space = await createSpace({
+      nombre: byId("space-name").value.trim(),
+      carpeta,
+    });
+    byId("space-form").hidden = true;
+    spaces = await loadSpaces();
+    await selectSpace(space);
+  } catch (failure) {
+    error.textContent = String(failure);
+  }
+}
+
+async function createNewMain(event) {
+  event.preventDefault();
+  const error = byId("main-error");
+  if (!activeSpace) {
+    error.textContent = TEXTS.noSpace;
+    return;
+  }
+  const modelo = byId("main-model").hidden
+    ? byId("main-model-text").value.trim()
+    : byId("main-model").value;
+  if (!byId("main-name").value.trim() || !modelo) {
+    error.textContent = TEXTS.needModel;
+    return;
+  }
+  try {
+    const info = await invoke("main_agent_create", {
+      space: activeSpace.id,
+      nombre: byId("main-name").value.trim(),
+      agente: byId("main-agent").value,
+      modelo,
+      esfuerzo: byId("main-effort").value.trim() || null,
+    });
+    byId("main-form").hidden = true;
+    await refresh();
+    activeMain = { id: info.id };
+    markSelected(byId("tree"), info.id);
+    await loadTrace();
+  } catch (failure) {
+    error.textContent = String(failure);
+  }
+}
+
+async function showStatus() {
+  const status = await invoke("runtime_status");
+  demo = status.mode === "demo";
+  const strip = byId("status-strip");
+  if (status.mode === "degradado") {
+    strip.textContent = status.reason;
+    strip.hidden = false;
+  } else {
+    strip.hidden = true;
+  }
 }
 
 function wire() {
-  byId("tab-fish").addEventListener("click", () => showTab("fish"));
   byId("tab-trace").addEventListener("click", () => showTab("trace"));
+  byId("tab-cards").addEventListener("click", () => showTab("cards"));
+  byId("toggle-right").addEventListener("click", () => {
+    const app = byId("app");
+    app.classList.toggle("right-collapsed");
+    byId("toggle-right").textContent = app.classList.contains("right-collapsed")
+      ? TEXTS.expand
+      : TEXTS.collapse;
+  });
+  byId("split-tab").addEventListener("click", toggleSplit);
   byId("btn-send").addEventListener("click", sendInput);
-  wireVoice(notice);
   byId("input-text").addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       sendInput();
     }
   });
-  byId("new-space").addEventListener("click", () => {
-    byId("space-form").hidden = !byId("space-form").hidden;
-    byId("space-error").textContent = "";
-    if (!byId("space-form").hidden) byId("space-name").focus();
+  byId("new-space").addEventListener("click", () => toggleForm("space-form", "main-form"));
+  byId("new-main").addEventListener("click", () => {
+    toggleForm("main-form", "space-form");
+    if (!byId("main-form").hidden) fillAgents();
   });
-  byId("space-cancel").addEventListener("click", () => {
-    byId("space-form").hidden = true;
-  });
-  byId("space-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const error = byId("space-error");
-    const carpeta = byId("space-folder").value.trim();
-    if (!carpeta) {
-      error.textContent = TEXTS.notice.needFolder;
-      return;
-    }
-    try {
-      const space = await createSpace({
-        nombre: byId("space-name").value,
-        carpeta,
-        agente: byId("space-agent").value,
-      });
-      byId("space-form").hidden = true;
-      const spaces = await loadSpaces();
-      renderSpaces(spaces, byId("space-list"), selectSpace);
-      await selectSpace(space);
-    } catch (failure) {
-      error.textContent = String(failure);
-    }
-  });
+  byId("space-cancel").addEventListener("click", () => { byId("space-form").hidden = true; });
+  byId("main-cancel").addEventListener("click", () => { byId("main-form").hidden = true; });
+  byId("space-form").addEventListener("submit", createNewSpace);
+  byId("main-form").addEventListener("submit", createNewMain);
+  byId("main-agent").addEventListener("change", fillModels);
   window.addEventListener("resize", fitAll);
-  listen("hub://changed", () => {
-    refreshTrace().catch((error) => notice(String(error)));
-  });
+  listen("hub://changed", () => refresh().catch((error) => notice(String(error))));
+  wireVoice(notice);
+}
+
+function forbiddenCount() {
+  const visible = (document.body.innerText ?? "").toLowerCase();
+  return ["elefante", "pez", "peces"].reduce(
+    (total, word) => total + visible.split(word).length - 1,
+    0,
+  );
 }
 
 async function maybeSelfcheck() {
-  const enabled = await invoke("selfcheck_enabled").catch(() => false);
-  if (!enabled) return;
+  if (!(await invoke("selfcheck_enabled").catch(() => false))) return;
   setTimeout(() => reportSelfcheck(), 6000);
 }
 
 async function reportSelfcheck() {
   const report = {
     errores: window.__ezErrors ?? [],
-    cabecera: byId("elephant-header").textContent.trim(),
-    terminales: terminalsWithData(),
-    peces: byId("fish-pane").querySelectorAll(".fish-card").length,
+    nodos: byId("tree").querySelectorAll(".tree-row").length,
+    pestañas: tabCount(),
+    terminales_con_datos: activeTerminalsWithData(),
     eventos: byId("timeline-list").querySelectorAll(".timeline-row").length,
     tarjetas: byId("card-list").querySelectorAll(".approval-card").length,
-    formulario_abierto: !byId("space-form").hidden,
+    textos_prohibidos: forbiddenCount(),
   };
   try {
     await invoke("selfcheck_report", { report });
@@ -196,10 +303,13 @@ async function reportSelfcheck() {
 async function boot() {
   applyTexts();
   wire();
-  const spaces = await loadSpaces();
-  renderSpaces(spaces, byId("space-list"), selectSpace);
+  await showStatus();
+  inventory = await invoke("inventory").catch(() => ({ data: [] }));
+  spaces = await loadSpaces();
+  renderTree(byId("tree"), spaces, null, [], selectSpace, onNode);
   if (spaces.length > 0) {
     await selectSpace(spaces[0]);
+    if (demo) await openDefaultTabs();
   }
 }
 
