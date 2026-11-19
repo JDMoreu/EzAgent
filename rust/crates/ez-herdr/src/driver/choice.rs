@@ -233,6 +233,10 @@ fn label_of(profile: &Map<String, Value>, key: &str) -> String {
         .unwrap_or_else(|| key.to_string())
 }
 
+// DECISION: la validación no reutiliza `match_mcode_model`/`resolve_codex` de
+// `launch.rs` porque ese archivo queda fuera del alcance de HD-3 y esas rutas
+// escriben configuración; aquí solo se lee el catálogo inyectado por hooks.
+
 /// Modelo con o sin prefijo (`opencode-go/m`) o `proveedor/m`.
 fn model_matches(known: &str, requested: &str) -> bool {
     let known = known.to_lowercase();
