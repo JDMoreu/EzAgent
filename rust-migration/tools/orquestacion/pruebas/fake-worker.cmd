@@ -54,10 +54,11 @@ for /L %%i in (1,1,20) do echo linea de relleno %%i: el agente sigue trabajando
 ping -n 50 127.0.0.1 >nul
 goto escribir
 :chatter
-rem HD-0e: el trabajador MENciona límites de uso con palabras sueltas
-rem («quota», «rate limit», «usage limit») pero no está bloqueado.
+rem HD-0e: el trabajador menciona límites de uso con palabras sueltas
+rem («quota», «rate limit», «usage limit») pero no está bloqueado. Vive más que
+rem la ventana de pantalla quieta para que el supervisor llegue a buscar la frase.
 echo revisando el informe de IR-0: "quota", "rate limit" y "usage limit" salen en el texto
-ping -n 6 127.0.0.1 >nul
+ping -n 45 127.0.0.1 >nul
 goto escribir
 :limitwork
 rem HD-0e: la frase COMPLETA de límite está en pantalla, pero el agente está

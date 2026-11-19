@@ -5,6 +5,10 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 if command -v python3 >/dev/null 2>&1 && python3 -c 'pass' 2>/dev/null; then PYTHON=python3; else PYTHON=python; fi
+# DECISION (HD-0e): el registro lleva acentos («límite de uso»); el Python de
+# Windows imprime en cp1252 cuando la salida es una tubería y la comparación
+# fallaba. Todo lo que este script lee de vuelta va en UTF-8.
+export PYTHONIOENCODING=utf-8
 REAL_HC="$(command -v hc)"
 ENV_EXE="${EZ_ENV_EXE:-C:/Program Files/Git/usr/bin/env.exe}"
 # hc no inyecta HC_TERMINAL_ID en comandos directos: si falta, se deriva del
@@ -98,12 +102,15 @@ check() { # check <nombre> <valor> <esperado>
   fi
 }
 notice() { # notice <nombre> <texto> — comprueba lo que recibió el padre falso
-  if grep -Fq "$2" "$PARENT_CAP"; then
-    echo "OK aviso $1"
-  else
-    echo "FALLO aviso $1: no aparece «$2»"
-    FAIL=1
-  fi
+  # hc send vuelve antes de que el padre falso lea y escriba la línea: se espera.
+  for _ in $(seq 1 40); do
+    if grep -Fq "$2" "$PARENT_CAP"; then
+      echo "OK aviso $1"; return
+    fi
+    sleep 0.25
+  done
+  echo "FALLO aviso $1: no aparece «$2»"
+  FAIL=1
 }
 
 changes() { git -C "$1" status --porcelain 2>/dev/null | wc -l | tr -d ' '; }
