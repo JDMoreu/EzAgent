@@ -113,3 +113,15 @@
 - Mal: la raíz = «primer miembro con dirección que no sea el que se lanza» invierte el árbol
   al reabrir la raíz (la cuelga del segundo). Mutación «la raíz puede ser el propio miembro»
   no la detecta nadie. HD-5b: raíz = primer miembro siempre.
+
+### DX-1 (congelamiento del chat, mcode) — diagnóstico validado; arreglo DX-1b (fase A)
+- Comprobado en el código: `prepare_view` maqueta todo el historial en el hilo que abre
+  (`lifecycle.rs:105-114`); `ChatPanel::render` pinta con `PanelState` tomado
+  (`window.rs:332`); caché topeada en 400 que expulsa el id más pequeño
+  (`entries.rs:100-106`); la firma mezcla parpadeo y tic del orbe (`compose.rs:91-105`).
+- Mediciones del subagente: abrir el chat ~89 ms por mensaje (33 mensajes ≈ 3 s de app
+  congelada); >401 mensajes, cada cuadro remaqueta todo (×5 950); con el chat abierto, ~1
+  núcleo entre los dos hilos de ventana. Sin fuga de GDI/USER ni de memoria.
+- Nota menor: las horas de las lecturas en vivo del informe no cuadran entre sí (CPU 511 s
+  «a las 09:56»); no cambia las conclusiones, que salen del código y de la medición.
+- DX-1b (mcode): pasos 1, 3, 4, 5, 6, 7 y 8; la virtualización (paso 2) queda para después.
