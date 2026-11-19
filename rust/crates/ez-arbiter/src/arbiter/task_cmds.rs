@@ -1,16 +1,17 @@
-//! Tareas, aprobaciones de la persona y estado.
+//! Tareas, aprobaciones de la persona, artefactos congelados y estado.
 
 use std::path::{Path, PathBuf};
 
+use ez_team::Seat;
+
 use crate::criteria;
-use crate::git;
 use crate::paths;
 use crate::state::{Status, Task, TeamStatus};
 use crate::texts;
-use crate::types::{Caller, Outcome, Rejection};
+use crate::types::{Caller, FishKey, Outcome, Rejection};
 
 use super::emit::Effects;
-use super::Arbiter;
+use super::{new_task_id, Arbiter};
 
 impl Arbiter {
     /// R2: crea la tarea, copia los artefactos y emite la tarjeta.
@@ -54,19 +55,19 @@ impl Arbiter {
         brief: &Path,
         criteria_path: &Path,
     ) -> Result<(PathBuf, PathBuf, criteria::Criteria), Rejection> {
-        let brief_abs = paths::resolve_inside(&space.folder, brief)
-            .ok_or_else(|| Rejection::new("R2", texts::outside_folder(brief)))?;
+        let brief_abs = paths::inside(&space.folder, brief)
+            .map_err(|_| Rejection::new("R2", texts::outside_folder(brief)))?;
         if !brief_abs.is_file() {
             return Err(Rejection::new("R2", texts::brief_missing(brief)));
         }
-        let criteria_abs = paths::resolve_inside(&space.folder, criteria_path)
-            .ok_or_else(|| Rejection::new("R2", texts::outside_folder(criteria_path)))?;
+        let criteria_abs = paths::inside(&space.folder, criteria_path)
+            .map_err(|_| Rejection::new("R2", texts::outside_folder(criteria_path)))?;
         if !criteria_abs.is_file() {
             return Err(Rejection::new("R2", texts::criteria_missing(criteria_path)));
         }
         let parsed = criteria::load(&criteria_abs, &space.folder)
             .map_err(|message| Rejection::new("R2", message))?;
-        if !git::is_repo(&space.folder) {
+        if !crate::git::is_repo(&space.folder) {
             return Err(Rejection::new("R2", texts::GIT_NOT_REPO));
         }
         Ok((brief_abs, criteria_abs, parsed))
@@ -82,13 +83,13 @@ impl Arbiter {
     ) -> Result<(Task, String), Rejection> {
         let (brief_abs, criteria_abs, parsed) =
             self.validate_inputs(space, &brief, &criteria_path)?;
-        // DECISION: el título vacío recibe uno fijo para que la tarjeta lega.
+        // DECISION: el título vacío recibe uno fijo para que la tarjeta sea lega.
         let title = if title.trim().is_empty() {
             "Tarea".to_string()
         } else {
             title.trim().to_string()
         };
-        let id = uuid::Uuid::new_v4().simple().to_string();
+        let id = new_task_id();
         let dir = paths::task_dir(&space.folder, &id);
         paths::copy_file(&brief_abs, &dir.join("encargo.md")).map_err(|error| {
             Rejection::new("R2", format!("No se pudo copiar el encargo: {error}."))
@@ -119,9 +120,12 @@ impl Arbiter {
             round: 0,
             clean_streak: 0,
             criteria_sha: sha,
+            encargo_sha: String::new(),
+            team_sha: None,
             last_close: None,
             rounds: Vec::new(),
             fish: Vec::new(),
+            work: Vec::new(),
         };
         Ok((task, card))
     }
@@ -131,8 +135,7 @@ impl Arbiter {
         match caller {
             Caller::Elephant { space } => {
                 let space_info = self.space(space)?;
-                let task = self.task_for_elephant(space).ok();
-                let Some(task) = task else {
+                let Some(task) = self.task_for_elephant(space).ok() else {
                     return Ok(Outcome::new(texts::STATUS_NO_TASK));
                 };
                 let message = texts::status_elephant(
@@ -149,19 +152,20 @@ impl Arbiter {
                     data: task.snapshot(),
                 })
             }
-            Caller::Fish { fish } => {
-                let Some(task) = self.task_for_fish(fish).ok() else {
+            Caller::Fish(key) => {
+                let Some(task) = self.task_for_fish_key(key).ok() else {
                     return Ok(Outcome::new(texts::STATUS_UNKNOWN_FISH));
                 };
-                let Some(record) = task.fish(fish) else {
+                let Some(record) = task.fish_by_key(key) else {
                     return Ok(Outcome::new(texts::STATUS_UNKNOWN_FISH));
                 };
+                let pending = task.pending_work(key).is_some();
                 let message = texts::status_fish(
-                    fish,
+                    &key.fish,
                     record.role.label(),
                     &task.id,
                     record.round,
-                    record.pending,
+                    pending,
                 );
                 Ok(Outcome {
                     message,
@@ -171,22 +175,21 @@ impl Arbiter {
         }
     }
 
-    /// La persona aprueba: se congelan los criterios.
+    /// La persona aprueba: se congelan los criterios y el encargo.
     pub(crate) fn approve_task_inner(&self, space: &str) -> Result<Outcome, Rejection> {
         let mut task = self.task_for_elephant(space)?;
         if task.status != Status::PendingApproval {
             return Err(Rejection::new("R2", texts::NOT_PENDING));
         }
-        let live = paths::task_dir(&task.space.folder, &task.id).join("criterios.toml");
-        if !live.is_file() {
-            return Err(Rejection::new("R2", texts::criteria_missing(&live)));
+        let dir = paths::task_dir(&task.space.folder, &task.id);
+        for name in ["criterios.toml", "encargo.md"] {
+            if !dir.join(name).is_file() {
+                return Err(Rejection::new("R2", texts::outside_folder(&dir.join(name))));
+            }
         }
-        let frozen = self.task_path(&task, "criterios.congelados.toml");
-        paths::copy_file(&live, &frozen).map_err(|error| {
-            Rejection::new("R2", format!("No se pudo congelar los criterios: {error}."))
-        })?;
-        task.criteria_sha =
-            paths::sha256_file(&frozen).map_err(|message| Rejection::new("R2", message))?;
+        let (criteria_sha, encargo_sha) = self.freeze_artifacts(&task)?;
+        task.criteria_sha = criteria_sha;
+        task.encargo_sha = encargo_sha;
         task.status = Status::Approved;
         task.approved_at = Some(self.now());
         let mut effects = Effects::default();
@@ -214,6 +217,7 @@ impl Arbiter {
             return Err(Rejection::new("R2", texts::NOT_PENDING));
         }
         task.status = Status::Rejected;
+        self.revoke_task_tokens(&task);
         let message = texts::task_rejected(comment);
         let mut effects = Effects::default();
         effects.both(
@@ -245,6 +249,9 @@ impl Arbiter {
                 texts::paused(&self.pause_text(&task)),
             ));
         }
+        if let Err(rejection) = self.check_artifacts(&task) {
+            return Err(self.pause_task(task, "R3", "artefactos_modificados", rejection.message));
+        }
         if task.clean_streak < 2 {
             return Err(Rejection::new(
                 "R10",
@@ -252,6 +259,7 @@ impl Arbiter {
             ));
         }
         task.status = Status::Done;
+        self.revoke_task_tokens(&task);
         let message = texts::task_closed(task.clean_streak);
         let mut effects = Effects::default();
         effects.event(self.event(&task, "task_closed", serde_json::json!({})));
@@ -292,11 +300,16 @@ impl Arbiter {
         Ok(Outcome::new(texts::paused(&reason)))
     }
 
-    /// La persona reanuda la tarea.
+    /// La persona reanuda la tarea; si la pausa fue de artefactos, los restaura.
     pub(crate) fn resume_inner(&self, space: &str) -> Result<Outcome, Rejection> {
         let mut task = self.task_for_elephant(space)?;
         if task.status != Status::Paused {
             return Err(Rejection::new("R4", texts::NOT_PAUSED));
+        }
+        let mut message = texts::RESUMED.to_string();
+        if task.pause_reason.as_deref() == Some("artefactos_modificados") {
+            self.restore_artifacts(&mut task)?;
+            message = texts::ARTIFACTS_RESTORED.to_string();
         }
         task.status = task.paused_from.unwrap_or(Status::Approved);
         task.paused_from = None;
@@ -308,18 +321,19 @@ impl Arbiter {
             self.elephant_event(
                 &task,
                 "resumed",
-                texts::RESUMED.to_string(),
+                message.clone(),
                 serde_json::json!({ "task": task.id }),
             ),
         );
         self.commit(&task, effects);
-        Ok(Outcome::new(texts::RESUMED))
+        Ok(Outcome::new(message))
     }
 
     /// La persona detiene la tarea.
     pub(crate) fn stop_inner(&self, space: &str) -> Result<Outcome, Rejection> {
         let mut task = self.task_for_elephant(space)?;
         task.status = Status::Stopped;
+        self.revoke_task_tokens(&task);
         let mut effects = Effects::default();
         effects.event(self.event(&task, "stopped", serde_json::json!({})));
         self.commit(&task, effects);
@@ -342,6 +356,89 @@ impl Arbiter {
         } else {
             Err(Rejection::new("R3", texts::CRITERIA_CHANGED))
         }
+    }
+
+    /// Congela encargo, criterios y equipo en la carpeta privada (§14.6).
+    pub(crate) fn freeze_artifacts(&self, task: &Task) -> Result<(String, String), Rejection> {
+        let private = self.frozen_dir(task);
+        let live = paths::task_dir(&task.space.folder, &task.id);
+        for name in ["criterios.toml", "encargo.md"] {
+            paths::copy_file(&live.join(name), &private.join(name)).map_err(|error| {
+                Rejection::new("R3", format!("No se pudo congelar {name}: {error}."))
+            })?;
+        }
+        let criteria_sha = paths::sha256_file(&private.join("criterios.toml"))
+            .map_err(|message| Rejection::new("R3", message))?;
+        let encargo_sha = paths::sha256_file(&private.join("encargo.md"))
+            .map_err(|message| Rejection::new("R3", message))?;
+        Ok((criteria_sha, encargo_sha))
+    }
+
+    /// Congela el equipo aprobado (§14.6).
+    pub(crate) fn freeze_team(&self, task: &Task) -> Result<String, Rejection> {
+        let bytes = serde_json::to_vec_pretty(&(&task.team, &task.team_card)).map_err(|error| {
+            Rejection::new("R5", format!("No se pudo congelar el equipo: {error}."))
+        })?;
+        let path = self.frozen_dir(task).join("equipo.json");
+        paths::write_atomic(&path, &bytes).map_err(|error| {
+            Rejection::new("R5", format!("No se pudo congelar el equipo: {error}."))
+        })?;
+        paths::sha256_file(&path).map_err(|message| Rejection::new("R5", message))
+    }
+
+    /// Comprueba que los tres artefactos sigan iguales a la copia congelada.
+    pub(crate) fn check_artifacts(&self, task: &Task) -> Result<(), Rejection> {
+        let live = paths::task_dir(&task.space.folder, &task.id);
+        for (name, expected) in [
+            ("criterios.toml", &task.criteria_sha),
+            ("encargo.md", &task.encargo_sha),
+        ] {
+            if expected.is_empty() {
+                continue;
+            }
+            let sha = paths::sha256_file(&live.join(name))
+                .map_err(|message| Rejection::new("R3", message))?;
+            if &sha != expected {
+                return Err(Rejection::new("R3", texts::ARTIFACTS_MODIFIED));
+            }
+        }
+        if let Some(expected) = &task.team_sha {
+            let bytes = serde_json::to_vec_pretty(&(&task.team, &task.team_card))
+                .map_err(|error| Rejection::new("R5", format!("{error}")))?;
+            if paths::sha256_hex(&bytes) != *expected {
+                return Err(Rejection::new("R3", texts::ARTIFACTS_MODIFIED));
+            }
+        }
+        Ok(())
+    }
+
+    /// Restaura los artefactos desde la copia privada al reanudar.
+    fn restore_artifacts(&self, task: &mut Task) -> Result<(), Rejection> {
+        let private = self.frozen_dir(task);
+        let live = paths::task_dir(&task.space.folder, &task.id);
+        for name in ["criterios.toml", "encargo.md"] {
+            paths::copy_file(&private.join(name), &live.join(name)).map_err(|error| {
+                Rejection::new("R4", format!("No se pudo restaurar {name}: {error}."))
+            })?;
+        }
+        if task.team_sha.is_some() {
+            let path = private.join("equipo.json");
+            let bytes = std::fs::read(&path).map_err(|error| {
+                Rejection::new("R4", format!("No se pudo leer el equipo: {error}."))
+            })?;
+            let (team, card): (Vec<Seat>, String) =
+                serde_json::from_slice(&bytes).map_err(|error| {
+                    Rejection::new("R4", format!("Equipo congelado ilegible: {error}."))
+                })?;
+            task.team = team;
+            task.team_card = card;
+        }
+        Ok(())
+    }
+
+    /// Carpeta privada de artefactos congelados de una tarea.
+    pub(crate) fn frozen_dir(&self, task: &Task) -> PathBuf {
+        crate::paths::data_task_dir(&self.data_dir, &task.id).join("congelados")
     }
 
     /// Deja la tarea en pausa por un motivo y devuelve el rechazo.
@@ -371,17 +468,17 @@ impl Arbiter {
         Rejection::new(rule, message)
     }
 
-    /// Verifica que el pez tenga algo que informar (R7).
-    pub(crate) fn report_allowed(&self, task: &Task, fish: &str) -> Result<(), Rejection> {
-        let record = task
-            .fish(fish)
-            .ok_or_else(|| Rejection::new("R1", texts::UNKNOWN_FISH))?;
-        if record.reported && record.role.is_verifier() {
-            return Err(Rejection::new("R7", texts::already_reported(fish)));
+    /// Verifica que la clave tenga trabajo pendiente (R7).
+    pub(crate) fn report_allowed(&self, task: &Task, key: &FishKey) -> Result<(), Rejection> {
+        if task.pending_work(key).is_some() {
+            return Ok(());
         }
-        if !record.pending {
-            return Err(Rejection::new("R7", texts::no_pending_work(fish)));
+        let verifier = task
+            .fish_by_key(key)
+            .is_some_and(|record| record.role.is_verifier());
+        if verifier && task.work_for_key(key).is_some() {
+            return Err(Rejection::new("R7", texts::already_reported(&key.fish)));
         }
-        Ok(())
+        Err(Rejection::new("R7", texts::no_pending_work(&key.fish)))
     }
 }

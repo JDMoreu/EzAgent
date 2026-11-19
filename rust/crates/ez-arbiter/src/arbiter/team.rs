@@ -47,6 +47,8 @@ impl Arbiter {
             return Err(Rejection::new("R5", texts::TEAM_NOT_PROPOSED));
         }
         task.team_status = TeamStatus::Approved;
+        let sha = self.freeze_team(&task)?;
+        task.team_sha = Some(sha);
         let mut effects = Effects::default();
         effects.both(
             self.event(&task, "team_approved", serde_json::json!({})),
@@ -72,6 +74,7 @@ impl Arbiter {
             return Err(Rejection::new("R5", texts::TEAM_NOT_PROPOSED));
         }
         task.team_status = TeamStatus::Rejected;
+        self.revoke_task_tokens(&task);
         let message = texts::team_rejected(comment);
         let mut events = Effects::default();
         events.both(

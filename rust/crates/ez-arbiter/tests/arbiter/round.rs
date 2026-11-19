@@ -1,6 +1,8 @@
 //! R8 (verificación con tope) y R9 (cierre de ronda y paradas).
 
-use ez_arbiter::{Command, Verdict};
+use std::fs;
+
+use ez_arbiter::{Caller, Command, Verdict};
 use ez_team::Role;
 
 use super::support::{git, Fixture};
@@ -15,6 +17,9 @@ fn setup_with(f: &Fixture, body: &str) -> String {
     f.arbiter
         .execute(&Fixture::elephant(), Command::RoundStart)
         .expect("abrir ronda");
+    f.launch(Role::Planner);
+    f.report("plan-r1", Verdict::Pass, None, None)
+        .expect("informe del planificador");
     task
 }
 
@@ -112,12 +117,14 @@ fn dirty_reports(f: &Fixture, qa_fails: bool, tried: Option<u32>) {
         .expect("informe del desarrollador");
     f.launch(Role::Qa);
     if qa_fails {
+        let (key, report) = f.fish_info("qa-r1");
+        fs::write(&report, "falló").expect("informe del QA");
         f.arbiter
             .execute(
-                &Fixture::as_fish("qa-r1"),
+                &Caller::Fish(key),
                 Command::Report {
                     verdict: Verdict::Fail,
-                    file: f.write("qa-r1.informe.md", "falló"),
+                    file: report,
                     blocking: 1,
                     major: 0,
                     minor: 0,
@@ -216,10 +223,15 @@ fn r9_pauses_at_max_rounds() {
     let f = Fixture::new("r9-tope-rondas");
     let task = setup_with(
         &f,
-        "[validacion]\nrondas_maximas = 1\n\
+        "[validacion]\nrondas_maximas = 2\n\
          [[criterio]]\nid = \"C1\"\ndescripcion = \"Git\"\ncomando = [\"git\", \"--version\"]\n",
     );
     clean_round(&f, 1);
+    assert_eq!(f.state_json(&task)["status"], "between_rounds");
+    f.arbiter
+        .execute(&Fixture::elephant(), Command::RoundStart)
+        .expect("ronda 2");
+    clean_round(&f, 2);
     let state = f.state_json(&task);
     assert_eq!(state["status"], "paused");
     assert_eq!(state["pause_reason"], "tope_rondas");

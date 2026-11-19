@@ -10,9 +10,12 @@
 //!
 //! # struct Launcher;
 //! # impl FishLauncher for Launcher {
-//! #     fn launch(&self, _: &ez_arbiter::LaunchRequest) -> Result<String, String> { Ok("t7".into()) }
+//! #     fn launch(&self, _: &ez_arbiter::LaunchRequest) -> Result<ez_arbiter::Launched, String> {
+//! #         Ok(ez_arbiter::Launched { terminal: "t7".into(), delivery: ez_arbiter::Delivery::Delivered })
+//! #     }
 //! #     fn send(&self, _: &str, _: &str) -> Result<(), String> { Ok(()) }
 //! #     fn alive(&self, _: &str) -> bool { true }
+//! #     fn revoke(&self, _: &str) {}
 //! # }
 //! # struct Writer;
 //! # impl InstructionWriter for Writer {
@@ -41,8 +44,8 @@ mod verify;
 pub use arbiter::Arbiter;
 pub use events::{ArbiterEvent, ElephantEvent};
 pub use types::{
-    Caller, Clock, Command, FishLauncher, InstructionWriter, LaunchRequest, Outcome, Rejection,
-    Space, SystemClock, Verdict,
+    Caller, Clock, Command, Delivery, FishKey, FishLauncher, InstructionWriter, LaunchRequest,
+    Launched, Outcome, Rejection, Space, SystemClock, Verdict,
 };
 
 /// Resultado de una comprobación de un criterio (logueable y serializable).

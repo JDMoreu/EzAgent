@@ -1,4 +1,4 @@
-//! Tipos públicos del árbitro: quien llama, comandos, launcher y reloj.
+//! Tipos públicos del árbitro: identidad de peces, comandos, launcher y reloj.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -25,14 +25,55 @@ impl Clock for SystemClock {
     }
 }
 
+/// Identidad completa de un pez (diseño §14.1). Un pez solo actúa mientras su
+/// clave coincida entera con un trabajo vigente de una tarea activa.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct FishKey {
+    pub space: String,
+    pub task: String,
+    pub fish: String,
+    /// Empieza en 1; sube al relanzar un papel que falló.
+    pub attempt: u32,
+}
+
+impl FishKey {
+    /// Clave de texto para el registro de tokens en memoria (no se persiste).
+    pub fn storage_key(&self) -> String {
+        format!(
+            "{}|{}|{}|{}",
+            self.space, self.task, self.fish, self.attempt
+        )
+    }
+}
+
+/// Resultado de entregar el encargo a un pez (diseño §14.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Delivery {
+    /// La terminal arrancó y recibió la primera línea.
+    Delivered,
+    /// No se pudo confirmar el arranque; el trabajo sigue adelante.
+    Unconfirmed,
+    /// Falló la entrega; el motivo se devuelve al elefante.
+    Failed(String),
+}
+
+/// Terminal creada y resultado de la entrega.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Launched {
+    pub terminal: String,
+    pub delivery: Delivery,
+}
+
 /// Lanza y habla con las terminales de los peces (lo implementa `ez-term`).
 pub trait FishLauncher: Send + Sync {
-    /// Lanza un pez y devuelve la dirección de su terminal en hc (`t7`).
-    fn launch(&self, request: &LaunchRequest) -> Result<String, String>;
+    /// Lanza un pez; devuelve su terminal y si se confirmó la entrega.
+    fn launch(&self, request: &LaunchRequest) -> Result<Launched, String>;
     /// Envía texto a la terminal de un pez.
     fn send(&self, terminal: &str, text: &str) -> Result<(), String>;
     /// Indica si la terminal del pez sigue viva.
     fn alive(&self, terminal: &str) -> bool;
+    /// Revoca el token de un pez cuando deja de actuar.
+    fn revoke(&self, token: &str);
 }
 
 /// Escribe las instrucciones de un pez desde las plantillas de `ez-team`.
@@ -54,6 +95,8 @@ pub struct LaunchRequest {
     pub env: BTreeMap<String, String>,
     pub labels: BTreeMap<String, String>,
     pub first_line: String,
+    /// Token que el proceso necesita y que el lanzador registra antes de abrirlo.
+    pub token: String,
 }
 
 /// Espacio de trabajo registrado por la ventana.
@@ -68,7 +111,7 @@ pub struct Space {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Caller {
     Elephant { space: String },
-    Fish { fish: String },
+    Fish(FishKey),
 }
 
 /// Comandos del protocolo `ez` que llegan al árbitro.
