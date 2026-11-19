@@ -370,3 +370,22 @@
 - Adenda antes de lanzar: archivos (`ez-stt`, `scripts/stop-voice.ps1`), excepción de
   `unsafe` solo en `server/job.rs` para el Job Object, humo con `fake-whisper` y procesos de
   prueba por PID (el `whisper-server` de la persona no se toca).
+
+### DX-1d — validado y fusionado (con DX-1b de nuevo)
+- Del mcode al relevo de OpenCode + DeepSeek. Entrega: hook de pánicos síncrono al registro,
+  `catch_panic` en WndProc de las ventanas layered, gancho de rueda, bandeja y DirectSound;
+  la vista del chat se recupera de un pánico de maquetación; `place_caret` ya no indexa una
+  lista vacía (clic en el campo antes del primer cuadro: candidato fuerte al disparador);
+  `composite_caret` recorta contra la capa de contenido.
+- Símbolos del exe caído (recompilado de 7ce0bbb): `0xbe3f2e` = `panic_with_hook` → pánico
+  que cruzó un `extern "system"`. **El disparador exacto no se reprodujo** (35 mensajes
+  sintéticos, tema y tamaño de la persona, secuencia panel → chat con llamada).
+- Corrida del elefante (release): 29 suites de `ez-core` + `ez-hud` en verde;
+  `panic_boundary` → «VIVO»; humo `chat` y `real` → `chat_open=true alive_secs=10`.
+  Mutaciones: quitar la guarda de `place_caret` → falla su prueba; quitar `catch_unwind` en
+  `paint_content` → falla `a_panicking_layout_keeps_the_view…`; quitar `catch_panic` en
+  WndProc → `panic in a function that cannot unwind … aborting`.
+- Integración: `git revert 82b25b2` (vuelve DX-1b) + fusión de `work/DX-1d`.
+- El humo usa la `VoiceApp` real con ventanas nativas y micrófono silencioso (no el exe con
+  micrófono, para no tocar el audio de la persona ni arrancar otro whisper-server). Falta la
+  prueba en la app de la persona: recompilar y reiniciar **solo con su permiso**.
