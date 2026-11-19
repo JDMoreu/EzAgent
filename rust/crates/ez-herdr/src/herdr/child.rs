@@ -16,6 +16,8 @@ use serde_json::{Map, Value};
 use super::actions::{wrapped_argv, LaunchPlan, LaunchStep};
 use super::{error_row, python_text, value_or_text, Herdr, HerdrError};
 
+mod space;
+
 /// Máximo de caracteres de un nombre de `hc`.
 const MAX_HC_NAME: usize = 32;
 
@@ -361,7 +363,7 @@ impl Herdr {
     fn place_child(&self, terminal: &str, parent: &str, show: Placement) -> Placed {
         match show {
             Placement::Tree => Placed::tree(),
-            Placement::Tab => self.keep_child(terminal, Placement::Tab),
+            Placement::Tab => self.keep_child_in_parent_space(terminal, parent),
             placement => match self.focus_pane(parent) {
                 Ok(()) => self.keep_child(terminal, placement),
                 Err(_) => {
@@ -487,6 +489,9 @@ impl Herdr {
     }
 
     /// `hc run --json`: distingue el error de «nombre ocupado».
+    ///
+    /// DECISION: `hc` escribe el JSON de error en `stderr` (verificado en
+    /// vivo el 19-nov), así que se lee el que venga en cualquiera de los dos.
     fn hc_run_json(&self, args: &[String], timeout: f64) -> Result<Value, Map<String, Value>> {
         let mut argv = vec![self.hc_path()];
         argv.extend_from_slice(args);
@@ -495,22 +500,10 @@ impl Herdr {
             Err(error) => return Err(error_row(error.message())),
         };
         let stdout = py_strip(&completed.stdout).to_string();
-        if stdout.is_empty() {
-            let message = if completed.stderr.is_empty() {
-                "hc run no devolvió nada".to_string()
-            } else {
-                completed.stderr.clone()
-            };
-            return Err(error_row(py_strip(&message).to_string()));
-        }
-        let data = match ez_core::pyloads::loads(&stdout) {
-            Ok(data) => data,
-            Err(_) => {
-                return Err(error_row(format!(
-                    "hc run devolvió algo que no es JSON: {}",
-                    head_chars(&stdout, 300)
-                )))
-            }
+        let stderr = py_strip(&completed.stderr).to_string();
+        let data = match parse_json(&stdout).or_else(|| parse_json(&stderr)) {
+            Some(data) => data,
+            None => return Err(error_row(unreadable_output(&stdout, &stderr))),
         };
         if let Some(error) = data.get("error").filter(|value| truthy(value)) {
             let mut row = error_row(error_message(error));
@@ -563,6 +556,29 @@ fn error_kind(error: &Value) -> Option<&str> {
         .as_object()
         .and_then(|spec| spec.get("kind"))
         .and_then(Value::as_str)
+}
+
+/// El JSON de `hc`, venga por `stdout` o por `stderr`.
+fn parse_json(text: &str) -> Option<Value> {
+    let text = py_strip(text);
+    if text.is_empty() {
+        return None;
+    }
+    ez_core::pyloads::loads(text).ok()
+}
+
+/// El motivo del fallo cuando `hc` no devolvió JSON en ninguna de las dos.
+fn unreadable_output(stdout: &str, stderr: &str) -> String {
+    if !stdout.is_empty() {
+        format!(
+            "hc run devolvió algo que no es JSON: {}",
+            head_chars(stdout, 300)
+        )
+    } else if !stderr.is_empty() {
+        stderr.to_string()
+    } else {
+        "hc run no devolvió nada".to_string()
+    }
 }
 
 #[cfg(test)]

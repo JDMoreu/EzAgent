@@ -1,0 +1,752 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "el espacio de la prueba",
+      "ok": true,
+      "detail": "espacio sp83621073441f9d2c2a4608c62970e49d con el padre t17x"
+    },
+    {
+      "name": "delegar en planner-claude",
+      "ok": true,
+      "detail": "plan1-claude (t17y) en tree"
+    },
+    {
+      "name": "delegar en developer-opencode",
+      "ok": true,
+      "detail": "dev1-opencode (t180) en tab"
+    },
+    {
+      "name": "delegar en developer-qwen",
+      "ok": true,
+      "detail": "dev2-qwen (t181) en right"
+    },
+    {
+      "name": "delegar en qa-codex",
+      "ok": true,
+      "detail": "qa1-codex (t182) en tree"
+    },
+    {
+      "name": "delegar en qa_validator-mcode",
+      "ok": true,
+      "detail": "valqa1-mcode (t183) en tab"
+    },
+    {
+      "name": "delegar en reviewer-pi",
+      "ok": true,
+      "detail": "reviewer1-pi (t184) en tree; avisos: El catálogo de Pi no lista modelos; uso «proveedor/libre» sin verificar."
+    },
+    {
+      "name": "el vigilante de plan1-claude arrancó sin avisos",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "el padre de plan1-claude",
+      "ok": true,
+      "detail": "t17x (se esperaba t17x)"
+    },
+    {
+      "name": "el nombre de plan1-claude",
+      "ok": true,
+      "detail": "«plan1-claude» (se esperaba «plan1-claude»)"
+    },
+    {
+      "name": "la etiqueta agent de plan1-claude",
+      "ok": true,
+      "detail": "«claude» (se esperaba «claude»)"
+    },
+    {
+      "name": "la etiqueta ez.agent de plan1-claude",
+      "ok": true,
+      "detail": "«claude» (se esperaba «claude»)"
+    },
+    {
+      "name": "la etiqueta ez.role de plan1-claude",
+      "ok": true,
+      "detail": "«planner» (se esperaba «planner»)"
+    },
+    {
+      "name": "la etiqueta ez.model de plan1-claude",
+      "ok": true,
+      "detail": "«sonnet» (se esperaba «sonnet»)"
+    },
+    {
+      "name": "la etiqueta ez.effort de plan1-claude",
+      "ok": true,
+      "detail": "«low» (se esperaba «low»)"
+    },
+    {
+      "name": "el primer mensaje de plan1-claude",
+      "ok": true,
+      "detail": "el mensaje trae el papel"
+    },
+    {
+      "name": "la terminal del padre en el mensaje de plan1-claude",
+      "ok": true,
+      "detail": "el mensaje nombra a t17x"
+    },
+    {
+      "name": "la marca del encargo en plan1-claude",
+      "ok": true,
+      "detail": "el mensaje trae E2E-18072-1"
+    },
+    {
+      "name": "el argv de plan1-claude",
+      "ok": true,
+      "detail": "[\"C:\\\\Users\\\\JDMoreu\\\\Documents\\\\EzAgent-wt\\\\HD-9\\\\rust\\\\target\\\\debug\\\\fake-ws-agent.exe\", \"--echo\", \"C:\\\\Users\\\\JDMoreu\\\\AppData\\\\Local\\\\Temp\\\\ez-e2e-18072\\\\registros\", \"--report\", \"terminado\", \"--ez\", \"C:\\\\Users\\\\JDMoreu\\\\Documents\\\\EzAgent-wt\\\\HD-9\\\\rust\\\\target\\\\debug\\\\examples\\\\e2e_delegate.exe\", \"--as\", \"claude\", \"--model\", \"sonnet\", \"--effort\", \"low\"]"
+    },
+    {
+      "name": "el vigilante de dev1-opencode arrancó sin avisos",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "el padre de dev1-opencode",
+      "ok": true,
+      "detail": "t17x (se esperaba t17x)"
+    },
+    {
+      "name": "el nombre de dev1-opencode",
+      "ok": true,
+      "detail": "«dev1-opencode» (se esperaba «dev1-opencode»)"
+    },
+    {
+      "name": "la etiqueta agent de dev1-opencode",
+      "ok": true,
+      "detail": "«opencode» (se esperaba «opencode»)"
+    },
+    {
+      "name": "la etiqueta ez.agent de dev1-opencode",
+      "ok": true,
+      "detail": "«opencode» (se esperaba «opencode»)"
+    },
+    {
+      "name": "la etiqueta ez.role de dev1-opencode",
+      "ok": true,
+      "detail": "«developer» (se esperaba «developer»)"
+    },
+    {
+      "name": "la etiqueta ez.model de dev1-opencode",
+      "ok": true,
+      "detail": "«deepseek-v4.1-flash» (se esperaba «deepseek-v4.1-flash»)"
+    },
+    {
+      "name": "la etiqueta ez.effort de dev1-opencode",
+      "ok": true,
+      "detail": "«high» (se esperaba «high»)"
+    },
+    {
+      "name": "el primer mensaje de dev1-opencode",
+      "ok": true,
+      "detail": "el mensaje trae el papel"
+    },
+    {
+      "name": "la terminal del padre en el mensaje de dev1-opencode",
+      "ok": true,
+      "detail": "el mensaje nombra a t17x"
+    },
+    {
+      "name": "la marca del encargo en dev1-opencode",
+      "ok": true,
+      "detail": "el mensaje trae E2E-18072-2"
+    },
+    {
+      "name": "el argv de dev1-opencode",
+      "ok": true,
+      "detail": "[\"C:\\\\Users\\\\JDMoreu\\\\Documents\\\\EzAgent-wt\\\\HD-9\\\\rust\\\\target\\\\debug\\\\fake-ws-agent.exe\", \"--echo\", \"C:\\\\Users\\\\JDMoreu\\\\AppData\\\\Local\\\\Temp\\\\ez-e2e-18072\\\\registros\", \"--as\", \"opencode\", \"--standalone\"]"
+    },
+    {
+      "name": "el OPENCODE_CONFIG_CONTENT de dev1-opencode",
+      "ok": true,
+      "detail": "{\"model\":\"opencode-go/deepseek-v4.1-flash#high\"} (se esperaba opencode-go/deepseek-v4.1-flash#high)"
+    },
+    {
+      "name": "el vigilante de dev2-qwen arrancó sin avisos",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "el padre de dev2-qwen",
+      "ok": true,
+      "detail": "t17x (se esperaba t17x)"
+    },
+    {
+      "name": "el nombre de dev2-qwen",
+      "ok": true,
+      "detail": "«dev2-qwen» (se esperaba «dev2-qwen»)"
+    },
+    {
+      "name": "la etiqueta agent de dev2-qwen",
+      "ok": true,
+      "detail": "«qwen» (se esperaba «qwen»)"
+    },
+    {
+      "name": "la etiqueta ez.agent de dev2-qwen",
+      "ok": true,
+      "detail": "«qwen» (se esperaba «qwen»)"
+    },
+    {
+      "name": "la etiqueta ez.role de dev2-qwen",
+      "ok": true,
+      "detail": "«developer» (se esperaba «developer»)"
+    },
+    {
+      "name": "la etiqueta ez.model de dev2-qwen",
+      "ok": true,
+      "detail": "«qwen3-coder-plus» (se esperaba «qwen3-coder-plus»)"
+    },
+    {
+      "name": "el primer mensaje de dev2-qwen",
+      "ok": true,
+      "detail": "el mensaje trae el papel"
+    },
+    {
+      "name": "la terminal del padre en el mensaje de dev2-qwen",
+      "ok": true,
+      "detail": "el mensaje nombra a t17x"
+    },
+    {
+      "name": "la marca del encargo en dev2-qwen",
+      "ok": true,
+      "detail": "el mensaje trae E2E-18072-3"
+    },
+    {
+      "name": "el argv de dev2-qwen",
+      "ok": true,
+      "detail": "[\"C:\\\\Users\\\\JDMoreu\\\\Documents\\\\EzAgent-wt\\\\HD-9\\\\rust\\\\target\\\\debug\\\\fake-ws-agent.exe\", \"--echo\", \"C:\\\\Users\\\\JDMoreu\\\\AppData\\\\Local\\\\Temp\\\\ez-e2e-18072\\\\registros\", \"--as\", \"qwen\", \"--model\", \"qwen3-coder-plus\"]"
+    },
+    {
+      "name": "el vigilante de qa1-codex arrancó sin avisos",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "el padre de qa1-codex",
+      "ok": true,
+      "detail": "t17x (se esperaba t17x)"
+    },
+    {
+      "name": "el nombre de qa1-codex",
+      "ok": true,
+      "detail": "«qa1-codex» (se esperaba «qa1-codex»)"
+    },
+    {
+      "name": "la etiqueta agent de qa1-codex",
+      "ok": true,
+      "detail": "«codex» (se esperaba «codex»)"
+    },
+    {
+      "name": "la etiqueta ez.agent de qa1-codex",
+      "ok": true,
+      "detail": "«codex» (se esperaba «codex»)"
+    },
+    {
+      "name": "la etiqueta ez.role de qa1-codex",
+      "ok": true,
+      "detail": "«qa» (se esperaba «qa»)"
+    },
+    {
+      "name": "la etiqueta ez.model de qa1-codex",
+      "ok": true,
+      "detail": "«gpt-5-codex» (se esperaba «gpt-5-codex»)"
+    },
+    {
+      "name": "la etiqueta ez.effort de qa1-codex",
+      "ok": true,
+      "detail": "«medium» (se esperaba «medium»)"
+    },
+    {
+      "name": "el primer mensaje de qa1-codex",
+      "ok": true,
+      "detail": "el mensaje trae el papel"
+    },
+    {
+      "name": "la terminal del padre en el mensaje de qa1-codex",
+      "ok": true,
+      "detail": "el mensaje nombra a t17x"
+    },
+    {
+      "name": "la marca del encargo en qa1-codex",
+      "ok": true,
+      "detail": "el mensaje trae E2E-18072-4"
+    },
+    {
+      "name": "el argv de qa1-codex",
+      "ok": true,
+      "detail": "[\"C:\\\\Users\\\\JDMoreu\\\\Documents\\\\EzAgent-wt\\\\HD-9\\\\rust\\\\target\\\\debug\\\\fake-ws-agent.exe\", \"--echo\", \"C:\\\\Users\\\\JDMoreu\\\\AppData\\\\Local\\\\Temp\\\\ez-e2e-18072\\\\registros\", \"--as\", \"codex\", \"--model\", \"gpt-5-codex\", \"-c\", \"model_reasoning_effort=medium\"]"
+    },
+    {
+      "name": "el vigilante de valqa1-mcode arrancó sin avisos",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "el padre de valqa1-mcode",
+      "ok": true,
+      "detail": "t17x (se esperaba t17x)"
+    },
+    {
+      "name": "el nombre de valqa1-mcode",
+      "ok": true,
+      "detail": "«valqa1-mcode» (se esperaba «valqa1-mcode»)"
+    },
+    {
+      "name": "la etiqueta agent de valqa1-mcode",
+      "ok": true,
+      "detail": "«mcode» (se esperaba «mcode»)"
+    },
+    {
+      "name": "la etiqueta ez.agent de valqa1-mcode",
+      "ok": true,
+      "detail": "«mcode» (se esperaba «mcode»)"
+    },
+    {
+      "name": "la etiqueta ez.role de valqa1-mcode",
+      "ok": true,
+      "detail": "«qa_validator» (se esperaba «qa_validator»)"
+    },
+    {
+      "name": "la etiqueta ez.model de valqa1-mcode",
+      "ok": true,
+      "detail": "«minimax/MiniMax-M3.1-Flash» (se esperaba «minimax/MiniMax-M3.1-Flash»)"
+    },
+    {
+      "name": "la etiqueta ez.effort de valqa1-mcode",
+      "ok": true,
+      "detail": "«high» (se esperaba «high»)"
+    },
+    {
+      "name": "el primer mensaje de valqa1-mcode",
+      "ok": true,
+      "detail": "el mensaje trae el papel"
+    },
+    {
+      "name": "la terminal del padre en el mensaje de valqa1-mcode",
+      "ok": true,
+      "detail": "el mensaje nombra a t17x"
+    },
+    {
+      "name": "la marca del encargo en valqa1-mcode",
+      "ok": true,
+      "detail": "el mensaje trae E2E-18072-5"
+    },
+    {
+      "name": "el argv de valqa1-mcode",
+      "ok": true,
+      "detail": "[\"C:\\\\Users\\\\JDMoreu\\\\Documents\\\\EzAgent-wt\\\\HD-9\\\\rust\\\\target\\\\debug\\\\fake-ws-agent.exe\", \"--echo\", \"C:\\\\Users\\\\JDMoreu\\\\AppData\\\\Local\\\\Temp\\\\ez-e2e-18072\\\\registros\", \"--as\", \"mcode\", \"--model\", \"minimax/MiniMax-M3.1-Flash\"]"
+    },
+    {
+      "name": "el vigilante de reviewer1-pi arrancó sin avisos",
+      "ok": true,
+      "detail": "El catálogo de Pi no lista modelos; uso «proveedor/libre» sin verificar."
+    },
+    {
+      "name": "el padre de reviewer1-pi",
+      "ok": true,
+      "detail": "t17x (se esperaba t17x)"
+    },
+    {
+      "name": "el nombre de reviewer1-pi",
+      "ok": true,
+      "detail": "«reviewer1-pi» (se esperaba «reviewer1-pi»)"
+    },
+    {
+      "name": "la etiqueta agent de reviewer1-pi",
+      "ok": true,
+      "detail": "«pi» (se esperaba «pi»)"
+    },
+    {
+      "name": "la etiqueta ez.agent de reviewer1-pi",
+      "ok": true,
+      "detail": "«pi» (se esperaba «pi»)"
+    },
+    {
+      "name": "la etiqueta ez.role de reviewer1-pi",
+      "ok": true,
+      "detail": "«reviewer» (se esperaba «reviewer»)"
+    },
+    {
+      "name": "la etiqueta ez.model de reviewer1-pi",
+      "ok": true,
+      "detail": "«proveedor/libre» (se esperaba «proveedor/libre»)"
+    },
+    {
+      "name": "la etiqueta ez.effort de reviewer1-pi",
+      "ok": true,
+      "detail": "«medium» (se esperaba «medium»)"
+    },
+    {
+      "name": "el primer mensaje de reviewer1-pi",
+      "ok": true,
+      "detail": "el mensaje trae el papel"
+    },
+    {
+      "name": "la terminal del padre en el mensaje de reviewer1-pi",
+      "ok": true,
+      "detail": "el mensaje nombra a t17x"
+    },
+    {
+      "name": "la marca del encargo en reviewer1-pi",
+      "ok": true,
+      "detail": "el mensaje trae E2E-18072-6"
+    },
+    {
+      "name": "el argv de reviewer1-pi",
+      "ok": true,
+      "detail": "[\"C:\\\\Users\\\\JDMoreu\\\\Documents\\\\EzAgent-wt\\\\HD-9\\\\rust\\\\target\\\\debug\\\\fake-ws-agent.exe\", \"--echo\", \"C:\\\\Users\\\\JDMoreu\\\\AppData\\\\Local\\\\Temp\\\\ez-e2e-18072\\\\registros\", \"--as\", \"pi\", \"--model\", \"proveedor/libre\", \"--thinking\", \"medium\"]"
+    },
+    {
+      "name": "plan1-claude está bajo su padre",
+      "ok": true,
+      "detail": "t17y no está en sub_agents ([\"t17y\", \"t180\", \"t181\", \"t182\", \"t183\", \"t184\"])"
+    },
+    {
+      "name": "dev1-opencode está bajo su padre",
+      "ok": true,
+      "detail": "t180 no está en sub_agents ([\"t17y\", \"t180\", \"t181\", \"t182\", \"t183\", \"t184\"])"
+    },
+    {
+      "name": "dev2-qwen está bajo su padre",
+      "ok": true,
+      "detail": "t181 no está en sub_agents ([\"t17y\", \"t180\", \"t181\", \"t182\", \"t183\", \"t184\"])"
+    },
+    {
+      "name": "qa1-codex está bajo su padre",
+      "ok": true,
+      "detail": "t182 no está en sub_agents ([\"t17y\", \"t180\", \"t181\", \"t182\", \"t183\", \"t184\"])"
+    },
+    {
+      "name": "valqa1-mcode está bajo su padre",
+      "ok": true,
+      "detail": "t183 no está en sub_agents ([\"t17y\", \"t180\", \"t181\", \"t182\", \"t183\", \"t184\"])"
+    },
+    {
+      "name": "reviewer1-pi está bajo su padre",
+      "ok": true,
+      "detail": "t184 no está en sub_agents ([\"t17y\", \"t180\", \"t181\", \"t182\", \"t183\", \"t184\"])"
+    },
+    {
+      "name": "plan1-claude queda en el árbol",
+      "ok": true,
+      "detail": "placed=tree"
+    },
+    {
+      "name": "dev1-opencode tiene pestaña propia",
+      "ok": true,
+      "detail": "placed=tab; pestaña tb3fbd1fb29b9be8d1407ea57c33f40421"
+    },
+    {
+      "name": "dev2-qwen está en la pestaña del padre",
+      "ok": true,
+      "detail": "placed=right; pestaña tbb3f21d3050411afa3ed21358c426f550"
+    },
+    {
+      "name": "qa1-codex queda en el árbol",
+      "ok": true,
+      "detail": "placed=tree"
+    },
+    {
+      "name": "valqa1-mcode tiene pestaña propia",
+      "ok": true,
+      "detail": "placed=tab; pestaña tbb22d01e84abc7e290962d0e574d3d681"
+    },
+    {
+      "name": "reviewer1-pi queda en el árbol",
+      "ok": true,
+      "detail": "placed=tree"
+    },
+    {
+      "name": "un tipo desconocido",
+      "ok": true,
+      "detail": "código 1 (se esperaba 1): No conozco el agente «nada». Agentes del catálogo: claude, codex, mcode, minimax, opencode, pi, qwen."
+    },
+    {
+      "name": "un tipo desconocido no crea terminal",
+      "ok": true,
+      "detail": "25 antes, 25 después"
+    },
+    {
+      "name": "un modelo fuera del catálogo de Claude Code",
+      "ok": true,
+      "detail": "código 1 (se esperaba 1): Claude Code no tiene el modelo «gpt-5». Modelos: fable, opus, sonnet, haiku."
+    },
+    {
+      "name": "un modelo fuera del catálogo de Claude Code no crea terminal",
+      "ok": true,
+      "detail": "25 antes, 25 después"
+    },
+    {
+      "name": "un esfuerzo que Claude Code no tiene",
+      "ok": true,
+      "detail": "código 1 (se esperaba 1): El esfuerzo 'ultra' no existe en claude. Valores válidos: low, medium, high, xhigh, max."
+    },
+    {
+      "name": "un esfuerzo que Claude Code no tiene no crea terminal",
+      "ok": true,
+      "detail": "25 antes, 25 después"
+    },
+    {
+      "name": "un esfuerzo que el modelo de OpenCode no tiene",
+      "ok": true,
+      "detail": "código 1 (se esperaba 1): El modelo deepseek-v4-pro no tiene el esfuerzo 'low'. Valores válidos: high, max."
+    },
+    {
+      "name": "un esfuerzo que el modelo de OpenCode no tiene no crea terminal",
+      "ok": true,
+      "detail": "25 antes, 25 después"
+    },
+    {
+      "name": "un modelo que Codex no tiene en su caché",
+      "ok": true,
+      "detail": "código 1 (se esperaba 1): Codex no tiene el modelo 'gpt-9-imaginario'. Modelos: gpt-5-codex."
+    },
+    {
+      "name": "un modelo que Codex no tiene en su caché no crea terminal",
+      "ok": true,
+      "detail": "25 antes, 25 después"
+    },
+    {
+      "name": "un modelo que mcode no tiene",
+      "ok": true,
+      "detail": "código 1 (se esperaba 1): MiniMax Code no tiene el modelo «minimax/modelo-que-no-existe». Modelos: minimax/MiniMax-M3.1-Flash."
+    },
+    {
+      "name": "un modelo que mcode no tiene no crea terminal",
+      "ok": true,
+      "detail": "25 antes, 25 después"
+    },
+    {
+      "name": "un esfuerzo en Qwen Code",
+      "ok": true,
+      "detail": "código 1 (se esperaba 1): Qwen Code no tiene niveles de esfuerzo."
+    },
+    {
+      "name": "un esfuerzo en Qwen Code no crea terminal",
+      "ok": true,
+      "detail": "25 antes, 25 después"
+    },
+    {
+      "name": "una ubicación que no existe",
+      "ok": true,
+      "detail": "código 2 (se esperaba 2): --show debe ser tree, tab, right o down (no «arriba»).\n\nez — comando del espacio de trabajo de EzAgent\n\nUso:\n  ez --skill                     Imprime el manual del agente principal\n  ez --help                      Muestra esta ayuda\n  ez --version                   Muestra la versión\n  ez status                      Estado de la tarea y de la ronda\n  ez inventory                   Agentes y modelos disponibles\n  ez task new --title T --brief MD --criteria TOML\n  ez team propose --file TOML\n  ez round start\n  ez round close\n  ez delegate <papel> --brief MD\n  ez send <subagente> --file MD\n  ez roles                       Papeles disponibles\n  ez verify\n  ez close\n  ez pause --reason TEXTO\n  ez wait [--timeout SEGUNDOS]\n  ez report --verdict pass|fail --file MD --blocking N --major N --minor N\n            [--mutations-tried N] [--mutations-caught N]\n\nModo local (Herdr, sin EZ_URL ni EZ_TOKEN):\n  ez delegate <papel> --agent <tipo> [--model <modelo>] [--effort <nivel>]\n               --brief <archivo> [--name <nombre>] [--show tree|tab|right|down]\n               [--cwd <carpeta>] [--no-notify] [--outlive-parent] [--json]\n  ez report --state terminado|fallido [--summary TEXTO] [--file INFORME]\n  ez validate <nombre> --pass|--fail [--summary TEXTO] [--file INFORME]\n  ez tasks [--parent <padre>] [--json]\n  ez watch --parent <padre> --dir <raíz> [--hc <ruta>]\n\nOpciones generales:\n  --json    Imprime la respuesta completa como JSON (cualquier comando)\n\nCódigos de salida: 0 bien, 1 rechazado, 2 uso incorrecto, 3 sin conexión."
+    },
+    {
+      "name": "una ubicación que no existe no crea terminal",
+      "ok": true,
+      "detail": "25 antes, 25 después"
+    },
+    {
+      "name": "un nombre con mayúsculas",
+      "ok": true,
+      "detail": "código 2 (se esperaba 2): El nombre «T9» no vale: usa minúsculas, números, «-», «_» o «.», hasta 32 caracteres.\n\nez — comando del espacio de trabajo de EzAgent\n\nUso:\n  ez --skill                     Imprime el manual del agente principal\n  ez --help                      Muestra esta ayuda\n  ez --version                   Muestra la versión\n  ez status                      Estado de la tarea y de la ronda\n  ez inventory                   Agentes y modelos disponibles\n  ez task new --title T --brief MD --criteria TOML\n  ez team propose --file TOML\n  ez round start\n  ez round close\n  ez delegate <papel> --brief MD\n  ez send <subagente> --file MD\n  ez roles                       Papeles disponibles\n  ez verify\n  ez close\n  ez pause --reason TEXTO\n  ez wait [--timeout SEGUNDOS]\n  ez report --verdict pass|fail --file MD --blocking N --major N --minor N\n            [--mutations-tried N] [--mutations-caught N]\n\nModo local (Herdr, sin EZ_URL ni EZ_TOKEN):\n  ez delegate <papel> --agent <tipo> [--model <modelo>] [--effort <nivel>]\n               --brief <archivo> [--name <nombre>] [--show tree|tab|right|down]\n               [--cwd <carpeta>] [--no-notify] [--outlive-parent] [--json]\n  ez report --state terminado|fallido [--summary TEXTO] [--file INFORME]\n  ez validate <nombre> --pass|--fail [--summary TEXTO] [--file INFORME]\n  ez tasks [--parent <padre>] [--json]\n  ez watch --parent <padre> --dir <raíz> [--hc <ruta>]\n\nOpciones generales:\n  --json    Imprime la respuesta completa como JSON (cualquier comando)\n\nCódigos de salida: 0 bien, 1 rechazado, 2 uso incorrecto, 3 sin conexión."
+    },
+    {
+      "name": "un nombre con mayúsculas no crea terminal",
+      "ok": true,
+      "detail": "25 antes, 25 después"
+    },
+    {
+      "name": "sin `HC_TERMINAL_ID`",
+      "ok": true,
+      "detail": "código 3 (se esperaba 3): Ejecútalo desde la terminal de un agente en Herdr."
+    },
+    {
+      "name": "sin `HC_TERMINAL_ID` no crea terminal",
+      "ok": true,
+      "detail": "25 antes, 25 después"
+    },
+    {
+      "name": "no quedan terminales nuevas",
+      "ok": true,
+      "detail": "25 antes, 25 después"
+    },
+    {
+      "name": "el registro de plan1-claude pasa a «terminado»",
+      "ok": true,
+      "detail": "Some(\"terminado\")"
+    },
+    {
+      "name": "el padre recibe el aviso de «terminado»",
+      "ok": true,
+      "detail": "[EzAgent · aviso] plan1-claude (Claude Code · sonnet) terminó. Resumen del subagente: «eco E2E-18072-1:». Informe: C:\\Users\\JDMoreu\\AppData\\Local\\Temp\\ez-e2e-18072\\registros\\t17y-informe.md. Para validarlo: ez validate plan1-claude --pass|--fail --file <evidencia>"
+    },
+    {
+      "name": "validar plan1-claude desde un hermano",
+      "ok": true,
+      "detail": "código 0: {\"name\":\"plan1-claude\",\"terminal\":\"t17y\",\"parent\":\"t17x\",\"agent\":\"claude\",\"label\":\"Claude Code\",\"model\":\"sonnet\",\"effort\":\"low\",\"role\":\"planner\",\"cwd\":\"C:\\\\Users\\\\JDMoreu\\\\AppData\\\\Local\\\\Temp\\\\ez-e2e-18072\\\\work\",\"brief_head\":\"Trabaja en E2E-18072-1: revisa la carpeta del proyecto y escribe un informe corto.\",\"state\":\"validado\",\"since_ms\":1795110783625,\"history\":[{\"state\":\"en_proceso\",\"at_ms\":1795110774535,\"by\":\"ez delegate\",\"detail\":\"encargo entregado\"},{\"state\":\"terminado\",\"at_ms\":1795110774544,\"by\":\"t17y\",\"detail\":\"el subagente terminó: eco E2E-18072-1:\"},{\"state\":\"validado\",\"at_ms\":1795110783625,\"by\":\"t180\",\"detail\":\"validado por t180\"}],\"summary\":\"eco E2E-18072-1:\",\"report\":\"C:\\\\Users\\\\JDMoreu\\\\AppData\\\\Local\\\\Temp\\\\ez-e2e-18072\\\\registros\\\\t17y-informe.md\",\"validation\":{\"by\":\"t180\",\"verdict\":true,\"summary\":\"ok\",\"file\":null,\"at_ms\":1795110783624},\"notified\":\"terminado\"}"
+    },
+    {
+      "name": "el registro de plan1-claude pasa a «validado»",
+      "ok": true,
+      "detail": "Some(\"validado\")"
+    },
+    {
+      "name": "el padre recibe el aviso de «validado»",
+      "ok": true,
+      "detail": "[EzAgent · aviso] plan1-claude quedó validado por t180: «ok»."
+    },
+    {
+      "name": "matar a dev2-qwen",
+      "ok": true,
+      "detail": "código 0: {\"address\":\"t181\",\"argv\":[\"C:\\\\Users\\\\JDMoreu\\\\Documents\\\\EzAgent-wt\\\\HD-9\\\\rust\\\\target\\\\debug\\\\fake-ws-agent.exe\",\"--echo\",\"C:\\\\Users\\\\JDMoreu\\\\AppData\\\\Local\\\\Temp\\\\ez-e2e-18072\\\\registros\",\"--as\",\"qwen\",\"--model\",\"qwen3-coder-plus\"],\"cols\":49,\"created_ms\":1795110777112,\"cwd\":\"C:\\\\Users\\\\JDMoreu\\\\AppData\\\\Local\\\\Temp\\\\ez-e2e-18072\\\\work\",\"die_with_parent\":true,\"exit_code\":1,\"finished_ms\":1795110787669,\"identity\":\"ghostty\",\"keep\":true,\"labels\":{\"agent\":\"qwen\",\"ez.agent\":\"qwen\",\"ez.model\":\"qwen3-coder-plus\",\"ez.parent\":\"t17x\",\"ez.role\":\"developer\",\"herdr.seen\":\"1\",\"herdr.space\":\"sp83621073441f9d2c2a4608c62970e49d\",\"herdr.tab\":\"tbb3f21d3050411afa3ed21358c426f550\",\"where\":\"ez-e2e-18072 / 1\"},\"name\":\"dev2-qwen\",\"notify\":false,\"parent\":\"t17x\",\"pid\":12340,\"reason\":\"killed\",\"reported\":true,\"rm\":false,\"rows\":63,\"screen\":\"exact\",\"signal\":null,\"state\":\"finished\",\"status\":null,\"status_ms\":1795110787668,\"template\":null,\"title\":\"\",\"turn\":1}"
+    },
+    {
+      "name": "el registro de dev2-qwen pasa a «fallido»",
+      "ok": true,
+      "detail": "Some(\"fallido\")"
+    },
+    {
+      "name": "el padre recibe el aviso de «fallido»",
+      "ok": true,
+      "detail": "[EzAgent · aviso] dev2-qwen (Qwen Code · qwen3-coder-plus) falló: la terminal terminó sin informe (código 1). Revisa su pantalla: hc read t181"
+    },
+    {
+      "name": "`ez tasks` muestra «validado»",
+      "ok": true,
+      "detail": "[\"en_proceso\", \"fallido\", \"validado\", \"en_proceso\", \"en_proceso\", \"en_proceso\"]"
+    },
+    {
+      "name": "`ez tasks` muestra «fallido»",
+      "ok": true,
+      "detail": "[\"en_proceso\", \"fallido\", \"validado\", \"en_proceso\", \"en_proceso\", \"en_proceso\"]"
+    },
+    {
+      "name": "`ez tasks` muestra «en_proceso»",
+      "ok": true,
+      "detail": "[\"en_proceso\", \"fallido\", \"validado\", \"en_proceso\", \"en_proceso\", \"en_proceso\"]"
+    },
+    {
+      "name": "el vigilante del padre existe una sola vez",
+      "ok": true,
+      "detail": "[\"t17z\"]"
+    },
+    {
+      "name": "los hijos de la prueba se borran",
+      "ok": true,
+      "detail": "[\"t17y\", \"t180\", \"t181\", \"t182\", \"t183\", \"t184\"]"
+    },
+    {
+      "name": "el vigilante de la prueba se borra",
+      "ok": true,
+      "detail": "[\"t17z\"]"
+    },
+    {
+      "name": "el espacio de la prueba se cierra",
+      "ok": true,
+      "detail": "código 0: {\n  \"ok\": true\n}"
+    },
+    {
+      "name": "las terminales de la prueba se borran",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "el foco vuelve a donde estaba",
+      "ok": true,
+      "detail": "pane p65206280d673d5a1c9118cd021e814b3 / agent t6h; ahora pane p65206280d673d5a1c9118cd021e814b3 / agent t6h"
+    },
+    {
+      "name": "la carpeta de la prueba se borra",
+      "ok": true,
+      "detail": "C:\\Users\\JDMoreu\\AppData\\Local\\Temp\\ez-e2e-18072"
+    },
+    {
+      "name": "no queda nada de la prueba en Herdr",
+      "ok": true,
+      "detail": "[]"
+    }
+  ],
+  "failed": 0,
+  "parent_lines": [
+    "[EzAgent · aviso] plan1-claude (Claude Code · sonnet) terminó. Resumen del subagente: «eco E2E-18072-1:». Informe: C:\\Users\\JDMoreu\\AppData\\Local\\Temp\\ez-e2e-18072\\registros\\t17y-informe.md. Para validarlo: ez validate plan1-claude --pass|--fail --file <evidencia>",
+    "[EzAgent · aviso] dev1-opencode (OpenCode · deepseek-v4.1-flash) está en proceso.",
+    "[EzAgent · aviso] dev2-qwen (Qwen Code · qwen3-coder-plus) está en proceso.",
+    "[EzAgent · aviso] qa1-codex (Codex · gpt-5-codex) está en proceso.",
+    "[EzAgent · aviso] reviewer1-pi (Pi · proveedor/libre) está en proceso.",
+    "[EzAgent · aviso] valqa1-mcode (MiniMax Code · minimax/MiniMax-M3.1-Flash) está en proceso.",
+    "[EzAgent · aviso] plan1-claude quedó validado por t180: «ok».",
+    "[EzAgent · aviso] dev2-qwen (Qwen Code · qwen3-coder-plus) falló: la terminal terminó sin informe (código 1). Revisa su pantalla: hc read t181"
+  ],
+  "id": "ez-e2e-18072",
+  "parent": {
+    "address": "t17x",
+    "space": "sp83621073441f9d2c2a4608c62970e49d"
+  },
+  "children": [
+    {
+      "role": "planner",
+      "agent": "claude",
+      "model": "sonnet",
+      "effort": "low",
+      "show": "tree",
+      "name": "plan1-claude",
+      "mark": "E2E-18072-1",
+      "terminal": "t17y",
+      "placed": "tree",
+      "warnings": []
+    },
+    {
+      "role": "developer",
+      "agent": "opencode",
+      "model": "deepseek-v4.1-flash",
+      "effort": "high",
+      "show": "tab",
+      "name": "dev1-opencode",
+      "mark": "E2E-18072-2",
+      "terminal": "t180",
+      "placed": "tab",
+      "warnings": []
+    },
+    {
+      "role": "developer",
+      "agent": "qwen",
+      "model": "qwen3-coder-plus",
+      "effort": null,
+      "show": "right",
+      "name": "dev2-qwen",
+      "mark": "E2E-18072-3",
+      "terminal": "t181",
+      "placed": "right",
+      "warnings": []
+    },
+    {
+      "role": "qa",
+      "agent": "codex",
+      "model": "gpt-5-codex",
+      "effort": "medium",
+      "show": "tree",
+      "name": "qa1-codex",
+      "mark": "E2E-18072-4",
+      "terminal": "t182",
+      "placed": "tree",
+      "warnings": []
+    },
+    {
+      "role": "qa_validator",
+      "agent": "mcode",
+      "model": "minimax/MiniMax-M3.1-Flash",
+      "effort": "high",
+      "show": "tab",
+      "name": "valqa1-mcode",
+      "mark": "E2E-18072-5",
+      "terminal": "t183",
+      "placed": "tab",
+      "warnings": []
+    },
+    {
+      "role": "reviewer",
+      "agent": "pi",
+      "model": "proveedor/libre",
+      "effort": "medium",
+      "show": "tree",
+      "name": "reviewer1-pi",
+      "mark": "E2E-18072-6",
+      "terminal": "t184",
+      "placed": "tree",
+      "warnings": [
+        "El catálogo de Pi no lista modelos; uso «proveedor/libre» sin verificar."
+      ]
+    }
+  ]
+}

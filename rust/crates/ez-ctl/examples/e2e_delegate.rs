@@ -51,7 +51,10 @@ use checks::Report;
 use serde_json::json;
 
 /// El nombre del archivo con el resultado, dentro de `rust-migration/reports`.
-const REPORT_FILE: &str = "HD-6-e2e.json";
+///
+/// DECISION: la corrida de HD-9 va a su propio archivo: el de HD-6 es la
+/// evidencia de aquella prueba y no se pisa.
+const REPORT_FILE: &str = "HD-9-e2e.json";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();

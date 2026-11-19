@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use ez_core::pyvalue::truthy;
 use serde_json::Value;
 
 use crate::herdr::{hc_slug, HerdrRuntime};
@@ -452,23 +453,23 @@ pub fn watcher_args(setup: &WatcherSetup) -> Vec<String> {
 ///
 /// Si `hc` dice que el nombre ya está ocupado, el vigilante ya está vivo: no
 /// es un error.
+///
+/// DECISION: `hc` escribe el JSON de error en `stderr` (verificado en vivo el
+/// 19-nov), así que se lee el que venga en cualquiera de los dos.
 pub fn ensure_watcher(runtime: &dyn WatchRuntime, setup: &WatcherSetup) -> WatcherState {
     let args = watcher_args(setup);
     let output = match runtime.hc(&args) {
         Ok(output) => output,
         Err(error) => return WatcherState::Failed(error),
     };
-    if let Ok(data) = ez_core::pyloads::loads(&output.stdout) {
-        if let Some(error) = data.get("error") {
+    let data = parse_json(&output.stdout).or_else(|| parse_json(&output.stderr));
+    if let Some(data) = data {
+        if let Some(error) = data.get("error").filter(|value| truthy(value)) {
             let kind = error.get("kind").and_then(Value::as_str);
             if kind == Some("name_taken") {
                 return WatcherState::AlreadyRunning;
             }
-            let message = error
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or("no pude arrancar el vigilante")
-                .to_string();
+            let message = error_message(error);
             return WatcherState::Failed(message);
         }
     }
@@ -485,4 +486,25 @@ pub fn ensure_watcher(runtime: &dyn WatchRuntime, setup: &WatcherSetup) -> Watch
         });
     }
     WatcherState::Started
+}
+
+/// El JSON de `hc`, venga por `stdout` o por `stderr`.
+fn parse_json(text: &str) -> Option<Value> {
+    let text = ez_core::pyvalue::py_strip(text);
+    if text.is_empty() {
+        return None;
+    }
+    ez_core::pyloads::loads(text).ok()
+}
+
+/// El mensaje de un error de `hc`.
+fn error_message(error: &Value) -> String {
+    match error {
+        Value::Object(spec) => spec
+            .get("message")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| "no pude arrancar el vigilante".to_string()),
+        other => ez_core::pyvalue::python_str(other),
+    }
 }

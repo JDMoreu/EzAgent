@@ -49,6 +49,21 @@ impl Reply {
             stderr: text.to_string(),
         }
     }
+
+    /// El error de «nombre ocupado» como lo escribe `hc`: por `stderr`.
+    fn name_taken_on_stderr(name: &str) -> Self {
+        Self {
+            rc: 1,
+            stdout: String::new(),
+            stderr: json!({
+                "error": {
+                    "kind": "name_taken",
+                    "message": format!("a live terminal is already named \"{name}\""),
+                }
+            })
+            .to_string(),
+        }
+    }
 }
 
 struct FakeState {
@@ -112,7 +127,7 @@ impl Fake {
     }
 }
 
-/// La ruta de la llamada: `hc:<sub>` o `app:<acción>`.
+/// La ruta de la llamada: `hc:<sub>`, `app:ls` o `app:<acción>`.
 fn route_of(argv: &[String]) -> String {
     let stem = Path::new(argv.first().map(String::as_str).unwrap_or(""))
         .file_stem()
@@ -120,6 +135,8 @@ fn route_of(argv: &[String]) -> String {
         .unwrap_or_default();
     if stem == "hc" {
         format!("hc:{}", argv.get(1).cloned().unwrap_or_default())
+    } else if argv.get(1).map(String::as_str) == Some("ls") {
+        "app:ls".to_string()
     } else {
         format!("app:{}", argv.get(2).cloned().unwrap_or_default())
     }
@@ -249,6 +266,30 @@ fn hc_get_ok(parent: &str) -> Reply {
         "parent": parent,
         "labels": {"agent": "opencode", "ez.role": "developer"},
         "state": "live",
+    }))
+}
+
+/// La respuesta de `hc get` de un padre que está en un espacio de Herdr.
+fn hc_get_with_space(parent: &str, space: &str) -> Reply {
+    Reply::json(&json!({
+        "address": parent,
+        "name": "padre",
+        "parent": "t1",
+        "labels": {"agent": "claude", "herdr.space": space},
+        "state": "live",
+    }))
+}
+
+/// La lista de Herdr con el subagente en una pestaña del espacio dado.
+fn app_ls_with_tab(space: &str, tab: &str, terminal: &str) -> Reply {
+    Reply::json(&json!({
+        "spaces": [{
+            "id": space,
+            "tabs": [{
+                "id": tab,
+                "terminals": [{"terminal": terminal, "pane": "p1"}],
+            }],
+        }],
     }))
 }
 

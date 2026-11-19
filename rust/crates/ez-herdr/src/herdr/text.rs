@@ -11,6 +11,9 @@ use ez_core::pyvalue::{collapse_spaces, py_splitlines, py_strip, text_or_empty};
 use regex::Regex;
 use serde_json::{Map, Value};
 
+#[cfg(test)]
+mod tests;
+
 fn compiled(slot: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
     slot.get_or_init(|| Regex::new(pattern).expect("patrón fijo válido"))
 }
@@ -106,6 +109,10 @@ fn plain_argument() -> &'static Regex {
 ///
 /// `env` se antepone como `$env:NOMBRE='valor'; ` (solo vive en esa shell).
 /// `path_prepend` añade carpetas al principio del PATH de esa shell.
+///
+/// DECISION: cuando el programa va citado se antepone el operador `&`:
+/// en PowerShell `'C:\ruta\programa.exe'` a secas es una cadena, no una
+/// orden, y el hijo muere sin arrancar (verificado en vivo el 19-nov).
 pub(crate) fn command_line(
     argv: &[String],
     env: &Map<String, Value>,
@@ -126,9 +133,13 @@ pub(crate) fn command_line(
     }
     let parts: Vec<String> = argv
         .iter()
-        .map(|part| {
+        .enumerate()
+        .map(|(index, part)| {
             if plain_argument().is_match(part) {
                 part.clone()
+            } else if index == 0 {
+                // El programa citado necesita el operador de llamada.
+                format!("& {}", ps_quote(part))
             } else {
                 ps_quote(part)
             }

@@ -30,8 +30,16 @@ pub(crate) struct Context {
 impl Context {
     /// El contexto según el entorno (el inyectado en las pruebas).
     pub fn new(env: &dyn Fn(&str) -> Option<String>) -> Self {
+        Self::with_hc(env, None)
+    }
+
+    /// El contexto con la ruta de `hc` ya resuelta.
+    ///
+    /// El vigilante la trae en `--hc`: con ella no hace falta leer la
+    /// configuración real de la persona (`%APPDATA%\EzAgent\voice.json`).
+    pub fn with_hc(env: &dyn Fn(&str) -> Option<String>, hc: Option<&str>) -> Self {
         let root = registry_root(env);
-        let hc = hc_path(env);
+        let hc = hc_path(env, hc);
         let terminal = env("HC_TERMINAL_ID")
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
@@ -63,8 +71,25 @@ fn registry_root(env: &dyn Fn(&str) -> Option<String>) -> PathBuf {
     base.join("EzAgent").join("subagentes")
 }
 
-/// La ruta de `hc`: la del entorno o la de la configuración.
-fn hc_path(env: &dyn Fn(&str) -> Option<String>) -> String {
+/// La ruta de `hc`: la dada, la del entorno o la de la configuración.
+///
+/// DECISION: con la ruta ya dada (el `--hc` del vigilante) no se lee la
+/// configuración real de la persona: el vigilante corre en una terminal de `hc`
+/// sin entorno y leería su `voice.json` sin necesitarlo.
+fn hc_path(env: &dyn Fn(&str) -> Option<String>, given: Option<&str>) -> String {
+    hc_path_with(env, given, &|| VoiceConfig::load(None).ok())
+}
+
+/// Lo mismo, pero la configuración se carga por la función dada (así las
+/// pruebas cuentan cuántas veces se lee).
+pub(super) fn hc_path_with(
+    env: &dyn Fn(&str) -> Option<String>,
+    given: Option<&str>,
+    load_config: &dyn Fn() -> Option<VoiceConfig>,
+) -> String {
+    if let Some(path) = given.map(str::trim).filter(|path| !path.is_empty()) {
+        return path.to_string();
+    }
     if let Some(path) = env("EZ_HC_PATH")
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -73,8 +98,7 @@ fn hc_path(env: &dyn Fn(&str) -> Option<String>) -> String {
     }
     // DECISION: `EZ_HC_PATH` manda sobre `voice.json` (pruebas y máquinas
     // donde Herdr vive en otro sitio).
-    let from_config = VoiceConfig::load(None)
-        .ok()
+    let from_config = load_config()
         .and_then(|config| {
             config
                 .get("hc_path")
@@ -206,12 +230,23 @@ pub(crate) fn run_state(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> i32 {
-    let context = Context::new(env);
     match state {
-        LocalState::Report(command) => run_report(command, &context, json, out, err),
-        LocalState::Validate(command) => run_validate(command, &context, json, out, err),
-        LocalState::Tasks(command) => run_tasks(command, &context, json, out, err),
+        LocalState::Report(command) => {
+            let context = Context::new(env);
+            run_report(command, &context, json, out, err)
+        }
+        LocalState::Validate(command) => {
+            let context = Context::new(env);
+            run_validate(command, &context, json, out, err)
+        }
+        LocalState::Tasks(command) => {
+            let context = Context::new(env);
+            run_tasks(command, &context, json, out, err)
+        }
+        // DECISION: el vigilante llega con la ruta de `hc` (`--hc`): con ella
+        // no se lee la configuración real de la persona.
         LocalState::Watch(command) => {
+            let context = Context::with_hc(env, command.hc.as_deref());
             super::watch::run_watch(command, &context, env, json, out, err)
         }
     }
