@@ -29,7 +29,6 @@ papel = \"plan_reviewer\"
 agente = \"fake_verify\"
 modelo = \"verify-1\"
 
-
 [[papel]]
 papel = \"developer\"
 agente = \"fake_exec\"
@@ -164,7 +163,10 @@ mod tests {
         assert!(!EQUIPO.contains("etapa"), "el equipo no fija etapas");
         let review = text.find("ez = [\"delegate\", \"plan_reviewer\"");
         let dev = text.find("ez = [\"delegate\", \"developer\"");
-        assert!(review.is_some() && dev.is_some() && review < dev, "el revisor del plan va antes del desarrollador");
+        assert!(
+            review.is_some() && dev.is_some() && review < dev,
+            "el revisor del plan va antes del desarrollador"
+        );
     }
 
     #[test]
