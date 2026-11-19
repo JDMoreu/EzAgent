@@ -448,3 +448,16 @@
   porque los subagentes lanzados con `hc run` a mano no entran en el registro; por eso
   qa_validator no cambió de familia. Se arregla al delegar con `ez delegate`.
 - NV-2 lanzado (`nv-2` t1x6).
+
+### DX-1c — revisión 1 (relevo de mcode a OpenCode)
+- Entrega: alto medido sin pintar, solo se maqueta el viewport ± una pantalla; humo `big`
+  (320 mensajes, rueda arriba/abajo) además de `chat` y `real`, sin `PÁNICO`, pico 147 MB.
+  Primer render: 10 → 402 ms (antes 711), 100 → 912 ms (antes 5 974), 1 000 → 6 928 ms
+  (antes 63 983). **No cumple** el criterio «mismo orden de magnitud con 10 y 1 000»: medir
+  sigue siendo lineal (~6,9 ms por mensaje rico). Se acepta como mejora y queda **DX-1e**
+  (alto estimado fuera de pantalla → primer cuadro constante).
+- Falsa alarma investigada: 4 pruebas de medidas de texto de `ez-hud` fallaban solo en el
+  worktree DX-1c (también con el código de `eco/main`): caché vieja de `freetype-sys` en su
+  `target`. `cargo clean --release -p freetype-sys` → pasan. No es un fallo del código.
+- Mutación: maquetar todo el historial → fallan las 3 de `chat_virtualization`.
+- Humo visual aplazado hasta que la persona termine su prueba técnica (abre ventanas).
