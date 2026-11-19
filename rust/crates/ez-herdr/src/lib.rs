@@ -6,5 +6,6 @@ pub mod herdr;
 pub mod permission;
 pub mod prelaunch;
 pub mod session;
+pub mod subagents;
 pub mod tasks;
 pub mod watcher;
