@@ -345,7 +345,7 @@ fn inspect_agent(
         plane,
         window_hours,
         reading,
-        depleted::entry(dirs, key, now_ms),
+        depleted::entries(dirs, key, now_ms),
     )
 }
 
@@ -399,11 +399,9 @@ fn assemble(
     plane: Option<&planes::Plane>,
     window_hours: f64,
     mut reading: Reading,
-    depleted: Option<String>,
+    depletion: depleted::Depletion,
 ) -> AgentUsage {
-    if let Some(source) = depleted {
-        reading.depleted = Some(source);
-    }
+    apply_depletion(&mut reading, depletion);
     let (declared, plan_warning) = declared_usage(plane, &reading);
     if let Some(warning) = plan_warning {
         reading.warnings.push(warning);
@@ -443,6 +441,55 @@ fn assemble(
         sources,
         warnings: reading.warnings,
     }
+}
+
+/// Aplica `uso.json`: un modelo agotado solo se marca a sí mismo; el agente
+/// queda agotado con la misma regla de IR-2b (todos sus modelos usables).
+fn apply_depletion(reading: &mut Reading, depletion: depleted::Depletion) {
+    // DECISION: como IR-2b, el agente solo se agota si había uso en la
+    // ventana; un `uso.json` suelto, sin datos de uso, no condena al agente.
+    let had_models = !reading.models.is_empty();
+    for entry in depletion.models {
+        match reading
+            .models
+            .iter_mut()
+            .find(|model| depleted::same_model(&model.model, &entry.model))
+        {
+            Some(model) => model.state = UsageState::Agotado,
+            None => reading.models.push(ModelUsage {
+                model: entry.model,
+                tokens: None,
+                messages: None,
+                cost_usd: None,
+                state: UsageState::Agotado,
+            }),
+        }
+    }
+    if let Some(source) = depletion.whole_agent {
+        reading.depleted = Some(source);
+    } else if had_models && reading.depleted.is_none() && all_usable_agotado(reading) {
+        reading.depleted =
+            Some("vigilante: todos los modelos usables están agotados (uso.json)".to_string());
+    }
+}
+
+/// ¿Todos los modelos usables están agotados? (la regla de IR-2b).
+fn all_usable_agotado(reading: &Reading) -> bool {
+    let usable: Vec<&str> = if reading.usable_models.is_empty() {
+        reading
+            .models
+            .iter()
+            .map(|model| model.model.as_str())
+            .collect()
+    } else {
+        reading.usable_models.iter().map(String::as_str).collect()
+    };
+    !usable.is_empty()
+        && usable.iter().all(|name| {
+            reading.models.iter().any(|model| {
+                depleted::same_model(&model.model, name) && model.state == UsageState::Agotado
+            })
+        })
 }
 
 fn read_agent(key: &str, dirs: &UsageDirs, window: &Window, now_ms: u64) -> Reading {
@@ -563,6 +610,11 @@ pub(crate) struct Reading {
     pub(crate) observed_window_hours: Option<f64>,
     /// Fuente del aviso de agotado, si la hay.
     pub(crate) depleted: Option<String>,
+    /// Modelos que el lector considera usables (ventana + recientes).
+    ///
+    /// Vacío en los lectores que no separan «reciente» de «ventana»: ahí se
+    /// usan los nombres de `models`.
+    pub(crate) usable_models: Vec<String>,
     /// Motivo por el que el dato no es actual; invalida el porcentaje.
     pub(crate) stale: Option<String>,
     pub(crate) warnings: Vec<String>,

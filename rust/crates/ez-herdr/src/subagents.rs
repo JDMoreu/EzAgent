@@ -18,8 +18,8 @@ mod watch;
 pub use registry::Registry;
 pub use watch::{
     ensure_watcher, epoch_ms, watcher_args, watcher_name, DelegateState, HcOutput, HcRuntime,
-    WatchConfig, WatchRuntime, WatchStop, Watcher, WatcherSetup, WatcherState, DEFAULT_GRACE_MS,
-    DEFAULT_IDLE_MS, DEFAULT_INTERVAL_MS,
+    MemoryProbe, MemoryReading, WatchConfig, WatchRuntime, WatchStop, Watcher, WatcherSetup,
+    WatcherState, DEFAULT_GRACE_MS, DEFAULT_IDLE_MS, DEFAULT_INTERVAL_MS,
 };
 
 /// Estado de una tarea delegada (§13 y `novedades-subagentes.md` §2).

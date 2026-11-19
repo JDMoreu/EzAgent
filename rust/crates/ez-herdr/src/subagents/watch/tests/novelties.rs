@@ -513,3 +513,76 @@ fn un_bloqueado_que_muere_sin_informe_queda_fallido() {
     assert_eq!(saved.state, TaskState::Failed);
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn la_frase_de_mcode_solo_bloquea_con_el_agente_parado() {
+    let screen = "Error 50110: credit exhausted.\nCheck /usage or switch provider";
+    // Con el agente trabajando, la pantalla es dato y no bloquea.
+    let root = temp_root("mcode-working");
+    let registry = Registry::at(&root);
+    registry
+        .create(&record_of(
+            "dev1-mcode",
+            "t12",
+            "mcode",
+            "MiniMax Code",
+            "minimax-m3.1",
+        ))
+        .expect("registro");
+    let fake = Fake::new()
+        .at(NOW)
+        .with_ls(&live_children("working"))
+        .with_get(r#"{"address":"t6h","state":"live"}"#)
+        .with_screen("t12", screen);
+    let mut watcher = make_watcher(&fake, Registry::at(&root));
+    watcher.tick();
+    let tick = watcher.tick();
+    assert!(tick.blocked.is_empty(), "{:?}", tick.blocked);
+    assert_eq!(
+        registry
+            .get("t6h", "dev1-mcode")
+            .expect("leer")
+            .expect("registro")
+            .state,
+        TaskState::InProgress
+    );
+    let _ = std::fs::remove_dir_all(&root);
+
+    // Parado y con la pantalla quieta, sí: es un límite de uso.
+    let root = temp_root("mcode-idle");
+    let registry = Registry::at(&root);
+    registry
+        .create(&record_of(
+            "dev1-mcode",
+            "t12",
+            "mcode",
+            "MiniMax Code",
+            "minimax-m3.1",
+        ))
+        .expect("registro");
+    let fake = Fake::new()
+        .at(NOW)
+        .with_ls(&live_children("idle"))
+        .with_get(r#"{"address":"t6h","state":"live"}"#)
+        .with_screen("t12", screen);
+    let mut watcher = make_watcher(&fake, Registry::at(&root));
+    watcher.tick();
+    let tick = watcher.tick();
+    assert_eq!(tick.blocked, vec!["dev1-mcode".to_string()]);
+    let saved = registry
+        .get("t6h", "dev1-mcode")
+        .expect("leer")
+        .expect("registro");
+    assert_eq!(saved.state, TaskState::Blocked);
+    assert!(
+        saved
+            .history
+            .last()
+            .expect("cambio")
+            .detail
+            .contains("límite de uso"),
+        "{:?}",
+        saved.history
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}

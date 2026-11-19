@@ -7,6 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use ez_core::config::VoiceConfig;
+use ez_scan::recommend::Size;
 use ez_scan::usage::{self, UsageDirs};
 use serde_json::json;
 
@@ -18,6 +19,11 @@ pub(crate) enum ScanCommand {
     Resources,
     Inventory,
     Usage,
+    /// `ez recommend <papel> [--size s|m|l]`.
+    Recommend {
+        role: String,
+        size: Size,
+    },
 }
 
 /// `ez init [--refresh]`.
@@ -49,6 +55,26 @@ pub(crate) fn build_usage(parsed: &mut Parsed) -> Result<Command, CliError> {
     Ok(Command::Scan(ScanCommand::Usage))
 }
 
+/// `ez recommend <papel> [--size s|m|l] [--json]`.
+pub(crate) fn build_recommend(parsed: &mut Parsed) -> Result<Command, CliError> {
+    let role = parsed.word("Falta el papel para la recomendación.")?;
+    if role.trim().is_empty() {
+        return Err(CliError::Usage(
+            "El papel no puede estar vacío.".to_string(),
+        ));
+    }
+    let size = match parsed.take("size") {
+        Some(text) => Size::parse(&text)
+            .ok_or_else(|| CliError::Usage(format!("--size debe ser s, m o l (no «{text}»).")))?,
+        None => Size::M,
+    };
+    parsed.check_empty()?;
+    Ok(Command::Scan(ScanCommand::Recommend {
+        role: role.trim().to_string(),
+        size,
+    }))
+}
+
 /// Ejecuta el comando y devuelve el código de salida.
 pub(crate) fn run(
     command: &ScanCommand,
@@ -63,6 +89,9 @@ pub(crate) fn run(
         ScanCommand::Resources => run_resources(env, cwd, json_output, out, err),
         ScanCommand::Inventory => run_inventory(json_output, out, err),
         ScanCommand::Usage => run_usage(env, json_output, out, err),
+        ScanCommand::Recommend { role, size } => {
+            run_recommend(env, cwd, role, *size, json_output, out, err)
+        }
     }
 }
 
@@ -179,6 +208,53 @@ fn run_usage(
         write_usage_agent(out, agent);
     }
     0
+}
+
+fn run_recommend(
+    env: &dyn Fn(&str) -> Option<String>,
+    cwd: &Path,
+    role: &str,
+    size: ez_scan::recommend::Size,
+    json_output: bool,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> i32 {
+    let cfg = load_config();
+    let parent = env("HC_TERMINAL_ID")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default();
+    let inputs = crate::local::choice::gather(env, &cfg, &parent, cwd);
+    match crate::local::choice::recommend_for(&inputs, role, size) {
+        Ok(recommendation) => {
+            for warning in &recommendation.warnings {
+                let _ = writeln!(err, "Aviso: {warning}");
+            }
+            if json_output {
+                print_json(out, &json!({"ok": true, "recommendation": recommendation}));
+                return 0;
+            }
+            let effort = recommendation.effort.as_deref().unwrap_or("sin esfuerzo");
+            let _ = writeln!(
+                out,
+                "Recomiendo {} · {} · {} para {} (tamaño {}).",
+                recommendation.label,
+                recommendation.model,
+                effort,
+                recommendation.role,
+                recommendation.size
+            );
+            let _ = writeln!(out, "Razones:");
+            for reason in &recommendation.reasons {
+                let _ = writeln!(out, "  - {reason}");
+            }
+            0
+        }
+        Err(error) => {
+            let _ = writeln!(err, "{error}");
+            1
+        }
+    }
 }
 
 fn run_resources(

@@ -471,5 +471,69 @@ fn un_vigilante_nuevo_arranca() {
     assert_eq!(ensure_watcher(&*fake, &setup()), WatcherState::Started);
 }
 
+// ------------------------------------------------------------- memoria baja
+
+/// Devuelve una lectura preparada por vuelta.
+struct SequenceMemory {
+    readings: Mutex<Vec<Option<MemoryReading>>>,
+}
+
+impl MemoryProbe for SequenceMemory {
+    fn low(&self) -> Option<MemoryReading> {
+        self.readings.lock().expect("lecturas").pop().flatten()
+    }
+}
+
+fn low_memory() -> MemoryReading {
+    MemoryReading {
+        free_ram_mb: 1_100,
+        free_commit_mb: 3_000,
+        top_name: Some("dev1-opencode".to_string()),
+        top_mb: 2_048,
+    }
+}
+
+#[test]
+fn la_memoria_baja_se_avisa_una_vez_por_episodio() {
+    let root = temp_root("memoria");
+    let fake = Fake::new()
+        .with_ls(r#"{"terminals":[]}"#)
+        .with_get(r#"{"address":"t6h","state":"live"}"#);
+    // Dos vueltas bajas seguidas, una normal, y otra baja: dos episodios.
+    let memory = Arc::new(SequenceMemory {
+        readings: Mutex::new(vec![
+            Some(low_memory()),
+            None,
+            Some(low_memory()),
+            Some(low_memory()),
+        ]),
+    });
+    let mut watcher = make_watcher(&fake, Registry::at(&root)).with_memory_probe(memory);
+    assert!(watcher.tick().memory_warned);
+    assert!(!watcher.tick().memory_warned, "no se repite en el episodio");
+    watcher.tick();
+    assert!(watcher.tick().memory_warned, "otro episodio sí avisa");
+    let sent = fake.sent();
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    assert_eq!(
+        sent[0],
+        "[EzAgent · aviso] Memoria baja: RAM libre 1100 MB, virtual libre 3000 MB. \
+         El subagente que más usa es dev1-opencode (2048 MB)."
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn sin_medidor_de_memoria_no_hay_aviso() {
+    let root = temp_root("sin-memoria");
+    let fake = Fake::new()
+        .with_ls(r#"{"terminals":[]}"#)
+        .with_get(r#"{"address":"t6h","state":"live"}"#);
+    let mut watcher = make_watcher(&fake, Registry::at(&root));
+    assert!(!watcher.tick().memory_warned);
+    assert!(fake.sent().is_empty());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 mod novelties;
 mod pantalla;

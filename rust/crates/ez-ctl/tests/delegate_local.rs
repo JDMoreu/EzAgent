@@ -96,8 +96,9 @@ fn el_analisis_rechaza_el_nombre_y_la_ubicacion_invalidos() {
         dir.path(),
     );
     assert!(bad_show.is_err(), "{bad_show:?}");
-    let no_agent = parse_delegate_options(&options(&["developer", "--brief", &brief]), dir.path());
-    assert!(no_agent.is_err(), "{no_agent:?}");
+    let no_agent = parse_delegate_options(&options(&["developer", "--brief", &brief]), dir.path())
+        .expect("sin --agent vale: lo elige la recomendación");
+    assert!(no_agent.agent.unwrap_or_default().is_empty());
     let unknown = parse_delegate_options(
         &options(&[
             "developer",
@@ -161,6 +162,27 @@ fn en_una_tarea_del_arbitro_el_delegate_sigue_siendo_el_de_hoy() {
 }
 
 #[test]
+fn el_analisis_acepta_sin_agente_y_con_force() {
+    let dir = TempDir::new();
+    let brief = dir.file("encargo.md");
+    let brief = brief.to_string_lossy().into_owned();
+    let parsed = parse_delegate_options(
+        &options(&["qa_validator", "--brief", &brief, "--force"]),
+        dir.path(),
+    )
+    .expect("análisis");
+    assert!(parsed.agent.is_none());
+    assert!(parsed.force);
+    assert!(parsed.local_options);
+
+    let empty = parse_delegate_options(
+        &options(&["developer", "--brief", &brief, "--agent", ""]),
+        dir.path(),
+    );
+    assert!(empty.is_err(), "{empty:?}");
+}
+
+#[test]
 fn sin_hc_terminal_id_el_modo_local_es_codigo_3() {
     let dir = TempDir::new();
     let brief = dir.file("encargo.md");
@@ -174,6 +196,16 @@ fn sin_hc_terminal_id_el_modo_local_es_codigo_3() {
             "--brief",
             &brief,
         ],
+        dir.path(),
+        None,
+    );
+    assert_eq!(code, 3);
+    assert!(out.is_empty());
+    assert!(err.contains(MISSING_TERMINAL), "{err}");
+
+    // Sin `--agent` el análisis también pasa; el modo local solo exige Herdr.
+    let (code, out, err) = run_local(
+        &["delegate", "developer", "--brief", &brief],
         dir.path(),
         None,
     );
@@ -263,6 +295,9 @@ fn la_ayuda_muestra_la_sintaxis_del_modo_local() {
     let dir = TempDir::new();
     let (code, out, _) = run_local(&["--help"], dir.path(), None);
     assert_eq!(code, 0);
-    assert!(out.contains("ez delegate <papel> --agent <tipo>"), "{out}");
+    assert!(
+        out.contains("ez delegate <papel> [--agent <tipo>]"),
+        "{out}"
+    );
     assert!(out.contains("--show tree|tab|right|down"), "{out}");
 }

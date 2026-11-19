@@ -158,6 +158,28 @@ fn resources_e_inventory_funcionan_sin_herdr_y_sin_arbitro() {
     assert!(agents.iter().any(|agent| agent["key"] == "codex"));
 }
 
+#[test]
+fn recommend_usa_los_agentes_falsos_y_el_modelos_toml() {
+    let root = setup();
+    write(
+        &root
+            .path()
+            .join("appdata")
+            .join("EzAgent")
+            .join("modelos.toml"),
+        "[qwen3-coder-plus]\nnivel = \"alto\"\ncosto = \"gratis\"\nfamilia = \"qwen\"\n",
+    );
+    let (code, out, err) = run(root.path(), &["recommend", "planner", "--json"]);
+    assert_eq!(code, 0, "salida: {out}\nerror: {err}");
+    let data = json(&out);
+    assert_eq!(data["ok"], true);
+    assert_eq!(data["recommendation"]["agent"], "qwen");
+    assert_eq!(data["recommendation"]["model"], "qwen3-coder-plus");
+    assert_eq!(data["recommendation"]["level"], "alto");
+    assert_eq!(data["recommendation"]["cost"], "gratis");
+    assert_eq!(data["recommendation"]["effort"], serde_json::Value::Null);
+}
+
 fn assert_exact_empty(items: Option<&Vec<serde_json::Value>>) {
     assert!(items.is_some_and(Vec::is_empty));
 }

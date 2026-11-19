@@ -110,7 +110,7 @@ pub fn check(probe: &dyn Probe, parent: &str, thresholds: &Thresholds) -> Result
         disk_free_mb: 0,
         subagents: probe.subagents(parent, thresholds)?,
     };
-    if let Some(reason) = refusal(&resources, thresholds) {
+    if let Some(reason) = reason(&resources, thresholds) {
         return Err(format!(
             "Recursos justos: {reason}. Espera a que termine alguno o usa --force."
         ));
@@ -119,7 +119,7 @@ pub fn check(probe: &dyn Probe, parent: &str, thresholds: &Thresholds) -> Result
 }
 
 /// Qué umbral no se cumple, o `None` si todo está bien.
-fn refusal(resources: &resources::Resources, thresholds: &Thresholds) -> Option<String> {
+pub fn reason(resources: &resources::Resources, thresholds: &Thresholds) -> Option<String> {
     let mut reasons = Vec::new();
     if resources.free_ram_mb < thresholds.min_free_ram_mb {
         reasons.push(format!(

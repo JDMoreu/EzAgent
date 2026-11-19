@@ -20,7 +20,7 @@ pub(crate) const MISSING_ENV: &str =
 const DEFAULT_WAIT_SECONDS: u64 = 170;
 
 /// Opciones que no llevan valor.
-const FLAG_OPTIONS: [&str; 7] = [
+const FLAG_OPTIONS: [&str; 8] = [
     "no-notify",
     "outlive-parent",
     "hc-notes",
@@ -28,6 +28,7 @@ const FLAG_OPTIONS: [&str; 7] = [
     "fail",
     "refresh",
     "local",
+    "force",
 ];
 
 const USAGE: &str = "
@@ -58,11 +59,14 @@ Recursos e inventario (siempre locales, no hablan con el árbitro):
   ez resources [--json]
   ez inventory --local [--json]
   ez usage [--json]              Uso y límites de cada agente
+  ez recommend <papel> [--size s|m|l] [--json]
+                                 Tipo, modelo y esfuerzo recomendados
 
 Modo local (Herdr, sin EZ_URL ni EZ_TOKEN):
-  ez delegate <papel> --agent <tipo> [--model <modelo>] [--effort <nivel>]
+  ez delegate <papel> [--agent <tipo>] [--model <modelo>] [--effort <nivel>]
                --brief <archivo> [--name <nombre>] [--show tree|tab|right|down]
-               [--cwd <carpeta>] [--no-notify] [--outlive-parent] [--json]
+               [--cwd <carpeta>] [--no-notify] [--outlive-parent] [--force] [--json]
+                                 Sin --agent lo elige la recomendación
   ez report --state terminado|fallido [--summary TEXTO] [--file INFORME]
   ez validate <nombre> --pass|--fail [--summary TEXTO] [--file INFORME]
   ez tasks [--parent <padre>] [--json]
@@ -244,6 +248,7 @@ fn build(
         "init" => scan_cmds::build_init(parsed),
         "resources" => scan_cmds::build_resources(parsed),
         "usage" => scan_cmds::build_usage(parsed),
+        "recommend" => scan_cmds::build_recommend(parsed),
         "verify" => parsed.finish("verify", json!({})),
         "close" => parsed.finish("task.close", json!({})),
         "pause" => {
@@ -521,7 +526,7 @@ fn delegate_in_herdr(
         let _ = writeln!(err, "{}", local::MISSING_TERMINAL);
         return 3;
     };
-    match local::delegate(request, &parent) {
+    match local::delegate(request, &parent, env) {
         Ok(row) => {
             print_delegate(out, err, &row, json);
             0

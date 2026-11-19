@@ -22,9 +22,13 @@ use super::{
     notice_text, pending_notices, InvalidRecord, ListOutcome, Record, Registry, TaskState,
 };
 
+mod children;
+mod memory;
 mod novelties;
 #[cfg(test)]
 mod tests;
+
+pub use memory::{MemoryProbe, MemoryReading};
 
 /// Cada cuánto mira el vigilante (ms).
 pub const DEFAULT_INTERVAL_MS: u64 = 3_000;
@@ -164,19 +168,14 @@ pub struct Tick {
     pub stalled: Vec<String>,
     /// Los avisos que se mandaron al padre.
     pub notified: Vec<String>,
+    /// Se avisó de memoria baja en esta vuelta.
+    pub memory_warned: bool,
     /// Si el padre sigue vivo (`None` si `hc` no respondió).
     pub parent_alive: Option<bool>,
 }
 
-/// Una terminal que cuelga del padre, según `hc ls`.
-#[derive(Debug, Clone)]
-struct Child {
-    address: String,
-    live: bool,
-    exit_code: Option<i64>,
-    /// `status.state` del agente: `working`, `idle`, `blocked`…
-    agent_state: String,
-}
+// Una terminal que cuelga del padre, según `hc ls`.
+use children::{parse_children, state_of, Child};
 
 /// Lo último que se vio de la pantalla de un hijo.
 #[derive(Debug, Clone)]
@@ -201,6 +200,10 @@ pub struct Watcher {
     screens: HashMap<String, ScreenMemory>,
     /// Los archivos ilegibles de los que ya se avisó.
     warned_invalid: HashSet<PathBuf>,
+    /// El medidor de memoria (lo instala `ez watch`).
+    memory: Option<Arc<dyn MemoryProbe>>,
+    /// Ya se avisó de memoria baja en este episodio.
+    memory_low: bool,
 }
 
 impl Watcher {
@@ -216,6 +219,8 @@ impl Watcher {
             novelty_file: Some(ez_core::dirs::app_data_dir().join("novedades.toml")),
             screens: HashMap::new(),
             warned_invalid: HashSet::new(),
+            memory: None,
+            memory_low: false,
         }
     }
 
@@ -244,6 +249,7 @@ impl Watcher {
         // (por ejemplo, «falló» y no «está en proceso»).
         let fresh = self.records();
         self.notify_invalid(&fresh.invalid);
+        self.check_memory(&mut tick);
         self.detect_novelties(&fresh.records, &children, &mut tick);
         let fresh = self.records();
         self.notify(&fresh.records, &mut tick);
@@ -400,56 +406,6 @@ impl Watcher {
         if pending {
             self.active_at = self.runtime.now_ms();
         }
-    }
-}
-
-/// El estado de una terminal en el JSON de `hc`.
-fn state_of(data: &Value) -> String {
-    if let Some(state) = data.get("state").and_then(Value::as_str) {
-        return state.to_string();
-    }
-    match data.get("status") {
-        Some(Value::Object(status)) => status
-            .get("state")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        Some(Value::String(state)) => state.clone(),
-        _ => String::new(),
-    }
-}
-
-/// Las terminales de `hc ls --json`.
-fn parse_children(data: &Value) -> Vec<Child> {
-    let Some(terminals) = data.get("terminals").and_then(Value::as_array) else {
-        return Vec::new();
-    };
-    let mut children = Vec::new();
-    for terminal in terminals {
-        let Some(address) = terminal.get("address").and_then(Value::as_str) else {
-            continue;
-        };
-        let state = state_of(terminal);
-        children.push(Child {
-            address: address.to_string(),
-            live: state == "live",
-            exit_code: terminal.get("exit_code").and_then(Value::as_i64),
-            agent_state: agent_state_of(terminal),
-        });
-    }
-    children
-}
-
-/// El estado del agente (`status.state`), con el nivel superior como respaldo.
-fn agent_state_of(data: &Value) -> String {
-    match data.get("status") {
-        Some(Value::Object(status)) => status
-            .get("state")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        Some(Value::String(state)) => state.clone(),
-        _ => state_of(data),
     }
 }
 

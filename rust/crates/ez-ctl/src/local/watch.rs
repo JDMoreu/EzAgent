@@ -5,13 +5,15 @@
 //! Es un comando interno: lo arrancan `ez delegate` y `ez report`.
 
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ez_herdr::subagents::{
-    ensure_watcher, HcRuntime, WatchConfig, WatchRuntime, WatchStop, Watcher, WatcherSetup,
-    WatcherState, DEFAULT_GRACE_MS, DEFAULT_IDLE_MS, DEFAULT_INTERVAL_MS,
+    ensure_watcher, HcRuntime, MemoryProbe, MemoryReading, WatchConfig, WatchRuntime, WatchStop,
+    Watcher, WatcherSetup, WatcherState, DEFAULT_GRACE_MS, DEFAULT_IDLE_MS, DEFAULT_INTERVAL_MS,
 };
+use ez_scan::capacity::Thresholds;
+use ez_scan::Probe;
 use serde_json::Value;
 
 use crate::cli::{CliError, Parsed};
@@ -58,7 +60,11 @@ pub(crate) fn run_watch(
         idle_ms: number(env, "EZ_WATCH_IDLE_MS", DEFAULT_IDLE_MS),
         grace_ms: number(env, "EZ_WATCH_GRACE_MS", DEFAULT_GRACE_MS),
     };
-    let mut watcher = Watcher::new(config, registry, Arc::new(runtime));
+    let mut watcher =
+        Watcher::new(config, registry, Arc::new(runtime)).with_memory_probe(Arc::new(ScanMemory {
+            parent: command.parent.clone(),
+            thresholds: thresholds(env),
+        }));
     let stop = watcher.run();
     let message = match stop {
         WatchStop::ParentGone => "Vigilante terminado: el padre ya no está vivo.",
@@ -74,6 +80,44 @@ fn number(env: &dyn Fn(&str) -> Option<String>, name: &str, default: u64) -> u64
     env(name)
         .and_then(|value| value.trim().parse::<u64>().ok())
         .unwrap_or(default)
+}
+
+/// Los umbrales de `voice.json` según el entorno inyectado.
+fn thresholds(env: &dyn Fn(&str) -> Option<String>) -> Thresholds {
+    let path = env("APPDATA").map(|base| PathBuf::from(base).join("EzAgent").join("voice.json"));
+    Thresholds::load(path.as_deref())
+}
+
+/// El medidor de memoria del vigilante: `ez-scan` y sus umbrales.
+///
+/// DECISION: el vigilante (`ez-herdr`) no puede depender de `ez-scan`, así que
+/// esta implementación vive aquí y se la pasa con `with_memory_probe`.
+struct ScanMemory {
+    parent: String,
+    thresholds: Thresholds,
+}
+
+impl MemoryProbe for ScanMemory {
+    fn low(&self) -> Option<MemoryReading> {
+        let probe = ez_scan::RealProbe;
+        let free_ram_mb = probe.free_ram_mb().ok()?;
+        let free_commit_mb = probe.free_commit_mb().ok()?;
+        let ram_low = free_ram_mb < self.thresholds.min_free_ram_mb;
+        let commit_low = free_commit_mb < self.thresholds.min_free_commit_mb;
+        if !ram_low && !commit_low {
+            return None;
+        }
+        let subagents = probe
+            .subagents(&self.parent, &self.thresholds)
+            .unwrap_or_default();
+        let top = subagents.iter().max_by_key(|child| child.memory_mb);
+        Some(MemoryReading {
+            free_ram_mb,
+            free_commit_mb,
+            top_name: top.map(|child| child.name.clone()),
+            top_mb: top.map_or(0, |child| child.memory_mb),
+        })
+    }
 }
 
 /// Arranca el vigilante del padre si no hay uno corriendo.
