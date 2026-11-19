@@ -71,8 +71,10 @@ fn start(handler: &Arc<HoldingHandler>) -> CtlServer {
         Caller::Fish {
             space: SPACE.to_string(),
             task: TASK.to_string(),
+            elephant: "e00000000".to_string(),
             fish: "dev-r1-1".to_string(),
             attempt: 1,
+            parent: None,
         },
     );
     let dynamic: Arc<dyn Handler> = handler.clone();

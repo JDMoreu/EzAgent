@@ -6,17 +6,26 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Quién hace una petición: el agente principal del espacio o un subagente.
+/// Quién hace una petición: un agente principal o un subagente concreto.
+///
+/// Los campos de identidad son los que el árbitro necesita para armar sus claves
+/// (`ElephantKey` y `FishKey`) sin adivinarlos (diseño §14.1 y §15.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Caller {
     Elephant {
         space: String,
+        /// Id del agente principal (`e` + 8 hex); `e00000000` es el por omisión.
+        elephant: String,
     },
     Fish {
         space: String,
         task: String,
+        /// Id del agente principal dueño de la tarea.
+        elephant: String,
         fish: String,
         attempt: u32,
+        /// Id del subagente que lo delegó, si lo hay.
+        parent: Option<String>,
     },
 }
 
@@ -119,6 +128,7 @@ mod tests {
         let tokens = Tokens::new();
         let elephant = Caller::Elephant {
             space: "espacio".to_string(),
+            elephant: "e00000000".to_string(),
         };
         tokens.register("abc", elephant.clone());
         assert_eq!(tokens.lookup("abc"), Some(elephant));
@@ -134,6 +144,7 @@ mod tests {
             "principal",
             Caller::Elephant {
                 space: "espacio".to_string(),
+                elephant: "e00000000".to_string(),
             },
         );
         for (token, task) in [("sub-viejo", "t-vieja"), ("sub-nuevo", "t-nueva")] {
@@ -142,8 +153,10 @@ mod tests {
                 Caller::Fish {
                     space: "espacio".to_string(),
                     task: task.to_string(),
+                    elephant: "e00000000".to_string(),
                     fish: "dev".to_string(),
                     attempt: 1,
+                    parent: None,
                 },
             );
         }
