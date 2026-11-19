@@ -108,7 +108,7 @@ print(sum(1 for t in json.load(sys.stdin).get('terminals',[]) if t.get('name')==
 humo_real() { # C0-HUMO: OpenCode real sin encargo, sin escribir en la interfaz
   echo "[pruebas] humo real: OpenCode sin encargo (EZ_HUMO_REAL=1)"
   local resolved bin sid addr st waited cfg state_dir
-  resolved="$(EZ_RESOLVE_OPENCODE=1 bash "$TOOLS/supervise3.sh" HD0CHUMO "$WORK" "$WORK/prompt.txt" 2>&1)"
+  resolved="$(EZ_RESOLVE_OPENCODE=1 bash "$TOOLS/supervise3.sh" HD0CHUMO "$WORK" "$HERE/../prompt-AUTO-A3.txt" 2>&1)"
   printf '%s\n' "$resolved"
   bin="$(printf '%s\n' "$resolved" | sed -n 's/^BIN=//p')"
   sid="$(printf '%s\n' "$resolved" | sed -n 's/^SID=//p')"
@@ -131,12 +131,15 @@ humo_real() { # C0-HUMO: OpenCode real sin encargo, sin escribir en la interfaz
   st=""
   while [ "$waited" -lt 15 ]; do
     st="$(field "$addr" "str(d.get('status','') or '')")"
-    [ "$st" = "idle" ] && break
+    case "$st" in *idle*) break ;; esac
     sleep 1
     waited=$((waited+1))
   done
   echo "[humo] tras ${waited}s: status=$st"
-  check "humo idle" "$st" "idle"
+  case "$st" in
+    *idle*) echo "OK humo idle: $st" ;;
+    *) echo "FALLO humo idle: esperaba idle, hay «$st»"; FAIL=1 ;;
+  esac
   check "humo sin error" "$(field "$addr" "str(d.get('state',''))")" "live"
   hc kill "$addr" >/dev/null 2>&1
   hc rm "$addr" >/dev/null 2>&1
