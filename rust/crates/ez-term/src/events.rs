@@ -233,7 +233,11 @@ fn event_from_params(params: &Value, min_seq: &mut Option<u64>) -> Option<TermEv
         .unwrap_or_default()
         .to_string();
     let data = params.get("data").cloned().unwrap_or(Value::Null);
-    Some(match kind {
+    Some(typed_event(kind, terminal, data, seq))
+}
+
+fn typed_event(kind: &str, terminal: String, data: Value, seq: u64) -> TermEvent {
+    match kind {
         "created" => match serde_json::from_value::<Terminal>(data.clone()) {
             Ok(terminal) => TermEvent::Created { terminal, seq },
             Err(error) => {
@@ -281,7 +285,7 @@ fn event_from_params(params: &Value, min_seq: &mut Option<u64>) -> Option<TermEv
             data,
             seq,
         },
-    })
+    }
 }
 
 /// Un `data` con `state` es un `Status`; cualquier otro, un evento `Other`.
