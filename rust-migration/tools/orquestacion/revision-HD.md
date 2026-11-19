@@ -50,3 +50,12 @@
   causó el supervisor.
 - Devuelto con HD-0b: C0-1 (OpenCode interactivo vía `env.exe` + `--session`) y C0-2
   (registro §13 + avisos al padre).
+
+### DX-2 (respuestas cortas de voz) — diagnóstico validado, implementación DX-2b
+- Referencias comprobadas (fast.rs COURTESY_WORDS/strip_courtesy, note_done como
+  `role: user` con 12 000 caracteres, done_question). Medición real: turno corto ~4,6 s
+  hasta el sonido y ~11 s en total; el atajo local, 0–16 ms.
+- Hueco detectado por el elefante: `done_question` termina con «¿Quieres que te resuma…?»;
+  tras una pregunta, «ok/dale» = «sí». DX-2b: avisos de «terminó» como afirmación
+  («Cuando quieras te cuento qué hizo.»), sin atajo tras una pregunta, y respuestas más
+  naturales.
