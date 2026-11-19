@@ -11,6 +11,7 @@ pub mod commands;
 pub mod hub;
 pub mod input;
 pub mod pty;
+pub mod runtime;
 pub mod selfcheck;
 pub mod space;
 pub mod texts;
@@ -36,6 +37,7 @@ pub fn init_tracing() {
 /// autocomprobación de la vista, que escribe su informe en esa ruta.
 pub fn run(demo: bool, selfcheck: Option<PathBuf>) -> tauri::Result<()> {
     let state = commands::AppState::with_selfcheck(demo, selfcheck.clone());
+    let runtime = state.runtime();
     // El informe se escribe antes de cerrar; si la ruta sigue sin existir en 20 s,
     // la vista no avisó. El hilo no retiene ningún candado durante la espera.
     if let Some(path) = selfcheck {
@@ -56,12 +58,22 @@ pub fn run(demo: bool, selfcheck: Option<PathBuf>) -> tauri::Result<()> {
             commands::elephant_input,
             commands::hub_state,
             commands::card_action,
+            commands::runtime_status,
+            commands::space_elephant,
+            commands::space_fish,
+            commands::elephant_send,
             commands::voice_note_start,
             commands::voice_note_stop,
             commands::voice_insert,
             commands::selfcheck_enabled,
             commands::selfcheck_report,
         ])
+        .setup(move |app| {
+            if let Some(runtime) = runtime {
+                runtime.attach_app(app.handle().clone());
+            }
+            Ok(())
+        })
         .run(tauri::generate_context!())
 }
 
