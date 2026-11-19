@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::thread;
 
 use ez_core::pyvalue::{head_chars, py_strip, python_str, text_or_empty, truthy};
+use ez_herdr::herdr::{hc_slug, Placement};
 use ez_herdr::permission::{classify, DialogKind};
 use serde_json::{Map, Value};
 use tracing::{info, warn};
@@ -160,6 +161,13 @@ fn launch_request(
         "EZS_SEAT".to_string(),
         Value::String(seat.to_string_lossy().into_owned()),
     );
+    let root = root_address(context, info, member);
+    if root.is_none() {
+        info!(
+            "Enjambre {}: {} se abre sin padre (no hay raíz con dirección).",
+            info.id, member.name
+        );
+    }
     LaunchRequest {
         cwd: (!info.cwd.is_empty()).then(|| info.cwd.clone()),
         name: format!("{} · enjambre", member.name),
@@ -168,7 +176,53 @@ fn launch_request(
         extra_args: (!extra.is_empty()).then_some(extra),
         model: (!member.model.is_empty()).then(|| member.model.clone()),
         effort: (!member.effort.is_empty()).then(|| member.effort.clone()),
+        parent: root.clone(),
+        hc_name: root.as_ref().map(|_| hc_slug(&member.name)),
+        labels: member_labels(info, member, root.as_deref()),
+        show: if root.is_some() {
+            Placement::Tab
+        } else {
+            Placement::Tree
+        },
+        notify: false,
+        outlive_parent: root.is_some(),
     }
+}
+
+/// Raíz: primer miembro en orden de trabajo con dirección que no sea el que se lanza (§9).
+fn root_address(context: &LaunchContext, info: &SwarmInfo, member: &Member) -> Option<String> {
+    let members = match context.service.store.members(&info.id) {
+        Ok(members) => members,
+        Err(error) => {
+            warn!(
+                "Enjambre {}: no pude leer los miembros para hallar la raíz: {error}",
+                info.id
+            );
+            return None;
+        }
+    };
+    members
+        .into_iter()
+        .find(|other| other.name != member.name && !other.address.is_empty())
+        .map(|other| other.address)
+}
+
+/// Etiquetas del contrato (§3) para un miembro hijo de la raíz.
+fn member_labels(info: &SwarmInfo, member: &Member, parent: Option<&str>) -> Map<String, Value> {
+    let mut labels = Map::new();
+    if let Some(parent) = parent {
+        labels.insert("ez.swarm".to_string(), Value::String(info.id.clone()));
+        labels.insert("ez.role".to_string(), Value::String(member.role.clone()));
+        labels.insert("ez.agent".to_string(), Value::String(member.agent.clone()));
+        labels.insert("ez.parent".to_string(), Value::String(parent.to_string()));
+        if !member.model.is_empty() {
+            labels.insert("ez.model".to_string(), Value::String(member.model.clone()));
+        }
+        if !member.effort.is_empty() {
+            labels.insert("ez.effort".to_string(), Value::String(member.effort.clone()));
+        }
+    }
+    labels
 }
 
 /// Argumentos de perfil que saltan los permisos del agente (10.18).

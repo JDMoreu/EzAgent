@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use ez_core::pyvalue::text_or_empty;
 use ez_herdr::driver::AgentDriver;
-use ez_herdr::herdr::{Herdr, RunAgent};
+use ez_herdr::herdr::{Herdr, Placement, RunAgent};
 use serde_json::{Map, Value};
 
 use super::TICK_SECS;
@@ -30,6 +30,18 @@ pub struct LaunchRequest {
     pub model: Option<String>,
     /// Esfuerzo elegido.
     pub effort: Option<String>,
+    /// Terminal padre: con ella el miembro cuelga de la raíz del enjambre.
+    pub parent: Option<String>,
+    /// Nombre que `hc` acepta para el miembro.
+    pub hc_name: Option<String>,
+    /// Etiquetas `ez.*` del miembro (`ez.swarm`, `ez.role`, `ez.agent`…).
+    pub labels: Map<String, Value>,
+    /// Dónde se ve el miembro en Herdr.
+    pub show: Placement,
+    /// Si `hc` avisa al padre de lo que hace el miembro.
+    pub notify: bool,
+    /// Si el miembro sobrevive al cierre de la raíz.
+    pub outlive_parent: bool,
 }
 
 /// Llamadas del supervisor y de la recuperación al adaptador de agentes.
@@ -187,6 +199,12 @@ impl SwarmHost for HerdrHost {
             extra_args: request.extra_args,
             model: request.model.as_deref(),
             effort: request.effort.as_deref(),
+            parent: request.parent.as_deref(),
+            hc_name: request.hc_name.as_deref(),
+            labels: Some(request.labels),
+            show: request.show,
+            notify: request.notify,
+            outlive_parent: request.outlive_parent,
             ..RunAgent::default()
         };
         self.herdr
