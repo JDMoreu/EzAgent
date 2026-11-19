@@ -212,6 +212,8 @@ pub fn space_create(
 }
 
 /// Abre una vista PTY. `space` la registra como la terminal del elefante.
+// DECISION: el brief no da forma de asociar `elephant_input {space, text}` con la vista
+// del elefante; `view_open` acepta `space` opcional para hacer esa asociación.
 #[tauri::command]
 pub fn view_open(
     state: State<'_, AppState>,
