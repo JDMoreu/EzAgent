@@ -224,3 +224,10 @@
   gastado en 8 arranques cortados) y habría afectado a NV-1 (su supervisor se detuvo a tiempo).
 - Medidas: supervisor nuevo fuera de uso; IR-1 (último intento, vivo) y NV-1 sigue con un
   vigilante simple que no mata nada; HD-0d (mcode) lo corrige.
+- Segundo hallazgo del mismo incidente: **TaskStop detiene la tarea de fondo de Claude Code
+  pero no el `bash supervise3.sh` que lanzó** (en Windows sobrevive el árbol). Quedaban vivos
+  un supervisor de IR-1 (12:38) y el de NV-1 (12:59), que seguían matando y relanzando
+  terminales con el mismo nombre (uno con el modelo gratuito agotado: de ahí el aviso
+  «ir-1 (OpenCode · opencode/hy4-flash-free) falló»). Detenidos por proceso (4 procesos).
+  Desde ahora: detener un supervisor = TaskStop **y** `Stop-Process` de todo proceso con
+  `supervise3.sh` en su línea de comandos.
