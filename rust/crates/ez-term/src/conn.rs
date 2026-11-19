@@ -111,6 +111,7 @@ impl Conn {
             return Err(TermError::NotFound);
         }
         let mut command = Command::new(hc);
+        // DECISION: stderr se descarta porque nadie lo drena y llenaría la tubería.
         command
             .arg("connect")
             .stdin(Stdio::piped())

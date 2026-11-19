@@ -17,6 +17,7 @@ use crate::types::{ReadText, RunSpec, SendOutcome, Terminal};
 /// Margen que se suma al tope de una operación que puede durar más que una
 /// llamada normal: el paso de espera de `send` (borrador y arranque) y el
 /// tope de `wait`.
+// DECISION: `send` no recibe timeout del llamador; se usa el tope normal + 10 s.
 const EXTRA_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Cliente síncrono de `hc connect`; se puede clonar y usar desde varios hilos.
@@ -67,6 +68,7 @@ impl HcClient {
 
     /// Terminales vivas que llevan todas esas etiquetas.
     pub fn list(&self, labels: &BTreeMap<String, String>) -> Result<Vec<Terminal>, TermError> {
+        // DECISION: sin `all`, `hc` devuelve solo vivas, que es el inventario.
         let value = self.call("terminal.list", json!({ "labels": labels }), CALL_TIMEOUT)?;
         let reply: ListReply = decode(value, "terminal.list")?;
         Ok(reply.terminals)
