@@ -63,6 +63,10 @@ fn no_default_model() -> String {
     String::new()
 }
 
+fn kimi_default_model() -> String {
+    "opencode-go/kimi-k3".to_string()
+}
+
 fn no_state(_model: &str, _effort: &str) -> Map<String, Value> {
     Map::new()
 }
@@ -83,22 +87,65 @@ fn driver_with(
     which: fn(&str) -> bool,
     mcode: fn() -> Vec<String>,
     codex: fn() -> Map<String, Value>,
+    default_model: fn() -> String,
+    state: fn(&str, &str) -> Map<String, Value>,
+    effort: fn(&str) -> bool,
+) -> AgentDriver<NoHost> {
+    driver_configured(
+        VoiceConfig::new(),
+        which,
+        mcode,
+        codex,
+        default_model,
+        state,
+        effort,
+    )
+}
+
+fn driver_configured(
+    cfg: VoiceConfig,
+    which: fn(&str) -> bool,
+    mcode: fn() -> Vec<String>,
+    codex: fn() -> Map<String, Value>,
+    default_model: fn() -> String,
     state: fn(&str, &str) -> Map<String, Value>,
     effort: fn(&str) -> bool,
 ) -> AgentDriver<NoHost> {
     let hooks = LaunchHooks {
         discover_mcode_models: mcode,
         discover_codex_models: codex,
-        opencode_default_model: no_default_model,
+        opencode_default_model: default_model,
         prepare_opencode_state: state,
         set_mcode_effort: effort,
         which: Arc::new(which),
     };
-    AgentDriver::with_hooks(NoHost, VoiceConfig::new(), hooks)
+    AgentDriver::with_hooks(NoHost, cfg, hooks)
+}
+
+fn driver_which(
+    cfg: VoiceConfig,
+    which: impl Fn(&str) -> bool + Send + Sync + 'static,
+) -> AgentDriver<NoHost> {
+    let hooks = LaunchHooks {
+        discover_mcode_models: mcode_models,
+        discover_codex_models: codex_catalog,
+        opencode_default_model: no_default_model,
+        prepare_opencode_state: no_state,
+        set_mcode_effort: no_effort,
+        which: Arc::new(which),
+    };
+    AgentDriver::with_hooks(NoHost, cfg, hooks)
 }
 
 fn full_driver() -> AgentDriver<NoHost> {
-    driver_with(installed, mcode_models, codex_catalog, no_state, no_effort)
+    driver_with(
+        installed,
+        mcode_models,
+        codex_catalog,
+        no_default_model,
+        no_state,
+        no_effort,
+    )
 }
 
 fn record_state(model: &str, effort: &str) -> Map<String, Value> {
@@ -264,7 +311,14 @@ fn alias_y_tipo_desconocido() {
 
 #[test]
 fn programa_no_instalado() {
-    let driver = driver_with(absent, mcode_models, codex_catalog, no_state, no_effort);
+    let driver = driver_with(
+        absent,
+        mcode_models,
+        codex_catalog,
+        no_default_model,
+        no_state,
+        no_effort,
+    );
     assert_eq!(
         driver.validate_choice("claude", None, None).unwrap_err(),
         "«claude» está en el catálogo pero no encuentro su programa (claude)."
@@ -273,7 +327,14 @@ fn programa_no_instalado() {
 
 #[test]
 fn catalogo_sin_descubrimiento_avisa() {
-    let driver = driver_with(installed, no_models, no_codex, no_state, no_effort);
+    let driver = driver_with(
+        installed,
+        no_models,
+        no_codex,
+        no_default_model,
+        no_state,
+        no_effort,
+    );
     let mcode = driver
         .validate_choice("mcode", Some("minimax-m3.1-flash"), None)
         .expect("mcode");
@@ -298,6 +359,7 @@ fn validar_no_escribe_configuracion() {
         installed,
         mcode_models,
         codex_catalog,
+        no_default_model,
         record_state,
         record_effort,
     );
@@ -309,4 +371,57 @@ fn validar_no_escribe_configuracion() {
         .expect("mcode");
     assert!(PREPARED.lock().expect("estado").is_empty());
     assert!(EFFORTS.lock().expect("esfuerzos").is_empty());
+}
+
+#[test]
+fn esfuerzo_sin_modelo_usa_los_niveles_del_modelo_por_omision() {
+    let driver = full_driver();
+    assert!(driver
+        .validate_choice("opencode", None, Some("high"))
+        .is_ok());
+    assert_eq!(
+        driver
+            .validate_choice("opencode", None, Some("ultra"))
+            .unwrap_err(),
+        "OpenCode no tiene el esfuerzo «ultra». Valores válidos: low, high, max, medium, xhigh, none."
+    );
+
+    let driver = driver_with(
+        installed,
+        mcode_models,
+        codex_catalog,
+        kimi_default_model,
+        no_state,
+        no_effort,
+    );
+    assert!(driver
+        .validate_choice("opencode", None, Some("max"))
+        .is_ok());
+    assert_eq!(
+        driver
+            .validate_choice("opencode", None, Some("high"))
+            .unwrap_err(),
+        "El modelo kimi-k3 no tiene el esfuerzo 'high'. Valores válidos: max."
+    );
+}
+
+#[test]
+fn programa_se_busca_igual_que_al_lanzar() {
+    let path = "C:/tmp/fake-ws-agent.exe";
+    let mut cfg = VoiceConfig::new();
+    cfg.set("agents", json!({"claude": [path]}));
+    let driver = driver_which(cfg.clone(), move |program| program == path);
+    assert_eq!(
+        driver
+            .validate_choice("claude", None, None)
+            .expect("claude")
+            .key,
+        "claude"
+    );
+
+    let driver = driver_which(cfg, |program| program == "claude");
+    assert_eq!(
+        driver.validate_choice("claude", None, None).unwrap_err(),
+        format!("«claude» está en el catálogo pero no encuentro su programa ({path}).")
+    );
 }
