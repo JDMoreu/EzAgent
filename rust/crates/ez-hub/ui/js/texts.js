@@ -11,6 +11,8 @@ export const TEXTS = {
   cancel: "Cancelar",
   send: "Enviar",
   voiceNote: "Nota de voz",
+  stop: "Detener",
+  transcribing: "Transcribiendo…",
   call: "Llamar",
   soon: "Disponible pronto",
   placeholder: "Escribe o dicta…",

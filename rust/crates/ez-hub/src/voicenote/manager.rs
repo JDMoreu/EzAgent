@@ -48,9 +48,13 @@ impl VoiceNotes {
 
     /// Empieza la grabación y programa el tope de cinco minutos.
     pub fn start(self: &Arc<Self>, app: AppHandle) -> Result<(), String> {
-        let mut slot = self.slot.lock();
-        if !matches!(*slot, Slot::Idle) {
-            return Err(texts::VOICE_BUSY.to_string());
+        {
+            let mut slot = self.slot.lock();
+            if !matches!(*slot, Slot::Idle) {
+                return Err(texts::VOICE_BUSY.to_string());
+            }
+            // Marca de reserva: abrir el micrófono y lanzar hilos va sin candado.
+            *slot = Slot::Busy;
         }
         let emit = {
             let app = app.clone();
@@ -62,15 +66,20 @@ impl VoiceNotes {
         let recorder = MicNoteRecorder::new(self.config.clone(), emit);
         let transcriber = WhisperTranscriber::new(self.config.clone(), Arc::clone(&self.whisper));
         let mut machine = Machine::new(recorder, transcriber, SystemClock::new());
-        machine.start().map_err(|error| error.message())?;
-        *slot = Slot::Recording(Box::new(machine));
-        drop(slot);
+        if let Err(error) = machine.start() {
+            *self.slot.lock() = Slot::Idle;
+            return Err(error.message());
+        }
+        *self.slot.lock() = Slot::Recording(Box::new(machine));
 
         let watcher = Arc::clone(self);
-        thread::Builder::new()
+        if thread::Builder::new()
             .name("ez-hub-voice-timeout".to_string())
             .spawn(move || watcher.watchdog(app))
-            .map_err(|_| texts::VOICE_BUSY.to_string())?;
+            .is_err()
+        {
+            tracing::warn!("no pude lanzar el vigilante de la nota de voz");
+        }
         Ok(())
     }
 

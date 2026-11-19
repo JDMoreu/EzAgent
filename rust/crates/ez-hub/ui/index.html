@@ -42,8 +42,12 @@
         <div id="input-bar">
           <div id="input-notice" class="input-notice" role="status"></div>
           <textarea id="input-text" rows="3" spellcheck="false"></textarea>
+          <div class="voice-meter" id="voice-meter" hidden>
+            <span class="voice-dot"></span>
+            <span class="voice-level"><span id="voice-level-fill"></span></span>
+          </div>
           <div class="input-actions">
-            <button id="btn-voice" type="button" title="Disponible pronto" disabled>Nota de voz</button>
+            <button id="btn-voice" type="button">Nota de voz</button>
             <button id="btn-call" type="button" title="Disponible pronto" disabled>Llamar</button>
             <button id="btn-send" class="primary" type="button">Enviar</button>
           </div>

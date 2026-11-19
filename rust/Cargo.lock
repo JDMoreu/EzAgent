@@ -1159,7 +1159,9 @@ name = "ez-hub"
 version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
+ "ez-audio",
  "ez-core",
+ "ez-stt",
  "parking_lot 0.13.0",
  "portable-pty",
  "serde",
