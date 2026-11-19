@@ -64,6 +64,10 @@ impl ChatModel for FakeModel {
         (0, self.messages.clone())
     }
 
+    fn version(&self) -> i64 {
+        0
+    }
+
     fn sessions(&self) -> Vec<SessionInfo> {
         Vec::new()
     }

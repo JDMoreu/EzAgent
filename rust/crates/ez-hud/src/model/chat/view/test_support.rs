@@ -30,6 +30,10 @@ impl ChatModel for FakeModel {
         (0, self.messages.clone())
     }
 
+    fn version(&self) -> i64 {
+        0
+    }
+
     fn sessions(&self) -> Vec<SessionInfo> {
         self.sessions.clone()
     }
@@ -74,6 +78,10 @@ pub(crate) struct SharedModel(pub Rc<RefCell<FakeModel>>);
 impl ChatModel for SharedModel {
     fn snapshot(&self) -> (i64, Vec<ChatMessage>) {
         self.0.borrow().snapshot()
+    }
+
+    fn version(&self) -> i64 {
+        self.0.borrow().version()
     }
 
     fn sessions(&self) -> Vec<SessionInfo> {

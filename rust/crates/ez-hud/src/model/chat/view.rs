@@ -12,7 +12,6 @@
 
 pub mod canvas;
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use ez_core::metrics::monotonic;
@@ -37,7 +36,7 @@ mod types;
 #[cfg(test)]
 pub(crate) mod test_support;
 
-use entries::{Cached, Geometry};
+use entries::{Geometry, LayoutCache};
 pub use types::{
     Action, ActionData, ChatMessage, ChatModel, ConfirmCard, Mode, Move, Role, SessionInfo,
     TextField, ViewHost,
@@ -85,8 +84,8 @@ pub struct ChatView {
     pub hover: Option<String>,
     /// Size, scale, theme and palette of the last `configure`.
     pub(crate) g: Geometry,
-    /// Rich messages already laid out, by message id.
-    pub(crate) cache: BTreeMap<i64, Cached>,
+    /// Rich messages already laid out, by message id, and their heights.
+    pub(crate) cache: LayoutCache,
     /// Clickable zones of the last `render`, in paint order.
     pub(crate) hits: Vec<Zone>,
     /// Visible lines of the input box: `(start, end)` in the text.
@@ -101,6 +100,8 @@ pub struct ChatView {
     pub status: String,
     /// Live orb of the header: `(cx, cy, diameter)` in logical pixels.
     pub orb: Option<(f64, f64, f64)>,
+    /// How many times the content layer has been painted.
+    pub(crate) content_renders: u64,
 }
 
 impl ChatView {
@@ -125,7 +126,7 @@ impl ChatView {
             deleting: None,
             hover: None,
             g: Geometry::default(),
-            cache: BTreeMap::new(),
+            cache: LayoutCache::default(),
             hits: Vec::new(),
             input_lines: Vec::new(),
             input_box: Rect::new(0.0, 0.0, 0.0, 0.0),
@@ -133,6 +134,7 @@ impl ChatView {
             flash: None,
             status: String::new(),
             orb: None,
+            content_renders: 0,
         }
     }
 
@@ -170,6 +172,7 @@ impl ChatView {
             height,
             scale,
             theme: theme.to_string(),
+            theme_hash: entries::hash_of(theme.as_bytes()),
             pal,
         };
     }
@@ -252,6 +255,17 @@ impl ChatView {
     // ------------------------------------------------------------- drawing
     /// The whole panel without its background: header, body and footer.
     pub fn render(&mut self, now: f64) -> Layer {
+        self.render_content(now, true)
+    }
+
+    /// The panel without the blinking caret.
+    ///
+    /// DECISION: the caret is painted apart from the content (DX-1, paso 4).
+    /// The content layer is cached and the caret is the only thing of the
+    /// panel that changes twice a second: keeping it inside meant
+    /// repainting the whole history twice a second.
+    pub(crate) fn render_content(&mut self, now: f64, caret: bool) -> Layer {
+        self.content_renders += 1;
         let mut buf = Layer::new(
             canvas::size_px(self.g.width * self.g.scale),
             canvas::size_px(self.g.height * self.g.scale),
@@ -264,7 +278,7 @@ impl ChatView {
             self.draw_messages(&mut buf, now, HEADER_H, self.g.height - footer);
         }
         self.draw_header(&mut buf);
-        self.draw_footer(&mut buf, now, footer);
+        self.draw_footer(&mut buf, now, footer, caret);
         buf
     }
 
@@ -284,6 +298,22 @@ impl ChatView {
             }
         }
         self.model.busy() || self.model.confirm().is_some() || flashing || fading
+    }
+
+    /// How many messages have been laid out since the last clear.
+    ///
+    /// It is the measure of the cost of the view: a frame that lays out
+    /// nothing new did not touch the history (DX-1, paso 3).
+    pub fn layouts(&self) -> u64 {
+        self.cache.layouts()
+    }
+
+    /// How many times the content layer has been painted.
+    ///
+    /// The content layer is the expensive one: it repaints the whole history.
+    /// At rest it must not be painted at all (DX-1, paso 4).
+    pub fn content_renders(&self) -> u64 {
+        self.content_renders
     }
 
     /// Shows for a moment that `text` was copied («COPIADO» where «COPIAR» was).
