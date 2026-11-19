@@ -258,3 +258,9 @@
 - Mal: C0-6 detecta límites con palabras sueltas y con el agente trabajando, y cierra la
   terminal: IR-2 (que leerá IR-0) quedaría `fallido`. HD-0e: mismo criterio que NV-1b.
   El supervisor sigue fuera de uso hasta HD-0e.
+
+### Decisiones de la persona (19-nov, tarde): «sí a todo»
+- DX-2 integrado en `eco/main` (avisos de «terminó» sin pregunta + acuse local + regla de voz).
+- `latency.jsonl` real: copia en `latency.jsonl.bak-2026-11-19` (470 líneas) y retiradas las 9
+  líneas `ack_fast` que escribieron las pruebas antes de DX-2c (quedan 461).
+- Recompilar la app de voz (release) con DX-1b + DX-2 y reiniciarla.
