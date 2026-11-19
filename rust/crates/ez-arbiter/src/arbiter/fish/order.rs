@@ -7,9 +7,9 @@ use crate::state::WorkState;
 use crate::texts;
 use crate::types::Rejection;
 
-use super::Arbiter;
+use super::ArbiterShared;
 
-impl Arbiter {
+impl ArbiterShared {
     /// Fases de la ronda y límite de peces vivos (§14.3).
     pub(crate) fn check_order(
         &self,

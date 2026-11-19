@@ -446,6 +446,19 @@ impl Fixture {
     }
 }
 
+/// Tipo de un evento de traza ya serializado (bitácora).
+pub fn kind(event: &serde_json::Value) -> &str {
+    event["kind"]["type"].as_str().unwrap_or("")
+}
+
+/// Tipo de un evento de traza en vivo (`ArbiterEvent`).
+pub fn live_kind(event: &ez_arbiter::ArbiterEvent) -> String {
+    serde_json::to_value(event).expect("serializar evento")["kind"]["type"]
+        .as_str()
+        .expect("tipo del evento")
+        .to_string()
+}
+
 /// Ejecuta git sin shell y sin ventana de consola.
 pub fn git(folder: &Path, args: &[&str]) {
     let mut command = std::process::Command::new("git");

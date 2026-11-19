@@ -10,10 +10,10 @@ use crate::state::{FishRecord, ReportRecord, Status, WorkItem, WorkKind, WorkSta
 use crate::texts;
 use crate::types::{FishKey, Outcome, Rejection, Verdict};
 
-use super::{attempt_suffix, Arbiter, ReportInput};
+use super::{attempt_suffix, ArbiterShared, ReportInput};
 use crate::arbiter::emit::Effects;
 
-impl Arbiter {
+impl ArbiterShared {
     /// R6: corrección a planificador o desarrollador vivo, antes del QA.
     pub(crate) fn fish_send(
         &self,
@@ -196,7 +196,7 @@ impl Arbiter {
         let changed = record
             .start
             .as_ref()
-            .map(|start| git::changed(&task.space.folder, start, &after))
+            .map(|start| git::changed(start, &after))
             .unwrap_or_default();
         let report = ReportRecord {
             verdict: input.verdict,

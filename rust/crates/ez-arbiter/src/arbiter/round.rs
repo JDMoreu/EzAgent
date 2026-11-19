@@ -11,9 +11,9 @@ use crate::types::{Outcome, Rejection, Verdict};
 use crate::verify::{self, CheckRecord};
 
 use super::emit::Effects;
-use super::Arbiter;
+use super::ArbiterShared;
 
-impl Arbiter {
+impl ArbiterShared {
     /// R4: empieza una ronda y toma la foto inicial de git.
     pub(crate) fn round_start(&self, space: &str) -> Result<Outcome, Rejection> {
         let mut task = self.task_for_elephant(space)?;
@@ -39,7 +39,7 @@ impl Arbiter {
         if let Some(previous) = &task.last_close {
             let current = git::snapshot(&task.space.folder)
                 .map_err(|message| Rejection::new("R11", message))?;
-            let changed = git::changed(&task.space.folder, previous, &current);
+            let changed = git::changed(previous, &current);
             if !changed.is_empty() {
                 let message = texts::elephant_changed_outside_round(&changed);
                 return Err(self.pause_task(task, "R11", "cambios_fuera_de_ronda", message));
@@ -190,7 +190,7 @@ impl Arbiter {
         clean: bool,
         reasons: &[String],
         checks: &[CheckRecord],
-        close: git::GitSnapshot,
+        close: git::Fingerprint,
     ) {
         if let Some(record) = task.open_round_mut() {
             record.closed = Some(self.now());
@@ -300,7 +300,7 @@ impl Arbiter {
             }
         };
         if let Some((code, message)) = &stop {
-            task.pause(code, message.clone());
+            task.pause(code, message.clone(), self.now());
         }
         stop
     }

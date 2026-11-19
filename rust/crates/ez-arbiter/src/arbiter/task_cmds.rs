@@ -5,15 +5,16 @@ use std::path::{Path, PathBuf};
 use ez_team::Seat;
 
 use crate::criteria;
+use crate::events::CardKind;
 use crate::paths;
 use crate::state::{Status, Task, TeamStatus};
 use crate::texts;
 use crate::types::{Caller, FishKey, Outcome, Rejection};
 
 use super::emit::Effects;
-use super::{new_task_id, Arbiter};
+use super::{new_task_id, ArbiterShared};
 
-impl Arbiter {
+impl ArbiterShared {
     /// R2: crea la tarea, copia los artefactos y emite la tarjeta.
     pub(crate) fn task_new(
         &self,
@@ -38,8 +39,16 @@ impl Arbiter {
         effects.event(self.event(
             &task,
             "task_proposed",
-            serde_json::json!({ "title": task.title, "card": card }),
+            serde_json::json!({ "title": task.title, "card": card.clone() }),
         ));
+        let opened = self.open_card(
+            space_id,
+            Some(&task.id),
+            CardKind::Task,
+            format!("Tarea propuesta: {}", task.title),
+            card.clone(),
+        );
+        effects.event(self.card_opened_event(&opened));
         let id = task.id.clone();
         self.commit(&task, effects);
         Ok(Outcome {
@@ -123,6 +132,12 @@ impl Arbiter {
             encargo_sha: String::new(),
             team_sha: None,
             last_close: None,
+            last_clean_close: None,
+            last_fp: None,
+            extra_rounds: 0,
+            extra_hours: 0.0,
+            paused_total: 0.0,
+            paused_at: None,
             rounds: Vec::new(),
             fish: Vec::new(),
             work: Vec::new(),
@@ -176,7 +191,7 @@ impl Arbiter {
     }
 
     /// La persona aprueba: se congelan los criterios y el encargo.
-    pub(crate) fn approve_task_inner(&self, space: &str) -> Result<Outcome, Rejection> {
+    pub(crate) fn approve_task_impl(&self, space: &str) -> Result<Outcome, Rejection> {
         let mut task = self.task_for_elephant(space)?;
         if task.status != Status::PendingApproval {
             return Err(Rejection::new("R2", texts::NOT_PENDING));
@@ -202,12 +217,15 @@ impl Arbiter {
                 serde_json::json!({ "task": task.id }),
             ),
         );
+        if let Some(card) = self.take_card(space, CardKind::Task) {
+            effects.event(self.card_closed_event(space, Some(&task.id), &card.id));
+        }
         self.commit(&task, effects);
         Ok(Outcome::new(texts::TASK_APPROVED))
     }
 
     /// La persona rechaza la tarea.
-    pub(crate) fn reject_task_inner(
+    pub(crate) fn reject_task_impl(
         &self,
         space: &str,
         comment: &str,
@@ -233,6 +251,9 @@ impl Arbiter {
                 serde_json::json!({ "comment": comment }),
             ),
         );
+        if let Some(card) = self.take_card(space, CardKind::Task) {
+            effects.event(self.card_closed_event(space, Some(&task.id), &card.id));
+        }
         self.commit(&task, effects);
         Ok(Outcome::new(message))
     }
@@ -281,7 +302,7 @@ impl Arbiter {
         } else {
             reason.trim().to_string()
         };
-        task.pause("manual", reason.clone());
+        task.pause("manual", reason.clone(), self.now());
         let mut effects = Effects::default();
         effects.both(
             self.event(
@@ -296,12 +317,20 @@ impl Arbiter {
                 serde_json::json!({ "reason": "manual", "message": reason }),
             ),
         );
+        let opened = self.open_card(
+            space,
+            Some(&task.id),
+            CardKind::Pause,
+            "Tarea en pausa".to_string(),
+            reason.clone(),
+        );
+        effects.event(self.card_opened_event(&opened));
         self.commit(&task, effects);
         Ok(Outcome::new(texts::paused(&reason)))
     }
 
     /// La persona reanuda la tarea; si la pausa fue de artefactos, los restaura.
-    pub(crate) fn resume_inner(&self, space: &str) -> Result<Outcome, Rejection> {
+    pub(crate) fn resume_impl(&self, space: &str) -> Result<Outcome, Rejection> {
         let mut task = self.task_for_elephant(space)?;
         if task.status != Status::Paused {
             return Err(Rejection::new("R4", texts::NOT_PAUSED));
@@ -311,10 +340,7 @@ impl Arbiter {
             self.restore_artifacts(&mut task)?;
             message = texts::ARTIFACTS_RESTORED.to_string();
         }
-        task.status = task.paused_from.unwrap_or(Status::Approved);
-        task.paused_from = None;
-        task.pause_reason = None;
-        task.pause_message = None;
+        task.resume(self.now());
         let mut effects = Effects::default();
         effects.both(
             self.event(&task, "resumed", serde_json::json!({})),
@@ -325,17 +351,49 @@ impl Arbiter {
                 serde_json::json!({ "task": task.id }),
             ),
         );
+        if let Some(card) = self.take_card(space, CardKind::Pause) {
+            effects.event(self.card_closed_event(space, Some(&task.id), &card.id));
+        }
+        self.commit(&task, effects);
+        Ok(Outcome::new(message))
+    }
+
+    /// La persona da más margen (+2 rondas, +1 h) y reanuda (§14.5).
+    pub(crate) fn more_time_impl(&self, space: &str) -> Result<Outcome, Rejection> {
+        let mut task = self.task_for_elephant(space)?;
+        if task.status != Status::Paused {
+            return Err(Rejection::new("R4", texts::NOT_PAUSED));
+        }
+        task.extra_rounds = task.extra_rounds.saturating_add(2);
+        task.extra_hours += 1.0;
+        task.resume(self.now());
+        let message = texts::more_time(task.extra_rounds, task.extra_hours);
+        let mut effects = Effects::default();
+        effects.both(
+            self.event(
+                &task,
+                "resumed",
+                serde_json::json!({ "extra_rounds": 2, "extra_hours": 1.0 }),
+            ),
+            self.elephant_event(&task, "resumed", message.clone(), serde_json::json!({})),
+        );
+        if let Some(card) = self.take_card(space, CardKind::Pause) {
+            effects.event(self.card_closed_event(space, Some(&task.id), &card.id));
+        }
         self.commit(&task, effects);
         Ok(Outcome::new(message))
     }
 
     /// La persona detiene la tarea.
-    pub(crate) fn stop_inner(&self, space: &str) -> Result<Outcome, Rejection> {
+    pub(crate) fn stop_impl(&self, space: &str) -> Result<Outcome, Rejection> {
         let mut task = self.task_for_elephant(space)?;
         task.status = Status::Stopped;
         self.revoke_task_tokens(&task);
         let mut effects = Effects::default();
         effects.event(self.event(&task, "stopped", serde_json::json!({})));
+        if let Some(card) = self.take_card(space, CardKind::Pause) {
+            effects.event(self.card_closed_event(space, Some(&task.id), &card.id));
+        }
         self.commit(&task, effects);
         Ok(Outcome::new(texts::STOPPED))
     }
@@ -449,7 +507,7 @@ impl Arbiter {
         code: &str,
         message: String,
     ) -> Rejection {
-        task.pause(code, message.clone());
+        task.pause(code, message.clone(), self.now());
         let mut effects = Effects::default();
         effects.both(
             self.event(
@@ -464,6 +522,14 @@ impl Arbiter {
                 serde_json::json!({ "reason": code, "message": message }),
             ),
         );
+        let opened = self.open_card(
+            &task.space.id,
+            Some(&task.id),
+            CardKind::Pause,
+            "Tarea en pausa".to_string(),
+            message.clone(),
+        );
+        effects.event(self.card_opened_event(&opened));
         self.commit(&task, effects);
         Rejection::new(rule, message)
     }

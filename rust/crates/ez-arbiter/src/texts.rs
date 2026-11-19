@@ -387,3 +387,7 @@ pub fn reports_not_clean(fish: &[String]) -> String {
 pub fn role_changed_files(role: &str, paths: &[String]) -> String {
     format!("{role} cambió archivos del proyecto: {}", paths.join(", "))
 }
+/// §14.5: la persona amplía el margen y reanuda.
+pub fn more_time(rounds: u32, hours: f64) -> String {
+    format!("La tarea se reanudó con {rounds} rondas y {hours} horas de margen adicionales.")
+}

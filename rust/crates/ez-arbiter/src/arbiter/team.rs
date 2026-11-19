@@ -2,14 +2,15 @@
 
 use ez_team::Seat;
 
+use crate::events::CardKind;
 use crate::state::{Status, TeamStatus};
 use crate::texts;
 use crate::types::{Outcome, Rejection};
 
 use super::emit::Effects;
-use super::Arbiter;
+use super::ArbiterShared;
 
-impl Arbiter {
+impl ArbiterShared {
     /// Guarda el equipo propuesto (ya validado por `ez-team`) y emite la tarjeta.
     pub(crate) fn team_propose(
         &self,
@@ -31,8 +32,16 @@ impl Arbiter {
         effects.event(self.event(
             &task,
             "team_proposed",
-            serde_json::json!({ "card": card, "seats": task.team }),
+            serde_json::json!({ "card": card.clone(), "seats": task.team }),
         ));
+        let opened = self.open_card(
+            space,
+            Some(&task.id),
+            CardKind::Team,
+            "Equipo propuesto".to_string(),
+            card.clone(),
+        );
+        effects.event(self.card_opened_event(&opened));
         self.commit(&task, effects);
         Ok(Outcome {
             message: card,
@@ -41,7 +50,7 @@ impl Arbiter {
     }
 
     /// La persona aprueba el equipo.
-    pub(crate) fn approve_team_inner(&self, space: &str) -> Result<Outcome, Rejection> {
+    pub(crate) fn approve_team_impl(&self, space: &str) -> Result<Outcome, Rejection> {
         let mut task = self.task_for_elephant(space)?;
         if task.team_status != TeamStatus::Proposed {
             return Err(Rejection::new("R5", texts::TEAM_NOT_PROPOSED));
@@ -59,12 +68,15 @@ impl Arbiter {
                 serde_json::json!({ "team": "approved" }),
             ),
         );
+        if let Some(card) = self.take_card(space, CardKind::Team) {
+            effects.event(self.card_closed_event(space, Some(&task.id), &card.id));
+        }
         self.commit(&task, effects);
         Ok(Outcome::new(texts::TEAM_APPROVED))
     }
 
     /// La persona rechaza el equipo con un comentario para el elefante.
-    pub(crate) fn reject_team_inner(
+    pub(crate) fn reject_team_impl(
         &self,
         space: &str,
         comment: &str,
@@ -90,6 +102,9 @@ impl Arbiter {
                 serde_json::json!({ "comment": comment }),
             ),
         );
+        if let Some(card) = self.take_card(space, CardKind::Team) {
+            events.event(self.card_closed_event(space, Some(&task.id), &card.id));
+        }
         self.commit(&task, events);
         Ok(Outcome::new(message))
     }

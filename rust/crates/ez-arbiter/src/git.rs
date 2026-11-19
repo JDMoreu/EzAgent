@@ -1,18 +1,30 @@
-//! Fotos de git para atribuir cambios (R4, R7, R9, R11).
+//! Huellas de contenido del proyecto para atribuir cambios (§14.4).
+//!
+//! La huella es el HEAD más el sha256 del contenido de cada archivo que lista
+//! `git ls-files -co --exclude-standard`, sin nada bajo `.ez/`. Un archivo que
+//! no se puede leer cuenta con el hash `"ilegible"`.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::paths;
 use crate::texts;
 
-/// Foto del repositorio: HEAD y la línea de estado de cada ruta.
+/// Número de archivos a partir del cual se avisa en el log.
+const FILE_WARN: usize = 20_000;
+/// Bytes totales a partir de los cuales se avisa en el log.
+const SIZE_WARN: u64 = 500 * 1024 * 1024;
+/// Hash de un archivo que no se puede leer.
+const UNREADABLE: &str = "ilegible";
+
+/// Huella de contenido del proyecto (diseño §14.4).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GitSnapshot {
+pub struct Fingerprint {
     pub head: Option<String>,
-    /// Ruta (relativa a la raíz del repositorio) → código de estado.
-    pub status: BTreeMap<String, String>,
+    /// Ruta relativa con `/` → sha256 en hexadecimal.
+    pub files: BTreeMap<String, String>,
 }
 
 /// `git -C <folder> <args>` y devuelve stdout; error con stderr redactado.
@@ -37,84 +49,95 @@ pub fn is_repo(folder: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Foto actual del repositorio.
-pub fn snapshot(folder: &Path) -> Result<GitSnapshot, String> {
+/// Huella actual del proyecto (diseño §14.4).
+pub fn snapshot(folder: &Path) -> Result<Fingerprint, String> {
     let head = git(folder, &["rev-parse", "HEAD"])
         .ok()
         .map(|text| text.trim().to_string())
         .filter(|text| !text.is_empty());
-    let raw = git(
-        folder,
-        &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
-    )?;
-    Ok(GitSnapshot {
-        head,
-        status: parse_status(raw.as_bytes()),
-    })
-}
-
-/// Lee la salida de `git status --porcelain=v1 -z`.
-pub fn parse_status(raw: &[u8]) -> BTreeMap<String, String> {
-    let mut map = BTreeMap::new();
-    let mut parts = raw.split(|byte| *byte == 0).filter(|part| !part.is_empty());
-    while let Some(entry) = parts.next() {
-        if entry.len() < 4 {
+    let raw = git(folder, &["ls-files", "-co", "--exclude-standard", "-z"])?;
+    let mut files = BTreeMap::new();
+    let mut total = 0u64;
+    for entry in raw
+        .as_bytes()
+        .split(|byte| *byte == 0)
+        .filter(|part| !part.is_empty())
+    {
+        let relative = String::from_utf8_lossy(entry).replace('\\', "/");
+        if relative.starts_with(".ez/") {
             continue;
         }
-        let text = String::from_utf8_lossy(entry);
-        let (code, path) = text.split_at(3);
-        let code = code.trim_end().to_string();
-        map.insert(path.to_string(), code.clone());
-        // Un renombrado o copiado lleva la ruta original en el trozo siguiente.
-        if code.starts_with('R') || code.starts_with('C') {
-            let _ = parts.next();
-        }
+        let hash = match std::fs::read(folder.join(&relative)) {
+            Ok(bytes) => {
+                total = total.saturating_add(bytes.len() as u64);
+                paths::sha256_hex(&bytes)
+            }
+            Err(_) => UNREADABLE.to_string(),
+        };
+        files.insert(relative, hash);
     }
-    map
+    if files.len() > FILE_WARN || total > SIZE_WARN {
+        tracing::warn!(
+            files = files.len(),
+            bytes = total,
+            "huella grande: el cálculo puede tardar"
+        );
+    }
+    Ok(Fingerprint { head, files })
 }
 
-/// Rutas cambiadas entre dos fotos, sin lo que está bajo `.ez/`.
-pub fn changed(folder: &Path, before: &GitSnapshot, after: &GitSnapshot) -> Vec<String> {
-    let mut paths: BTreeSet<String> = BTreeSet::new();
-    for (path, code) in &after.status {
-        if before.status.get(path) != Some(code) {
-            paths.insert(path.clone());
-        }
-    }
-    for path in before.status.keys() {
-        if !after.status.contains_key(path) {
-            paths.insert(path.clone());
-        }
-    }
-    if let (Some(from), Some(to)) = (&before.head, &after.head) {
-        if from != to {
-            if let Ok(text) = git(folder, &["diff", "--name-only", from, to]) {
-                for line in text.lines() {
-                    let line = line.trim();
-                    if !line.is_empty() {
-                        paths.insert(line.replace('\\', "/"));
-                    }
-                }
-            }
-        }
-    }
-    paths
-        .into_iter()
+/// Rutas cuyo contenido cambió entre dos huellas, sin lo bajo `.ez/`.
+pub fn changed(before: &Fingerprint, after: &Fingerprint) -> Vec<String> {
+    let mut paths: Vec<String> = before
+        .files
+        .keys()
+        .chain(after.files.keys())
         .filter(|path| !path.starts_with(".ez/"))
-        .collect()
+        .filter(|path| before.files.get(*path) != after.files.get(*path))
+        .cloned()
+        .collect();
+    paths.sort();
+    paths.dedup();
+    paths
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_status;
+    use super::{changed, snapshot, Fingerprint};
+    use std::collections::BTreeMap;
+
+    fn fingerprint(files: &[(&str, &str)]) -> Fingerprint {
+        Fingerprint {
+            head: None,
+            files: files
+                .iter()
+                .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+                .collect::<BTreeMap<_, _>>(),
+        }
+    }
 
     #[test]
-    fn parses_z_status_with_rename() {
-        let raw = b" M src/a.rs\0?? nuevo.txt\0R  nuevo.rs\0viejo.rs\0";
-        let map = parse_status(raw);
-        assert_eq!(map.get("src/a.rs").map(String::as_str), Some(" M"));
-        assert_eq!(map.get("nuevo.txt").map(String::as_str), Some("??"));
-        assert_eq!(map.get("nuevo.rs").map(String::as_str), Some("R"));
-        assert!(!map.contains_key("viejo.rs"));
+    fn changed_detects_edits_adds_removes_and_ignores_ez() {
+        let before = fingerprint(&[("a.rs", "1"), ("b.rs", "2"), (".ez/tareas/x", "x")]);
+        let after = fingerprint(&[("a.rs", "9"), ("c.rs", "3")]);
+        assert_eq!(changed(&before, &after), vec!["a.rs", "b.rs", "c.rs"]);
+    }
+
+    #[test]
+    fn snapshot_hashes_a_real_project_and_ignores_ez() {
+        let root =
+            std::env::temp_dir().join(format!("ez-arbiter-fp-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(root.join(".ez")).expect("crear raíz");
+        let _ = crate::exec::command("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["init", "-q"])
+            .status();
+        std::fs::write(root.join("a.txt"), "hola").expect("escribir a");
+        std::fs::write(root.join(".ez").join("interno.txt"), "ignorar").expect("escribir ez");
+        let measured = snapshot(&root).expect("huella");
+        assert_eq!(measured.files.len(), 1);
+        assert!(measured.files.contains_key("a.txt"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -14,7 +14,7 @@ use crate::texts;
 use crate::types::{Delivery, FishKey, Launched, Outcome, Rejection, Verdict};
 
 use super::emit::Effects;
-use super::{fish_id, hc_name, new_token, Arbiter};
+use super::{fish_id, hc_name, new_token, ArbiterShared};
 
 /// Datos de un informe, agrupados para no pasar ocho argumentos.
 #[derive(Debug, Clone)]
@@ -43,11 +43,11 @@ struct LaunchPlan {
     fish: String,
     role: Role,
     report_path: PathBuf,
-    start: git::GitSnapshot,
+    start: git::Fingerprint,
     request: crate::types::LaunchRequest,
 }
 
-impl Arbiter {
+impl ArbiterShared {
     /// R5: valida la fase, escribe instrucciones y entrega el encargo al pez.
     pub(crate) fn fish_new(
         &self,
@@ -198,7 +198,7 @@ impl Arbiter {
         task: &crate::state::Task,
         brief: &Path,
         fish_brief: &Path,
-    ) -> Result<git::GitSnapshot, Rejection> {
+    ) -> Result<git::Fingerprint, Rejection> {
         let brief_abs = paths::inside(&task.space.folder, brief)
             .map_err(|_| Rejection::new("R5", texts::outside_folder(brief)))?;
         if !brief_abs.is_file() {

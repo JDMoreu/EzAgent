@@ -1,9 +1,9 @@
 //! Persistencia y emisión de eventos del árbitro.
 
-use crate::events::{ArbiterEvent, ElephantEvent};
+use crate::events::{ArbiterEvent, ElephantEvent, EventKind};
 use crate::state::Task;
 
-use super::Arbiter;
+use super::ArbiterShared;
 
 /// Eventos que produce una acción: traza (vista y bitácora) y novedades
 /// para el elefante.
@@ -26,15 +26,15 @@ impl Effects {
     }
 }
 
-impl Arbiter {
-    /// Evento de traza de una tarea.
+impl ArbiterShared {
+    /// Evento de traza de una tarea, con payload tipado y `seq` (§14.8).
     pub(crate) fn event(&self, task: &Task, kind: &str, data: serde_json::Value) -> ArbiterEvent {
         ArbiterEvent {
-            kind: kind.to_string(),
+            seq: self.next_seq(),
+            kind: EventKind::from_parts(kind, &data),
             space: task.space.id.clone(),
             task: Some(task.id.clone()),
             ts: self.now(),
-            data,
         }
     }
 
@@ -162,11 +162,14 @@ impl Arbiter {
             (None, crate::types::Caller::Fish { .. }) => return,
         };
         let event = ArbiterEvent {
-            kind: "rejected".to_string(),
+            seq: self.next_seq(),
+            kind: EventKind::Rejected {
+                rule: rejection.rule.to_string(),
+                message: rejection.message.clone(),
+            },
             space: space.clone(),
             task: task.as_ref().map(|task| task.id.clone()),
             ts: self.now(),
-            data: serde_json::json!({ "rule": rejection.rule, "message": rejection.message }),
         };
         let (subscribers, sender) = {
             let inner = self.inner.lock();
@@ -184,7 +187,10 @@ impl Arbiter {
                 space,
                 event.ts,
                 rejection.message.clone(),
-                event.data.clone(),
+                serde_json::json!({
+                    "rule": rejection.rule,
+                    "message": rejection.message,
+                }),
             );
             message.task = task.as_ref().map(|task| task.id.clone());
             let _ = sender.send(message);

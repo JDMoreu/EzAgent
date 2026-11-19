@@ -42,7 +42,7 @@ mod types;
 mod verify;
 
 pub use arbiter::Arbiter;
-pub use events::{ArbiterEvent, ElephantEvent};
+pub use events::{ArbiterEvent, Card, CardKind, ElephantEvent, EventKind};
 pub use types::{
     Caller, Clock, Command, Delivery, FishKey, FishLauncher, InstructionWriter, LaunchRequest,
     Launched, Outcome, Rejection, Space, SystemClock, Verdict,
