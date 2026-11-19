@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use ez_core::pyvalue::text_or_empty;
 use ez_herdr::driver::AgentDriver;
-use ez_herdr::herdr::{Herdr, RunAgent};
+use ez_herdr::herdr::{Herdr, Placement, RunAgent};
 use serde_json::{Map, Value};
 
 use super::TICK_SECS;
@@ -30,6 +30,18 @@ pub struct LaunchRequest {
     pub model: Option<String>,
     /// Esfuerzo elegido.
     pub effort: Option<String>,
+    /// Terminal padre: con ella el miembro cuelga de la raíz del enjambre.
+    pub parent: Option<String>,
+    /// Nombre que `hc` acepta para el miembro.
+    pub hc_name: Option<String>,
+    /// Etiquetas `ez.*` del miembro (`ez.swarm`, `ez.role`, `ez.agent`…).
+    pub labels: Map<String, Value>,
+    /// Dónde se ve el miembro en Herdr.
+    pub show: Placement,
+    /// Si `hc` avisa al padre de lo que hace el miembro.
+    pub notify: bool,
+    /// Si el miembro sobrevive al cierre de la raíz.
+    pub outlive_parent: bool,
 }
 
 /// Llamadas del supervisor y de la recuperación al adaptador de agentes.
@@ -187,6 +199,12 @@ impl SwarmHost for HerdrHost {
             extra_args: request.extra_args,
             model: request.model.as_deref(),
             effort: request.effort.as_deref(),
+            parent: request.parent.as_deref(),
+            hc_name: request.hc_name.as_deref(),
+            labels: Some(request.labels),
+            show: request.show,
+            notify: request.notify,
+            outlive_parent: request.outlive_parent,
             ..RunAgent::default()
         };
         self.herdr
@@ -220,6 +238,10 @@ impl SwarmHost for HerdrHost {
 
 #[cfg(test)]
 mod tests {
+    use ez_core::config::VoiceConfig;
+    use ez_herdr::herdr::{Completed, HerdrRuntime, RunError};
+    use serde_json::{json, Map, Value};
+
     use super::*;
 
     fn assert_send_sync<T: Send + Sync>() {}
@@ -227,5 +249,110 @@ mod tests {
     #[test]
     fn the_host_trait_is_send_and_sync() {
         assert_send_sync::<Arc<dyn SwarmHost>>();
+    }
+
+    /// Runtime falso: registra cada argv y devuelve respuestas preparadas.
+    struct Recorder(Arc<std::sync::Mutex<Vec<Vec<String>>>>);
+
+    impl Recorder {
+        fn new() -> Arc<Self> {
+            Arc::new(Self(Arc::new(std::sync::Mutex::new(Vec::new()))))
+        }
+
+        fn calls(&self) -> Vec<Vec<String>> {
+            self.0
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone()
+        }
+    }
+
+    impl HerdrRuntime for Recorder {
+        fn run(
+            &self,
+            argv: &[String],
+            _timeout: f64,
+            _anonymous: bool,
+        ) -> Result<Completed, RunError> {
+            self.0
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .push(argv.to_vec());
+            let row = match argv.get(1).map(String::as_str) {
+                Some("run") | Some("get") => json!({
+                    "address": "t9", "name": "ana", "parent": "t1", "labels": {}, "state": "live"
+                }),
+                _ => json!({"ok": true}),
+            };
+            Ok(Completed {
+                stdout: row.to_string(),
+                stderr: String::new(),
+                returncode: 0,
+            })
+        }
+
+        fn which(&self, program: &str) -> Option<std::path::PathBuf> {
+            Some(std::path::PathBuf::from(program))
+        }
+
+        fn monotonic(&self) -> f64 {
+            1000.0
+        }
+
+        fn next_id(&self) -> String {
+            "abcd1234".to_string()
+        }
+
+        fn spawn(&self, _name: &str, _task: Box<dyn FnOnce() + Send + 'static>) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn run_agent_copies_the_swarm_fields_into_run_agent() {
+        let runtime = Recorder::new();
+        let mut cfg = VoiceConfig::new();
+        cfg.set("hc_path", json!("hc"));
+        cfg.set("herdr_app_path", json!("herdr-app"));
+        cfg.set("default_cwd", json!("C:\\ws"));
+        let herdr = Arc::new(Herdr::with_runtime(
+            cfg,
+            runtime.clone() as Arc<dyn HerdrRuntime>,
+        ));
+        let host = HerdrHost::new(herdr);
+        let mut labels = Map::new();
+        labels.insert("ez.swarm".to_string(), Value::from("S1"));
+        labels.insert("ez.parent".to_string(), Value::from("t1"));
+        let request = LaunchRequest {
+            name: "ana · enjambre".to_string(),
+            parent: Some("t1".to_string()),
+            hc_name: Some("ana".to_string()),
+            labels,
+            show: Placement::Tree,
+            notify: false,
+            outlive_parent: true,
+            ..LaunchRequest::default()
+        };
+        assert!(host.run_agent("claude", "", request).is_ok());
+        let argv = runtime
+            .calls()
+            .into_iter()
+            .find(|call| call.get(1).map(String::as_str) == Some("run"))
+            .expect("hc run");
+        assert!(
+            argv.windows(2).any(|pair| pair == ["--parent", "t1"]),
+            "{argv:?}"
+        );
+        assert!(
+            argv.windows(2).any(|pair| pair == ["--name", "ana"]),
+            "{argv:?}"
+        );
+        assert!(argv.iter().any(|part| part == "--no-notify"), "{argv:?}");
+        assert!(
+            argv.iter().any(|part| part == "--outlive-parent"),
+            "{argv:?}"
+        );
+        assert!(argv.iter().any(|part| part == "ez.swarm=S1"), "{argv:?}");
+        assert!(argv.iter().any(|part| part == "ez.parent=t1"), "{argv:?}");
     }
 }
