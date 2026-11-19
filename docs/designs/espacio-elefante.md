@@ -355,3 +355,123 @@ La app de voz actual (`ezagent-voice`) no cambia durante las olas 1 y 2.
 - Mutaciones: el árbitro exige los números; las ejecuta el `qa_validator`
   (verificarlas en código queda para después).
 - Codex sin `--yolo` por omisión (configurable en `agentes.toml`).
+
+## 14. Revisión 1 (pez ECO-REV0): veredictos y cambios
+
+Informe: `rust-migration/reports/ECO-REV0-r1.md` (10 Bloqueantes, 16 Mayores, 6 Menores).
+**Donde difiera, manda esta sección.** Se aplica en la ronda de correcciones de la ola 1
+(ECO-1b…5b) y en la ola 2.
+
+### 14.1 Identidad y credenciales (B02, B03, M09)
+- Id de tarea: `t` + 12 hex de un uuid v4 (`t3f9a0c1d2e4b`); `task.new` lo devuelve en `data.task`.
+- Pez: `FishKey { space, task, fish, attempt }` (`attempt` empieza en 1). Es el `Caller::Fish`
+  de `ez-ctl` y de `ez-arbiter`, y lo reciben `fish_blocked`, `fish_exited` y `fish_failed`
+  (la ventana lo saca de las etiquetas hc `ez_space`, `ez_task`, `ez_fish` y `ez_attempt`).
+- Nombre hc: `ez-{8 hex de la tarea}-{pez}`, más `-a{n}` si `attempt > 1`.
+- Token: lo genera el árbitro y va en `LaunchRequest.token`; **el lanzador lo registra en
+  `Tokens` antes de lanzar el proceso**. El árbitro llama a `FishLauncher::revoke(token)`
+  cuando un verificador informa, cuando el pez sale o falla y cuando la tarea termina o se
+  detiene. Ningún evento, vista, bitácora ni log lleva tokens.
+
+### 14.2 Lanzamiento (B01, M08, M11, M16, m04)
+- Perfil: se añaden `env` (mapa; marcadores `{modelo}`, `{esfuerzo}` y `{variante}` =
+  `#<esfuerzo>` o vacío) y `previo` (opcional; hoy solo `"opencode_state"`, el estado
+  aislado de `ez_herdr::prelaunch`). `launch::command(profile, seat) -> LaunchCommand { argv, env, previo }`.
+- OpenCode por omisión (su TUI rechaza `--model`): `argv = ["opencode", "--standalone"]`,
+  `env = { OPENCODE_CONFIG_CONTENT = '{"model":"{modelo}{variante}"}' }`, `previo = "opencode_state"`.
+- Claude: `esfuerzo_args = ["--effort", "{esfuerzo}"]`.
+- Validación: `agente` y `modelo` no vacíos; si hay `esfuerzo`, no vacío y el perfil debe
+  poder aplicarlo (`esfuerzo_args` o `{esfuerzo}`/`{variante}` en `env`); si no, error.
+- Transacción del lanzador (ventana): registrar token → `terminal.run` → `terminal.wait`
+  hasta que no esté `working` (tope 60 s) → `terminal.send` de la primera línea → si
+  `started == Some(false)`, leer la pantalla, esperar 5 s y reenviar una vez. Resultado
+  `Delivered`, `Unconfirmed` (`started == None`) o `Failed(motivo)`; con `Failed` el trabajo
+  queda `failed` (14.5) y no hay trabajo pendiente.
+- Elefante: el espacio guarda `{agente, modelo, esfuerzo}` y se lanza con el mismo
+  `launch::command`, `EZ_ROLE=elephant` y la primera línea: «Eres el elefante de este
+  espacio de EzAgent. Ejecuta `ez --skill` y sigue ese manual; luego espera el pedido de la persona.»
+
+### 14.3 Fases de la ronda e informes (B04, B05)
+- Trabajo: `WorkItem { key, round, kind: launch | correction(k), report_path, state: pending | reported | failed }`.
+  Informe en `ronda-<n>/<pez>.informe.md` (lanzamiento) o `ronda-<n>/<pez>.informe-c<k>.md`
+  (corrección; la línea de corrección nombra esa ruta). `report` exige exactamente la ruta
+  del trabajo pendiente.
+- Ronda 1: planner (uno) `pass` → plan_reviewer `pass` (si está en el equipo) → al menos un
+  developer → qa → qa_validator. Rondas siguientes: developers (lanzamiento o corrección) →
+  qa → qa_validator. Lanzar o corregir un developer con un `qa` ya lanzado en la ronda → rechazo.
+- **Ronda solo de verificación** (sin developer): permitida solo si la huella del proyecto
+  es igual a la del cierre de la ronda anterior y esa ronda fue limpia.
+- `--blocking`, `--major` y `--minor` son obligatorios; `pass` con bloqueantes o mayores > 0
+  → rechazo: «El veredicto pass no puede llevar hallazgos bloqueantes o mayores.». El
+  informe se copia al almacén privado con su sha256.
+- **Ronda limpia (sustituye la de R9):** criterios pasan ∧ **todos** los informes de la ronda
+  `pass` con 0 bloqueantes y 0 mayores ∧ mutaciones del validador ≥ mínimo y todas
+  detectadas ∧ sin violaciones (14.4) ∧ artefactos congelados intactos (14.6).
+
+### 14.4 Huellas y atribución (B06, B07)
+- Huella = HEAD + sha256 del contenido de cada archivo de
+  `git ls-files -co --exclude-standard -z` fuera de `.ez/`.
+- Se toma al aprobar la tarea, al lanzar o corregir un pez, al recibir cada informe, al
+  abrir y cerrar ronda y en `task.close`.
+- Los cambios entre la huella al empezar un trabajo y la de su informe se atribuyen a ese
+  pez. Los cambios cuando no hay trabajo pendiente se atribuyen al elefante → `paused`
+  (`cambios_fuera_de_ronda`); al reanudar, `rondas_limpias_seguidas` vuelve a 0.
+- Violaciones (la ronda no es limpia): `planner`, `plan_reviewer` o `qa_validator` cambiaron
+  archivos del proyecto; `developer` cambió un archivo atribuido a `qa` (en esta ronda o
+  antes). Con developers en paralelo, sus cambios se atribuyen al papel.
+- `task.close` repite R3 y R8 y compara la huella con la del cierre de la última ronda
+  limpia: si difieren → rechazo.
+
+### 14.5 Concurrencia, recuperación y topes (B08, M01, M02, M03)
+- Un ejecutor secuencial por espacio (cola + hilo `ez-arbiter-<espacio>`): cada comando del
+  elefante, de un pez o de la persona se procesa entero antes del siguiente. `wait` y
+  `snapshot` no pasan por la cola.
+- Al arrancar, las tareas no finales pasan a `paused` (`reinicio`), sus trabajos
+  pendientes a `failed` y sus tokens dejan de valer.
+- Pez que sale, se pierde o queda en `error` antes de informar → trabajo `failed`, token
+  revocado y evento `fish_failed` al elefante. Se puede relanzar ese papel en la misma
+  ronda con `attempt + 1` (hasta 3 intentos por papel y ronda).
+- Tarjeta de pausa: «Reanudar», «Dar más margen» (+2 rondas y +1 h, guardado fuera de los
+  criterios) y «Detener». El tiempo cuenta solo fuera de pausa. `task.close` solo desde
+  `between_rounds`.
+
+### 14.6 Artefactos congelados y rangos (B10, M12)
+- Al aprobar se congelan encargo, criterios y equipo (copia privada + sha256). Al lanzar,
+  informar, verificar y cerrar se comparan las copias de `.ez/tareas/<tarea>/`: si
+  difieren → `paused` (`artefactos_modificados`); al reanudar se restauran.
+- Rangos de `criterios.toml`: `mutaciones_minimas` 1–20; `rondas_maximas` 2–20;
+  `horas_maximas` finito, > 0 y ≤ 24; `segundos` 1–3600; `descripcion` no vacía. `contiene`
+  se busca en stdout seguido de stderr. La tarjeta muestra `[validacion]`.
+
+### 14.7 Procesos y rutas (M06, M14)
+- Al vencer el tope de un criterio: `taskkill /T /F /PID <pid>` (argumentos en lista, sin
+  shell); los lectores de salida se abandonan 2 s después.
+- Rutas: `canonicalize` de la raíz y del destino (del padre si el archivo no existe) y
+  `Path::starts_with` por componentes. Pruebas con `..`, prefijo compartido
+  (`proyecto` frente a `proyecto-otro`) y enlace o junction.
+
+### 14.8 Servidor, protocolo y vista (M05, M10, m01, m02, m06)
+- `ez-ctl`: hasta 8 hilos para comandos y hasta 32 esperas simultáneas en hilos aparte
+  (más → 503 «Demasiadas esperas.»). `stop` despierta las esperas.
+- `ArbiterEvent` tipado con `seq` monotónico; `snapshot` incluye `last_seq`. Tarjeta:
+  `Card { id, space, task, kind: task | team | pause, title, body }`; acciones `approve` y
+  `reject` (task, team), `resume`, `more_time` y `stop` (pause).
+- `ez --json` (global) imprime el `Reply` entero; `inventory` devuelve el inventario en `data`.
+- `HcClient::send`: tope 75 s.
+- La barra envía texto crudo con `terminal.send`; el pegado entre corchetes queda solo
+  para PTY directos (modo demostración).
+
+### 14.9 Eventos de hc (M13)
+`TermEvent` lleva `seq`; tras `missed` se descartan los eventos con `seq` ≤ el de la foto.
+Si la foto no se puede leer: `Missed { snapshot: None }` y el consumidor resincroniza con
+`terminal.list`.
+
+### 14.10 Diferido o aclarado
+- M04 (churn): diferido a la ola 3 (necesita hallazgos estructurados); hasta entonces solo `mismo_error`.
+- M07: ECO-8 incluye una prueba real por CLI (primera línea, modelo, `ez report`, estado).
+  Si el sandbox de Codex no deja ejecutar `ez.exe`, decide la persona.
+- B09: excepción explícita para `--demo`: `powershell.exe -NoLogo` interactivo, sin `-Command`.
+- M15: los peces usan `cargo fmt -p <crate>`; `cargo fmt --all --check` queda para la puerta del elefante.
+- m03: ejemplos de familia: los tres de §6 más `hy4-flash-free` → `hy`.
+- m05: la copia del validador va en `%TEMP%\ez-valqa-<uuid>`, sin `.git`, `target`,
+  `node_modules` ni `.ez`, y se borra al final.

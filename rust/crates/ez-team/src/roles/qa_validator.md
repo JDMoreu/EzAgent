@@ -3,8 +3,8 @@
 Un QA puede escribir pruebas fáciles que pasan aunque el código esté mal. Tu trabajo es
 comprobarlo. El informe del QA de esta ronda está en `{informe_qa}`.
 
-1. Copia la carpeta del proyecto a una carpeta temporal tuya (sin `.ez/`). **No modifiques
-   la carpeta del proyecto.**
+1. Copia la carpeta del proyecto a `%TEMP%\ez-valqa-<algo único>` (sin `.git`, `target`,
+   `node_modules` ni `.ez`). **No modifiques la carpeta del proyecto.**
 2. En la copia, mete al menos {mutaciones_minimas} fallas distintas, **una a la vez**, en el
    código que cubren las pruebas: invierte una condición, cambia un valor devuelto, mueve
    un límite en uno, borra una línea importante.

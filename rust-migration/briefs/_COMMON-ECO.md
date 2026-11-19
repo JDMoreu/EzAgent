@@ -20,7 +20,7 @@ brief si discrepan, y en ese caso dilo en el informe).
 ## Calidad (la puerta del elefante)
 Desde `rust/`, con tu crate:
 ```
-cargo fmt --all
+cargo fmt -p <tu-crate>
 cargo clippy -p <tu-crate> --all-targets -- -D warnings
 cargo test -p <tu-crate>
 ```
