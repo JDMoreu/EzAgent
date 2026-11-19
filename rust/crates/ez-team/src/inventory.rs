@@ -353,6 +353,8 @@ mod tests {
             models: Vec::new(),
             family: None,
             effort_args: Vec::new(),
+            env: std::collections::BTreeMap::new(),
+            prelaunch: None,
         }
     }
 

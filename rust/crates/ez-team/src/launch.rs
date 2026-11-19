@@ -137,6 +137,8 @@ mod tests {
                 .iter()
                 .map(|argument| argument.to_string())
                 .collect(),
+            env: std::collections::BTreeMap::new(),
+            prelaunch: None,
         }
     }
 

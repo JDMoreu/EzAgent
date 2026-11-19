@@ -227,6 +227,8 @@ mod tests {
             models: models.iter().map(|model| model.to_string()).collect(),
             family: family.map(str::to_string),
             effort_args: Vec::new(),
+            env: std::collections::BTreeMap::new(),
+            prelaunch: None,
         }
     }
 
