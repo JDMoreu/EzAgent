@@ -7,7 +7,7 @@
 //! registro solo se leen las líneas de límite, nunca el contenido de sesiones.
 
 use std::cmp::Reverse;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use rusqlite::Connection;
@@ -19,6 +19,9 @@ use super::{ModelUsage, Reading, TokenUsage, UsageDirs, UsageState, Window};
 const MAX_LOG_TAIL: u64 = 2 * 1024 * 1024;
 const STALE_DB_MS: u64 = 24 * 3_600_000;
 const FREE_LIFE_MS: u64 = 24 * 3_600_000;
+/// Modelos usados en los últimos días cuentan como «usables» para decidir si
+/// el agente entero está agotado.
+const RECENT_MODEL_MS: u64 = 7 * 24 * 3_600_000;
 
 pub(crate) fn read(dirs: &UsageDirs, window: &Window, now_ms: u64) -> Reading {
     let mut reading = Reading::default();
@@ -186,7 +189,10 @@ fn apply_notices(
         return;
     }
     let active = active_notices(reading, db, notices, window, now_ms);
-    mark_models(reading, &active);
+    let recent = db
+        .map(|(connection, _)| recent_models(connection, now_ms))
+        .unwrap_or_default();
+    mark_models(reading, &active, &recent);
     reading.plan =
         plan_from_usage(reading).or_else(|| active.last().map(|notice| notice.label.clone()));
     if reading.plan.is_some() && reading.sources.plan.is_none() {
@@ -228,7 +234,7 @@ fn active_notices(
     active
 }
 
-fn mark_models(reading: &mut Reading, active: &[Notice]) {
+fn mark_models(reading: &mut Reading, active: &[Notice], recent: &[String]) {
     for model in &mut reading.models {
         if active.iter().any(|notice| notice.covers(&model.model)) {
             model.state = UsageState::Agotado;
@@ -239,9 +245,22 @@ fn mark_models(reading: &mut Reading, active: &[Notice]) {
         .iter()
         .filter(|model| model.state == UsageState::Agotado)
         .collect();
-    if !exhausted.is_empty() && exhausted.len() == reading.models.len() {
+    // DECISION: el agente solo es «agotado» si todos los modelos con uso en la
+    // ventana y los usados en los últimos 7 días están cubiertos por un aviso.
+    let mut usable: BTreeSet<String> = reading
+        .models
+        .iter()
+        .map(|model| model.model.clone())
+        .collect();
+    usable.extend(recent.iter().cloned());
+    let all_covered = !reading.models.is_empty()
+        && !usable.is_empty()
+        && usable
+            .iter()
+            .all(|model| active.iter().any(|notice| notice.covers(model)));
+    if all_covered {
         reading.depleted = Some(
-            "aviso de límite de OpenCode: todos los modelos usados en la ventana están agotados"
+            "aviso de límite de OpenCode: todos los modelos usados recientemente están agotados"
                 .to_string(),
         );
     } else if !exhausted.is_empty() {
@@ -302,6 +321,45 @@ fn u64_of(value: i64) -> u64 {
     u64::try_from(value).unwrap_or(0)
 }
 
+/// Modelos usados en los últimos días, para no agotar el agente entero cuando
+/// solo lo está el plan que nombra el aviso.
+fn recent_models(connection: &Connection, now_ms: u64) -> Vec<String> {
+    if !sqlite::has_table(connection, "session_v2") {
+        return Vec::new();
+    }
+    let start = i64::try_from(now_ms.saturating_sub(RECENT_MODEL_MS)).unwrap_or(0);
+    let sql = "SELECT COALESCE(json_extract(model, '$.providerID'), ''), \
+               COALESCE(json_extract(model, '$.id'), '') \
+               FROM session_v2 WHERE time_updated >= ?1 AND json_valid(model)";
+    let Ok(mut statement) = connection.prepare(sql) else {
+        return Vec::new();
+    };
+    let Ok(rows) = statement.query_map([start], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    }) else {
+        return Vec::new();
+    };
+    let mut seen = BTreeSet::new();
+    for (provider, id) in rows.flatten() {
+        let name = model_name(&provider, &id);
+        if name != "desconocido" {
+            seen.insert(name);
+        }
+    }
+    seen.into_iter().collect()
+}
+
+fn model_name(provider: &str, id: &str) -> String {
+    let provider = provider.trim();
+    let id = id.trim();
+    match (provider.is_empty(), id.is_empty()) {
+        (false, false) => format!("{provider}/{id}"),
+        (false, true) => provider.to_string(),
+        (true, false) => id.to_string(),
+        (true, true) => "desconocido".to_string(),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Schema {
     SessionMessage,
@@ -338,14 +396,7 @@ struct Group {
 
 impl Group {
     fn model(&self) -> String {
-        let provider = self.provider.trim();
-        let id = self.id.trim();
-        match (provider.is_empty(), id.is_empty()) {
-            (false, false) => format!("{provider}/{id}"),
-            (false, true) => provider.to_string(),
-            (true, false) => id.to_string(),
-            (true, true) => "desconocido".to_string(),
-        }
+        model_name(&self.provider, &self.id)
     }
 }
 

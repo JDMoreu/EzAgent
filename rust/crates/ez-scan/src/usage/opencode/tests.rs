@@ -260,6 +260,41 @@ fn el_uso_posterior_del_mismo_plan_vence_el_aviso() {
 }
 
 #[test]
+fn un_plan_usado_hace_poco_no_agota_el_agente() {
+    let root = open("plan-reciente");
+    let connection = current_db(&root);
+    connection
+        .execute_batch("CREATE TABLE session_v2 (id TEXT, model TEXT, time_updated INTEGER);")
+        .expect("tabla de sesiones");
+    connection
+        .execute(
+            "INSERT INTO session_v2 (id, model, time_updated) VALUES ('s', ?1, ?2)",
+            rusqlite::params![
+                r#"{"providerID":"opencode-go","id":"deepseek-v4.1-flash"}"#,
+                NOW as i64 - 3_600_000
+            ],
+        )
+        .expect("sesión reciente");
+    insert(
+        &connection,
+        AT_1030,
+        "opencode",
+        "hy4-flash-free",
+        [10, 20, 30, 40],
+        0.0,
+    );
+    drop(connection);
+    log(&root, &[FREE_LINE]);
+    let reading = read(&dirs(&root), &Window::new(NOW, 5.0), NOW);
+    assert!(reading.depleted.is_none(), "{reading:#?}");
+    assert!(reading
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("está agotado; el agente no")));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn todos_los_modelos_agotados_marcan_el_agente() {
     let root = open("todos");
     let connection = current_db(&root);
