@@ -5,12 +5,21 @@ use super::*;
 impl HubRuntime {
     /// Arranca el motor en modo normal. Nunca se llama en `--demo`.
     pub fn start(data_dir: &Path) -> Result<HubRuntime, String> {
+        Self::start_with(data_dir, RuntimeOptions::default())
+    }
+
+    /// Arranca el motor con opciones explícitas (ECO-8), sin cambiar el
+    /// comportamiento de [`HubRuntime::start`].
+    pub fn start_with(data_dir: &Path, options: RuntimeOptions) -> Result<HubRuntime, String> {
         let spaces = load_spaces(&data_dir.join("espacios.json"))?;
         let profiles =
             ez_team::profiles::load_or_init(data_dir).map_err(|error| error.to_string())?;
         let subscriptions =
             ez_team::subscriptions::load(data_dir).map_err(|error| error.to_string())?;
-        let exe_dir = exe_directory()?;
+        let exe_dir = match options.ez_dir {
+            Some(dir) => dir,
+            None => exe_directory()?,
+        };
         let Some((client, hc_path)) = connect_hc()? else {
             return Ok(Self::degraded(spaces, data_dir, HC_MISSING));
         };
