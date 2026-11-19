@@ -76,7 +76,7 @@ lines = open(sys.argv[1], encoding='utf-8', errors='replace').read().splitlines(
 s = ''
 for ln in lines:
     if re.search(r'estado\s*:', ln, re.I):
-        s = ln.strip(); break
+        s = re.sub(r'^\s*[-*]\s+', '', ln).strip(); break
 if not s:
     inres = False
     for ln in lines:

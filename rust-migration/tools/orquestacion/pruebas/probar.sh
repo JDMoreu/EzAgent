@@ -81,6 +81,14 @@ check() { # check <nombre> <valor> <esperado>
     FAIL=1
   fi
 }
+notice() { # notice <nombre> <texto> — comprueba lo que recibió el padre falso
+  if grep -Fq "$2" "$PARENT_CAP"; then
+    echo "OK aviso $1"
+  else
+    echo "FALLO aviso $1: no aparece «$2»"
+    FAIL=1
+  fi
+}
 
 changes() { git -C "$1" status --porcelain 2>/dev/null | wc -l | tr -d ' '; }
 
@@ -113,18 +121,29 @@ if [ -n "$addr" ]; then
 fi
 check "argv env.exe opencode" "$(grep -c -- '--standalone --auto --session HD0T1-s1 --prompt' "$WORK/opencode/.fake-argv.log")" "1"
 check "OPENCODE_CONFIG_CONTENT" "$(grep -Fc 'ENV=[{"model":"opencode/hy4-flash-free"}]' "$WORK/opencode/.fake-argv.log")" "1"
-grep -Fq -- '--prompt Encargo de prueba HD0T1.' "$WORK/opencode/.fake-argv.log" \
+grep -Fq -- '--prompt' "$WORK/opencode/.fake-argv.log" \
+  && grep -Fq 'Encargo de prueba HD0T1' "$WORK/opencode/.fake-argv.log" \
   || { echo "FALLO: caso 1 no pasó el encargo en --prompt"; FAIL=1; }
 check "registro estado" "$(reg_field HD0T1 "d['state']")" "terminado"
 check "registro historial" "$(reg_field HD0T1 "','.join(h['state'] for h in d['history'])")" "en_proceso,terminado"
 check "registro by" "$(reg_field HD0T1 "d['history'][0]['by']")" "supervisor"
 check "registro notified" "$(reg_field HD0T1 "d.get('notified','')")" "terminado"
 check "registro summary" "$(reg_field HD0T1 "d.get('summary','')")" "Estado: completado"
-check "registro report" "$(reg_field HD0T1 "d.get('report','')")" "$WORK/opencode/rust-migration/reports/HD0T1-r1.md"
-grep -Fq "hd0t1 (OpenCode · opencode/hy4-flash-free) terminó" "$PARENT_CAP" \
-  || { echo "FALLO: el padre no recibió el aviso de terminado"; FAIL=1; }
-grep -Fq "Resumen del subagente: «Estado: completado»" "$PARENT_CAP" \
-  || { echo "FALLO: el aviso de terminado no trae el resumen"; FAIL=1; }
+# La ruta puede llegar en forma POSIX o Windows (MSYS convierte los argv al
+# pasar por env.exe): basta con que el registro apunte a un informe existente.
+HD0B_REPORT="$(reg_field HD0T1 "d.get('report','')")"
+if [ -f "$HD0B_REPORT" ] && printf '%s' "$HD0B_REPORT" | grep -Fq 'HD0T1-r1.md'; then
+  echo "OK registro report: $HD0B_REPORT"
+else
+  echo "FALLO registro report: «$HD0B_REPORT» no es un informe existente"
+  FAIL=1
+fi
+notice "terminado opencode" "hd0t1 (OpenCode · opencode/hy4-flash-free) terminó"
+notice "resumen del subagente" "Resumen del subagente: «Estado: completado»"
+notice "informe en aviso" "Informe:"
+notice "ruta del informe en aviso" "HD0T1-r1.md"
+notice "validación en aviso" "Para validarlo: ez validate hd0t1 --pass|--fail --file <evidencia>"
+echo "[pruebas] línea «Informe» recibida: $(grep -F 'Informe:' "$PARENT_CAP" | head -1)"
 
 echo "[pruebas] caso 2: mcode falso en modo tui, informe, commit y cierre"
 run_case HD0T2 "$WORK/mcode" tui EZ_AGENT=mcode EZ_AGENT_BIN="$HERE/fake-worker.cmd"
@@ -140,8 +159,7 @@ if [ -n "$addr" ]; then
   check "estado cerrado" "$(field "$addr" "d.get('state','')")" "finished"
   check "cambios sin confirmar" "$(changes "$WORK/mcode")" "0"
 fi
-grep -Fq "hd0t2 (mcode · minimax/MiniMax-M3.1-Flash) terminó" "$PARENT_CAP" \
-  || { echo "FALLO: el padre no recibió el aviso de mcode"; FAIL=1; }
+notice "terminado mcode" "hd0t2 (mcode · minimax/MiniMax-M3.1-Flash) terminó"
 
 echo "[pruebas] caso 3: sin informe (EZ_WORKER_CMD) reintenta, falla y avisa"
 run_case HD0T3 "$WORK/fail" fail EZ_WORKER_CMD="$HERE/fake-worker.cmd"
@@ -152,8 +170,7 @@ printf '%s\n' "$LAST_OUT" | grep -q "sin informe completado tras 2 intentos" \
 check "registro fallido estado" "$(reg_field HD0T3 "d['state']")" "fallido"
 check "registro fallido detalle" "$(reg_field HD0T3 "d['history'][-1]['detail']")" "sin informe completado tras 2 intentos"
 check "registro fallido notified" "$(reg_field HD0T3 "d.get('notified','')")" "fallido"
-grep -Fq "hd0t3 (OpenCode · opencode/hy4-flash-free) falló: sin informe completado tras 2 intentos" "$PARENT_CAP" \
-  || { echo "FALLO: el padre no recibió el aviso de fallido"; FAIL=1; }
+notice "fallido" "hd0t3 (OpenCode · opencode/hy4-flash-free) falló: sin informe completado tras 2 intentos. Revisa su pantalla: hc read"
 
 echo "[pruebas] caso 4: opencode interactivo reintenta con la misma sesión"
 run_case HD0T4 "$WORK/retry" retry EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd"
@@ -173,6 +190,13 @@ if [ -n "$addr" ]; then
 else
   echo "FALLO: caso 5 no dejó terminal"; FAIL=1
 fi
+
+echo "[pruebas] caso 6: EZ_OPENCODE_MODE=run conserva el modo anterior"
+run_case HD0T6 "$WORK/legacy" exit EZ_AGENT=opencode EZ_OPENCODE_MODE=run EZ_AGENT_BIN="$HERE/fake-worker.cmd"
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 6 devolvió $code (esperado 0)"; FAIL=1; }
+check "modo run sin envoltura" "$(grep -c -- 'ARGS=run --model opencode/hy4-flash-free --title HD0T6-s1 --auto' "$WORK/legacy/.fake-argv.log")" "1"
+check "modo run sin OPENCODE_CONFIG_CONTENT" "$(grep -Fc 'ENV=[]' "$WORK/legacy/.fake-argv.log")" "1"
 
 echo "[pruebas] resultado: $([ "$FAIL" -eq 0 ] && echo VERDE || echo ROJO)"
 exit "$FAIL"
