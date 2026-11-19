@@ -1,3 +1,4 @@
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
 use super::*;
@@ -8,6 +9,8 @@ struct Fake {
     pause_message: &'static str,
     tasks: Vec<Map<String, Value>>,
     labels: Vec<(String, String)>,
+    ack: RefCell<Option<(f64, Option<String>, bool)>>,
+    ack_index: Cell<usize>,
 }
 
 impl Default for Fake {
@@ -18,6 +21,8 @@ impl Default for Fake {
             pause_message: "En pausa. Di «oye ez» cuando me necesites.",
             tasks: Vec::new(),
             labels: Vec::new(),
+            ack: RefCell::new(None),
+            ack_index: Cell::new(0),
         }
     }
 }
@@ -45,6 +50,16 @@ impl FastHost for Fake {
             .find(|(key, _)| key == address)
             .map(|(_, label)| label.clone())
             .unwrap_or_default()
+    }
+
+    fn ack_context(&self) -> Option<(f64, Option<String>, bool)> {
+        self.ack.borrow_mut().take()
+    }
+
+    fn ack_index(&self) -> usize {
+        let index = self.ack_index.get();
+        self.ack_index.set(index + 1);
+        index
     }
 }
 
@@ -422,4 +437,134 @@ fn los_valores_por_defecto_del_host_son_los_de_fabrica() {
     assert_eq!(host.agent_label(""), "El agente");
     assert!(host.pending_tasks().is_empty());
     assert_eq!(host.label_for("t1"), "");
+    assert!(host.ack_context().is_none());
+    assert_eq!(host.ack_index(), 0);
+    assert_eq!(host.ack_window_secs(), ACK_WINDOW_SECS);
+}
+
+fn ack_host(seconds: f64, kind: &str, question: bool) -> Fake {
+    let host = Fake::default();
+    *host.ack.borrow_mut() = Some((seconds, Some(kind.to_string()), question));
+    host
+}
+
+#[test]
+fn el_acuse_corto_responde_sin_pasar_por_el_llm() {
+    // «gracias» y «ok gracias» los gana el atajo de agradecimiento («De nada.»).
+    for text in [
+        "ok",
+        "okey",
+        "oki",
+        "oc",
+        "k",
+        "va",
+        "vale",
+        "bueno",
+        "listo",
+        "perfecto",
+        "dale",
+        "genial",
+        "de acuerdo",
+        "ya está",
+        "muy bien",
+        "esta bien",
+        "entendido",
+        "confirmado",
+        "ok ok",
+        "vale vale",
+    ] {
+        let outcome = run_with(text, &ack_host(1.0, "announce", false));
+        assert!(outcome.handled, "{text}");
+        assert!(outcome.ack, "{text}");
+        assert_eq!(
+            outcome.speech.as_ref().map(|(kind, _)| *kind),
+            Some("ack"),
+            "{text}"
+        );
+        assert!(
+            ACK_REPLIES.contains(&speech(&outcome).unwrap_or_default()),
+            "{text}: {:?}",
+            speech(&outcome)
+        );
+    }
+    // El agradecimiento suelto conserva su atajo de siempre.
+    for text in ["gracias", "ok gracias", "muchas gracias"] {
+        let outcome = run_with(text, &ack_host(1.0, "announce", false));
+        assert_eq!(speech(&outcome), Some("De nada."), "{text}");
+        assert!(!outcome.ack, "{text}");
+    }
+}
+
+#[test]
+fn el_acuse_no_aplica_sin_salida_reciente_o_tras_pregunta() {
+    // Sin contexto, tras confirmación, fuera de ventana o tras pregunta: al LLM.
+    for host in [
+        Fake::default(),
+        ack_host(1.0, "confirm", false),
+        ack_host(11.0, "announce", false),
+        ack_host(1.0, "announce", true),
+        ack_host(-1.0, "answer", false),
+    ] {
+        let outcome = run_with("ok", &host);
+        assert!(!outcome.handled);
+        assert!(!outcome.ack);
+        assert_eq!(outcome, FastOutcome::default());
+    }
+    // Las respuestas habladas por la app también cuentan como salida.
+    let outcome = run_with("ok", &ack_host(1.0, "answer", false));
+    assert!(outcome.handled);
+    assert_eq!(outcome.speech.as_ref().map(|(kind, _)| *kind), Some("ack"));
+}
+
+#[test]
+fn las_respuestas_de_acuse_rotan_sin_repetir_la_anterior() {
+    struct Rotating(Cell<usize>);
+    impl FastHost for Rotating {
+        fn ack_context(&self) -> Option<(f64, Option<String>, bool)> {
+            Some((1.0, Some("announce".to_string()), false))
+        }
+        fn ack_index(&self) -> usize {
+            let index = self.0.get();
+            self.0.set(index + 1);
+            index
+        }
+    }
+    let host = Rotating(Cell::new(0));
+    let replies: Vec<String> = (0..8)
+        .map(|_| {
+            let outcome = fast_command("ok", &host);
+            speech(&outcome).unwrap_or_default().to_string()
+        })
+        .collect();
+    for (reply, expected) in replies.iter().zip(ACK_REPLIES.iter().cycle()) {
+        assert_eq!(reply, expected);
+    }
+    assert_eq!(replies[6], replies[0]);
+    assert_eq!(replies[7], replies[1]);
+    for pair in replies.windows(2) {
+        assert_ne!(pair[0], pair[1]);
+    }
+}
+
+#[test]
+fn un_atajo_real_no_consume_el_contexto_de_acuse() {
+    let host = ack_host(1.0, "announce", false);
+    // «ok, mutea» sigue silenciando y no gasta el aviso reciente.
+    assert_eq!(run_with("ok mutea", &host).mic, Some(true));
+    assert!(run_with("ok", &host).ack);
+}
+
+#[test]
+fn clausula_de_acuse_rechaza_texto_con_contenido_nuevo() {
+    for text in [
+        "ok, pero cambia X",
+        "listo haz esto",
+        "hola mundo",
+        "sí",
+        "no",
+    ] {
+        assert!(!is_pure_acknowledgement(&normalize(text)), "{text}");
+        let outcome = run_with(text, &ack_host(1.0, "announce", false));
+        assert!(!outcome.handled, "{text}");
+    }
 }
