@@ -1,0 +1,2 @@
+{"type":"assistant","timestamp":"2026-01-02T11:30:00.000Z","message":{"model":"modelo-inventado","usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":10,"cache_read_input_tokens":20,"fallback_credit":null}}}
+{"type":"assistant","timestamp":"2026-01-02T01:00:00.000Z","message":{"model":"modelo-inventado","usage":{"input_tokens":999,"output_tokens":999,"cache_creation_input_tokens":999,"cache_read_input_tokens":999,"fallback_credit":null}}}

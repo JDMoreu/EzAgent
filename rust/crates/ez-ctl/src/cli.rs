@@ -57,6 +57,7 @@ Recursos e inventario (siempre locales, no hablan con el árbitro):
   ez init [--refresh] [--json]
   ez resources [--json]
   ez inventory --local [--json]
+  ez usage [--json]              Uso y límites de cada agente
 
 Modo local (Herdr, sin EZ_URL ni EZ_TOKEN):
   ez delegate <papel> --agent <tipo> [--model <modelo>] [--effort <nivel>]
@@ -242,6 +243,7 @@ fn build(
         }
         "init" => scan_cmds::build_init(parsed),
         "resources" => scan_cmds::build_resources(parsed),
+        "usage" => scan_cmds::build_usage(parsed),
         "verify" => parsed.finish("verify", json!({})),
         "close" => parsed.finish("task.close", json!({})),
         "pause" => {

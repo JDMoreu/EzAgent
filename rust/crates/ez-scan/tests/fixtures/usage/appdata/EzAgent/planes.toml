@@ -1,0 +1,10 @@
+# Planes inventados para la prueba de lectura; no son los de la persona.
+[claude]
+plan = "claude_max"
+ventana_horas = 10
+limite = 1000000
+unidad = "tokens"
+prioridad = "primero"
+
+[novedades]
+reintento_automatico = true

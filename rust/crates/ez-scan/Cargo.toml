@@ -10,10 +10,13 @@ name = "ez_scan"
 path = "src/lib.rs"
 
 [dependencies]
+chrono = { workspace = true }
 ez-core = { path = "../ez-core" }
 ez-herdr = { path = "../ez-herdr" }
+rusqlite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sysinfo = { workspace = true }
+toml = { workspace = true }
 tracing = { workspace = true }
 windows = { workspace = true }
