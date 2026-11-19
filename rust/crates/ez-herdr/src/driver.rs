@@ -12,6 +12,7 @@
 //! LLM solo aporta valores (modelo, esfuerzo, tarea) que se validan antes.
 
 mod catalog;
+mod choice;
 mod launch;
 
 use std::sync::Arc;
@@ -27,6 +28,7 @@ use crate::session::{AgentSession, SessionHost};
 
 pub use crate::herdr::AgentLaunch;
 pub use crate::session::{command_line, valid_keys, DEFAULT_SHELL};
+pub use choice::Choice;
 #[doc(hidden)]
 pub use launch::resolve_codex_value;
 
@@ -45,7 +47,7 @@ fn profiles(cfg: &VoiceConfig) -> Option<&Map<String, Value>> {
     cfg.get("agent_profiles").and_then(Value::as_object)
 }
 
-fn agents(cfg: &VoiceConfig) -> Option<&Map<String, Value>> {
+pub(crate) fn agents(cfg: &VoiceConfig) -> Option<&Map<String, Value>> {
     cfg.get("agents").and_then(Value::as_object)
 }
 
@@ -99,15 +101,15 @@ pub fn check_value(cfg: &VoiceConfig, key: &str, kind: &str, value: &str) -> Str
     String::new()
 }
 
-fn is_prelaunch(profile: &Map<String, Value>, value: &str) -> bool {
+pub(crate) fn is_prelaunch(profile: &Map<String, Value>, value: &str) -> bool {
     profile.get("prelaunch").and_then(Value::as_str) == Some(value)
 }
 
-fn discover(profile: &Map<String, Value>, value: &str) -> bool {
+pub(crate) fn discover(profile: &Map<String, Value>, value: &str) -> bool {
     profile.get("discover").and_then(Value::as_str) == Some(value)
 }
 
-fn has_ignore_case(items: &[String], wanted: &str) -> bool {
+pub(crate) fn has_ignore_case(items: &[String], wanted: &str) -> bool {
     let wanted = wanted.to_lowercase();
     items.iter().any(|item| item.to_lowercase() == wanted)
 }
@@ -128,9 +130,9 @@ fn flag_args(profile: &Map<String, Value>, key: &str, default: [&str; 2]) -> Vec
 
 /// Modelo y esfuerzo pedidos, ya validados por sus valores por defecto.
 #[derive(Debug, Clone, Default)]
-struct Wanted {
-    model: String,
-    effort: String,
+pub(crate) struct Wanted {
+    pub(crate) model: String,
+    pub(crate) effort: String,
 }
 
 impl Wanted {
