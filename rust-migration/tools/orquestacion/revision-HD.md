@@ -194,3 +194,9 @@
   modelo hubo que borrar la sesión (`opencode session delete ses_ir1s1 --standalone`). El
   supervisor debería detectar el aviso «Free limit reached» en pantalla y, si el modelo
   pedido cambió, abrir una sesión nueva.
+
+### Pedido nuevo (19-nov): EzAgent lidia con las novedades
+- Diseño `docs/designs/novedades-subagentes.md`: estado `bloqueado`, detector (límite de uso
+  por pantalla con hora de reinicio, diálogo, sin avance), `ez retry` con sesión nueva, y la
+  app de voz como padre que anuncia y responde. Encargos NV-1 (tras HD-9), NV-2 (tras NV-1 e
+  IR-3), NV-3 (tras NV-2 y DX-2).
