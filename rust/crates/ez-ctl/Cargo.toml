@@ -13,6 +13,10 @@ path = "src/lib.rs"
 name = "ez"
 path = "src/bin/ez.rs"
 
+[[example]]
+name = "e2e_delegate"
+path = "examples/e2e_delegate.rs"
+
 [dependencies]
 ez-core = { path = "../ez-core" }
 ez-herdr = { path = "../ez-herdr" }
