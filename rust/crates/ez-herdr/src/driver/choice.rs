@@ -6,6 +6,7 @@
 
 use ez_core::pyvalue::truthy;
 
+use super::launch::{agent_command, match_mcode_model, resolve_codex};
 use super::*;
 
 /// Tipo, modelo y esfuerzo ya validados para delegar en un subagente.
@@ -53,16 +54,15 @@ impl<H: SessionHost> AgentDriver<H> {
         }
 
         let mut warnings = Vec::new();
-        if let Some(requested) = model {
-            self.check_model(&profile, &label, requested, &mut warnings)?;
-        }
-        let codex = if discover(&profile, "codex") {
-            self.check_codex(&label, model, &mut warnings)?
+        if discover(&profile, "codex") {
+            self.check_codex(&label, model, effort, &mut warnings)?;
         } else {
-            None
-        };
-        if let Some(requested) = effort {
-            self.check_effort(&profile, &label, model, requested, codex.as_deref())?;
+            if let Some(requested) = model {
+                self.check_model(&profile, &label, requested, &mut warnings)?;
+            }
+            if let Some(requested) = effort {
+                self.check_effort(&profile, &label, model, requested)?;
+            }
         }
         Ok(Choice {
             key,
@@ -95,12 +95,7 @@ impl<H: SessionHost> AgentDriver<H> {
         key: &str,
         profile: &Map<String, Value>,
     ) -> Result<(), String> {
-        let command = text_list(profile.get("command"));
-        let command = if command.is_empty() {
-            text_list(agents(cfg).and_then(|agents| agents.get(key)))
-        } else {
-            command
-        };
+        let command = agent_command(cfg, key, profile);
         let program = command.first().map(String::as_str).unwrap_or("");
         if program.is_empty() || !(self.hooks.which)(program) {
             return Err(format!(
@@ -118,9 +113,6 @@ impl<H: SessionHost> AgentDriver<H> {
         requested: &str,
         warnings: &mut Vec<String>,
     ) -> Result<(), String> {
-        if discover(profile, "codex") {
-            return Ok(());
-        }
         let models = text_list(profile.get("models"));
         if !models.is_empty() {
             if models.iter().any(|known| model_matches(known, requested)) {
@@ -135,10 +127,7 @@ impl<H: SessionHost> AgentDriver<H> {
             let known = (self.hooks.discover_mcode_models)();
             if known.is_empty() {
                 warnings.push(unverified(label, requested));
-            } else if !known
-                .iter()
-                .any(|reference| mcode_matches(reference, requested))
-            {
+            } else if match_mcode_model(&known, requested).is_none() {
                 return Err(format!(
                     "{label} no tiene el modelo «{requested}». Modelos: {}.",
                     known.join(", ")
@@ -152,75 +141,86 @@ impl<H: SessionHost> AgentDriver<H> {
         Ok(())
     }
 
-    /// Modelo y niveles de Codex contra su catálogo descubierto.
+    /// Modelo y esfuerzo de Codex contra su catálogo descubierto.
     fn check_codex(
         &self,
         label: &str,
         model: Option<&str>,
+        effort: Option<&str>,
         warnings: &mut Vec<String>,
-    ) -> Result<Option<Vec<String>>, String> {
+    ) -> Result<(), String> {
         let table = (self.hooks.discover_codex_models)();
         if table.is_empty() {
             if let Some(requested) = model {
                 warnings.push(unverified(label, requested));
             }
-            return Ok(None);
+            return Ok(());
         }
-        let Some(requested) = model else {
-            return Ok(Some(union_levels(&table)));
+        let mut wanted = Wanted {
+            model: model.unwrap_or("").to_string(),
+            effort: effort.unwrap_or("").to_string(),
         };
-        let slug = table
-            .keys()
-            .find(|name| name.eq_ignore_ascii_case(requested))
-            .cloned();
-        let Some(slug) = slug else {
-            let known: Vec<String> = table.keys().cloned().collect();
-            return Err(format!(
-                "Codex no tiene el modelo {}. Modelos: {}.",
-                repr_str(requested),
-                known.join(", ")
-            ));
-        };
-        Ok(Some(text_list(table.get(&slug))))
+        let problem = resolve_codex(&table, &mut wanted);
+        if problem.is_empty() {
+            Ok(())
+        } else {
+            Err(problem)
+        }
     }
 
-    /// Esfuerzo contra `efforts`, `model_efforts` y los niveles de Codex.
+    /// Esfuerzo contra `model_efforts` o contra `efforts` del perfil.
     fn check_effort(
         &self,
         profile: &Map<String, Value>,
         label: &str,
         model: Option<&str>,
         requested: &str,
-        codex: Option<&[String]>,
     ) -> Result<(), String> {
         if let Some(name) = model {
             if let Some(by_model) = profile.get("model_efforts").and_then(Value::as_object) {
                 let name = name.rsplit('/').next().unwrap_or(name);
                 let known = text_list(by_model.get(name));
                 if !known.is_empty() && !has_ignore_case(&known, requested) {
-                    return Err(format!(
-                        "El modelo {name} no tiene el esfuerzo {}. Valores válidos: {}.",
-                        repr_str(requested),
-                        known.join(", ")
-                    ));
+                    return Err(model_effort_error(name, requested, &known));
                 }
             }
-        }
-        if let Some(levels) = codex {
-            if !levels.is_empty() && !has_ignore_case(levels, requested) {
-                let suffix = model.map_or(String::new(), |name| format!(" para {name}"));
-                return Err(format!(
-                    "El esfuerzo {} no existe en Codex{suffix}. Valores válidos: {}.",
-                    repr_str(requested),
-                    levels.join(", ")
-                ));
-            }
-            return Ok(());
+        } else if let Some(by_model) = profile
+            .get("model_efforts")
+            .and_then(Value::as_object)
+            .filter(|by_model| !by_model.is_empty())
+        {
+            return self.check_effort_without_model(label, by_model, requested);
         }
         if has_effort_support(profile) {
             return Ok(());
         }
         Err(format!("{label} no tiene niveles de esfuerzo."))
+    }
+
+    /// Sin modelo, el esfuerzo se valida contra el modelo por omisión (o la unión).
+    fn check_effort_without_model(
+        &self,
+        label: &str,
+        by_model: &Map<String, Value>,
+        requested: &str,
+    ) -> Result<(), String> {
+        let default = (self.hooks.opencode_default_model)();
+        let name = default.rsplit('/').next().unwrap_or(&default);
+        let known = text_list(by_model.get(name));
+        if !known.is_empty() {
+            if !has_ignore_case(&known, requested) {
+                return Err(model_effort_error(name, requested, &known));
+            }
+            return Ok(());
+        }
+        let union = union_efforts(by_model);
+        if !has_ignore_case(&union, requested) {
+            return Err(format!(
+                "{label} no tiene el esfuerzo «{requested}». Valores válidos: {}.",
+                union.join(", ")
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -233,9 +233,10 @@ fn label_of(profile: &Map<String, Value>, key: &str) -> String {
         .unwrap_or_else(|| key.to_string())
 }
 
-// DECISION: la validación no reutiliza `match_mcode_model`/`resolve_codex` de
-// `launch.rs` porque ese archivo queda fuera del alcance de HD-3 y esas rutas
-// escriben configuración; aquí solo se lee el catálogo inyectado por hooks.
+// DECISION: `match_mcode_model` y `resolve_codex` son funciones puras de
+// `launch.rs` (solo comparan con el catálogo ya leído); se reutilizan como
+// `pub(crate)` para que validación y lanzamiento no diverjan. Aquí no se llama
+// a las rutas que escriben (`set_mcode_effort`, `prepare_opencode_state`).
 
 /// Modelo con o sin prefijo (`opencode-go/m`) o `proveedor/m`.
 fn model_matches(known: &str, requested: &str) -> bool {
@@ -245,18 +246,19 @@ fn model_matches(known: &str, requested: &str) -> bool {
     known == requested || known == tail
 }
 
-/// Ref completo de mcode o lo que va tras su primera barra.
-fn mcode_matches(reference: &str, requested: &str) -> bool {
-    let reference = reference.to_lowercase();
-    let requested = requested.to_lowercase();
-    let tail = reference.split_once('/').map_or("", |(_, rest)| rest);
-    requested == reference || requested == tail
+/// Error de esfuerzo fuera de los niveles de un modelo.
+fn model_effort_error(name: &str, requested: &str, known: &[String]) -> String {
+    format!(
+        "El modelo {name} no tiene el esfuerzo {}. Valores válidos: {}.",
+        repr_str(requested),
+        known.join(", ")
+    )
 }
 
-/// Niveles de todos los modelos de Codex, sin repetir y en orden.
-fn union_levels(table: &Map<String, Value>) -> Vec<String> {
+/// Niveles de todos los modelos de `model_efforts`, sin repetir y en orden.
+fn union_efforts(by_model: &Map<String, Value>) -> Vec<String> {
     let mut levels: Vec<String> = Vec::new();
-    for value in table.values() {
+    for value in by_model.values() {
         for level in text_list(Some(value)) {
             if !levels.contains(&level) {
                 levels.push(level);
