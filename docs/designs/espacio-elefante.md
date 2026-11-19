@@ -615,3 +615,19 @@ El enum `Role` desaparece; los cinco papeles incluidos quedan como constantes de
 4. **ECO-6c:** runtime de la ventana con varios elefantes, worktrees, `ez roles` y
    delegación; **ECO-6b** (rehecho): la ventana de 15.6.
 5. **ECO-8:** punta a punta con agentes falsos y hc real.
+
+### 15.9 Nombres (pedido de la persona)
+«Elefante» y «pez dorado» son la **referencia** de la metodología, no nombres del producto.
+- Todo lo que lee una persona o un agente usa **«agente principal»** y **«subagente»**:
+  la vista («Agente principal · {agente}», pestaña «Subagentes», «+ Agente principal»),
+  tarjetas, traza, mensajes de `ez`, el manual (`ez --skill`: «Manual del agente
+  principal»), las plantillas de papeles («Eres un subagente de EzAgent…») y las primeras
+  líneas:
+  - subagente: `Eres un subagente de EzAgent con el papel {papel}. Lee {instrucciones} y síguelo al pie de la letra.`
+  - principal: `Eres el agente principal de este espacio de EzAgent. Ejecuta ez --skill y sigue ese manual; luego espera el pedido de la persona.`
+- Comando `ez fish` → **`ez delegate <papel> --brief <md>`** (protocolo `agent.delegate`);
+  `EZ_ROLE` vale `main` o `sub`. Los demás comandos no cambian.
+- Los identificadores internos de Rust (`Elephant…`, `Fish…`) y este documento pueden
+  seguir usando la referencia; no se muestran.
+- Lo aplica ECO-R1 junto con el contrato 15.7 (el elefante entrega el manual y las
+  plantillas ya reescritos).
