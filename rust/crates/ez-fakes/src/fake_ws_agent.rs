@@ -5,6 +5,7 @@
 //! entrega su informe con `ez report`) o la del agente principal (ejecuta un
 //! guion de comandos `ez`). No necesita modelos de lenguaje.
 
+mod echo;
 mod instructions;
 mod process;
 mod report;
@@ -14,18 +15,22 @@ mod state;
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
+pub use echo::Echo;
+
 /// Uso del binario `fake-ws-agent`.
-pub const USAGE: &str = "\
+pub const USAGE: &str = "
 fake-ws-agent: agente falso de EzAgent sobre una terminal de hc.
 
 Uso:
   fake-ws-agent --exec
   fake-ws-agent --verify
   fake-ws-agent --main RUTA_GUION
+  fake-ws-agent --echo CARPETA [argumentos libres…]
 
   --exec    subagente ejecutor: escribe fake/<id>.txt y entrega su informe.
   --verify  subagente verificador: entrega su informe sin tocar el proyecto.
   --main    agente principal: sigue el guion TOML de comandos `ez`.
+  --echo    anota argv, entorno y lo que recibe en CARPETA/<id>.json.
 ";
 
 /// Modo de operación del agente falso.
@@ -37,6 +42,8 @@ pub enum Mode {
     Verifier,
     /// Agente principal con un guion TOML.
     Main(PathBuf),
+    /// Agente que solo anota lo que recibe (prueba de punta a punta).
+    Echo(Echo),
 }
 
 /// Argumentos ya validados del binario.
@@ -48,6 +55,12 @@ pub struct Args {
 
 /// Analiza los argumentos de línea de comandos.
 pub fn parse(args: &[String]) -> Result<Args, String> {
+    // DECISION: `--echo` se reconoce el primero: sus argumentos libres son
+    // los flags del tipo de agente y no deben takers como un modo nuevo.
+    if args.first().map(String::as_str) == Some("--echo") {
+        let mode = Mode::Echo(echo::parse(args.get(1..).unwrap_or(&[]))?);
+        return Ok(Args { mode });
+    }
     let mut mode = None;
     let mut index = 0;
     while index < args.len() {
@@ -73,6 +86,9 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
 /// Ningún candado de E/S queda tomado mientras se ejecuta un subproceso.
 pub fn run(args: &[String]) -> Result<(), String> {
     let parsed = parse(args)?;
+    if let Mode::Echo(echo) = &parsed.mode {
+        return echo::run(echo);
+    }
     announce("idle")?;
     prompt()?;
     while let Some(line) = next_line()? {
@@ -154,11 +170,31 @@ mod tests {
     }
 
     #[test]
+    fn el_modo_eco_acepta_argumentos_libres() {
+        let mode = parse(&[
+            "--echo".into(),
+            "registros".into(),
+            "--model".into(),
+            "x".into(),
+        ])
+        .unwrap()
+        .mode;
+        assert_eq!(
+            mode,
+            Mode::Echo(Echo {
+                folder: PathBuf::from("registros"),
+                extra: vec!["--model".to_string(), "x".to_string()],
+            })
+        );
+    }
+
+    #[test]
     fn rejects_bad_arguments() {
         assert!(parse(&[]).is_err());
         assert!(parse(&["--exec".into(), "--verify".into()]).is_err());
         assert!(parse(&["--main".into()]).is_err());
         assert!(parse(&["--otro".into()]).is_err());
+        assert!(parse(&["--echo".into()]).is_err());
     }
 
     #[test]

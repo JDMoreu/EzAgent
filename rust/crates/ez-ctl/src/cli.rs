@@ -4,19 +4,24 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use crate::client::{self, ClientError};
+use crate::local::{self, LocalDelegate};
 use crate::protocol::{Reply, Request};
 
 /// Manual del agente principal. Es un contrato: no se edita.
 pub const SKILL: &str = include_str!("skill.md");
 
-const MISSING_ENV: &str =
+/// El texto cuando falta el entorno del árbitro.
+pub(crate) const MISSING_ENV: &str =
     "Este comando solo funciona dentro de una terminal abierta por EzAgent (faltan EZ_URL y EZ_TOKEN).";
 const DEFAULT_WAIT_SECONDS: u64 = 170;
 
-const USAGE: &str = "\
+/// Opciones que no llevan valor.
+const FLAG_OPTIONS: [&str; 3] = ["no-notify", "outlive-parent", "hc-notes"];
+
+const USAGE: &str = "
 ez — comando del espacio de trabajo de EzAgent
 
 Uso:
@@ -39,30 +44,49 @@ Uso:
   ez report --verdict pass|fail --file MD --blocking N --major N --minor N
             [--mutations-tried N] [--mutations-caught N]
 
+Modo local (Herdr, sin EZ_URL ni EZ_TOKEN):
+  ez delegate <papel> --agent <tipo> [--model <modelo>] [--effort <nivel>]
+               --brief <archivo> [--name <nombre>] [--show tree|tab|right|down]
+               [--cwd <carpeta>] [--no-notify] [--outlive-parent] [--json]
+
 Opciones generales:
-  --json    Imprime la respuesta completa del árbitro como JSON (cualquier comando)
+  --json    Imprime la respuesta completa como JSON (cualquier comando)
 
 Códigos de salida: 0 bien, 1 rechazado, 2 uso incorrecto, 3 sin conexión.
 ";
 
-enum CliError {
+/// Por qué el comando no puede seguir.
+pub(crate) enum CliError {
     /// Mensaje para la persona; se acompaña del uso.
     Usage(String),
     /// Archivo que no existe, ya resuelto contra la carpeta actual.
     MissingFile(PathBuf),
+    /// Falta el entorno del árbitro (código 3).
+    NoEnv,
 }
 
-struct Parsed {
+/// Lo que hace el comando: hablar con el árbitro o delegar en Herdr.
+enum Command {
+    /// Una orden para el árbitro (la de siempre).
+    Arbiter(Request),
+    /// Una delegación en el modo local (Herdr).
+    Local(LocalDelegate),
+}
+
+/// Los argumentos de la línea de comandos, ya analizados.
+pub(crate) struct Parsed {
     words: Vec<String>,
     options: Vec<(String, String)>,
+    flags: Vec<String>,
     json: bool,
 }
 
 impl Parsed {
-    fn parse(args: &[String]) -> Result<Parsed, String> {
+    pub(crate) fn parse(args: &[String]) -> Result<Parsed, String> {
         let mut parsed = Parsed {
             words: Vec::new(),
             options: Vec::new(),
+            flags: Vec::new(),
             json: false,
         };
         let mut index = 0;
@@ -74,6 +98,13 @@ impl Parsed {
                 continue;
             }
             if let Some(name) = arg.strip_prefix("--") {
+                // DECISION: `--no-notify` y compañía no llevan valor; sin esto
+                // el análisis genérico se comería la opción siguiente.
+                if FLAG_OPTIONS.contains(&name) {
+                    parsed.flags.push(name.to_string());
+                    index += 1;
+                    continue;
+                }
                 let value = args.get(index + 1).filter(|value| !value.starts_with("--"));
                 let Some(value) = value else {
                     return Err(format!("Falta el valor de --{name}."));
@@ -88,19 +119,28 @@ impl Parsed {
         Ok(parsed)
     }
 
-    fn word(&mut self, missing: &str) -> Result<String, CliError> {
+    pub(crate) fn word(&mut self, missing: &str) -> Result<String, CliError> {
         if self.words.is_empty() {
             return Err(CliError::Usage(missing.to_string()));
         }
         Ok(self.words.remove(0))
     }
 
-    fn take(&mut self, name: &str) -> Option<String> {
+    pub(crate) fn take(&mut self, name: &str) -> Option<String> {
         let index = self.options.iter().position(|(key, _)| key == name)?;
         Some(self.options.remove(index).1)
     }
 
-    fn required(&mut self, name: &str) -> Result<String, CliError> {
+    /// ¿Aparece la opción sin valor? (y la consume)
+    pub(crate) fn flag(&mut self, name: &str) -> bool {
+        let Some(index) = self.flags.iter().position(|flag| flag == name) else {
+            return false;
+        };
+        self.flags.remove(index);
+        true
+    }
+
+    pub(crate) fn required(&mut self, name: &str) -> Result<String, CliError> {
         self.take(name)
             .filter(|value| !value.trim().is_empty())
             .ok_or_else(|| CliError::Usage(format!("Falta --{name}.")))
@@ -122,21 +162,45 @@ impl Parsed {
             .ok_or_else(|| CliError::Usage(format!("Falta --{name}.")))
     }
 
-    fn finish(&mut self, command: &str, args: Value) -> Result<Request, CliError> {
+    /// ¿Sobró algo?
+    pub(crate) fn check_empty(&mut self) -> Result<(), CliError> {
         if let Some(word) = self.words.first() {
             return Err(CliError::Usage(format!("Argumento de más: {word}.")));
         }
         if let Some((name, _)) = self.options.first() {
             return Err(CliError::Usage(format!("Opción desconocida: --{name}.")));
         }
+        if let Some(name) = self.flags.first() {
+            return Err(CliError::Usage(format!("Opción desconocida: --{name}.")));
+        }
+        Ok(())
+    }
+
+    /// La orden para el árbitro.
+    pub(crate) fn finish_request(
+        &mut self,
+        command: &str,
+        args: Value,
+    ) -> Result<Request, CliError> {
+        self.check_empty()?;
         Ok(Request {
             command: command.to_string(),
             args,
         })
     }
+
+    fn finish(&mut self, command: &str, args: Value) -> Result<Command, CliError> {
+        let request = self.finish_request(command, args)?;
+        Ok(Command::Arbiter(request))
+    }
 }
 
-fn build(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
+fn build(
+    parsed: &mut Parsed,
+    cwd: &Path,
+    arbiter: bool,
+    partial_env: bool,
+) -> Result<Command, CliError> {
     let command = parsed.word("Falta el comando. Pasa --help para ver el uso.")?;
     match command.as_str() {
         "status" => parsed.finish("status", json!({})),
@@ -155,7 +219,10 @@ fn build(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
         "task" => build_task(parsed, cwd),
         "team" => build_team(parsed, cwd),
         "round" => build_round(parsed),
-        "delegate" => build_delegate(parsed, cwd),
+        "delegate" => match local::build_delegate(parsed, cwd, arbiter, partial_env)? {
+            local::Delegate::Arbiter(request) => Ok(Command::Arbiter(request)),
+            local::Delegate::Local(request) => Ok(Command::Local(request)),
+        },
         "roles" => parsed.finish("roles", json!({})),
         "send" => build_send(parsed, cwd),
         "report" => build_report(parsed, cwd),
@@ -163,7 +230,7 @@ fn build(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
     }
 }
 
-fn build_task(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
+fn build_task(parsed: &mut Parsed, cwd: &Path) -> Result<Command, CliError> {
     let subcommand = parsed.word("Falta el subcomando de task (new).")?;
     if subcommand != "new" {
         return Err(CliError::Usage(format!(
@@ -179,7 +246,7 @@ fn build_task(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
     )
 }
 
-fn build_team(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
+fn build_team(parsed: &mut Parsed, cwd: &Path) -> Result<Command, CliError> {
     let subcommand = parsed.word("Falta el subcomando de team (propose).")?;
     if subcommand != "propose" {
         return Err(CliError::Usage(format!(
@@ -190,7 +257,7 @@ fn build_team(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
     parsed.finish("team.propose", json!({ "file": file }))
 }
 
-fn build_round(parsed: &mut Parsed) -> Result<Request, CliError> {
+fn build_round(parsed: &mut Parsed) -> Result<Command, CliError> {
     let subcommand = parsed.word("Falta el subcomando de round (start o close).")?;
     match subcommand.as_str() {
         "start" => parsed.finish("round.start", json!({})),
@@ -201,18 +268,7 @@ fn build_round(parsed: &mut Parsed) -> Result<Request, CliError> {
     }
 }
 
-fn build_delegate(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
-    let role = parsed.word("Falta el papel del subagente.")?;
-    if role.trim().is_empty() {
-        return Err(CliError::Usage(
-            "El papel del subagente no puede estar vacío.".to_string(),
-        ));
-    }
-    let brief = existing(&parsed.required("brief")?, cwd)?;
-    parsed.finish("agent.delegate", json!({ "role": role, "brief": brief }))
-}
-
-fn build_send(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
+fn build_send(parsed: &mut Parsed, cwd: &Path) -> Result<Command, CliError> {
     let fish = parsed.word("Falta el subagente.")?;
     if fish.trim().is_empty() {
         return Err(CliError::Usage(
@@ -223,7 +279,7 @@ fn build_send(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
     parsed.finish("fish.send", json!({ "fish": fish, "file": file }))
 }
 
-fn build_report(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
+fn build_report(parsed: &mut Parsed, cwd: &Path) -> Result<Command, CliError> {
     let verdict = parsed.required("verdict")?;
     if verdict != "pass" && verdict != "fail" {
         return Err(CliError::Usage(
@@ -311,41 +367,37 @@ fn print_reply(out: &mut dyn Write, reply: &Reply, json: bool) {
     let _ = writeln!(out, "{}", reply.message);
 }
 
-/// Punto de entrada de `ez`; `argv` incluye el nombre del programa.
-///
-/// Devuelve el código de salida: 0 bien, 1 rechazado, 2 uso incorrecto, 3 sin
-/// conexión o token rechazado.
-pub fn main_with(
-    argv: &[String],
-    env: &dyn Fn(&str) -> Option<String>,
-    cwd: &Path,
+/// La delegación en Herdr: una línea legible (o el mapa con `--json`).
+fn print_delegate(out: &mut dyn Write, err: &mut dyn Write, row: &Map<String, Value>, json: bool) {
+    if json {
+        if let Ok(text) = serde_json::to_string(row) {
+            let _ = writeln!(out, "{text}");
+        }
+        return;
+    }
+    let _ = writeln!(out, "{}", local::summary(row));
+    for warning in local::warnings(row) {
+        let _ = writeln!(err, "Aviso: {warning}");
+    }
+}
+
+/// La orden va al árbitro (el modo de siempre).
+fn send_to_arbiter(
+    request: &Request,
+    url: Option<String>,
+    token: Option<String>,
+    json: bool,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> i32 {
-    let args = argv.get(1..).unwrap_or(&[]);
-    if let Some(code) = special(args, out) {
-        return code;
-    }
-    let mut parsed = match Parsed::parse(args) {
-        Ok(parsed) => parsed,
-        Err(detail) => return usage_error(err, Some(&detail)),
-    };
-    let request = match build(&mut parsed, cwd) {
-        Ok(request) => request,
-        Err(CliError::Usage(detail)) => return usage_error(err, Some(&detail)),
-        Err(CliError::MissingFile(path)) => {
-            let _ = writeln!(err, "No existe el archivo: {}", path.display());
-            return 2;
-        }
-    };
-    let (Some(url), Some(token)) = (non_empty(env("EZ_URL")), non_empty(env("EZ_TOKEN"))) else {
+    let (Some(url), Some(token)) = (url, token) else {
         let _ = writeln!(err, "{MISSING_ENV}");
         return 3;
     };
-    let timeout = Duration::from_secs(timeout_seconds(&request));
-    match client::send(&url, &token, &request, timeout) {
+    let timeout = Duration::from_secs(timeout_seconds(request));
+    match client::send(&url, &token, request, timeout) {
         Ok(reply) => {
-            print_reply(out, &reply, parsed.json);
+            print_reply(out, &reply, json);
             if reply.ok {
                 0
             } else {
@@ -368,6 +420,73 @@ pub fn main_with(
             let _ = writeln!(err, "{message}");
             1
         }
+    }
+}
+
+/// La delegación en Herdr: sin árbitro, el subagente cuelga de esta terminal.
+fn delegate_in_herdr(
+    request: &LocalDelegate,
+    env: &dyn Fn(&str) -> Option<String>,
+    json: bool,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> i32 {
+    let Some(parent) = non_empty(env("HC_TERMINAL_ID")) else {
+        let _ = writeln!(err, "{}", local::MISSING_TERMINAL);
+        return 3;
+    };
+    match local::delegate(request, &parent) {
+        Ok(row) => {
+            print_delegate(out, err, &row, json);
+            0
+        }
+        Err(error) => {
+            let _ = writeln!(err, "{}", error.message());
+            error.code()
+        }
+    }
+}
+
+/// Punto de entrada de `ez`; `argv` incluye el nombre del programa.
+///
+/// Devuelve el código de salida: 0 bien, 1 rechazado, 2 uso incorrecto, 3 sin
+/// conexión o token rechazado.
+pub fn main_with(
+    argv: &[String],
+    env: &dyn Fn(&str) -> Option<String>,
+    cwd: &Path,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> i32 {
+    let args = argv.get(1..).unwrap_or(&[]);
+    if let Some(code) = special(args, out) {
+        return code;
+    }
+    let mut parsed = match Parsed::parse(args) {
+        Ok(parsed) => parsed,
+        Err(detail) => return usage_error(err, Some(&detail)),
+    };
+    let url = non_empty(env("EZ_URL"));
+    let token = non_empty(env("EZ_TOKEN"));
+    // DECISION: el modo árbitro necesita las dos variables; con una sola, el
+    // entorno está a medias y el comando avisa (código 3).
+    let arbiter = url.is_some() && token.is_some();
+    let partial_env = url.is_some() != token.is_some();
+    let command = match build(&mut parsed, cwd, arbiter, partial_env) {
+        Ok(command) => command,
+        Err(CliError::Usage(detail)) => return usage_error(err, Some(&detail)),
+        Err(CliError::MissingFile(path)) => {
+            let _ = writeln!(err, "No existe el archivo: {}", path.display());
+            return 2;
+        }
+        Err(CliError::NoEnv) => {
+            let _ = writeln!(err, "{MISSING_ENV}");
+            return 3;
+        }
+    };
+    match command {
+        Command::Arbiter(request) => send_to_arbiter(&request, url, token, parsed.json, out, err),
+        Command::Local(request) => delegate_in_herdr(&request, env, parsed.json, out, err),
     }
 }
 

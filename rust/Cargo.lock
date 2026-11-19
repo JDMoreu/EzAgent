@@ -1108,6 +1108,8 @@ name = "ez-ctl"
 version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
+ "ez-core",
+ "ez-herdr",
  "parking_lot 0.13.0",
  "reqwest",
  "serde",
