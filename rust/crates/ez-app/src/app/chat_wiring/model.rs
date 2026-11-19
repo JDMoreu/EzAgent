@@ -47,10 +47,6 @@ impl ViewModel for HudModel {
         (version, messages)
     }
 
-    fn version(&self) -> i64 {
-        self.chat.version()
-    }
-
     fn sessions(&self) -> Vec<ViewSessionInfo> {
         self.chat
             .sessions()

@@ -166,12 +166,13 @@ fn the_viewing_notice_does_not_steal_the_input() {
 fn the_caret_blinks_with_the_focus_time() {
     let mut view = sample_view();
     let _ = view.render(0.0);
+    let input = view.input_box;
     view.focus_t0 = 10.0;
     let mut lit = Layer::new(440, 600);
-    view.draw_caret(&mut lit, 10.0);
+    view.draw_caret(&mut lit, input.x0 + 14.0, input, 0, 10.0);
     assert!(lit.as_raw().iter().any(|value| *value > 0.0));
     let mut dark = Layer::new(440, 600);
-    view.draw_caret(&mut dark, 10.5);
+    view.draw_caret(&mut dark, input.x0 + 14.0, input, 0, 10.5);
     assert!(dark.as_raw().iter().all(|value| *value == 0.0));
 }
 

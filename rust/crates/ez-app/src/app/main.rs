@@ -102,111 +102,12 @@ pub fn run_with(argv: &[String]) -> i32 {
     run_conversation(&cli, cfg)
 }
 
-/// Registro a stderr, como el `loguru` por omisión del Python, y a un
-/// archivo con rotación diaria.
-///
-/// DECISION: la app se arranca sin consola, así que el registro solo en
-/// stderr se perdía: no quedaba rastro de un congelamiento (DX-1, paso 7).
-/// Ahora también va a `%APPDATA%\EzAgent\logs\ezagent.log.<fecha>`, con
-/// rotación diaria y siete días de historia.
+/// Registro a stderr, como el `loguru` por omisión del Python.
 fn init_logging() {
-    init_logging_in(&ez_core::dirs::logs_dir());
-}
-
-/// Registro a stderr y a un archivo con rotación diaria, en la carpeta dada.
-///
-/// DECISION: la carpeta es un parámetro (y no el valor fijo) para que la
-/// prueba pueda usar una temporal y no tocar el registro de la persona
-/// (DX-1, paso 7).
-///
-/// Devuelve `false` si la carpeta no se pudo crear (entonces el registro se
-/// queda solo en stderr).
-pub fn init_logging_in(dir: &std::path::Path) -> bool {
-    if std::fs::create_dir_all(dir).is_err() {
-        let _ = tracing_subscriber::fmt()
-            .with_writer(std::io::stderr)
-            .with_ansi(false)
-            .try_init();
-        return false;
-    }
-    let appender = tracing_appender::rolling::daily(dir, "ezagent.log");
-    let (file, guard) = tracing_appender::non_blocking(appender);
-    // DECISION: el guard tiene que vivir tanto como la app: al soltarlo
-    // el archivo deja de recibir el registro.
-    std::mem::forget(guard);
     let _ = tracing_subscriber::fmt()
-        .with_writer(ConsoleAndFile { file })
+        .with_writer(std::io::stderr)
         .with_ansi(false)
         .try_init();
-    prune_logs(dir, LOG_DAYS);
-    true
-}
-
-/// Cuántos días de registro se guardan.
-const LOG_DAYS: u64 = 7;
-
-/// Escribe el registro en la consola y en el archivo.
-struct ConsoleAndFile {
-    file: tracing_appender::non_blocking::NonBlocking,
-}
-
-/// Los dos destinos, en un solo escritor.
-struct BothWriters {
-    console: std::io::Stderr,
-    file: tracing_appender::non_blocking::NonBlocking,
-}
-
-impl std::io::Write for BothWriters {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let console = self.console.write(buf);
-        let file = self.file.write(buf);
-        console.and(file)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.console.flush()?;
-        self.file.flush()
-    }
-}
-
-impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for ConsoleAndFile {
-    type Writer = BothWriters;
-
-    fn make_writer(&'a self) -> Self::Writer {
-        BothWriters {
-            console: std::io::stderr(),
-            file: self.file.clone(),
-        }
-    }
-}
-
-/// Borra los registros con más de `days` días.
-///
-/// DECISION: solo se borran los archivos que el propio registro crea (los
-/// que empiezan por `ezagent.log`); nada más de la carpeta.
-pub fn prune_logs(dir: &std::path::Path, days: u64) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let cutoff = std::time::SystemTime::now()
-        .checked_sub(std::time::Duration::from_secs(days * 24 * 60 * 60))
-        .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let is_ours = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.starts_with("ezagent.log"));
-        if !is_ours {
-            continue;
-        }
-        let Ok(modified) = entry.metadata().and_then(|meta| meta.modified()) else {
-            continue;
-        };
-        if modified < cutoff {
-            let _ = std::fs::remove_file(&path);
-        }
-    }
 }
 
 /// `--write-config`, `--list-agents` y `--say`, en el orden del Python.

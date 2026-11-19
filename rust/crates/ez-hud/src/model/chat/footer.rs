@@ -25,8 +25,6 @@ pub const INPUT_LINE: f64 = 21.0;
 pub const INPUT_MAX_LINES: usize = 6;
 /// Height of the hint strip under the input box.
 pub const HINT_H: f64 = 0.0;
-/// Radius of the caret bar.
-const CARET_RADIUS: f64 = 0.8;
 /// Width taken by the mic and speaker buttons.
 pub const AUDIO_W: f64 = BTN * 2.0 + 16.0;
 
@@ -112,7 +110,7 @@ impl ChatView {
     }
 
     /// `_draw_footer`: viewing notice, confirmation, input box and tools.
-    pub(crate) fn draw_footer(&mut self, buf: &mut Layer, now: f64, footer: f64, caret: bool) {
+    pub(crate) fn draw_footer(&mut self, buf: &mut Layer, now: f64, footer: f64) {
         let mut y = self.g.height - footer;
         if self.model.viewing().is_some() {
             self.text(
@@ -146,7 +144,7 @@ impl ChatView {
             self.color("MINT")
         };
         self.stroke(buf, input, 16.0, outline, 0.7);
-        self.draw_input_text(buf, input, now, caret);
+        self.draw_input_text(buf, input, now);
         // Before the send button: the last registered zone wins.
         self.hit(input, "input", None);
         self.draw_send(buf, input);
@@ -191,7 +189,7 @@ impl ChatView {
     }
 
     /// `_draw_input_text`: hint or text lines, selection and caret.
-    fn draw_input_text(&mut self, buf: &mut Layer, input: Rect, now: f64, caret: bool) {
+    fn draw_input_text(&mut self, buf: &mut Layer, input: Rect, now: f64) {
         let x0 = input.x0 + 14.0;
         let body = body_style();
         let text = self.input.text().to_string();
@@ -229,85 +227,37 @@ impl ChatView {
                 self.text(buf, line, body, self.color("TEXT"), x0, y, Align::Left);
             }
         }
-        if caret {
-            self.draw_caret(buf, now);
-        }
-    }
-
-    /// The caret as its own little layer, to paint it over the content.
-    ///
-    /// DECISION: the patch uses the same geometry and the same colour as the
-    /// caret inside the panel, so the pixels are the same ones (DX-1, paso 4).
-    /// The origin is in physical pixels inside the content layer.
-    pub(crate) fn caret_patch(&self, now: f64) -> Option<(i32, i32, Layer)> {
-        let rect = self.caret_rect(now)?;
-        let scale = self.g.scale;
-        // The SDF of a rounded rectangle is evaluated with a margin of one and
-        // a half logical pixels: the patch has to cover all of it.
-        let x0 = ((rect.x0 - 1.5) * scale).floor() as i32;
-        let y0 = ((rect.y0 - 1.5) * scale).floor() as i32;
-        let x1 = ((rect.x1 + 1.5) * scale).ceil() as i32;
-        let y1 = ((rect.y1 + 1.5) * scale).ceil() as i32;
-        let mut patch = Layer::new((x1 - x0).max(1) as u32, (y1 - y0).max(1) as u32);
-        // The patch starts at an integer number of physical pixels, so the
-        // coverage of the SDF is the same one the panel would have computed.
-        let dx = f64::from(x0) / scale;
-        let dy = f64::from(y0) / scale;
-        canvas::fill_round_rect(
-            &mut patch,
-            Rect::new(rect.x0 - dx, rect.y0 - dy, rect.x1 - dx, rect.y1 - dy),
-            CARET_RADIUS,
-            self.color("MINT"),
-            scale,
-            1.0,
-        );
-        Some((x0, y0, patch))
+        self.draw_caret(buf, x0, input, first, now);
     }
 
     /// `_draw_caret`: blinking bar at the cursor.
-    fn draw_caret(&self, buf: &mut Layer, now: f64) {
-        let Some(rect) = self.caret_rect(now) else {
-            return;
-        };
-        canvas::fill_round_rect(
-            buf,
-            rect,
-            CARET_RADIUS,
-            self.color("MINT"),
-            self.g.scale,
-            1.0,
-        );
-    }
-
-    /// Where the caret is, in logical pixels, when its phase shows it.
-    ///
-    /// DECISION: the caret is the only part of the panel that changes twice
-    /// a second; it is painted apart from the content layer (DX-1, paso 4).
-    pub(crate) fn caret_rect(&self, now: f64) -> Option<Rect> {
-        // DECISION: Python reads `view._focus_t0` for the caret blink; F5-14
-        // keeps it private, so the phase is derived from the clock instead.
+    fn draw_caret(&self, buf: &mut Layer, x0: f64, input: Rect, first: usize, now: f64) {
         if ((now - self.focus_t0) * 2.0).trunc() as i64 % 2 != 0 {
-            return None;
+            return;
         }
         let cursor = self.input.cursor();
         let text = self.input.text();
         let lines = &self.input_lines;
-        let first = lines.len().saturating_sub(INPUT_MAX_LINES);
         let cap = cap_height(body_style(), self.g.scale)
             .expect("the chat body style is known and the font is bundled");
         for (row, &(a, b)) in lines.iter().enumerate() {
             if a <= cursor && cursor <= b {
                 if row < first {
-                    return None;
+                    return;
                 }
-                let x = self.input_box.x0
-                    + 14.0
-                    + canvas::body_length(canvas::slice(text, a, cursor), self.g.scale);
-                let base = self.baseline(self.input_box, row - first);
-                return Some(Rect::new(x, base - cap - 3.0, x + 1.6, base + 4.0));
+                let x = x0 + canvas::body_length(canvas::slice(text, a, cursor), self.g.scale);
+                let base = self.baseline(input, row - first);
+                canvas::fill_round_rect(
+                    buf,
+                    Rect::new(x, base - cap - 3.0, x + 1.6, base + 4.0),
+                    0.8,
+                    self.color("MINT"),
+                    self.g.scale,
+                    1.0,
+                );
+                return;
             }
         }
-        None
     }
 
     /// `_draw_send`: round send/stop button.

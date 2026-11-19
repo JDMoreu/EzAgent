@@ -3,7 +3,6 @@
 //! Each message is drawn once into a premultiplied tile and cached by id; the
 //! view only crops and composes it every frame.
 
-use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use ez_gfx::sdf::Layer;
@@ -37,161 +36,20 @@ pub(crate) struct Entry {
 }
 
 /// Cache key of a rich message.
-///
-/// DECISION: the key does not carry the text (DX-1, paso 3). Copying the
-/// whole history into the keys copied every message of the conversation once
-/// per frame, just to compare them. The length and a 64-bit hash of the text
-/// are enough to notice a change.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CacheKey {
-    text_len: usize,
-    text_hash: u64,
+    text: String,
     streaming: bool,
     error: bool,
-    theme_hash: u64,
+    theme: String,
     width: i64,
 }
 
-/// A cached message plus when it was laid out and when it was last used.
+/// A cached message plus when it was laid out.
 pub(crate) struct Cached {
     pub(crate) key: CacheKey,
     pub(crate) entry: Rc<Entry>,
-    /// When it was laid out (the throttle of the streaming answers).
     pub(crate) at: f64,
-    /// When it was last used (the order of the eviction).
-    pub(crate) used: f64,
-    /// Bytes of the tile.
-    pub(crate) bytes: usize,
-}
-
-/// Height of a message, cached apart from its tile.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct CachedHeight {
-    pub(crate) key: CacheKey,
-    pub(crate) height: f64,
-}
-
-/// Budget of the layout cache, in bytes of tile.
-pub(crate) const CACHE_BYTES: usize = 32 * 1024 * 1024;
-
-/// How many heights are remembered (they are tiny: 40 bytes each).
-const HEIGHT_LIMIT: usize = 20_000;
-
-/// Laid-out messages of the chat, by id.
-///
-/// DECISION: the cache has a budget in **bytes** and evicts the tile that has
-/// not been used for the longest time and is not on screen (DX-1, paso 3).
-/// The old cache had a cap of 400 entries and dropped the smallest id, which
-/// is the oldest message: with more messages than the cap, every frame laid
-/// out the whole history again (measured: 8,9 ms with 401 messages and
-/// 53 227 ms with 1 000).
-#[derive(Default)]
-pub(crate) struct LayoutCache {
-    entries: BTreeMap<i64, Cached>,
-    heights: BTreeMap<i64, CachedHeight>,
-    bytes: usize,
-    layouts: u64,
-}
-
-impl LayoutCache {
-    /// Number of tiles held.
-    #[cfg(test)]
-    pub(crate) fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    /// How many messages have been laid out since the last clear.
-    pub(crate) fn layouts(&self) -> u64 {
-        self.layouts
-    }
-
-    /// The cached message, if any.
-    pub(crate) fn get_mut(&mut self, id: i64) -> Option<&mut Cached> {
-        self.entries.get_mut(&id)
-    }
-
-    /// The height of a message, if it is known.
-    pub(crate) fn height(&self, id: i64) -> Option<CachedHeight> {
-        self.heights.get(&id).copied()
-    }
-
-    /// Remembers the tile of a message.
-    pub(crate) fn insert(&mut self, id: i64, key: CacheKey, entry: Rc<Entry>, now: f64) {
-        let bytes = tile_bytes(&entry);
-        if let Some(previous) = self.entries.insert(
-            id,
-            Cached {
-                key,
-                entry,
-                at: now,
-                used: now,
-                bytes,
-            },
-        ) {
-            self.bytes = self.bytes.saturating_sub(previous.bytes);
-        }
-        self.bytes += bytes;
-        self.layouts += 1;
-    }
-
-    /// Remembers the height of a message.
-    pub(crate) fn insert_height(&mut self, id: i64, key: CacheKey, height: f64) {
-        if self.heights.len() >= HEIGHT_LIMIT {
-            // The oldest id is the oldest message: its height is the cheapest
-            // one to lose (it is the first a long conversation forgets).
-            if let Some(first) = self.heights.keys().next().copied() {
-                self.heights.remove(&first);
-            }
-        }
-        self.heights.insert(id, CachedHeight { key, height });
-    }
-
-    /// Forgets everything (the theme or the size changed).
-    pub(crate) fn clear(&mut self) {
-        self.entries.clear();
-        self.heights.clear();
-        self.bytes = 0;
-        self.layouts = 0;
-    }
-
-    /// Drops tiles until the cache fits in its budget.
-    ///
-    /// The victim is the tile that has not been used for the longest time and
-    /// is not on screen: the messages on screen are the ones the next frame
-    /// needs.
-    pub(crate) fn enforce_budget(&mut self, visible: &[i64]) {
-        while self.bytes > CACHE_BYTES {
-            let victim = self
-                .entries
-                .iter()
-                .filter(|(id, _)| !visible.contains(id))
-                .min_by(|(id_a, a), (id_b, b)| {
-                    a.used.total_cmp(&b.used).then_with(|| id_a.cmp(id_b))
-                })
-                .map(|(id, _)| *id);
-            let Some(victim) = victim else {
-                break;
-            };
-            if let Some(removed) = self.entries.remove(&victim) {
-                self.bytes = self.bytes.saturating_sub(removed.bytes);
-            }
-        }
-    }
-}
-
-/// Bytes of a premultiplied `f32` tile.
-fn tile_bytes(entry: &Entry) -> usize {
-    entry.image.width() as usize * entry.image.height() as usize * 16
-}
-
-/// `fnv1a`: a cheap 64-bit hash of the bytes.
-pub(crate) fn hash_of(bytes: &[u8]) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325u64;
-    for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    hash
 }
 
 /// Size, scale, theme and palette of the last `configure`.
@@ -201,7 +59,6 @@ pub(crate) struct Geometry {
     pub(crate) height: f64,
     pub(crate) scale: f64,
     pub(crate) theme: String,
-    pub(crate) theme_hash: u64,
     pub(crate) pal: ColorMap,
 }
 
@@ -212,30 +69,22 @@ impl Default for Geometry {
             height: 600.0,
             scale: 1.0,
             theme: "dark".to_string(),
-            theme_hash: hash_of(b"dark"),
             pal: ColorMap::new(),
         }
     }
 }
 
 impl ChatView {
-    /// Fingerprint of what the tile of a message depends on.
-    pub(crate) fn cache_key(&self, msg: &ChatMessage) -> CacheKey {
-        CacheKey {
-            text_len: msg.text.len(),
-            text_hash: hash_of(msg.text.as_bytes()),
-            streaming: msg.streaming,
-            error: msg.error,
-            theme_hash: self.g.theme_hash,
-            width: canvas::px(self.g.width),
-        }
-    }
-
     /// Key of a message in the layout cache.
     pub(crate) fn entry(&mut self, msg: &ChatMessage, now: f64) -> Rc<Entry> {
-        let key = self.cache_key(msg);
-        if let Some(cached) = self.cache.get_mut(msg.id) {
-            cached.used = now;
+        let key = CacheKey {
+            text: msg.text.clone(),
+            streaming: msg.streaming,
+            error: msg.error,
+            theme: self.g.theme.clone(),
+            width: canvas::px(self.g.width),
+        };
+        if let Some(cached) = self.cache.get(&msg.id) {
             // DECISION: the first text and final answer bypass batching;
             // subsequent chunks are laid out at most every 50 ms to bound the
             // rich-text work.
@@ -248,27 +97,22 @@ impl ChatView {
             }
         }
         let entry = Rc::new(self.build_entry(msg));
-        self.cache.insert(msg.id, key, Rc::clone(&entry), now);
-        entry
-    }
-
-    /// Height of a message, without laying it out again when it is known.
-    ///
-    /// DECISION: the height is cached apart from the tile (DX-1, paso 3). The
-    /// total height of the conversation needs the height of every message, but
-    /// the tile is only needed for the ones on screen; without this the view
-    /// laid out the whole history in every frame.
-    pub(crate) fn height_of(&mut self, msg: &ChatMessage, now: f64) -> f64 {
-        let key = self.cache_key(msg);
-        if let Some(cached) = self.cache.height(msg.id) {
-            if cached.key == key {
-                return cached.height;
+        if self.cache.len() > 400 {
+            // DECISION: Python evicts the oldest insertion; ids grow with the
+            // conversation, so the smallest id is the closest equivalent.
+            if let Some(first) = self.cache.keys().next().copied() {
+                self.cache.remove(&first);
             }
         }
-        let entry = self.entry(msg, now);
-        let height = entry.height;
-        self.cache.insert_height(msg.id, key, height);
-        height
+        self.cache.insert(
+            msg.id,
+            Cached {
+                key,
+                entry: Rc::clone(&entry),
+                at: now,
+            },
+        );
+        entry
     }
 
     fn build_entry(&self, msg: &ChatMessage) -> Entry {

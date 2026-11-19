@@ -1,16 +1,12 @@
 //! Tests of the chat panel lifecycle, input routing and callbacks.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
 use crate::geometry::{FADE_SECS, MORPH_SECS, SCREEN_PAD};
 use crate::model::chat::view::test_support::{FakeHost, FakeInput, FakeModel};
-use crate::model::chat::view::{
-    Action, ActionData, ChatMessage, ChatModel, ConfirmCard, Role, SessionInfo,
-};
+use crate::model::chat::view::{Action, ActionData};
 use crate::win::chat::test_support::{empty_view, fake_ui, sample_view, FakeUi, Recorder};
 
 use super::anim::{clamp_to_work, duration, elapsed_for, step};
@@ -39,108 +35,6 @@ fn open_panel(view: ChatView) -> (Arc<ChatPanel>, Arc<Recorder>) {
     let window = Arc::new(ChatWindow::new(&panel, 0, 0, 120, 120));
     *panel.window.lock() = Some(Arc::clone(&window));
     (panel, recorder)
-}
-
-/// A model whose copy of the history takes its time.
-///
-/// It stands in for a real conversation: the content layer cannot be painted
-/// until the history is copied.
-struct SlowModel {
-    messages: Vec<ChatMessage>,
-    /// Set when the copy starts.
-    copying: Arc<AtomicBool>,
-    delay: Duration,
-}
-
-impl ChatModel for SlowModel {
-    fn snapshot(&self) -> (i64, Vec<ChatMessage>) {
-        self.copying.store(true, Ordering::SeqCst);
-        std::thread::sleep(self.delay);
-        (0, self.messages.clone())
-    }
-
-    fn version(&self) -> i64 {
-        0
-    }
-
-    fn sessions(&self) -> Vec<SessionInfo> {
-        Vec::new()
-    }
-
-    fn busy(&self) -> bool {
-        false
-    }
-
-    fn confirm(&self) -> Option<ConfirmCard> {
-        None
-    }
-
-    fn viewing(&self) -> Option<i64> {
-        None
-    }
-
-    fn current_session(&self) -> Option<i64> {
-        None
-    }
-
-    fn voice_replies(&self) -> bool {
-        false
-    }
-
-    fn mic_muted(&self) -> bool {
-        false
-    }
-
-    fn view_session(&mut self, _: Option<i64>) {}
-}
-
-/// Un cuadro lento no bloquea la entrada.
-///
-/// DECISION: el cuadro se pinta sin el candado del panel (DX-1, paso 5). La
-/// capa de contenido (la cara) se dibuja con la vista fuera del estado, así
-/// que la app sigue respondiendo mientras el historial se pinta.
-#[test]
-fn a_slow_frame_does_not_block_the_input() {
-    let copying = Arc::new(AtomicBool::new(false));
-    let mut view = ChatView::new(
-        Box::new(SlowModel {
-            messages: vec![ChatMessage::new(1, Role::User, "hola")],
-            copying: Arc::clone(&copying),
-            delay: Duration::from_millis(400),
-        }),
-        Box::new(FakeHost),
-        Box::new(FakeInput::default()),
-    );
-    view.configure(
-        440.0,
-        600.0,
-        1.0,
-        "dark",
-        crate::tokens::palette("dark").expect("the dark palette exists"),
-    );
-    let (panel, _recorder) = open_panel(view);
-    let painter = {
-        let panel = Arc::clone(&panel);
-        std::thread::spawn(move || {
-            let _ = panel.render();
-        })
-    };
-    // Wait until the frame is painting the content.
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while !copying.load(Ordering::SeqCst) && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    assert!(copying.load(Ordering::SeqCst), "the frame never started");
-    // The input must answer while the frame paints.
-    let start = Instant::now();
-    let consumed = panel.pointer_down(60, 60);
-    let elapsed = start.elapsed();
-    assert!(consumed);
-    assert!(
-        elapsed < Duration::from_millis(100),
-        "the input waited {elapsed:?} for the frame"
-    );
-    painter.join().expect("the painter finished");
 }
 
 #[test]

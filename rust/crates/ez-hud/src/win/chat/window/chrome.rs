@@ -9,7 +9,6 @@ use std::time::Duration;
 
 use parking_lot::{Condvar, Mutex};
 
-use crate::win::frame_stats::FrameStats;
 use crate::win::layered::{LayeredWindow, RgbaFrame, WindowEvent, WindowHooks, WindowOptions};
 use crate::win::wheel;
 
@@ -31,8 +30,6 @@ pub struct ChatWindow {
     paint_cv: Condvar,
     thread: Mutex<Option<JoinHandle<()>>>,
     events: Mutex<Option<Receiver<WindowEvent>>>,
-    /// Times of the painted frames (the summary goes to the log).
-    frame_stats: Mutex<FrameStats>,
 }
 
 impl ChatWindow {
@@ -63,7 +60,6 @@ impl ChatWindow {
             paint_cv: Condvar::new(),
             thread: Mutex::new(None),
             events: Mutex::new(events),
-            frame_stats: Mutex::new(FrameStats::new("chat")),
         }
     }
 
@@ -155,17 +151,10 @@ impl ChatWindow {
     }
 
     /// `_interval`: repaint cadence fixed by the panel each frame.
-    ///
-    /// DECISION: the cadence also reaches the layered window (DX-1, paso 8).
-    /// The window thread presents the frame and it used to do it at 60 fps
-    /// whatever the panel asked for: with the chat open that was half a core
-    /// of CPU for nothing.
     pub(crate) fn set_interval(&self, seconds: f64) {
-        let seconds = seconds.max(0.001);
         let mut state = self.paint.lock();
-        state.interval = seconds;
+        state.interval = seconds.max(0.001);
         self.paint_cv.notify_all();
-        self.window.set_interval(seconds);
     }
 
     /// Wakes the paint loop (a state change asks for a frame now, not on the
@@ -278,10 +267,6 @@ impl ChatWindow {
                     Err(_) => tracing::warn!("el render del chat falló"),
                 }
                 painted = ez_core::metrics::monotonic() - started;
-                // DECISION: el tiempo del cuadro del chat se registra (DX-1,
-                // paso 7): antes se medía y se tiraba, así que un
-                // congelamiento no dejaba rastro.
-                self.frame_stats.lock().add(painted * 1000.0);
             }
             state = self.paint.lock();
             if state.stop {

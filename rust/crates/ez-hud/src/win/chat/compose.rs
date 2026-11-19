@@ -59,14 +59,9 @@ pub struct WindowRect {
     pub height: usize,
 }
 
-/// Fingerprint of the content layer: what the painted messages depend on.
-///
-/// DECISION: the content and the animation are two different things (DX-1,
-/// paso 4). The blink of the caret and the tick of the orb used to be part of
-/// this fingerprint, so the whole history was repainted twice a second (and
-/// thirty times a second while the model was answering).
+/// Fingerprint of everything the content cache depends on (`_sig`).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ContentSig {
+pub(crate) struct Sig {
     version: i64,
     scroll_tenths: i64,
     hover: Option<String>,
@@ -78,31 +73,24 @@ pub(crate) struct ContentSig {
     pending_delete: Option<i64>,
     status: String,
     flash: (String, bool),
+    blink: i64,
+    anim_tick: i64,
     theme: String,
     width: i32,
     height: i32,
-}
-
-/// Fingerprint of the whole frame (`_sig`).
-///
-/// It is the fingerprint of the content plus what moves on top of it: the
-/// caret's phase and the size of the window.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Sig {
-    content: ContentSig,
-    blink: i64,
     window_width: usize,
     window_height: usize,
     scale_bits: u64,
 }
 
 /// `_sig`: the view state the painted content depends on.
-pub(crate) fn content_signature(view: &ChatView) -> ContentSig {
-    ContentSig {
-        // DECISION: the version is read on its own (`ChatModel::version`); with
-        // `snapshot()` the whole history was copied twice per frame just to
-        // read this number (DX-1, paso 6).
-        version: view.model.version(),
+pub(crate) fn signature(view: &mut ChatView, now: f64, ticking: bool) -> Sig {
+    let animating = ticking && view.animating(now);
+    // DECISION: Python reads `view._focus_t0` for the caret blink; F5-14 keeps
+    // it private, so the phase is derived from the clock instead.
+    let blink = if ticking { (now * 2.0) as i64 % 2 } else { 0 };
+    Sig {
+        version: view.model.snapshot().0,
         scroll_tenths: (view.scroll.offset() * 10.0).round_ties_even() as i64,
         hover: view.hover.clone(),
         input_text: view.input.text().to_string(),
@@ -113,19 +101,11 @@ pub(crate) fn content_signature(view: &ChatView) -> ContentSig {
         pending_delete: view.pending_delete(),
         status: view.status.clone(),
         flash: view.flash_token(),
+        blink,
+        anim_tick: if animating { (now * 30.0) as i64 } else { 0 },
         theme: view.g.theme.clone(),
         width: view.g.width.round_ties_even() as i32,
         height: view.g.height.round_ties_even() as i32,
-    }
-}
-
-/// The fingerprint of the whole frame: the content plus the caret's phase.
-pub(crate) fn frame_signature(view: &ChatView, now: f64) -> Sig {
-    Sig {
-        content: content_signature(view),
-        // DECISION: Python reads `view._focus_t0` for the caret blink; F5-14
-        // keeps it private, so the phase is derived from the clock instead.
-        blink: (now * 2.0) as i64 % 2,
         window_width: 0,
         window_height: 0,
         scale_bits: 0,
@@ -208,19 +188,7 @@ fn byte_scale() -> &'static [f32; 256] {
 
 /// Fingerprint and pixels of the cached content layer (`_cache` in Python).
 #[derive(Default)]
-pub struct ContentCache(Option<(ContentSig, ez_gfx::sdf::Layer)>);
-
-impl ContentCache {
-    /// Whether the cached layer is the one of this signature.
-    pub(crate) fn matches(&self, sig: &ContentSig) -> bool {
-        self.0.as_ref().is_some_and(|(cached, _)| cached == sig)
-    }
-
-    /// Stores the layer of a signature.
-    pub(crate) fn store(&mut self, sig: ContentSig, layer: ez_gfx::sdf::Layer) {
-        self.0 = Some((sig, layer));
-    }
-}
+pub struct ContentCache(Option<(Sig, ez_gfx::sdf::Layer)>);
 
 /// Scratch canvas borrowed from the thread pool.
 ///
@@ -327,6 +295,7 @@ pub(crate) fn compose(
             &mask,
             lift,
             content,
+            scene.anim == AnimState::Open,
             scene.anim == AnimState::Closing,
         );
         if live {
@@ -379,7 +348,7 @@ pub(crate) fn stable(
     content: &mut ContentCache,
     window: WindowRect,
 ) -> Frame {
-    let mut key = frame_signature(scene.view, scene.now);
+    let mut key = signature(scene.view, scene.now, true);
     key.window_width = window.width;
     key.window_height = window.height;
     key.scale_bits = scene.ui.scale().to_bits();
@@ -443,15 +412,16 @@ fn paint_content(
     mask: &[f32],
     lift: i32,
     content: &mut ContentCache,
+    ticking: bool,
     reuse: bool,
 ) {
-    let sig = content_signature(scene.view);
+    let sig = signature(scene.view, scene.now, ticking);
     // Al cerrar, la capa de contenido es la que dejó el panel abierto (solo
     // cambia la geometría): recalcularla con un historial largo costaba más que
     // los 0,20 s del cierre y se comía todos sus cuadros intermedios.
     let miss = content.0.as_ref().is_none_or(|(cached, _)| cached != &sig);
     if miss && !(reuse && content.0.is_some()) {
-        content.0 = Some((sig, scene.view.render_content(scene.now, false)));
+        content.0 = Some((sig, scene.view.render(scene.now)));
     }
     let layer = match content.0.as_ref() {
         Some((_, layer)) => layer,
@@ -473,15 +443,6 @@ fn paint_content(
     }
     let raw = layer.as_raw();
     let stride = layer.width() as usize;
-    // El cursor se pinta aparte: es lo unico que cambia dos veces por segundo
-    // y no puede invalidar la capa de contenido (DX-1, paso 4).
-    let caret = scene.view.caret_patch(scene.now);
-    let skip = caret.as_ref().map(|(cx, cy, patch)| raster::Skip {
-        x0: (*cx).max(0) as usize,
-        y0: (*cy).max(0) as usize,
-        x1: (*cx).max(0) as usize + patch.width() as usize,
-        y1: (*cy).max(0) as usize + patch.height() as usize,
-    });
     composite_masked(
         canvas,
         raw,
@@ -492,24 +453,7 @@ fn paint_content(
         rows,
         x0,
         y0 + lift,
-        skip,
     );
-    if let Some((cx, cy, patch)) = caret {
-        raster::composite_caret(
-            canvas,
-            raw,
-            stride,
-            patch.as_raw(),
-            patch.width() as usize,
-            patch.height() as usize,
-            cx.max(0) as usize,
-            cy.max(0) as usize,
-            &coverage,
-            mask,
-            x0,
-            y0 + lift,
-        );
-    }
 }
 
 /// `_live_layers`: premultiplied `(x, y, RGBA)` layers of the orb and status line.

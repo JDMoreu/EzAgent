@@ -100,7 +100,7 @@ impl LayeredWindow {
             let now = super::super::monotonic_seconds();
             super::super::keyboard::restore_focus_if_due(self, now);
             self.sync_native();
-            let interval = self.interval();
+            let interval = self.interval;
             let (visible, dirty, dragging, last_paint) = {
                 let state = self.state.lock();
                 (
