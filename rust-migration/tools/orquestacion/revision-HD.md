@@ -216,3 +216,11 @@
   stderr → falla `un_nombre_ocupado_por_stderr_tambien_se_reconoce`. Bien.
 - Cosmético (no bloquea): en «está bajo su padre» el detalle dice «no está en sub_agents»
   aunque la comprobación pasa; es el texto del ejemplo.
+
+### Incidente: el supervisor nuevo mataba trabajadores sanos (19-nov ~13:30)
+- IR-1 «falló tras 8 intentos»: cada intento se cortaba a los 2-3 min. Causa comprobada por el
+  elefante: `python` en Windows imprime `\r\n` → `terminal_state` = `"live\r"` → «desconocido»
+  → a los 2 min siguiente intento y `free_name` mata la terminal viva. Afectó a IR-1 (DeepSeek
+  gastado en 8 arranques cortados) y habría afectado a NV-1 (su supervisor se detuvo a tiempo).
+- Medidas: supervisor nuevo fuera de uso; IR-1 (último intento, vivo) y NV-1 sigue con un
+  vigilante simple que no mata nada; HD-0d (mcode) lo corrige.
