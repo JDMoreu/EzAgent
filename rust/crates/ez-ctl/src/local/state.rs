@@ -434,17 +434,32 @@ fn run_tasks(
         );
         return 3;
     };
-    let records = match context.registry.list(&parent) {
-        Ok(records) => records,
+    let outcome = match context.registry.list_lenient(&parent) {
+        Ok(outcome) => outcome,
         Err(error) => {
             let _ = writeln!(err, "{error}");
             return 1;
         }
     };
-    if json {
-        print_json(out, &records);
+    // DECISION: sin archivos ilegibles se mantiene la lista de siempre para no
+    // romper a quien ya consume `--json`; con ellos se añade `invalid`.
+    if json && !outcome.invalid.is_empty() {
+        print_json(
+            out,
+            &serde_json::json!({"tasks": outcome.records, "invalid": outcome.invalid}),
+        );
+    } else if json {
+        print_json(out, &outcome.records);
     } else {
-        print_table(out, &records);
+        print_table(out, &outcome.records);
+        for invalid in &outcome.invalid {
+            let _ = writeln!(
+                out,
+                "registro ilegible: {}: {}",
+                invalid.path.display(),
+                invalid.error
+            );
+        }
     }
     0
 }

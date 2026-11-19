@@ -378,6 +378,47 @@ fn el_vigilante_usa_la_etiqueta_del_padre_para_preguntar_a_hc() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+#[test]
+fn un_registro_ilegible_no_tapa_a_los_demas_y_se_avisa_una_vez() {
+    let root = temp_root("ilegible");
+    let registry = Registry::at(&root);
+    registry
+        .create(&record("dev1-opencode", "t12"))
+        .expect("registro");
+    registry
+        .transition(
+            "t6h",
+            "dev1-opencode",
+            TaskState::Done,
+            "t12",
+            "el subagente terminó",
+            |_| {},
+        )
+        .expect("cambio");
+    let broken = root.join("t6h").join("ir-1.json");
+    std::fs::write(&broken, r#"{"validation": null, "roto": "#).expect("archivo roto");
+    let fake = Fake::new()
+        .with_ls(r#"{"terminals":[{"address":"t12","state":"live"}]}"#)
+        .with_get(r#"{"address":"t6h","state":"live"}"#);
+    let mut watcher = make_watcher(&fake, Registry::at(&root));
+
+    let tick = watcher.tick();
+    assert_eq!(tick.notified, vec!["dev1-opencode".to_string()]);
+    let sent = fake.sent();
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    assert!(sent.iter().any(|text| text.contains("terminó")), "{sent:?}");
+    assert!(
+        sent.iter()
+            .any(|text| text.contains("Registro ilegible:") && text.contains("ir-1.json")),
+        "{sent:?}"
+    );
+
+    watcher.tick();
+    assert_eq!(fake.sent().len(), 2, "el ilegible no se avisa dos veces");
+    assert!(broken.exists(), "el archivo ilegible no se borra");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 // ------------------------------------------------------------- arranque del vigilante
 
 /// La preparación del vigilante de un padre.

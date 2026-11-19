@@ -6,6 +6,8 @@
 //! el historial de cambios. Los textos que lee una persona están en español
 //! neutro y los escribe el código, nunca un agente.
 
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 mod registry;
@@ -120,9 +122,50 @@ pub struct Record {
     pub history: Vec<Change>,
     pub summary: Option<String>,
     pub report: Option<String>,
+    /// `null` o un objeto con todos sus campos en `null` es «sin validar».
+    #[serde(default, deserialize_with = "validation_from_json")]
     pub validation: Option<Validation>,
     /// Último estado del que se avisó al padre.
     pub notified: Option<TaskState>,
+}
+
+/// Un archivo del registro que no se pudo leer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct InvalidRecord {
+    /// La ruta del archivo.
+    pub path: PathBuf,
+    /// El motivo, sin la ruta (que ya está aparte).
+    pub error: String,
+}
+
+/// Lo que se pudo leer de la carpeta de un padre: los válidos y los ilegibles,
+/// para que un archivo dañado no oculte a los demás (§13).
+#[derive(Debug, Clone, Default)]
+pub struct ListOutcome {
+    /// Los registros legibles.
+    pub records: Vec<Record>,
+    /// Los archivos que no se pudieron leer.
+    pub invalid: Vec<InvalidRecord>,
+}
+
+/// Acepta el objeto `validation` que escribe el supervisor con todos sus
+/// campos en `null` como si no hubiera validación.
+fn validation_from_json<'de, D>(deserializer: D) -> Result<Option<Validation>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    match value {
+        None => Ok(None),
+        Some(serde_json::Value::Object(fields))
+            if fields.values().all(serde_json::Value::is_null) =>
+        {
+            Ok(None)
+        }
+        Some(value) => serde_json::from_value(value)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
 }
 
 /// Fallo al leer, escribir o validar el registro de subagentes.

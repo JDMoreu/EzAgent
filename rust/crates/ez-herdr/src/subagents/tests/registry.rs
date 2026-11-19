@@ -571,3 +571,71 @@ fn create_rejects_terminal_initial_states() {
         );
     }
 }
+
+#[test]
+fn a_validation_object_with_every_field_null_is_no_validation() {
+    let tmp = TempRoot::new();
+    let registry = Registry::at(tmp.path());
+    registry
+        .create(&rec("nv-1", "t6h", "t12", TaskState::Failed))
+        .expect("crear");
+    let folder = tmp.path().join("t6h");
+    // La forma exacta que escribe el supervisor de la orquestación.
+    std::fs::write(
+        folder.join("ir-1.json"),
+        r#"{
+  "name": "ir-1",
+  "terminal": "t18p",
+  "parent": "t6h",
+  "agent": "opencode",
+  "label": "OpenCode",
+  "model": "opencode/hy4-flash-free",
+  "effort": "",
+  "role": "developer",
+  "cwd": "C:/work",
+  "brief_head": "encargo",
+  "state": "fallido",
+  "since_ms": 1,
+  "summary": "",
+  "report": "",
+  "validation": {"by": null, "verdict": null, "summary": null, "file": null, "at_ms": null},
+  "notified": "fallido",
+  "history": []
+}"#,
+    )
+    .expect("escribir ir-1.json");
+
+    let outcome = registry.list_lenient("t6h").expect("listar tolerante");
+    assert!(outcome.invalid.is_empty(), "{:?}", outcome.invalid);
+    assert_eq!(registry.list("t6h").expect("listar estricta").len(), 2);
+    let ir = outcome
+        .records
+        .iter()
+        .find(|record| record.name == "ir-1")
+        .expect("ir-1");
+    assert_eq!(ir.validation, None);
+    assert_eq!(ir.state, TaskState::Failed);
+}
+
+#[test]
+fn a_broken_file_is_listed_apart_and_never_blocks_the_others() {
+    let tmp = TempRoot::new();
+    let registry = Registry::at(tmp.path());
+    registry
+        .create(&rec("dev1-opencode", "t6h", "t12", TaskState::InProgress))
+        .expect("crear");
+    let broken = tmp.path().join("t6h").join("roto.json");
+    std::fs::write(&broken, "{\"name\": \"roto\"").expect("escribir roto");
+
+    let outcome = registry.list_lenient("t6h").expect("listar tolerante");
+    assert_eq!(outcome.records.len(), 1);
+    assert_eq!(outcome.records[0].name, "dev1-opencode");
+    assert_eq!(outcome.invalid.len(), 1);
+    assert_eq!(outcome.invalid[0].path, broken);
+    assert!(!outcome.invalid[0].error.is_empty());
+
+    let error = registry.list("t6h").expect_err("la estricta falla");
+    assert!(matches!(error, RegistryError::Invalid(_)));
+    assert!(error.to_string().contains("roto.json"), "{error}");
+    assert!(broken.exists(), "el archivo ilegible no se borra");
+}
