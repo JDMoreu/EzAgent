@@ -189,7 +189,9 @@ fn launch_request(
     }
 }
 
-/// Raíz: primer miembro en orden de trabajo con dirección que no sea el que se lanza (§9).
+/// Raíz: primer miembro en orden de trabajo, tenga o no dirección (§9).
+/// Quien se lanza, si es la raíz, no cuelga de nadie; los demás cuelgan de la
+/// dirección de la raíz o, si aún no la tiene, se abren sin padre.
 fn root_address(context: &LaunchContext, info: &SwarmInfo, member: &Member) -> Option<String> {
     let members = match context.service.store.members(&info.id) {
         Ok(members) => members,
@@ -203,10 +205,11 @@ fn root_address(context: &LaunchContext, info: &SwarmInfo, member: &Member) -> O
             return None;
         }
     };
-    members
-        .into_iter()
-        .find(|other| other.name != member.name && !other.address.is_empty())
-        .map(|other| other.address)
+    let root = members.first()?;
+    if root.name == member.name {
+        return None;
+    }
+    (!root.address.is_empty()).then(|| root.address.clone())
 }
 
 /// Etiquetas del contrato (§3) para un miembro hijo de la raíz.

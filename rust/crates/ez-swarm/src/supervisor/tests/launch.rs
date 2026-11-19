@@ -118,6 +118,34 @@ fn two_member_swarm(fixture: &super::Fixture) -> String {
         .0
 }
 
+/// Tres miembros: la raíz (ana) abre primero, luego bo y cy.
+fn three_member_swarm(fixture: &super::Fixture) -> String {
+    let specs = [
+        MemberSpec::new("ana", "plan", "claude"),
+        MemberSpec {
+            name: "bo".to_string(),
+            role: "dev".to_string(),
+            agent: "claude".to_string(),
+            task: "Portar".to_string(),
+            parallel: true,
+            ..MemberSpec::default()
+        },
+        MemberSpec {
+            name: "cy".to_string(),
+            role: "qa".to_string(),
+            agent: "claude".to_string(),
+            task: "Probar".to_string(),
+            parallel: true,
+            ..MemberSpec::default()
+        },
+    ];
+    fixture
+        .service
+        .start("Migrar", &specs, "", None)
+        .unwrap_or_else(|error| panic!("{error}"))
+        .0
+}
+
 #[test]
 fn the_first_member_is_launched_without_a_parent() {
     let fixture = fixture();
@@ -236,4 +264,79 @@ fn a_reopened_non_root_member_hangs_from_the_root() {
         .unwrap_or_else(|error| error.into_inner())
         .clone();
     assert_eq!(launched[0].2.parent.as_deref(), Some("t1"));
+}
+
+/// Reabrir al primer miembro (la raíz) no debe invertir el árbol: sigue sin padre.
+/// Mata la mutación «la raíz puede ser el propio miembro»: si al buscar la raíz
+/// se excluyera a ana, colgaría de la dirección de bo (t2).
+#[test]
+fn reopening_the_root_leaves_it_without_a_parent() {
+    let fixture = fixture();
+    let swarm = two_member_swarm(&fixture);
+    for (name, address) in [("ana", "t1"), ("bo", "t2")] {
+        fixture
+            .service
+            .store
+            .set_address(&swarm, name, address)
+            .unwrap_or_else(|error| panic!("{error}"));
+    }
+    let incident = fixture
+        .service
+        .store
+        .open_incident(&swarm, "ana", "error", "detalle", 0.0)
+        .unwrap_or_else(|error| panic!("{error}"))
+        .0;
+    fixture
+        .supervisor
+        .recovery
+        .resolve(incident.id, "reopen", "", "", "")
+        .unwrap_or_else(|error| panic!("{error}"));
+    fixture
+        .supervisor
+        .tick()
+        .unwrap_or_else(|error| panic!("{error}"));
+    wait_for(|| fixture.host.launched_count() == 1);
+    let launched = fixture
+        .host
+        .launched
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone();
+    assert_eq!(launched[0].2.name, "ana · enjambre");
+    assert_eq!(launched[0].2.parent, None);
+    assert!(launched[0].2.labels.is_empty());
+    assert_eq!(launched[0].2.show, Placement::Tree);
+    assert!(!launched[0].2.outlive_parent);
+}
+
+/// Con la raíz aún sin dirección, el tercer miembro no cuelga del segundo.
+#[test]
+fn a_third_member_does_not_hang_from_the_second_when_the_root_has_no_address() {
+    let fixture = fixture();
+    let swarm = three_member_swarm(&fixture);
+    fixture
+        .service
+        .store
+        .set_address(&swarm, "bo", "t2")
+        .unwrap_or_else(|error| panic!("{error}"));
+    // ana (raíz) no abrió todavía: se marca gone para que solo se lance cy.
+    fixture
+        .service
+        .store
+        .set_member_state(&swarm, "ana", "gone")
+        .unwrap_or_else(|error| panic!("{error}"));
+    fixture
+        .supervisor
+        .tick()
+        .unwrap_or_else(|error| panic!("{error}"));
+    wait_for(|| fixture.host.launched_count() == 1);
+    let launched = fixture
+        .host
+        .launched
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone();
+    assert_eq!(launched[0].2.name, "cy · enjambre");
+    // Con la regla vieja, cy colgaba de bo (t2).
+    assert_eq!(launched[0].2.parent, None);
 }
