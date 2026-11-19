@@ -243,6 +243,46 @@ button.primary {
   gap: 6px;
 }
 
+/* Nota de voz: punto rojo y medidor de nivel mientras se graba. */
+.voice-meter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+}
+
+.voice-meter[hidden] {
+  display: none;
+}
+
+.voice-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--bad);
+  box-shadow: 0 0 6px var(--bad);
+}
+
+.voice-level {
+  width: 90px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+#voice-level-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+}
+
+#btn-voice.recording {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
 /* Derecha: peces y traza */
 .tab-bar {
   display: flex;

@@ -29,6 +29,19 @@ pub const CARD_ACTION_INVALID: &str = "La acción de la tarjeta debe ser approve
 pub const CARD_COMMENT_REQUIRED: &str = "Para rechazar, escribe un comentario para el elefante.";
 pub const SPACES_FILE: &str = "No pude guardar los espacios.";
 
+// Nota de voz (ECO-7): textos de la línea de estado de la barra.
+pub const VOICE_NO_MICROPHONE: &str = "No encontré un micrófono.";
+pub const VOICE_EMPTY: &str = "No escuché nada.";
+pub const VOICE_BUSY: &str = "La nota de voz ya está en curso.";
+pub const VOICE_NOT_RECORDING: &str = "No hay una grabación en curso.";
+pub const VOICE_STT_FAILED: &str = "No pude iniciar la transcripción.";
+pub const VOICE_ALREADY_STARTED: &str = "La grabación ya estaba empezada.";
+
+/// «No pude transcribir: {motivo}»
+pub fn voice_transcribe_failed(reason: &str) -> String {
+    format!("No pude transcribir: {reason}")
+}
+
 /// «No encontré «{programa}» en PATH.»
 pub fn program_not_found(program: &str) -> String {
     format!("No encontré «{program}» en PATH.")

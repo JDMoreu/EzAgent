@@ -14,6 +14,7 @@ pub mod pty;
 pub mod selfcheck;
 pub mod space;
 pub mod texts;
+pub mod voicenote;
 
 #[cfg(test)]
 mod testutil;
@@ -55,6 +56,9 @@ pub fn run(demo: bool, selfcheck: Option<PathBuf>) -> tauri::Result<()> {
             commands::elephant_input,
             commands::hub_state,
             commands::card_action,
+            commands::voice_note_start,
+            commands::voice_note_stop,
+            commands::voice_insert,
             commands::selfcheck_enabled,
             commands::selfcheck_report,
         ])

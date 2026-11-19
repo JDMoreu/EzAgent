@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use serde::Serialize;
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
@@ -15,6 +16,7 @@ use crate::pty::{self, EventSink, PtyEvent, Session, Size};
 use crate::selfcheck::{self, SelfcheckReport};
 use crate::space::{self, Space, SpaceStore};
 use crate::texts;
+use crate::voicenote::VoiceNotes;
 
 /// Estado que comparten todos los comandos de la ventana.
 pub struct AppState {
@@ -25,6 +27,7 @@ pub struct AppState {
     elephants: Mutex<HashMap<String, String>>,
     hub: Mutex<HubState>,
     selfcheck_path: Option<PathBuf>,
+    voice: Arc<VoiceNotes>,
 }
 
 impl AppState {
@@ -59,6 +62,7 @@ impl AppState {
             elephants: Mutex::new(HashMap::new()),
             hub: Mutex::new(hub),
             selfcheck_path,
+            voice: Arc::new(VoiceNotes::new()),
         }
     }
 
@@ -74,6 +78,21 @@ impl AppState {
             .ok_or_else(|| "La autocomprobación no está activa.".to_string())?;
         selfcheck::write_json(path, report)?;
         Ok(selfcheck::evaluate(report))
+    }
+
+    /// Empieza la nota de voz de la barra.
+    pub fn voice_start(&self, app: AppHandle) -> Result<(), String> {
+        self.voice.start(app)
+    }
+
+    /// Para la nota y devuelve el texto transcrito.
+    pub fn voice_stop(&self) -> Result<String, String> {
+        self.voice.stop()
+    }
+
+    /// Inserta el texto dictado en el cursor del área de entrada.
+    pub fn voice_insert(&self, current: &str, cursor: usize, added: &str) -> (String, usize) {
+        self.voice.insert(current, cursor, added)
     }
 
     /// Espacios guardados (o el de demostración, en memoria).
@@ -304,6 +323,43 @@ pub fn card_action(
     Ok(())
 }
 
+/// Texto transcrito por la nota de voz.
+#[derive(Debug, Serialize)]
+pub struct VoiceText {
+    pub texto: String,
+}
+
+/// Resultado de insertar el texto en el cursor del área de entrada.
+#[derive(Debug, Serialize)]
+pub struct InsertResult {
+    pub text: String,
+    pub cursor: usize,
+}
+
+/// Empieza a grabar la nota de voz; el nivel se emite en `hub://voice-level`.
+#[tauri::command]
+pub fn voice_note_start(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    state.voice_start(app)
+}
+
+/// Para la grabación y devuelve `{ "texto": ... }` sin enviarlo al elefante.
+#[tauri::command]
+pub fn voice_note_stop(state: State<'_, AppState>) -> Result<VoiceText, String> {
+    state.voice_stop().map(|texto| VoiceText { texto })
+}
+
+/// Inserta el texto dictado en `cursor` y devuelve el texto y el cursor nuevo.
+#[tauri::command]
+pub fn voice_insert(
+    state: State<'_, AppState>,
+    current: String,
+    cursor: usize,
+    added: String,
+) -> InsertResult {
+    let (text, cursor) = state.voice_insert(&current, cursor, &added);
+    InsertResult { text, cursor }
+}
+
 /// La vista pregunta si debe enviar el informe de autocomprobación.
 #[tauri::command]
 pub fn selfcheck_enabled(state: State<'_, AppState>) -> bool {
@@ -419,5 +475,19 @@ mod tests {
         let state = AppState::new(true);
         assert!(state.selfcheck_path().is_none());
         assert!(state.submit_selfcheck(&SelfcheckReport::default()).is_err());
+    }
+
+    #[test]
+    fn voice_insert_adds_a_separator_at_the_cursor() {
+        let state = AppState::new(true);
+        let (text, cursor) = state.voice_insert("hola", 4, "mundo");
+        assert_eq!(text, "hola mundo");
+        assert_eq!(cursor, 10);
+    }
+
+    #[test]
+    fn stopping_a_voice_note_that_never_started_is_an_error() {
+        let state = AppState::new(true);
+        assert!(state.voice_stop().is_err());
     }
 }

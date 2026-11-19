@@ -4,6 +4,7 @@ import { TEXTS, agentLabel } from "./texts.js";
 import { loadSpaces, createSpace, renderSpaces, markSelected } from "./spaces.js";
 import { mountTerminal, terminalsWithData } from "./terminal.js";
 import { renderFish, renderTrace } from "./panel.js";
+import { wireVoice } from "./voice.js";
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -119,15 +120,14 @@ function applyTexts() {
   byId("btn-voice").textContent = TEXTS.voiceNote;
   byId("btn-call").textContent = TEXTS.call;
   byId("btn-send").textContent = TEXTS.send;
-  for (const id of ["btn-voice", "btn-call"]) {
-    byId(id).title = TEXTS.soon;
-  }
+  byId("btn-call").title = TEXTS.soon;
 }
 
 function wire() {
   byId("tab-fish").addEventListener("click", () => showTab("fish"));
   byId("tab-trace").addEventListener("click", () => showTab("trace"));
   byId("btn-send").addEventListener("click", sendInput);
+  wireVoice(notice);
   byId("input-text").addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
