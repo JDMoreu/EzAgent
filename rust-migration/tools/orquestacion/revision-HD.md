@@ -70,3 +70,10 @@
   viva y lanzó otro (falló por `name_taken`; no hubo dos trabajadores a la vez). Debe tratar
   un `hc get` fallido como «desconocido» (reintentar) y no lanzar otro intento mientras una
   terminal con su nombre siga viva.
+
+### HD-7 (registro de estados) — revisión 1: devuelto (HD-7b)
+- Bien: transiciones, candado con carpeta del padre, escritura atómica, textos de §13,
+  `pending_notices` (mutación «avisar cambios del padre» → falla su prueba). 201 en verde.
+- Hueco: permitir `validado → terminado` no lo detecta ninguna prueba. HD-7b: tabla
+  completa de 16 transiciones y estado inicial de `create`.
+- Aceptado: aviso corto propio para `en_proceso` (lo usa el supervisor cuando lanza).
