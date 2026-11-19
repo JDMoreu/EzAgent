@@ -77,3 +77,20 @@ En curso (si se cierra Claude Code, comprobar con `git worktree list`, `opencode
   - 19:35: OpenCode 2.3 reanudaba solo las sesiones suspendidas (F7-05-s1, SOAK-FIX-s1, PYOUT-2a-s1) al abrirlo el usuario. Se exportaron a `scratchpad/opencode-<id>.json` y se borraron con `opencode session delete`; no queda ninguna sesión reanudable. La sesión F7-05 dejó un commit más en `work/F7-05` (`daf3e92`, el soak guarda cada muestra) que hay que unir a SOAK-FIX al retomar.
   - Al lanzar workers otra vez: `supervise2.sh` (rechaza informes con «pendiente») y cerrar sus `cua-driver` al terminar.
 Después: F7-04 (rendimiento, con el equipo tranquilo: después del soak y de TMAP), F9 (auditoría con veredicto), activar docs, y `git push -u origin rust/main` (autorizado).
+
+## Espacio de trabajo con elefante (desde 2026-11-18)
+Nueva dirección aprobada por el usuario: EzAgent como espacio de trabajo (ventana Tauri con
+espacios, terminal del elefante y subterminales de peces), elefante = el CLI que elige el
+usuario, EzAgent = árbitro (`ez`). Diseño: `docs/designs/espacio-elefante.md`.
+- Rama `eco/main` (sale de `rust/main` en fdd25fe; commit b6ae9f8 con diseño, contratos,
+  esqueleto y briefs). Los pendientes de la migración (SOAK-FIX, PYOUT-2a, F7-04, F9)
+  siguen en sus ramas, sin tocar.
+- **Ola 1 en curso** (OpenCode `deepseek-v4.1-flash#max`, `supervise2.sh` con
+  `EZ_LOG_DIR`/`EZ_MODEL`): ECO-1 `ez-term`, ECO-2 `ez-arbiter`, ECO-3 `ez-ctl`,
+  ECO-4 `ez-team`, ECO-5 `ez-hub`; revisor del diseño ECO-REV0 con `kimi-k3.1-pro`.
+  Worktrees `../EzAgent-wt/ECO-*`, ramas `work/ECO-*`, prompts
+  `rust-migration/tools/orquestacion/prompt-ECO-*.txt`.
+- Al terminar cada uno: puerta (fmt, clippy -p, test -p), pez verificador nuevo,
+  fusionar en `eco/main`, borrar el worktree. Luego ola 2 (integración, nota de voz, E2E).
+- El elefante (Claude) no escribe código de producción: solo diseño, contratos,
+  plantillas, encargos, verificación e integración de ramas.
