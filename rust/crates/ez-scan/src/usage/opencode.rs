@@ -52,6 +52,9 @@ pub(crate) fn read(dirs: &UsageDirs, window: &Window, now_ms: u64) -> Reading {
         apply_notices(&mut reading, None, &notices, window, now_ms);
         return reading;
     };
+    // Los modelos usados en los últimos días: la regla de IR-2b y la de
+    // `uso.json` comparten este conjunto de «usables».
+    reading.usable_models = recent_models(&connection, now_ms);
     match query(&connection, schema, window) {
         Ok(groups) => fill(&mut reading, groups, schema, latest, now_ms),
         Err(error) => reading
@@ -189,9 +192,7 @@ fn apply_notices(
         return;
     }
     let active = active_notices(reading, db, notices, window, now_ms);
-    let recent = db
-        .map(|(connection, _)| recent_models(connection, now_ms))
-        .unwrap_or_default();
+    let recent = reading.usable_models.clone();
     mark_models(reading, &active, &recent);
     reading.plan =
         plan_from_usage(reading).or_else(|| active.last().map(|notice| notice.label.clone()));

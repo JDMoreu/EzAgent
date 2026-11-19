@@ -131,3 +131,130 @@ fn una_ventana_invalida_cae_en_cinco_horas() {
     assert_eq!(window.start_ms, 5 * 3_600_000);
     assert_eq!(window.minutes(), 300);
 }
+
+#[test]
+fn un_agotamiento_por_modelo_no_agota_el_agente() {
+    let mut reading = Reading {
+        usable_models: vec![
+            "opencode-go/deepseek-v4.1-flash".to_string(),
+            "opencode/hy4-flash-free".to_string(),
+        ],
+        ..Reading::default()
+    };
+    reading.models = vec![ModelUsage {
+        model: "opencode-go/deepseek-v4.1-flash".to_string(),
+        tokens: None,
+        messages: None,
+        cost_usd: None,
+        state: UsageState::Desconocido,
+    }];
+    let depletion = depleted::Depletion {
+        whole_agent: None,
+        models: vec![depleted::ModelDepletion {
+            model: "opencode/hy4-flash-free".to_string(),
+        }],
+    };
+    let usage = assemble(
+        "opencode",
+        "OpenCode".to_string(),
+        true,
+        None,
+        5.0,
+        reading,
+        depletion,
+    );
+    assert_ne!(usage.state, UsageState::Agotado, "{usage:#?}");
+    let free = usage
+        .models
+        .iter()
+        .find(|model| model.model == "opencode/hy4-flash-free")
+        .expect("el modelo gratuito aparece aunque no tenga uso");
+    assert_eq!(free.state, UsageState::Agotado);
+    let deepseek = usage
+        .models
+        .iter()
+        .find(|model| model.model == "opencode-go/deepseek-v4.1-flash")
+        .expect("deepseek sigue en el informe");
+    assert_ne!(deepseek.state, UsageState::Agotado);
+}
+
+#[test]
+fn un_agotamiento_sin_modelo_agota_el_agente() {
+    let depletion = depleted::Depletion {
+        whole_agent: Some("vigilante: agotado sin reinicio conocido (uso.json)".to_string()),
+        models: Vec::new(),
+    };
+    let usage = assemble(
+        "opencode",
+        "OpenCode".to_string(),
+        true,
+        None,
+        5.0,
+        Reading::default(),
+        depletion,
+    );
+    assert_eq!(usage.state, UsageState::Agotado);
+    assert!(usage.sources.state.contains("vigilante"), "{usage:#?}");
+}
+
+#[test]
+fn el_agente_solo_se_agota_si_todos_sus_modelos_usables_lo_estan() {
+    let mut reading = Reading {
+        usable_models: vec!["opencode-go/deepseek-v4.1-flash".to_string()],
+        ..Reading::default()
+    };
+    reading.models = vec![ModelUsage {
+        model: "opencode-go/deepseek-v4.1-flash".to_string(),
+        tokens: None,
+        messages: None,
+        cost_usd: None,
+        state: UsageState::Desconocido,
+    }];
+    let only = depleted::Depletion {
+        whole_agent: None,
+        models: vec![depleted::ModelDepletion {
+            model: "opencode-go/deepseek-v4.1-flash".to_string(),
+        }],
+    };
+    let usage = assemble(
+        "opencode",
+        "OpenCode".to_string(),
+        true,
+        None,
+        5.0,
+        reading,
+        only,
+    );
+    assert_eq!(usage.state, UsageState::Agotado);
+
+    let mut reading = Reading {
+        usable_models: vec![
+            "opencode-go/deepseek-v4.1-flash".to_string(),
+            "opencode/hy4-flash-free".to_string(),
+        ],
+        ..Reading::default()
+    };
+    reading.models = vec![ModelUsage {
+        model: "opencode-go/deepseek-v4.1-flash".to_string(),
+        tokens: None,
+        messages: None,
+        cost_usd: None,
+        state: UsageState::Desconocido,
+    }];
+    let partial = depleted::Depletion {
+        whole_agent: None,
+        models: vec![depleted::ModelDepletion {
+            model: "opencode-go/deepseek-v4.1-flash".to_string(),
+        }],
+    };
+    let usage = assemble(
+        "opencode",
+        "OpenCode".to_string(),
+        true,
+        None,
+        5.0,
+        reading,
+        partial,
+    );
+    assert_ne!(usage.state, UsageState::Agotado, "{usage:#?}");
+}
