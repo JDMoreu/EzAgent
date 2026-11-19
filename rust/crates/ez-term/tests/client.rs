@@ -322,6 +322,77 @@ fn keys_interrupt_and_kill_wrap_their_methods() {
 }
 
 #[test]
+fn simple_calls_use_the_simple_timeout() {
+    let (client, script) = support::client_scripted(|fake| {
+        fake.hello();
+        let request = fake.request();
+        assert_eq!(request["method"], "terminal.get");
+        // Sin respuesta: vence el tope de las llamadas simples; se mantiene
+        // abierto el canal para que no parezca un fin de flujo.
+        thread::sleep(Duration::from_millis(300));
+    });
+    let client = client.with_timing(
+        Duration::from_millis(120),
+        Duration::from_secs(1),
+        Duration::from_secs(1),
+    );
+    assert_eq!(
+        client.get("t1"),
+        Err(TermError::Timeout {
+            method: "terminal.get".to_string()
+        })
+    );
+    script.join().expect("guion");
+}
+
+#[test]
+fn send_uses_its_own_timeout() {
+    let (client, script) = support::client_scripted(|fake| {
+        fake.hello();
+        let request = fake.request();
+        assert_eq!(request["method"], "terminal.send");
+        // Sin respuesta: vence el tope propio de `send`.
+        thread::sleep(Duration::from_millis(300));
+    });
+    let client = client.with_timing(
+        Duration::from_secs(1),
+        Duration::from_millis(120),
+        Duration::from_secs(1),
+    );
+    assert_eq!(
+        client.send("t1", "hola"),
+        Err(TermError::Timeout {
+            method: "terminal.send".to_string()
+        })
+    );
+    script.join().expect("guion");
+}
+
+#[test]
+fn wait_adds_its_margin_to_the_caller_timeout() {
+    let (client, script) = support::client_scripted(|fake| {
+        fake.hello();
+        let request = fake.request();
+        assert_eq!(request["method"], "terminal.wait");
+        assert_eq!(request["params"]["timeout"], 0.1);
+        // Sin respuesta: vence `timeout_s` más el margen inyectado.
+        thread::sleep(Duration::from_millis(300));
+    });
+    let client = client.with_timing(
+        Duration::from_secs(1),
+        Duration::from_secs(1),
+        Duration::from_millis(120),
+    );
+    assert_eq!(
+        client.wait("t1", 0.1),
+        Err(TermError::Timeout {
+            method: "terminal.wait".to_string()
+        })
+    );
+    script.join().expect("guion");
+}
+
+#[test]
 fn client_is_clone_send_and_sync() {
     fn assert_traits<T: Clone + Send + Sync>() {}
     assert_traits::<HcClient>();

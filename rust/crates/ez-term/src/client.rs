@@ -14,16 +14,35 @@ use crate::conn::{Conn, CALL_TIMEOUT};
 use crate::error::TermError;
 use crate::types::{ReadText, RunSpec, SendOutcome, Terminal};
 
-/// Margen que se suma al tope de una operación que puede durar más que una
-/// llamada normal: el paso de espera de `send` (borrador y arranque) y el
-/// tope de `wait`.
-// DECISION: `send` no recibe timeout del llamador; se usa el tope normal + 10 s.
-const EXTRA_TIMEOUT: Duration = Duration::from_secs(10);
+/// Topes de espera del cliente (§14.8, m01).
+#[derive(Clone, Copy)]
+struct Timing {
+    /// Llamadas simples: 30 s (el tope del transporte).
+    simple: Duration,
+    /// `terminal.send`: 75 s (borrador y arranque del programa).
+    send: Duration,
+    /// Margen sobre el tope que pide el llamador a `terminal.wait`: 10 s.
+    wait_extra: Duration,
+}
+
+impl Default for Timing {
+    fn default() -> Self {
+        Self {
+            simple: CALL_TIMEOUT,
+            send: Duration::from_secs(75),
+            wait_extra: Duration::from_secs(10),
+        }
+    }
+}
 
 /// Cliente síncrono de `hc connect`; se puede clonar y usar desde varios hilos.
+///
+/// Tres topes (§14.8): las llamadas simples usan 30 s, `send` usa 75 s y `wait`
+/// usa el tope que pide el llamador más 10 s de margen.
 #[derive(Clone)]
 pub struct HcClient {
     conn: Arc<Conn>,
+    timing: Timing,
 }
 
 impl HcClient {
@@ -47,7 +66,19 @@ impl HcClient {
         conn.hello()?;
         Ok(HcClient {
             conn: Arc::new(conn),
+            timing: Timing::default(),
         })
+    }
+
+    /// Sobrescribe los topes con valores cortos para pruebas; no usar en producción.
+    #[doc(hidden)]
+    pub fn with_timing(mut self, simple: Duration, send: Duration, wait_extra: Duration) -> Self {
+        self.timing = Timing {
+            simple,
+            send,
+            wait_extra,
+        };
+        self
     }
 
     /// Versión del núcleo que respondió `hello`.
@@ -62,14 +93,18 @@ impl HcClient {
 
     /// Lanza un programa en una terminal nueva.
     pub fn run(&self, spec: &RunSpec) -> Result<Terminal, TermError> {
-        let value = self.call("terminal.run", spec.params(), CALL_TIMEOUT)?;
+        let value = self.call("terminal.run", spec.params(), self.timing.simple)?;
         decode(value, "terminal.run")
     }
 
     /// Terminales vivas que llevan todas esas etiquetas.
     pub fn list(&self, labels: &BTreeMap<String, String>) -> Result<Vec<Terminal>, TermError> {
         // DECISION: sin `all`, `hc` devuelve solo vivas, que es el inventario.
-        let value = self.call("terminal.list", json!({ "labels": labels }), CALL_TIMEOUT)?;
+        let value = self.call(
+            "terminal.list",
+            json!({ "labels": labels }),
+            self.timing.simple,
+        )?;
         let reply: ListReply = decode(value, "terminal.list")?;
         Ok(reply.terminals)
     }
@@ -79,7 +114,7 @@ impl HcClient {
         let value = self.call(
             "terminal.get",
             json!({ "terminal": terminal }),
-            CALL_TIMEOUT,
+            self.timing.simple,
         )?;
         decode(value, "terminal.get")
     }
@@ -89,17 +124,17 @@ impl HcClient {
         let value = self.call(
             "terminal.read",
             json!({ "terminal": terminal, "lines": lines }),
-            CALL_TIMEOUT,
+            self.timing.simple,
         )?;
         decode(value, "terminal.read")
     }
 
-    /// Pega texto y pulsa Enter.
+    /// Pega texto y pulsa Enter; usa el tope de 75 s de `send`.
     pub fn send(&self, terminal: &str, text: &str) -> Result<SendOutcome, TermError> {
         let value = self.call(
             "terminal.send",
             json!({ "terminal": terminal, "text": text }),
-            CALL_TIMEOUT + EXTRA_TIMEOUT,
+            self.timing.send,
         )?;
         decode(value, "terminal.send")
     }
@@ -109,7 +144,7 @@ impl HcClient {
         self.call(
             "terminal.keys",
             json!({ "terminal": terminal, "keys": keys }),
-            CALL_TIMEOUT,
+            self.timing.simple,
         )?;
         Ok(())
     }
@@ -119,7 +154,7 @@ impl HcClient {
         self.call(
             "terminal.interrupt",
             json!({ "terminal": terminal }),
-            CALL_TIMEOUT,
+            self.timing.simple,
         )?;
         Ok(())
     }
@@ -129,14 +164,18 @@ impl HcClient {
         self.call(
             "terminal.kill",
             json!({ "terminal": terminal }),
-            CALL_TIMEOUT,
+            self.timing.simple,
         )?;
         Ok(())
     }
 
     /// Borra una terminal terminada.
     pub fn rm(&self, terminal: &str) -> Result<(), TermError> {
-        self.call("terminal.rm", json!({ "terminal": terminal }), CALL_TIMEOUT)?;
+        self.call(
+            "terminal.rm",
+            json!({ "terminal": terminal }),
+            self.timing.simple,
+        )?;
         Ok(())
     }
 
@@ -148,7 +187,7 @@ impl HcClient {
         } else {
             0.0
         };
-        let budget = Duration::from_secs_f64(seconds) + EXTRA_TIMEOUT;
+        let budget = Duration::from_secs_f64(seconds) + self.timing.wait_extra;
         self.call(
             "terminal.wait",
             json!({ "terminal": terminal, "timeout": seconds }),
