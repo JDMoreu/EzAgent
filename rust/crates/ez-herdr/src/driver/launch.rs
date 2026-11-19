@@ -276,7 +276,11 @@ fn missing_profile(key: &str) -> AgentLaunch {
     }
 }
 
-fn agent_command(cfg: &VoiceConfig, key: &str, profile: &Map<String, Value>) -> Vec<String> {
+pub(crate) fn agent_command(
+    cfg: &VoiceConfig,
+    key: &str,
+    profile: &Map<String, Value>,
+) -> Vec<String> {
     let command = text_list(profile.get("command"));
     if command.is_empty() {
         text_list(agents(cfg).and_then(|agents| agents.get(key)))
@@ -289,7 +293,7 @@ fn agent_command(cfg: &VoiceConfig, key: &str, profile: &Map<String, Value>) -> 
 ///
 /// mcode distingue mayúsculas (`minimax/MiniMax-M3.1-Flash`); se acepta el ref
 /// completo o lo que va tras la primera barra.
-fn match_mcode_model(known: &[String], model: &str) -> Option<String> {
+pub(crate) fn match_mcode_model(known: &[String], model: &str) -> Option<String> {
     let low = model.to_lowercase();
     known
         .iter()
@@ -302,7 +306,7 @@ fn match_mcode_model(known: &[String], model: &str) -> Option<String> {
 }
 
 /// Valida modelo/esfuerzo contra el catálogo de Codex; "" si está bien.
-fn resolve_codex(table: &Map<String, Value>, wanted: &mut Wanted) -> String {
+pub(crate) fn resolve_codex(table: &Map<String, Value>, wanted: &mut Wanted) -> String {
     if table.is_empty() {
         return String::new();
     }

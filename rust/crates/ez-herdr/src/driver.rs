@@ -130,9 +130,9 @@ fn flag_args(profile: &Map<String, Value>, key: &str, default: [&str; 2]) -> Vec
 
 /// Modelo y esfuerzo pedidos, ya validados por sus valores por defecto.
 #[derive(Debug, Clone, Default)]
-struct Wanted {
-    model: String,
-    effort: String,
+pub(crate) struct Wanted {
+    pub(crate) model: String,
+    pub(crate) effort: String,
 }
 
 impl Wanted {
