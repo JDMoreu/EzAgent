@@ -237,6 +237,9 @@ fn writer_loop(mut writer: Box<dyn Write + Send>, shared: Arc<Shared>, out: Rece
 }
 
 fn reader_loop<R: BufRead>(mut reader: R, shared: Arc<Shared>, events: Option<Sender<TermEvent>>) {
+    // Secuencia de la última foto perdida: se actualiza con cada `missed` y
+    // sirve para descartar eventos ya incluidos en esa foto (§14.9).
+    let mut min_seq: Option<u64> = None;
     loop {
         let mut line = String::new();
         match reader.read_line(&mut line) {
@@ -244,7 +247,7 @@ fn reader_loop<R: BufRead>(mut reader: R, shared: Arc<Shared>, events: Option<Se
             Ok(_) => {
                 let line = line.trim();
                 if !line.is_empty() {
-                    handle_line(&shared, events.as_ref(), line);
+                    handle_line(&shared, events.as_ref(), line, &mut min_seq);
                 }
             }
             Err(error) => {
@@ -259,7 +262,12 @@ fn reader_loop<R: BufRead>(mut reader: R, shared: Arc<Shared>, events: Option<Se
     }
 }
 
-fn handle_line(shared: &Shared, events: Option<&Sender<TermEvent>>, line: &str) {
+fn handle_line(
+    shared: &Shared,
+    events: Option<&Sender<TermEvent>>,
+    line: &str,
+    min_seq: &mut Option<u64>,
+) {
     let value: Value = match serde_json::from_str(line) {
         Ok(value) => value,
         Err(error) => {
@@ -285,7 +293,7 @@ fn handle_line(shared: &Shared, events: Option<&Sender<TermEvent>>, line: &str) 
         tracing::debug!("ez-term: notificación sin conexión de eventos");
         return;
     };
-    if let Some(event) = event_from_notification(&value) {
+    if let Some(event) = event_from_notification(&value, min_seq) {
         let _ = events.send(event);
     }
 }
