@@ -69,9 +69,17 @@ impl Thresholds {
 }
 
 /// ¿Se puede lanzar otro subagente? `Err` trae el texto para la persona.
+///
+/// No mide CPU ni disco: la guarda de §4 solo mira memoria y subagentes vivos,
+/// y así no paga las dos muestras de CPU.
 pub fn check(probe: &dyn Probe, parent: &str, thresholds: &Thresholds) -> Result<(), String> {
-    let workdir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
-    let resources = resources::collect(probe, parent, &workdir)?;
+    let resources = resources::Resources {
+        free_ram_mb: probe.free_ram_mb()?,
+        free_commit_mb: probe.free_commit_mb()?,
+        cpu_percent: 0.0,
+        disk_free_mb: 0,
+        subagents: probe.subagents(parent)?,
+    };
     if let Some(reason) = refusal(&resources, thresholds) {
         return Err(format!(
             "Recursos justos: {reason}. Espera a que termine alguno o usa --force."
