@@ -173,9 +173,6 @@ impl UsageDirs {
     }
 
     /// Las carpetas según un entorno inyectado (el de las pruebas de `ez`).
-    ///
-    /// DECISION: `OPENCODE_DATA_DIR` no existe en OpenCode; se admite para
-    /// apuntar la base a una carpeta falsa sin tocar la del usuario.
     pub fn from_lookup(lookup: &dyn Fn(&str) -> Option<String>) -> Self {
         let var = |name: &str| {
             lookup(name)
@@ -192,6 +189,8 @@ impl UsageDirs {
             .unwrap_or_else(|| home.join(".config").join("EzAgent"));
         let codex = var("CODEX_HOME").unwrap_or_else(|| home.join(".codex"));
         let minimax = var("MINIMAX_DATA_DIR").unwrap_or_else(|| home.join(".minimax"));
+        // DECISION: OpenCode no tiene una variable para su carpeta de datos;
+        // `OPENCODE_DATA_DIR` solo existe para que las pruebas usen una falsa.
         let opencode_data = var("OPENCODE_DATA_DIR")
             .unwrap_or_else(|| home.join(".local").join("share").join("opencode"));
         let subagents = var("EZ_SUBAGENTS_DIR").unwrap_or_else(|| {
@@ -279,7 +278,7 @@ pub fn report_at(
         if program.is_empty() {
             continue;
         }
-        // Dos claves del catálogo pueden apuntar al mismo programa
+        // DECISION: dos claves del catálogo pueden apuntar al mismo programa
         // (`mcode` y `minimax`): se informa una sola vez.
         if seen_programs
             .iter()

@@ -21,6 +21,9 @@ pub enum Priority {
 }
 
 /// Lo declarado para un tipo de agente.
+///
+/// DECISION: una tabla de primer nivel por tipo (más `[novedades]`) y
+/// `unidad = "tokens" | "mensajes"` para desambiguar `limite`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Plane {
     pub plan: Option<String>,

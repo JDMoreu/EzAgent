@@ -106,6 +106,8 @@ fn apply_freshness(
         .observed_ms
         .map(|observed| now_ms.saturating_sub(observed))
         .unwrap_or(0);
+    // DECISION: con el reinicio ya pasado el porcentaje no es actual: el
+    // estado queda `desconocido` y se avisa; no se adivina la ventana nueva.
     let age = age_text(age_ms);
     if reset_passed {
         reading.stale = Some(format!(

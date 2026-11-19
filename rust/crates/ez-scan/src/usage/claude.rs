@@ -70,6 +70,7 @@ pub(crate) fn read(dirs: &UsageDirs, window: &Window, now_ms: u64) -> Reading {
             }
         });
     }
+    // DECISION: Claude Code no guarda costo por token en disco; no se inventa.
     reading.tokens = Some(TokenUsage::new(input, output, cache_read, cache_write));
     reading.messages = Some(messages);
     reading.observed_ms = (observed > 0).then_some(observed);

@@ -17,6 +17,8 @@ const STALE_DB_MS: u64 = 24 * 3_600_000;
 
 pub(crate) fn read(dirs: &UsageDirs, window: &Window, now_ms: u64) -> Reading {
     let mut reading = Reading::default();
+    // DECISION: se lee la base en modo `ro` en vez de ejecutar
+    // `opencode stats`: el brief prohíbe lanzar agentes reales.
     let db = dirs.opencode_data.join("opencode.db");
     if !db.is_file() {
         reading
