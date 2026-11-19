@@ -1262,9 +1262,11 @@ version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
  "ez-core",
+ "parking_lot 0.13.0",
  "serde",
  "serde_json",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
