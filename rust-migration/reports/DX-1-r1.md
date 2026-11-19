@@ -19,8 +19,9 @@
 ## Verificación
 - `cargo test --release -p ez-app --test diag_chat_history_cost` → **3 pruebas en
   verde** (`test result: ok`), una por vez, con `--test-threads=1`.
-- `cargo fmt -p ez-app -- --check` → limpio.
-- `cargo clippy --release -p ez-app --all-targets -- -D warnings` → ver §7.
+- `cargo fmt -p ez-app -- --check` → limpio (exit 0).
+- `cargo clippy --release -p ez-app --all-targets -- -D warnings` → **sin avisos**
+  (exit 0).
 - Nada de la app en marcha se tocó: no se cerró `ezagent-voice.exe`, no se le inyectó
   nada, no se le adjuntó un depurador, no se ejecutó ningún agente real y no se tocó la
   ventana de Herdr.
@@ -467,9 +468,9 @@ Qué mirar en la salida, en este orden:
 1. Si el hilo **`ezagent-chat-paint`** está dentro de `render`/`build_entry`/`decode`
    → es el coste O(historial) (causa 1 y 3).
 2. Si el hilo **`ezagent-EzAgent`** está en `WaitForSingleObject`/lock y el
-   **`ezagent-chat-paint`** está en `render` → es el amplificador del candado (causa 2).
+   **`ezagent-chat-paint`** está en `render` → es el amplificador del candado (causa 3).
 3. Si **todos** los hilos de la interfaz están en `WaitForSingleObject` y el principal
-   está en `render` → es el `prepare_view` síncrono (causa 4).
+   está en `render` → es el `prepare_view` síncrono (causa 1).
 
 ---
 
@@ -489,6 +490,12 @@ Qué mirar en la salida, en este orden:
   capa aparte.
 - El registro a archivo escribe en `%APPDATA%`: hay que rotar y limitar el tamaño
   (`tracing-appender` lo hace; falta decidir cuántos días se guardan).
+- **Medir con historiales largos consume mucha memoria**: la primera corrida del
+  harness llegó a 7,4 GB de RSS con el caso de 5 000 mensajes y el agente principal
+  la detuvo al llegar a 11,4 GB. El harness ya corta a 1 GB y no repite ese caso
+  (§3). Con el arreglo (virtualización + teselas en `u8`) el techo de memoria
+  debería bajar de forma notable, pero conviene medirlo otra vez antes de dar el
+  caso por cerrado.
 
 **No se pudo confirmar**
 
