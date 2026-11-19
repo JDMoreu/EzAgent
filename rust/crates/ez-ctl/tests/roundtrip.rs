@@ -5,7 +5,7 @@ mod support;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
-use support::{Harness, FISH_TOKEN, SPACE, TOKEN};
+use support::{Harness, FISH_TOKEN, SPACE, TASK, TOKEN};
 
 use ez_ctl::Caller;
 
@@ -178,7 +178,9 @@ fn report_carries_verdict_counts_and_mutations() {
         calls[0].0,
         Caller::Fish {
             space: SPACE.to_string(),
+            task: TASK.to_string(),
             fish: "dev-r1-1".to_string(),
+            attempt: 1,
         }
     );
     let file = calls[0].1.args["file"].as_str().expect("ruta");
