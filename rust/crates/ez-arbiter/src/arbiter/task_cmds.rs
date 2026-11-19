@@ -343,7 +343,9 @@ impl ArbiterShared {
         effects.event(self.event(&task, "task_closed", serde_json::json!({})));
         let slot = super::scope(&task.elephant);
         if let Some(agent) = self.agent_for(&task.elephant) {
-            let (title, body) = texts::integrate_card(&task.title, &agent.branch);
+            let committed = super::agents::commit_work(&agent.worktree, &task.title, task.round)
+                .map_err(|message| Rejection::new("R12", message))?;
+            let (title, body) = texts::integrate_card(&task.title, &agent.branch, committed);
             let opened = self.open_card(&slot, Some(&task.id), CardKind::Integrate, title, body);
             effects.event(self.card_opened_event(&opened));
         }

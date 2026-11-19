@@ -432,13 +432,15 @@ pub fn delegated_launched(fish: &str, parent: &str, terminal: &str) -> String {
     format!("{parent} delegó en {fish}, lanzado en {terminal}.")
 }
 /// §15.1: tarjeta para integrar la rama del agente principal.
-pub fn integrate_card(title: &str, branch: &str) -> (String, String) {
-    (
-        "Integrar el trabajo".to_string(),
-        format!(
-            "La tarea «{title}» terminó en la rama {branch}. ¿Integrarla en la rama base o dejarla en su rama?"
-        ),
-    )
+/// `committed` dice si el árbitro confirmó trabajo nuevo en esa rama.
+pub fn integrate_card(title: &str, branch: &str, committed: bool) -> (String, String) {
+    let mut body = format!(
+        "La tarea «{title}» terminó en la rama {branch}. ¿Integrarla en la rama base o dejarla en su rama?"
+    );
+    if !committed {
+        body.push_str(" No había cambios nuevos que confirmar en esa rama.");
+    }
+    ("Integrar el trabajo".to_string(), body)
 }
 /// §15.1: integración hecha.
 pub fn integrated(branch: &str) -> String {

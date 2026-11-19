@@ -184,8 +184,6 @@ fn closing_a_task_offers_integration_and_merge_succeeds() {
         .create_main_agent("s1", "Integrador")
         .expect("crear agente");
     fs::write(agent.worktree.join("entregable.txt"), "hecho").expect("escribir entregable");
-    git(&agent.worktree, &["add", "entregable.txt"]);
-    git(&agent.worktree, &["commit", "-q", "-m", "entregable"]);
     let task = propose_for(&f, &agent.key, &agent.worktree);
     f.arbiter
         .approve_task_for(&agent.key)
@@ -210,6 +208,15 @@ fn closing_a_task_offers_integration_and_merge_succeeds() {
     clean_round_for(&f, &agent.key, &agent.worktree);
     call(&f, &agent.key, Command::TaskClose);
 
+    let subject = git_output(&agent.worktree, &["log", "-1", "--format=%s"]);
+    assert!(
+        subject.contains("EzAgent: «Tarea del agente B» (ronda 2, dos rondas limpias)"),
+        "{subject}"
+    );
+    let tree = git_output(&agent.worktree, &["ls-tree", "-r", "--name-only", "HEAD"]);
+    assert!(tree.contains("entregable.txt"), "{tree}");
+    assert!(!tree.contains(".ez/"), "{tree}");
+
     let card = integrate_card(&f, &task);
     let outcome = f
         .arbiter
@@ -222,6 +229,21 @@ fn closing_a_task_offers_integration_and_merge_succeeds() {
         .bitacora(&task)
         .iter()
         .any(|event| event["kind"]["type"] == "integrated"));
+}
+
+#[test]
+fn creating_a_main_agent_excludes_ez_from_commits() {
+    let f = Fixture::new("excluir-ez");
+    let agent = f
+        .arbiter
+        .create_main_agent("s1", "Excluyente")
+        .expect("crear agente");
+    let exclude = fs::read_to_string(f.folder.join(".git/info/exclude")).expect("info/exclude");
+    assert!(
+        exclude.lines().any(|line| line.trim() == ".ez/"),
+        "{exclude}"
+    );
+    assert!(agent.worktree.is_dir());
 }
 
 #[test]
