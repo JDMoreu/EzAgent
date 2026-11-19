@@ -185,3 +185,12 @@
   por stderr (aviso espurio del vigilante, sin reintento n+1), B2 PowerShell sin `&` con
   ruta citada, B3 el vigilante lee el voice.json real, B4 `--show tab` abre en el espacio a
   la vista. HD-9 los corrige y quita los atajos del ejemplo.
+
+### Cambio de modelo (19-nov ~12:40, pedido de la persona)
+- El modelo gratuito agotó su límite diario («Free limit reached»): IR-1 se trabó al arrancar.
+  Los subagentes de OpenCode pasan a `opencode-go/deepseek-v4.1-flash`.
+- Hallazgo para el supervisor (C0-6): al retomar una sesión (`--session ses_…`), OpenCode
+  conserva el modelo con que se creó e ignora `OPENCODE_CONFIG_CONTENT`. Para cambiar de
+  modelo hubo que borrar la sesión (`opencode session delete ses_ir1s1 --standalone`). El
+  supervisor debería detectar el aviso «Free limit reached» en pantalla y, si el modelo
+  pedido cambió, abrir una sesión nueva.
