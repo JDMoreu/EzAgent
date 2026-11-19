@@ -75,6 +75,16 @@ pub fn parse(text: &str) -> Result<Vec<Seat>, TeamError> {
                 "fila {number}: agente y modelo son obligatorios."
             )));
         }
+        if row
+            .esfuerzo
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|effort| effort.is_empty())
+        {
+            return Err(TeamError::Invalid(format!(
+                "fila {number}: esfuerzo no puede estar vacío."
+            )));
+        }
         seats.push(Seat {
             role,
             agent: row.agente.trim().to_string(),
@@ -117,6 +127,7 @@ pub fn validate(seats: &[Seat], inventory: &Inventory) -> TeamCheck {
                 seat.model, agent.profile.name
             ));
         }
+        check_effort(seat, inventory, &mut check);
     }
     for role in [Role::Qa, Role::QaValidator] {
         let (Some(other), Some(developer)) = (find(seats, role), find(seats, Role::Developer))
@@ -152,11 +163,35 @@ fn find(seats: &[Seat], role: Role) -> Option<&Seat> {
     seats.iter().find(|seat| seat.role == role)
 }
 
+/// A seat with an effort needs a profile that can apply it (design §14.2).
+fn check_effort(seat: &Seat, inventory: &Inventory, check: &mut TeamCheck) {
+    let Some(effort) = seat.effort.as_deref().filter(|effort| !effort.is_empty()) else {
+        return;
+    };
+    // An unavailable agent already has its own error; do not pile a second one on it.
+    let Some(agent) = inventory.find(&seat.agent) else {
+        return;
+    };
+    let can_apply = !agent.profile.effort_args.is_empty()
+        || agent.profile.env.values().any(|value| {
+            value.contains("{esfuerzo}") || value.contains("{variante}")
+        });
+    if !can_apply {
+        // DECISION: the name in the message is the profile's human name when the agent
+        // is known; the id would be ambiguous for the person reading the card.
+        check.errors.push(format!(
+            "{} no puede aplicar el esfuerzo «{effort}»: quita `esfuerzo` o configura `esfuerzo_args` en agentes.toml.",
+            agent.profile.name
+        ));
+    }
+}
+
 fn warn_same_family(role: Role, seats: &[Seat], inventory: &Inventory, check: &mut TeamCheck) {
     let (Some(seat), Some(developer)) = (find(seats, role), find(seats, Role::Developer)) else {
         return;
     };
-    // The same model is already an error; the warning is for different models of one family.
+    // DECISION: the same model is already an error; the warning is for different models
+    // of one family only, so the person does not see the same problem twice.
     if seat.model == developer.model {
         return;
     }
@@ -182,8 +217,9 @@ fn warn_same_family(role: Role, seats: &[Seat], inventory: &Inventory, check: &m
     }
 }
 
-/// Approval card, with the exact format of design §6. Blocking errors and the warnings
-/// go after the seat lines so the person sees why a team cannot be approved.
+/// Approval card, with the exact format of design §6: the seat lines and then the
+/// warnings. Errors are not part of the card: a proposal with errors is rejected to the
+/// elephant instead of shown for approval.
 pub fn card(task_title: &str, seats: &[Seat], check: &TeamCheck, inventory: &Inventory) -> String {
     let mut text = format!("Equipo propuesto para «{task_title}»:");
     for seat in seats {
@@ -195,14 +231,13 @@ pub fn card(task_title: &str, seats: &[Seat], check: &TeamCheck, inventory: &Inv
         if let Some(effort) = seat.effort.as_deref().filter(|effort| !effort.is_empty()) {
             line.push_str(&format!(" · esfuerzo {effort}"));
         }
+        // DECISION: `×{cantidad}` appears only when `cantidad > 1`; §6 marks it optional
+        // and printing `×1` on every line is noise.
         if seat.count > 1 {
             line.push_str(&format!(" · ×{}", seat.count));
         }
         text.push('\n');
         text.push_str(&line);
-    }
-    for error in &check.errors {
-        text.push_str(&format!("\nError: {error}"));
     }
     for warning in &check.warnings {
         text.push_str(&format!("\nAviso: {warning}"));
@@ -252,14 +287,19 @@ mod tests {
     }
 
     fn inventory() -> Inventory {
+        let mut opencode = profile(
+            "opencode",
+            "OpenCode",
+            &["opencode-go/deepseek-v4.1-flash", "opencode-go/qwen4-max"],
+            None,
+        );
+        opencode.env.insert(
+            "OPENCODE_CONFIG_CONTENT".to_string(),
+            r#"{"model":"{modelo}{variante}"}"#.to_string(),
+        );
         Inventory {
             agents: vec![
-                available(profile(
-                    "opencode",
-                    "OpenCode",
-                    &["opencode-go/deepseek-v4.1-flash", "opencode-go/qwen4-max"],
-                    None,
-                )),
+                available(opencode),
                 available(profile(
                     "claude",
                     "Claude Code",
@@ -408,6 +448,64 @@ modelo = "opencode-go/gpt-6-luna"
     }
 
     #[test]
+    fn validator_with_the_developer_model_is_an_error() {
+        let mut seats = parse(team_text()).expect("parse");
+        seats[3].model = "opencode-go/deepseek-v4.1-flash".to_string();
+        let check = validate(&seats, &inventory());
+        assert!(
+            check
+                .errors
+                .iter()
+                .any(|error| error.contains("mismo modelo")),
+            "{check:?}"
+        );
+    }
+
+    #[test]
+    fn parse_rejects_an_empty_effort() {
+        let error = parse(
+            "[[papel]]\npapel = \"developer\"\nagente = \"codex\"\nmodelo = \"m\"\nesfuerzo = \"  \"\n",
+        )
+        .expect_err("empty effort");
+        assert!(error.to_string().contains("esfuerzo no puede estar vacío"), "{error}");
+    }
+
+    #[test]
+    fn effort_without_profile_support_is_an_error() {
+        let mut seats = parse(team_text()).expect("parse");
+        seats[0].effort = Some("max".to_string());
+        let mut stock = inventory();
+        stock.agents[0].profile.env.clear();
+        let check = validate(&seats, &stock);
+        assert!(
+            check
+                .errors
+                .iter()
+                .any(|error| error.contains("OpenCode no puede aplicar el esfuerzo")),
+            "{check:?}"
+        );
+    }
+
+    #[test]
+    fn effort_in_an_env_marker_is_accepted() {
+        let mut seats = parse(team_text()).expect("parse");
+        seats[0].effort = Some("max".to_string());
+        let mut stock = inventory();
+        stock.agents[0].profile.env.insert(
+            "OPENCODE_CONFIG_CONTENT".to_string(),
+            r#"{"model":"{modelo}{variante}"}"#.to_string(),
+        );
+        let check = validate(&seats, &stock);
+        assert!(
+            !check
+                .errors
+                .iter()
+                .any(|error| error.contains("no puede aplicar")),
+            "{check:?}"
+        );
+    }
+
+    #[test]
     fn same_family_warning_only_when_another_family_is_available() {
         let mut seats = parse(team_text()).expect("parse");
         let developer_agent = available(profile(
@@ -492,14 +590,15 @@ modelo = "opencode-go/gpt-6-luna"
     }
 
     #[test]
-    fn card_lists_errors_and_warnings() {
+    fn card_lists_only_the_warnings() {
         let seats = parse(team_text()).expect("parse");
         let check = TeamCheck {
             errors: vec!["falla".to_string()],
             warnings: vec!["aviso".to_string()],
         };
         let text = card("T", &seats, &check, &inventory());
-        assert!(text.ends_with("Error: falla\nAviso: aviso"), "{text}");
+        assert!(text.ends_with("Aviso: aviso"), "{text}");
+        assert!(!text.contains("Error"), "{text}");
     }
 
     #[test]
