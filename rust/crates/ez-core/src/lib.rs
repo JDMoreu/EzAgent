@@ -13,6 +13,7 @@ pub mod llm_providers;
 pub mod logging;
 pub mod metrics;
 pub mod models;
+pub mod panics;
 pub mod paths;
 pub mod permissions;
 pub mod pyjson;

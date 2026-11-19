@@ -184,3 +184,12 @@ fn clicking_past_the_last_character_puts_the_caret_at_the_end() {
     view.pointer_down(input.x1 - 4.0, input.y0 + INPUT_MIN / 2.0);
     assert_eq!(view.input.cursor(), 4);
 }
+
+/// DX-1d: un clic dentro del campo antes del primer cuadro de contenido no
+/// puede indexar una lista de líneas vacía (lo llamaba el `WndProc`).
+#[test]
+fn placing_the_caret_before_the_first_frame_does_not_panic() {
+    let mut view = sample_view();
+    assert!(view.input_lines.is_empty());
+    view.place_caret(10.0, 10.0);
+}

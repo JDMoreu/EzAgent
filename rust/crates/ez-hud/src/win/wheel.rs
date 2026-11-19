@@ -130,20 +130,28 @@ pub(crate) fn uninstall_mouse_hook(window: &LayeredWindow) {
 /// Callback `WH_MOUSE_LL`: entrega la rueda a las ventanas interesadas.
 // SAFETY: la firma `unsafe extern "system"` es la que exige `HOOKPROC`.
 unsafe extern "system" fn mouse_hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if code >= 0 && wparam.0 as u32 == WM_MOUSEWHEEL {
-        // SAFETY: con code >= 0 y WH_MOUSE_LL, `lparam` apunta a MSLLHOOKSTRUCT.
-        let data = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
-        let delta = ((data.mouseData >> 16) & 0xFFFF) as u16 as i16;
-        let owners: Vec<Arc<LayeredWindow>> = HOOK_OWNERS
-            .lock()
-            .iter()
-            .filter_map(Weak::upgrade)
-            .collect();
-        for window in owners {
-            if window.on_global_wheel(data.pt.x, data.pt.y, delta as i32) {
-                return LRESULT(1);
+    // DX-1d: un pánico no puede cruzar la frontera FFI.
+    let swallowed = ez_core::panics::catch_panic(|| {
+        if code >= 0 && wparam.0 as u32 == WM_MOUSEWHEEL {
+            // SAFETY: con code >= 0 y WH_MOUSE_LL, `lparam` apunta a MSLLHOOKSTRUCT.
+            let data = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
+            let delta = ((data.mouseData >> 16) & 0xFFFF) as u16 as i16;
+            let owners: Vec<Arc<LayeredWindow>> = HOOK_OWNERS
+                .lock()
+                .iter()
+                .filter_map(Weak::upgrade)
+                .collect();
+            for window in owners {
+                if window.on_global_wheel(data.pt.x, data.pt.y, delta as i32) {
+                    return true;
+                }
             }
         }
+        false
+    })
+    .unwrap_or(false);
+    if swallowed {
+        return LRESULT(1);
     }
     // SAFETY: reenvío estándar; devuelve lo que responda el siguiente gancho.
     unsafe { CallNextHookEx(None, code, wparam, lparam) }

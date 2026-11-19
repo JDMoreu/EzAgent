@@ -102,18 +102,23 @@ unsafe extern "system" fn collect(
     _module: PCWSTR,
     context: *mut core::ffi::c_void,
 ) -> BOOL {
-    // SAFETY: `context` es el `Names` vivo que pasa `append`.
-    let names = unsafe { &mut *(context as *mut Names) };
-    // SAFETY: `description` es la cadena que entrega DirectSound en la llamada.
-    let name = unsafe { description.to_string() }.unwrap_or_default();
-    // SAFETY: `guid` es nulo o apunta a un GUID válido durante la llamada.
-    let guid = if guid.is_null() {
-        None
-    } else {
-        Some(unsafe { *guid })
-    };
-    names.push((guid, name));
-    BOOL::from(true)
+    // DX-1d: un pánico no puede cruzar la frontera FFI (Rust aborta con
+    // 0xc0000409). Se atrapa y la enumeración sigue.
+    ez_core::panics::catch_panic(|| {
+        // SAFETY: `context` es el `Names` vivo que pasa `append`.
+        let names = unsafe { &mut *(context as *mut Names) };
+        // SAFETY: `description` es la cadena que entrega DirectSound en la llamada.
+        let name = unsafe { description.to_string() }.unwrap_or_default();
+        // SAFETY: `guid` es nulo o apunta a un GUID válido durante la llamada.
+        let guid = if guid.is_null() {
+            None
+        } else {
+            Some(unsafe { *guid })
+        };
+        names.push((guid, name));
+        BOOL::from(true)
+    })
+    .unwrap_or(BOOL::from(true))
 }
 
 fn capture_caps(guid: Option<&GUID>) -> Option<DSCCAPS> {
