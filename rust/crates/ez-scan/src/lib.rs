@@ -15,6 +15,7 @@ pub mod entorno;
 pub mod probe;
 pub mod resources;
 pub mod system;
+pub mod usage;
 
 pub use agents::AgentInfo;
 pub use capacity::Thresholds;
@@ -22,6 +23,7 @@ pub use probe::Probe;
 pub use real::RealProbe;
 pub use resources::{Resources, SubagentUsage};
 pub use system::{GpuInfo, SystemInfo};
+pub use usage::{UsageDirs, UsageReport};
 
 mod real;
 
@@ -47,4 +49,9 @@ pub fn agents(cfg: &VoiceConfig) -> Vec<AgentInfo> {
 /// La guarda de `ez delegate` (§4): `Err` con el texto de «Recursos justos».
 pub fn check_capacity(parent: &str, thresholds: &Thresholds) -> Result<(), String> {
     capacity::check(&RealProbe, parent, thresholds)
+}
+
+/// Uso y límites de cada agente del catálogo (§5); nunca abre un agente.
+pub fn usage_report(cfg: &VoiceConfig) -> UsageReport {
+    usage::report(cfg)
 }

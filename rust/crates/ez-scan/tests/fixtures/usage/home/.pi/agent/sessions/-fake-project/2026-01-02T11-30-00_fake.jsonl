@@ -1,0 +1,3 @@
+{"type":"session","version":1,"id":"sesion-inventada","timestamp":"2026-01-02T11:00:00.000Z","cwd":"C:\\inventado"}
+{"type":"message","message":{"role":"assistant","timestamp":1767353400000,"usage":{"input":100,"output":50,"cacheRead":20,"cacheWrite":10,"reasoning":5,"totalTokens":185,"cost":{"input":0.1,"output":0.2,"cacheRead":0.0,"cacheWrite":0.0,"total":0.3}}}}
+{"type":"message","message":{"role":"assistant","timestamp":1767315600000,"usage":{"input":999,"output":999,"cacheRead":0,"cacheWrite":0,"reasoning":0,"totalTokens":1998,"cost":{"input":9.0,"output":9.0,"cacheRead":0.0,"cacheWrite":0.0,"total":18.0}}}}

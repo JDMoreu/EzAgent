@@ -1,0 +1,11 @@
+{
+  "oauthAccount": {
+    "organizationType": "claude_pro",
+    "billingType": "stripe_subscription",
+    "emailAddress": "no-leer@example.invalid",
+    "fullName": "Persona Inventada"
+  },
+  "unusedLimitResetStatusCache": {
+    "holdsUnusedReset": true
+  }
+}

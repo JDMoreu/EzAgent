@@ -4,18 +4,20 @@
 //! y muestran lo detectado. `ez init` es el único que escribe (`entorno.json`).
 
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ez_core::config::VoiceConfig;
+use ez_scan::usage::{self, UsageDirs};
 use serde_json::json;
 
 use crate::cli::{CliError, Command, Parsed};
 
-/// Los comandos de recursos e inventario.
+/// Los comandos de recursos, inventario y uso.
 pub(crate) enum ScanCommand {
     Init,
     Resources,
     Inventory,
+    Usage,
 }
 
 /// `ez init [--refresh]`.
@@ -41,6 +43,12 @@ pub(crate) fn build_inventory(parsed: &mut Parsed) -> Result<Command, CliError> 
     Ok(Command::Scan(ScanCommand::Inventory))
 }
 
+/// `ez usage [--json]`.
+pub(crate) fn build_usage(parsed: &mut Parsed) -> Result<Command, CliError> {
+    parsed.check_empty()?;
+    Ok(Command::Scan(ScanCommand::Usage))
+}
+
 /// Ejecuta el comando y devuelve el código de salida.
 pub(crate) fn run(
     command: &ScanCommand,
@@ -51,23 +59,55 @@ pub(crate) fn run(
     err: &mut dyn Write,
 ) -> i32 {
     match command {
-        ScanCommand::Init => run_init(cwd, json_output, out, err),
+        ScanCommand::Init => run_init(env, cwd, json_output, out, err),
         ScanCommand::Resources => run_resources(env, cwd, json_output, out, err),
         ScanCommand::Inventory => run_inventory(json_output, out, err),
+        ScanCommand::Usage => run_usage(env, json_output, out, err),
     }
 }
 
-fn run_init(cwd: &Path, json_output: bool, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+fn run_init(
+    env: &dyn Fn(&str) -> Option<String>,
+    cwd: &Path,
+    json_output: bool,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> i32 {
     match ez_scan::entorno::init(cwd) {
         Ok((path, entorno)) => {
+            let planes = propose_planes(env);
+            if let Some(problem) = planes.error.as_deref() {
+                let _ = writeln!(err, "Aviso: no pude proponer planes.toml: {problem}");
+            }
             if json_output {
-                print_json(out, &json!({"ok": true, "path": path, "entorno": entorno}));
+                print_json(
+                    out,
+                    &json!({
+                        "ok": true,
+                        "path": path,
+                        "entorno": entorno,
+                        "planes": {"path": planes.path, "created": planes.created},
+                    }),
+                );
                 return 0;
             }
             let _ = writeln!(out, "Entorno guardado en {}.", path.display());
             write_system(out, &entorno.system);
             write_agents(out, &entorno.agents);
             write_missing(out, &entorno.missing);
+            if planes.created {
+                let _ = writeln!(
+                    out,
+                    "Planes: propuesta nueva en {}; revísala y confírmala.",
+                    planes.path.display()
+                );
+            } else if planes.path.exists() {
+                let _ = writeln!(
+                    out,
+                    "Planes: ya existe {}; no lo sobrescribo.",
+                    planes.path.display()
+                );
+            }
             0
         }
         Err(error) => {
@@ -75,6 +115,70 @@ fn run_init(cwd: &Path, json_output: bool, out: &mut dyn Write, err: &mut dyn Wr
             1
         }
     }
+}
+
+struct PlanProposal {
+    path: PathBuf,
+    created: bool,
+    error: Option<String>,
+}
+
+/// Propone `planes.toml` con lo detectado; nunca sobrescribe uno existente.
+fn propose_planes(env: &dyn Fn(&str) -> Option<String>) -> PlanProposal {
+    let dirs = UsageDirs::from_lookup(env);
+    let path = usage::planes_path(&dirs);
+    let planes = usage::load_planes(&dirs);
+    let report = usage::report_with(&load_config(), &dirs, &planes, usage::now_ms());
+    match usage::propose_planes(&dirs, &report) {
+        Ok(created) => PlanProposal {
+            path,
+            created,
+            error: None,
+        },
+        Err(error) => PlanProposal {
+            path,
+            created: false,
+            error: Some(error),
+        },
+    }
+}
+
+fn run_usage(
+    env: &dyn Fn(&str) -> Option<String>,
+    json_output: bool,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> i32 {
+    let dirs = UsageDirs::from_lookup(env);
+    let planes = usage::load_planes(&dirs);
+    let report = usage::report_with(&load_config(), &dirs, &planes, usage::now_ms());
+    if json_output {
+        print_json(
+            out,
+            &json!({
+                "ok": true,
+                "planes": usage::planes_path(&dirs),
+                "usage": report,
+            }),
+        );
+        return 0;
+    }
+    for warning in &report.warnings {
+        let _ = writeln!(err, "Aviso: {warning}");
+    }
+    let path = usage::planes_path(&dirs);
+    if path.is_file() {
+        let _ = writeln!(out, "Uso y límites (planes.toml: {}):", path.display());
+    } else {
+        let _ = writeln!(
+            out,
+            "Uso y límites (sin planes.toml; ventana de 5 h por omisión):"
+        );
+    }
+    for agent in &report.agents {
+        write_usage_agent(out, agent);
+    }
+    0
 }
 
 fn run_resources(
@@ -226,6 +330,120 @@ fn write_missing(out: &mut dyn Write, missing: &[String]) {
     let _ = writeln!(out, "Falta declarar:");
     for line in missing {
         let _ = writeln!(out, "  {line}");
+    }
+}
+
+fn write_usage_agent(out: &mut dyn Write, agent: &ez_scan::usage::AgentUsage) {
+    let _ = writeln!(
+        out,
+        "  {} ({}): {}",
+        agent.label,
+        agent.key,
+        state_text(agent.state)
+    );
+    write_usage_facts(out, agent);
+    write_usage_sources(out, agent);
+    for warning in &agent.warnings {
+        let _ = writeln!(out, "    aviso: {warning}");
+    }
+}
+
+fn write_usage_facts(out: &mut dyn Write, agent: &ez_scan::usage::AgentUsage) {
+    let mut facts = Vec::new();
+    if let Some(tokens) = agent.tokens {
+        facts.push(format!(
+            "{} tokens en la ventana",
+            format_tokens(tokens.total)
+        ));
+    }
+    if let Some(messages) = agent.messages {
+        facts.push(format!("{messages} mensajes"));
+    }
+    if let Some(percent) = agent.used_percent {
+        facts.push(format!("{percent:.1} % observado"));
+    }
+    if let Some(cost) = agent.cost_usd {
+        facts.push(format!("{cost:.2} USD"));
+    }
+    facts.push(format!("ventana {:.1} h", agent.window_hours));
+    match &agent.limit {
+        Some(limit) => facts.push(format!(
+            "límite {} {}",
+            format_amount(limit.value),
+            unit_text(&limit.unit)
+        )),
+        None => facts.push("límite no declarado".to_string()),
+    }
+    facts.push(match &agent.reset_text {
+        Some(reset) => format!("reinicio {reset}"),
+        None => "reinicio desconocido".to_string(),
+    });
+    if let Some(plan) = &agent.plan {
+        facts.push(format!("plan {plan}"));
+    }
+    if let Some(priority) = agent.priority {
+        facts.push(format!(
+            "prioridad {}",
+            match priority {
+                ez_scan::usage::Priority::Primero => "primero",
+                ez_scan::usage::Priority::Normal => "normal",
+                ez_scan::usage::Priority::Reservar => "reservar",
+            }
+        ));
+    }
+    let _ = writeln!(out, "    {}", facts.join(" · "));
+}
+
+fn write_usage_sources(out: &mut dyn Write, agent: &ez_scan::usage::AgentUsage) {
+    let mut sources = Vec::new();
+    for (name, value) in [
+        ("uso", &agent.sources.tokens),
+        ("mensajes", &agent.sources.messages),
+        ("costo", &agent.sources.cost),
+        ("límite", &agent.sources.limit),
+        ("reinicio", &agent.sources.reset),
+        ("plan", &agent.sources.plan),
+    ] {
+        if let Some(value) = value {
+            sources.push(format!("{name}={value}"));
+        }
+    }
+    sources.push(format!("estado={}", agent.sources.state));
+    let _ = writeln!(out, "    fuentes: {}", sources.join(" · "));
+}
+
+fn state_text(state: ez_scan::usage::UsageState) -> &'static str {
+    match state {
+        ez_scan::usage::UsageState::Libre => "libre",
+        ez_scan::usage::UsageState::Cerca => "cerca",
+        ez_scan::usage::UsageState::Agotado => "agotado",
+        ez_scan::usage::UsageState::Desconocido => "desconocido",
+    }
+}
+
+fn unit_text(unit: &str) -> &'static str {
+    match unit {
+        "tokens" => "tokens",
+        "messages" => "mensajes",
+        _ => "% de la ventana",
+    }
+}
+
+fn format_amount(value: f64) -> String {
+    if (value - value.round()).abs() < f64::EPSILON {
+        format!("{value:.0}")
+    } else {
+        format!("{value:.1}")
+    }
+}
+
+fn format_tokens(tokens: u64) -> String {
+    if tokens >= 1_000_000 {
+        format!("{:.1} M", tokens as f64 / 1_000_000.0)
+    } else if tokens >= 1_000 {
+        format!("{:.1} K", tokens as f64 / 1_000.0)
+    } else {
+        tokens.to_string()
     }
 }
 
