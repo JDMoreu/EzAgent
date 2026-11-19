@@ -389,3 +389,23 @@
 - El humo usa la `VoiceApp` real con ventanas nativas y micrófono silencioso (no el exe con
   micrófono, para no tocar el audio de la persona ni arrancar otro whisper-server). Falta la
   prueba en la app de la persona: recompilar y reiniciar **solo con su permiso**.
+
+### App de la persona recompilada (19-nov 17:26) — con su permiso
+- La app de las 13:54 ya no corría: la cerró la persona (lo confirmó); sin eventos de caída
+  después de las 13:52. Su `whisper-server` 18960 quedó huérfano: cerrado (+ su powershell).
+- `eco/main` e15eb05 (DX-1b + DX-1d + DX-2 + NV-1 + IR-1 + HD-10): `cargo build --release`
+  3 min 14 s; abierta con `Start-Process` (PID 19576), viva a los 12 s, whisper nuevo 1556.
+- Verificación de `eco/main` fusionado: 47 suites de `ez-core`, `ez-hud`, `ez-app`, `ez-chat`
+  en verde (saltando la inestable conocida `a_dirty_round…`, que pasó 3/3 aislada); clippy
+  sin avisos propios (solo `vendor/freetype-sys`, ya existentes).
+- Pendiente: que la persona abra el chat (panel → chat) y confirme.
+
+### DX-3 — revisión 1: devuelto (DX-3b)
+- Bien: Job Object con `KILL_ON_JOB_CLOSE`, `unsafe` solo en `server/job.rs`, estado propio
+  con nombre de imagen comprobado antes de matar, reutiliza/reemplaza, humo release con
+  `fake-whisper` y los procesos de la persona intactos.
+- Falta: el guion del humo no se comprometió (no es repetible) y el lanzamiento directo
+  duplica `start-whisper.ps1` sin comprobar que da el mismo servidor que hoy (exe, modelo
+  large-v3-turbo-q8_0, `-l es -t 6 --vad --vad-model silero`). DX-3b: guion en
+  `scripts/tests/humo-whisper.ps1`, ejemplo `whisper_plan` de solo lectura y prueba de
+  correspondencia.
