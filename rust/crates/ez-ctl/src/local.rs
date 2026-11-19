@@ -14,10 +14,19 @@ use std::sync::Arc;
 use ez_core::config::VoiceConfig;
 use ez_herdr::driver::AgentDriver;
 use ez_herdr::herdr::{DelegateError, DelegateRequest, Herdr, Placement};
+use ez_herdr::subagents::{DelegateState, Registry, WatcherSetup};
 use serde_json::{json, Map, Value};
 
 use crate::cli::{CliError, Parsed};
 use crate::protocol::Request;
+
+mod state;
+mod watch;
+
+pub(crate) use state::{
+    build_report as build_local_report, build_tasks, build_validate, run_state, LocalState,
+};
+pub(crate) use watch::build_watch;
 
 /// El texto cuando `ez delegate` corre fuera de una terminal de Herdr.
 pub const MISSING_TERMINAL: &str = "Ejecútalo desde la terminal de un agente en Herdr.";
@@ -322,11 +331,26 @@ pub fn delegate(request: &LocalDelegate, parent: &str) -> Result<Map<String, Val
         outlive_parent: request.outlive_parent,
     };
     herdr
-        .delegate(launcher, &check, &delegate_request)
+        .delegate(launcher, &check, &delegate_request, Some(&delegate_state(parent, &herdr)))
         .map_err(|error| match error {
             DelegateError::Rejected(message) => LocalError::Rejected(message),
             DelegateError::Unavailable(message) => LocalError::Unavailable(message),
         })
+}
+
+/// El registro del subagente y el vigilante que avisa al padre (§13).
+fn delegate_state(parent: &str, herdr: &Herdr) -> DelegateState {
+    let registry = Registry::from_env();
+    let root = registry.root().to_path_buf();
+    // DECISION: el vigilante se arranca con el binario que se está ejecutando
+    // (`ez`); si no se puede saber, se deja sin vigilante.
+    let watcher = std::env::current_exe().ok().map(|ez| WatcherSetup {
+        parent: parent.to_string(),
+        root: root.clone(),
+        hc: herdr.hc_path(),
+        ez,
+    });
+    DelegateState { registry, watcher }
 }
 
 /// El encargo: un archivo UTF-8 que no pase de 200 000 bytes.

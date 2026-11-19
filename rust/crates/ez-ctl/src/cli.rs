@@ -19,7 +19,7 @@ pub(crate) const MISSING_ENV: &str =
 const DEFAULT_WAIT_SECONDS: u64 = 170;
 
 /// Opciones que no llevan valor.
-const FLAG_OPTIONS: [&str; 3] = ["no-notify", "outlive-parent", "hc-notes"];
+const FLAG_OPTIONS: [&str; 5] = ["no-notify", "outlive-parent", "hc-notes", "pass", "fail"];
 
 const USAGE: &str = "
 ez — comando del espacio de trabajo de EzAgent
@@ -48,6 +48,10 @@ Modo local (Herdr, sin EZ_URL ni EZ_TOKEN):
   ez delegate <papel> --agent <tipo> [--model <modelo>] [--effort <nivel>]
                --brief <archivo> [--name <nombre>] [--show tree|tab|right|down]
                [--cwd <carpeta>] [--no-notify] [--outlive-parent] [--json]
+  ez report --state terminado|fallido [--summary TEXTO] [--file INFORME]
+  ez validate <nombre> --pass|--fail [--summary TEXTO] [--file INFORME]
+  ez tasks [--parent <padre>] [--json]
+  ez watch --parent <padre> --dir <raíz> [--hc <ruta>]
 
 Opciones generales:
   --json    Imprime la respuesta completa como JSON (cualquier comando)
@@ -71,6 +75,8 @@ enum Command {
     Arbiter(Request),
     /// Una delegación en el modo local (Herdr).
     Local(LocalDelegate),
+    /// Una orden del estado de los subagentes en el modo local (Herdr).
+    LocalState(local::LocalState),
 }
 
 /// Los argumentos de la línea de comandos, ya analizados.
@@ -129,6 +135,11 @@ impl Parsed {
     pub(crate) fn take(&mut self, name: &str) -> Option<String> {
         let index = self.options.iter().position(|(key, _)| key == name)?;
         Some(self.options.remove(index).1)
+    }
+
+    /// ¿Aparece la opción? (sin consumirla).
+    pub(crate) fn has(&self, name: &str) -> bool {
+        self.options.iter().any(|(key, _)| key == name)
     }
 
     /// ¿Aparece la opción sin valor? (y la consume)
@@ -225,9 +236,58 @@ fn build(
         },
         "roles" => parsed.finish("roles", json!({})),
         "send" => build_send(parsed, cwd),
-        "report" => build_report(parsed, cwd),
+        "report" => build_report(parsed, cwd, arbiter, partial_env),
+        "validate" => build_state(parsed, cwd, arbiter, partial_env, local::build_validate),
+        "tasks" => build_state(parsed, cwd, arbiter, partial_env, local::build_tasks),
+        "watch" => build_state(parsed, cwd, arbiter, partial_env, local::build_watch),
         other => Err(CliError::Usage(format!("Comando desconocido: {other}."))),
     }
+}
+
+/// Analiza una orden del estado de los subagentes (solo en el modo local).
+fn build_state(
+    parsed: &mut Parsed,
+    cwd: &Path,
+    arbiter: bool,
+    partial_env: bool,
+    build: fn(&mut Parsed, &Path) -> Result<local::LocalState, CliError>,
+) -> Result<Command, CliError> {
+    // DECISION: en una tarea del árbitro estos comandos no existen: el
+    // árbitro lleva su propio estado.
+    if arbiter {
+        return Err(CliError::Usage(
+            "En una tarea del árbitro el estado de los subagentes lo lleva el árbitro."
+                .to_string(),
+        ));
+    }
+    if partial_env {
+        return Err(CliError::NoEnv);
+    }
+    Ok(Command::LocalState(build(parsed, cwd)?))
+}
+
+/// `ez report`: la del árbitro o la del modo local (§13).
+///
+/// Con `--state` es la del modo local (el subagente declara cómo terminó);
+/// sin él, `report` sigue siendo la orden de siempre para el árbitro.
+fn build_report(
+    parsed: &mut Parsed,
+    cwd: &Path,
+    arbiter: bool,
+    partial_env: bool,
+) -> Result<Command, CliError> {
+    if !parsed.has("state") {
+        return Ok(Command::Arbiter(build_arbiter_report(parsed, cwd)?));
+    }
+    if arbiter {
+        return Err(CliError::Usage(
+            "En una tarea del árbitro el estado de los subagentes lo lleva el árbitro.".to_string(),
+        ));
+    }
+    if partial_env {
+        return Err(CliError::NoEnv);
+    }
+    Ok(Command::LocalState(local::build_local_report(parsed, cwd)?))
 }
 
 fn build_task(parsed: &mut Parsed, cwd: &Path) -> Result<Command, CliError> {
@@ -279,7 +339,7 @@ fn build_send(parsed: &mut Parsed, cwd: &Path) -> Result<Command, CliError> {
     parsed.finish("fish.send", json!({ "fish": fish, "file": file }))
 }
 
-fn build_report(parsed: &mut Parsed, cwd: &Path) -> Result<Command, CliError> {
+fn build_arbiter_report(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
     let verdict = parsed.required("verdict")?;
     if verdict != "pass" && verdict != "fail" {
         return Err(CliError::Usage(
@@ -292,7 +352,7 @@ fn build_report(parsed: &mut Parsed, cwd: &Path) -> Result<Command, CliError> {
     let minor = parsed.required_number("minor")?;
     let tried = parsed.number("mutations-tried")?;
     let caught = parsed.number("mutations-caught")?;
-    parsed.finish(
+    parsed.finish_request(
         "report",
         json!({
             "verdict": verdict,
@@ -487,6 +547,7 @@ pub fn main_with(
     match command {
         Command::Arbiter(request) => send_to_arbiter(&request, url, token, parsed.json, out, err),
         Command::Local(request) => delegate_in_herdr(&request, env, parsed.json, out, err),
+        Command::LocalState(state) => local::run_state(&state, env, parsed.json, out, err),
     }
 }
 
