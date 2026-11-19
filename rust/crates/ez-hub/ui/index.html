@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EzAgent</title>
+    <link rel="stylesheet" href="vendor/xterm/css/xterm.css" />
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="spaces" class="panel-column">
+        <header class="column-header">
+          <h1 id="app-title">EzAgent</h1>
+          <span id="spaces-title">Espacios</span>
+        </header>
+        <div id="space-list" class="space-list"></div>
+        <button id="new-space" class="wide-button" type="button">+ Nuevo espacio</button>
+        <form id="space-form" class="space-form" hidden>
+          <label for="space-name" data-text="name">Nombre</label>
+          <input id="space-name" type="text" required />
+          <label for="space-folder" data-text="folder">Carpeta</label>
+          <input id="space-folder" type="text" required />
+          <label for="space-agent" data-text="elephant">Elefante</label>
+          <select id="space-agent">
+            <option value="claude">Claude Code</option>
+            <option value="opencode">OpenCode</option>
+            <option value="codex">Codex</option>
+          </select>
+          <p id="space-error" class="form-error" role="alert"></p>
+          <div class="form-actions">
+            <button id="space-create" type="submit" data-text="create">Crear</button>
+            <button id="space-cancel" type="button" data-text="cancel">Cancelar</button>
+          </div>
+        </form>
+      </aside>
+
+      <main id="center" class="panel-column">
+        <header id="elephant-header" class="column-header">Elefante</header>
+        <div id="elephant-view" class="terminal-host"></div>
+        <div id="input-bar">
+          <div id="input-notice" class="input-notice" role="status"></div>
+          <textarea id="input-text" rows="3" spellcheck="false"></textarea>
+          <div class="input-actions">
+            <button id="btn-voice" type="button" title="Disponible pronto" disabled>Nota de voz</button>
+            <button id="btn-call" type="button" title="Disponible pronto" disabled>Llamar</button>
+            <button id="btn-send" class="primary" type="button">Enviar</button>
+          </div>
+        </div>
+      </main>
+
+      <section id="right" class="panel-column">
+        <nav class="tab-bar">
+          <button id="tab-fish" class="tab active" type="button" data-text="fishTab">Peces</button>
+          <button id="tab-trace" class="tab" type="button" data-text="traceTab">Traza</button>
+        </nav>
+        <div id="fish-pane" class="tab-pane"></div>
+        <div id="trace-pane" class="tab-pane" hidden>
+          <h2 data-text="timeline">Traza</h2>
+          <div id="timeline-list" class="timeline-list"></div>
+          <h2 data-text="cards">Aprobaciones</h2>
+          <div id="card-list" class="card-list"></div>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>
