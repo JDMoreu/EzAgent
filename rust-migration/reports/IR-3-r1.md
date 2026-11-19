@@ -25,6 +25,7 @@
 - Un `modelos.toml` con entradas válidas reemplaza toda la fábrica; vacío, ilegible o sin entradas válidas deja la fábrica y avisa. Un archivo válido nunca se mezcla con la fábrica.
 - Un modelo sin `familia` queda como `desconocida` (aviso) y no cuenta para la regla de familia distinta; sin `agente` se infiere de la fábrica y, si no está, se salta con aviso. `agente` no aparecía en el brief pero es necesario para saber a quién lanzar.
 - No se filtra por la lista `models` del perfil: `modelos.toml` manda y el lanzamiento valida; así sirven modelos descubiertos (por ejemplo `*-free`).
+- Se prefiere el nivel más bajo que cumpla el mínimo del papel (no se gasta un modelo alto cuando uno medio alcanza); a igual nivel, el más barato.
 - Con recursos justos, un tipo sin subagentes vivos cuenta 0 MB (el que menos usa) y la elección se avisa.
 - Esfuerzo: si el modelo no tiene el nivel pedido, se usa el válido más cercano; a igual distancia, el más alto (`medium` → `high` en `deepseek-v4.1-flash`, que no tiene `medium`).
 - `qa_validator`: si no hay ningún modelo de otra familia instalado, se relaja la regla con aviso en vez de dejar al padre sin validador.

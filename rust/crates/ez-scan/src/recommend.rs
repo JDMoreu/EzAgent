@@ -272,6 +272,10 @@ struct Candidate<'a> {
 impl Candidate<'_> {
     /// El orden de §6: uso, memoria (si hay recursos justos), nivel, costo,
     /// prioridad y, al final, el orden del catálogo para que sea estable.
+    ///
+    /// DECISION: se prefiere el nivel más bajo que cumpla el mínimo del papel
+    /// (no se gasta un modelo alto cuando uno medio alcanza) y, a igual nivel,
+    /// el más barato.
     fn key(&self, tight: bool) -> (u8, u64, u8, u8, u8, usize) {
         (
             state_rank(self.state),
