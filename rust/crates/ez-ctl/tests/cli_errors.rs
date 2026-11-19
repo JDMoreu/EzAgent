@@ -97,12 +97,24 @@ fn misuse_is_exit_2_with_usage() {
     let dir = TempDir::new();
     let brief = dir.file("encargo.md");
     let brief = brief.to_string_lossy().into_owned();
-    let cases: [&[&str]; 7] = [
+    let cases: [&[&str]; 9] = [
         &["bailar"],
         &["task", "new", "--title", "T", "--brief", &brief],
         &["fish", "", "--brief", &brief],
         &["fish", "developer"],
         &["report", "--verdict", "quizás", "--file", &brief],
+        &["report", "--verdict", "pass", "--file", &brief],
+        &[
+            "report",
+            "--verdict",
+            "pass",
+            "--file",
+            &brief,
+            "--blocking",
+            "0",
+            "--minor",
+            "0",
+        ],
         &["status", "de-más"],
         &["status", "--verbose", "x"],
     ];
@@ -112,6 +124,23 @@ fn misuse_is_exit_2_with_usage() {
         assert!(out.is_empty(), "{}", args.join(" "));
         assert!(err.contains("Uso:"), "{}: {err}", args.join(" "));
     }
+
+    let (code, _, err) = run_without_env(
+        &[
+            "report",
+            "--verdict",
+            "pass",
+            "--file",
+            &brief,
+            "--blocking",
+            "0",
+            "--minor",
+            "0",
+        ],
+        dir.path(),
+    );
+    assert_eq!(code, 2);
+    assert!(err.contains("Falta --major."), "{err}");
 
     let (code, _, err) = run_without_env(&["pause", "--reason"], dir.path());
     assert_eq!(code, 2);

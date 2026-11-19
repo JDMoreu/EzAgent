@@ -24,7 +24,7 @@ Uso:
   ez --help                      Muestra esta ayuda
   ez --version                   Muestra la versión
   ez status                      Estado de la tarea y de la ronda
-  ez inventory [--json]          Agentes y modelos disponibles
+  ez inventory                   Agentes y modelos disponibles
   ez task new --title T --brief MD --criteria TOML
   ez team propose --file TOML
   ez round start
@@ -35,11 +35,11 @@ Uso:
   ez close
   ez pause --reason TEXTO
   ez wait [--timeout SEGUNDOS]
-  ez report --verdict pass|fail --file MD [--blocking N] [--major N] [--minor N]
+  ez report --verdict pass|fail --file MD --blocking N --major N --minor N
             [--mutations-tried N] [--mutations-caught N]
 
 Opciones generales:
-  --json    Imprime la respuesta completa del árbitro como JSON
+  --json    Imprime la respuesta completa del árbitro como JSON (cualquier comando)
 
 Códigos de salida: 0 bien, 1 rechazado, 2 uso incorrecto, 3 sin conexión.
 ";
@@ -116,6 +116,11 @@ impl Parsed {
         Ok(Some(number))
     }
 
+    fn required_number(&mut self, name: &str) -> Result<u64, CliError> {
+        self.number(name)?
+            .ok_or_else(|| CliError::Usage(format!("Falta --{name}.")))
+    }
+
     fn finish(&mut self, command: &str, args: Value) -> Result<Request, CliError> {
         if let Some(word) = self.words.first() {
             return Err(CliError::Usage(format!("Argumento de más: {word}.")));
@@ -134,11 +139,8 @@ fn build(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
     let command = parsed.word("Falta el comando. Pasa --help para ver el uso.")?;
     match command.as_str() {
         "status" => parsed.finish("status", json!({})),
-        "inventory" => {
-            // DECISION: `--json` es general para la salida y además viaja en los args.
-            let json = parsed.json;
-            parsed.finish("inventory", json!({ "json": json }))
-        }
+        // DECISION: `--json` solo controla la salida; el inventario viaja en `data`.
+        "inventory" => parsed.finish("inventory", json!({})),
         "verify" => parsed.finish("verify", json!({})),
         "close" => parsed.finish("task.close", json!({})),
         "pause" => {
@@ -227,9 +229,9 @@ fn build_report(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
         ));
     }
     let file = existing(&parsed.required("file")?, cwd)?;
-    let blocking = parsed.number("blocking")?.unwrap_or(0);
-    let major = parsed.number("major")?.unwrap_or(0);
-    let minor = parsed.number("minor")?.unwrap_or(0);
+    let blocking = parsed.required_number("blocking")?;
+    let major = parsed.required_number("major")?;
+    let minor = parsed.required_number("minor")?;
     let tried = parsed.number("mutations-tried")?;
     let caught = parsed.number("mutations-caught")?;
     parsed.finish(
