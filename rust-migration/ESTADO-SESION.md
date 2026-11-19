@@ -102,3 +102,13 @@ usuario, EzAgent = árbitro (`ez`). Diseño: `docs/designs/espacio-elefante.md`.
   `supervise2.sh <ID> <worktree> <prompt> resume` (continúa su sesión `<ID>-s1`).
   Encargos de corrección listos: ECO-1b, ECO-3b (en curso), ECO-4b; faltan ECO-2b (cuando
   termine ECO-2) y, si hace falta, ECO-5b.
+- **Desde 20:30 los peces usan `opencode/hy4-flash-free`** (decisión del usuario).
+- **Integrado en `eco/main` (2026-11-18, ~22:00):** ECO-1+1b (`ez-term`), ECO-2+2b
+  (`ez-arbiter`), ECO-3+3b (`ez-ctl`), ECO-4+4b (`ez-team`), ECO-5+5b (`ez-hub`, con
+  `--demo --selfcheck`), ECO-7 (nota de voz; falta prueba con micrófono real), ECO-REV0.
+- **En curso:** ECO-2c (worktree `ECO-2`) y ECO-6a (worktree `ECO-6a`), en paralelo.
+- **Siguiente:** ECO-6b (vista conectada; encargo listo), ECO-8 (punta a punta con
+  agente falso y hc real; luego prueba con CLIs reales, que gasta cuota: preguntar).
+- Pendientes menores: prueba del aviso de familia del validador (`ez-team`, team.rs);
+  usar `ez_herdr::prelaunch::discover_codex_models` para los modelos de Codex.
+- `cleanup_worktrees.sh`: usar `BASE=eco/main`, mirar primero sin `--apply`.
