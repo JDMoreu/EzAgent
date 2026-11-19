@@ -5,16 +5,19 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use ez_arbiter::{Delivery as ArbiterDelivery, FishLauncher, InstructionWriter, LaunchRequest, Launched};
+use ez_arbiter::{
+    Delivery as ArbiterDelivery, FishLauncher, InstructionWriter, LaunchRequest, Launched,
+};
 use ez_ctl::{Caller, Tokens};
-use ez_term::{Delivery as TermDelivery, HcClient, RunSpec, Terminal};
 use ez_team::{AgentProfile, InstructionContext, LaunchCommand, Role, Seat};
+use ez_term::{Delivery as TermDelivery, HcClient, RunSpec, Terminal};
 use parking_lot::RwLock;
 
 use crate::runtime::spaces::SpaceConfig;
 
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
-const HC_MISSING_MODEL: &str = "El espacio necesita configurar el modelo del elefante en agentes.toml.";
+const HC_MISSING_MODEL: &str =
+    "El espacio necesita configurar el modelo del elefante en agentes.toml.";
 
 /// Operaciones sobre terminales que necesita el motor. `HcClient` las cumple;
 /// las pruebas usan un doble que no abre procesos.
@@ -89,11 +92,7 @@ pub struct RuntimeLauncher {
 
 impl RuntimeLauncher {
     /// Lanza el elefante de `space` y devuelve la dirección de su terminal.
-    pub fn launch_elephant(
-        &self,
-        space: &SpaceConfig,
-        token: &str,
-    ) -> Result<String, String> {
+    pub fn launch_elephant(&self, space: &SpaceConfig, token: &str) -> Result<String, String> {
         if space.model.trim().is_empty() {
             return Err(HC_MISSING_MODEL.to_string());
         }
@@ -109,9 +108,7 @@ impl RuntimeLauncher {
         let mut extra = BTreeMap::new();
         if command.prelaunch.as_deref() == Some("opencode_state") {
             let effort = space.effort.as_deref().unwrap_or_default();
-            for (name, value) in
-                ez_herdr::prelaunch::prepare_opencode_state(&space.model, effort)
-            {
+            for (name, value) in ez_herdr::prelaunch::prepare_opencode_state(&space.model, effort) {
                 if let Some(text) = value.as_str() {
                     extra.insert(name, text.to_string());
                 }
@@ -134,9 +131,11 @@ impl RuntimeLauncher {
             no_parent: true,
             no_notify: true,
         };
-        let (terminal, delivery) = self
-            .terminals
-            .launch_and_deliver(&spec, &ez_team::launch::elephant_first_line(), READY_TIMEOUT)?;
+        let (terminal, delivery) = self.terminals.launch_and_deliver(
+            &spec,
+            &ez_team::launch::elephant_first_line(),
+            READY_TIMEOUT,
+        )?;
         check_delivery(delivery)?;
         Ok(terminal.address)
     }
@@ -204,10 +203,9 @@ impl FishLauncher for RuntimeLauncher {
         let mut extra = BTreeMap::new();
         if command.prelaunch.as_deref() == Some("opencode_state") {
             let effort = request.seat.effort.as_deref().unwrap_or_default();
-            for (name, value) in ez_herdr::prelaunch::prepare_opencode_state(
-                &request.seat.model,
-                effort,
-            ) {
+            for (name, value) in
+                ez_herdr::prelaunch::prepare_opencode_state(&request.seat.model, effort)
+            {
                 if let Some(text) = value.as_str() {
                     extra.insert(name, text.to_string());
                 }
@@ -217,7 +215,8 @@ impl FishLauncher for RuntimeLauncher {
         labels.insert("ez_agent".to_string(), request.seat.agent.clone());
         labels.insert("ez_model".to_string(), request.seat.model.clone());
         labels.insert("ez_role_fish".to_string(), request.role.id().to_string());
-        let mut env = extra;
+        let mut env = request.env.clone();
+        env.extend(extra);
         for (name, value) in &command.env {
             env.insert(name.clone(), value.clone());
         }
@@ -232,9 +231,9 @@ impl FishLauncher for RuntimeLauncher {
             no_parent: true,
             no_notify: true,
         };
-        let (terminal, delivery) = self
-            .terminals
-            .launch_and_deliver(&spec, &request.first_line, READY_TIMEOUT)?;
+        let (terminal, delivery) =
+            self.terminals
+                .launch_and_deliver(&spec, &request.first_line, READY_TIMEOUT)?;
         Ok(Launched {
             terminal: terminal.address,
             delivery: map_delivery(delivery),

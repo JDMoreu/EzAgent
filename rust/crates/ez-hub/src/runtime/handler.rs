@@ -4,9 +4,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ez_arbiter::{Arbiter, Caller as ArbiterCaller, Command, FishKey, Verdict};
+use ez_arbiter::{
+    Caller as ArbiterCaller, Command, ElephantEvent, FishKey, Outcome, Rejection, Verdict,
+};
 use ez_ctl::{Caller, Handler, Reply, Request};
-use ez_team::{inventory::Inventory, profiles::AgentProfile, subscriptions::Subscription, RealSystem, Role};
+use ez_team::{
+    inventory::Inventory, profiles::AgentProfile, subscriptions::Subscription, RealSystem, Role,
+};
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 
@@ -15,9 +19,34 @@ use crate::runtime::spaces::SpaceConfig;
 const CACHE_SECONDS: u64 = 60;
 const DEFAULT_WAIT_SECONDS: u64 = 170;
 
+/// Operaciones del árbitro que usa el adaptador. `Arbiter` las cumple; las
+/// pruebas usan un doble que registra cada comando recibido.
+pub trait ArbiterApi: Send + Sync {
+    /// Ejecuta un comando en nombre de `caller`.
+    fn execute(&self, caller: &ArbiterCaller, command: Command) -> Result<Outcome, Rejection>;
+    /// Espera una novedad del elefante.
+    fn wait(&self, space: &str, timeout: Duration) -> Option<ElephantEvent>;
+    /// Estado serializado de la tarea activa de `space`.
+    fn snapshot(&self, space: &str) -> Option<Value>;
+}
+
+impl ArbiterApi for ez_arbiter::Arbiter {
+    fn execute(&self, caller: &ArbiterCaller, command: Command) -> Result<Outcome, Rejection> {
+        ez_arbiter::Arbiter::execute(self, caller, command)
+    }
+
+    fn wait(&self, space: &str, timeout: Duration) -> Option<ElephantEvent> {
+        self.wait_for_elephant(space, timeout)
+    }
+
+    fn snapshot(&self, space: &str) -> Option<Value> {
+        self.snapshot(space)
+    }
+}
+
 /// Atiende los comandos del protocolo usando el árbitro real.
 pub struct ArbiterHandler {
-    arbiter: Arc<Arbiter>,
+    arbiter: Arc<dyn ArbiterApi>,
     profiles: Vec<AgentProfile>,
     subscriptions: Vec<Subscription>,
     spaces: Vec<SpaceConfig>,
@@ -27,7 +56,7 @@ pub struct ArbiterHandler {
 impl ArbiterHandler {
     /// Crea el adaptador con el inventario vacío en caché.
     pub fn new(
-        arbiter: Arc<Arbiter>,
+        arbiter: Arc<dyn ArbiterApi>,
         profiles: Vec<AgentProfile>,
         subscriptions: Vec<Subscription>,
         spaces: Vec<SpaceConfig>,
@@ -77,7 +106,12 @@ impl ArbiterHandler {
         let title = self
             .arbiter
             .snapshot(space)
-            .and_then(|snapshot| snapshot.get("title").and_then(Value::as_str).map(str::to_owned))
+            .and_then(|snapshot| {
+                snapshot
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
             .unwrap_or_else(|| "Tarea".to_string());
         let card = ez_team::team::card(&title, &seats, &check, &found);
         Ok(Command::TeamPropose { seats, card })
@@ -96,7 +130,7 @@ impl ArbiterHandler {
             .get("timeout")
             .and_then(Value::as_u64)
             .unwrap_or(DEFAULT_WAIT_SECONDS);
-        match self.arbiter.wait_for_elephant(space, Duration::from_secs(seconds)) {
+        match self.arbiter.wait(space, Duration::from_secs(seconds)) {
             Some(event) => {
                 let message = event.message.clone();
                 Reply::ok(message, json!({ "event": event }))
@@ -305,9 +339,8 @@ mod tests {
         let dir = crate::testutil::TempDir::new("runtime-handler-inside");
         let inside_file = dir.path().join("equipo.toml");
         std::fs::write(&inside_file, "x").expect("archivo");
-        let outside_root = dir.path().join("otro");
-        std::fs::create_dir_all(&outside_root).expect("carpeta");
-        let outside_file = outside_root.join("equipo.toml");
+        let other = crate::testutil::TempDir::new("runtime-handler-outside");
+        let outside_file = other.path().join("equipo.toml");
         std::fs::write(&outside_file, "x").expect("archivo");
         assert!(inside(dir.path(), &inside_file).is_ok());
         assert!(inside(dir.path(), &outside_file).is_err());

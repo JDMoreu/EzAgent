@@ -6,9 +6,9 @@ use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 
+use crossbeam_channel::Sender;
 use ez_arbiter::{Arbiter, FishKey};
 use ez_term::{EventStream, TermEvent, Terminal};
-use tauri::{AppHandle, Emitter};
 
 use crate::runtime::launcher::RuntimeLauncher;
 
@@ -31,13 +31,13 @@ pub fn spawn(
     hc: &Path,
     arbiter: Arc<Arbiter>,
     launcher: Arc<RuntimeLauncher>,
-    app: Arc<parking_lot::Mutex<Option<AppHandle>>>,
+    changed: Sender<()>,
 ) -> Result<(), String> {
     let labels = BTreeMap::from([(ALL_EZ.to_string(), EZ_LABEL.to_string())]);
     let stream = EventStream::subscribe(hc, &labels).map_err(|error| error.to_string())?;
     thread::Builder::new()
         .name("ez-hub-hc-events".to_string())
-        .spawn(move || run(stream, arbiter, launcher, app))
+        .spawn(move || run(stream, arbiter, launcher, changed))
         .map_err(|error| error.to_string())?;
     Ok(())
 }
@@ -46,7 +46,7 @@ fn run(
     stream: EventStream,
     arbiter: Arc<Arbiter>,
     launcher: Arc<RuntimeLauncher>,
-    app: Arc<parking_lot::Mutex<Option<AppHandle>>>,
+    changed: Sender<()>,
 ) {
     let mut keys: HashMap<String, FishKey> = HashMap::new();
     for terminal in stream.snapshot() {
@@ -60,7 +60,7 @@ fn run(
             if let Ok(terminals) = launcher.list(&labels) {
                 keys = keys_from(&terminals);
             }
-            notify(&app);
+            let _ = changed.try_send(());
             continue;
         }
         if let Some(signal) = translate(&event, &mut keys) {
@@ -69,7 +69,7 @@ fn run(
                 FishSignal::Failed(key, motive) => arbiter.fish_failed(&key, &motive),
                 FishSignal::Exited(key) => arbiter.fish_exited(&key),
             }
-            notify(&app);
+            let _ = changed.try_send(());
         }
     }
 }
@@ -96,11 +96,7 @@ pub(crate) fn translate(
                 _ => None,
             }
         }
-        TermEvent::Finished {
-            terminal,
-            reason: _,
-            ..
-        } => {
+        TermEvent::Finished { terminal, .. } => {
             let key = keys.remove(terminal)?;
             Some(FishSignal::Exited(key))
         }
@@ -146,15 +142,6 @@ fn fish_key(labels: &BTreeMap<String, String>) -> Option<FishKey> {
     })
 }
 
-fn notify(app: &Arc<parking_lot::Mutex<Option<AppHandle>>>) {
-    let handle = { app.lock().clone() };
-    if let Some(handle) = handle {
-        if let Err(error) = handle.emit("hub://changed", ()) {
-            tracing::debug!(%error, "la vista ya no escucha cambios");
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,11 +168,12 @@ mod tests {
     }
 
     fn created() -> TermEvent {
-        let mut terminal = Terminal::default();
-        terminal.address = "t7".to_string();
-        terminal.labels = labels();
         TermEvent::Created {
-            terminal,
+            terminal: Terminal {
+                address: "t7".to_string(),
+                labels: labels(),
+                ..Terminal::default()
+            },
             seq: 1,
         }
     }
@@ -233,20 +221,28 @@ mod tests {
             reason: None,
             seq: 3,
         };
-        assert_eq!(translate(&event, &mut keys), Some(FishSignal::Exited(key())));
+        assert_eq!(
+            translate(&event, &mut keys),
+            Some(FishSignal::Exited(key()))
+        );
         translate(&created(), &mut keys);
         let event = TermEvent::Lost {
             terminal: "t7".to_string(),
             seq: 4,
         };
-        assert!(matches!(translate(&event, &mut keys), Some(FishSignal::Failed(..))));
+        assert!(matches!(
+            translate(&event, &mut keys),
+            Some(FishSignal::Failed(..))
+        ));
     }
 
     #[test]
     fn missed_with_a_snapshot_resynchronizes_the_keys() {
-        let mut terminal = Terminal::default();
-        terminal.address = "t9".to_string();
-        terminal.labels = labels();
+        let terminal = Terminal {
+            address: "t9".to_string(),
+            labels: labels(),
+            ..Terminal::default()
+        };
         let event = TermEvent::Missed {
             snapshot: Some(vec![terminal]),
             seq: Some(7),
@@ -258,16 +254,15 @@ mod tests {
 
     #[test]
     fn ignores_terminals_that_are_not_fish() {
-        let mut terminal = Terminal::default();
-        terminal.address = "e1".to_string();
-        terminal.labels = BTreeMap::from([
-            ("ez".to_string(), "1".to_string()),
-            ("ez_role".to_string(), "elephant".to_string()),
-        ]);
-        let event = TermEvent::Created {
-            terminal,
-            seq: 1,
+        let terminal = Terminal {
+            address: "e1".to_string(),
+            labels: BTreeMap::from([
+                ("ez".to_string(), "1".to_string()),
+                ("ez_role".to_string(), "elephant".to_string()),
+            ]),
+            ..Terminal::default()
         };
+        let event = TermEvent::Created { terminal, seq: 1 };
         let mut keys = HashMap::new();
         assert!(translate(&event, &mut keys).is_none());
         assert!(keys.is_empty());

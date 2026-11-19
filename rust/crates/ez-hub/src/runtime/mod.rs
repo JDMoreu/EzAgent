@@ -9,16 +9,19 @@ pub mod launcher;
 pub mod spaces;
 mod types;
 
+#[cfg(test)]
+mod tests;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use ez_arbiter::{Arbiter, Space, SystemClock};
 use ez_ctl::{new_token, Caller, CtlServer, Tokens};
-use ez_term::{HcClient, locate_hc};
+use ez_term::{locate_hc, HcClient};
 use parking_lot::{Mutex, RwLock};
-use tauri::AppHandle;
 
 use self::handler::ArbiterHandler;
 use self::launcher::{HcTerminals, RuntimeLauncher, TeamInstructionWriter};
@@ -39,14 +42,15 @@ pub struct HubRuntime {
     elephant_tokens: ElephantTokens,
     need_relaunch: Arc<AtomicBool>,
     relaunched: Mutex<BTreeSet<String>>,
-    app: Arc<Mutex<Option<AppHandle>>>,
+    changed: (Sender<()>, Receiver<()>),
 }
 
 impl HubRuntime {
     /// Arranca el motor en modo normal. Nunca se llama en `--demo`.
     pub fn start(data_dir: &Path) -> Result<HubRuntime, String> {
         let spaces = load_spaces(&data_dir.join("espacios.json"))?;
-        let profiles = ez_team::profiles::load_or_init(data_dir).map_err(|error| error.to_string())?;
+        let profiles =
+            ez_team::profiles::load_or_init(data_dir).map_err(|error| error.to_string())?;
         let subscriptions =
             ez_team::subscriptions::load(data_dir).map_err(|error| error.to_string())?;
         let exe_dir = exe_directory()?;
@@ -82,7 +86,7 @@ impl HubRuntime {
             tokens.register(&token, Caller::Elephant { space });
         }
         let handler = Arc::new(ArbiterHandler::new(
-            Arc::clone(&arbiter),
+            Arc::clone(&arbiter) as Arc<dyn handler::ArbiterApi>,
             launcher.profiles.clone(),
             subscriptions,
             spaces.clone(),
@@ -90,12 +94,12 @@ impl HubRuntime {
         let need_relaunch = Arc::new(AtomicBool::new(false));
         let service_url = start_server(handler, &tokens, &need_relaunch)?;
         *url.write() = Some(service_url.clone());
-        let app = Arc::new(Mutex::new(None));
+        let changed = unbounded();
         events::spawn(
             &hc_path,
             Arc::clone(&arbiter),
             Arc::clone(&launcher),
-            Arc::clone(&app),
+            changed.0.clone(),
         )?;
         let status = if ez_ok {
             RuntimeStatus::normal(service_url)
@@ -112,7 +116,7 @@ impl HubRuntime {
             elephant_tokens,
             need_relaunch,
             relaunched: Mutex::new(BTreeSet::new()),
-            app,
+            changed,
         })
     }
 
@@ -130,7 +134,7 @@ impl HubRuntime {
             elephant_tokens: ElephantTokens::load(data_dir.join("elefantes.json")),
             need_relaunch: Arc::new(AtomicBool::new(false)),
             relaunched: Mutex::new(BTreeSet::new()),
-            app: Arc::new(Mutex::new(None)),
+            changed: unbounded(),
         }
     }
 
@@ -139,14 +143,17 @@ impl HubRuntime {
         self.status.clone()
     }
 
-    /// Recibe el `AppHandle` de Tauri para avisar de cambios a la vista.
-    pub fn attach_app(&self, app: AppHandle) {
-        *self.app.lock() = Some(app);
+    /// Canal de avisos para la vista; el hilo de Tauri emite `hub://changed`.
+    pub fn subscribe_changed(&self) -> Receiver<()> {
+        self.changed.1.clone()
     }
 
     /// Dirección hc del elefante de `space`; lo lanza si no está vivo.
     pub fn ensure_elephant(&self, space: &str) -> Result<String, String> {
-        let launcher = self.launcher.as_ref().ok_or_else(|| self.status.reason.clone())?;
+        let launcher = self
+            .launcher
+            .as_ref()
+            .ok_or_else(|| self.status.reason.clone())?;
         let config = self
             .spaces
             .iter()
@@ -174,8 +181,12 @@ impl HubRuntime {
             .get(space)
             .filter(|token| !token.is_empty())
             .unwrap_or_else(new_token);
-        self.tokens
-            .register(&token, Caller::Elephant { space: space.to_string() });
+        self.tokens.register(
+            &token,
+            Caller::Elephant {
+                space: space.to_string(),
+            },
+        );
         match launcher.launch_elephant(config, &token) {
             Ok(address) => {
                 self.elephant_tokens.set(space, &token)?;
@@ -190,13 +201,15 @@ impl HubRuntime {
     }
 
     fn must_relaunch(&self, space: &str) -> bool {
-        self.need_relaunch.load(Ordering::SeqCst)
-            && !self.relaunched.lock().contains(space)
+        self.need_relaunch.load(Ordering::SeqCst) && !self.relaunched.lock().contains(space)
     }
 
     /// Peces vivos de `space`, con dirección, papel, agente, modelo y estado.
     pub fn space_fish(&self, space: &str) -> Result<Vec<FishInfo>, String> {
-        let launcher = self.launcher.as_ref().ok_or_else(|| self.status.reason.clone())?;
+        let launcher = self
+            .launcher
+            .as_ref()
+            .ok_or_else(|| self.status.reason.clone())?;
         let labels = BTreeMap::from([("ez".to_string(), "1".to_string())]);
         let terminals = launcher.list(&labels)?;
         Ok(terminals
@@ -223,8 +236,31 @@ impl HubRuntime {
     /// Envía texto crudo a la terminal del elefante.
     pub fn elephant_send(&self, space: &str, text: &str) -> Result<(), String> {
         let address = self.ensure_elephant(space)?;
-        let launcher = self.launcher.as_ref().ok_or_else(|| self.status.reason.clone())?;
+        let launcher = self
+            .launcher
+            .as_ref()
+            .ok_or_else(|| self.status.reason.clone())?;
         launcher.send_text(&address, text)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_parts(
+        spaces: Vec<SpaceConfig>,
+        launcher: Arc<RuntimeLauncher>,
+        tokens: Arc<Tokens>,
+        elephant_tokens: ElephantTokens,
+        need_relaunch: bool,
+    ) -> HubRuntime {
+        HubRuntime {
+            status: RuntimeStatus::normal("http://127.0.0.1:1"),
+            spaces,
+            tokens,
+            launcher: Some(launcher),
+            elephant_tokens,
+            need_relaunch: Arc::new(AtomicBool::new(need_relaunch)),
+            relaunched: Mutex::new(BTreeSet::new()),
+            changed: unbounded(),
+        }
     }
 }
 
@@ -241,7 +277,11 @@ fn exe_directory() -> Result<PathBuf, String> {
 
 fn exe_name() -> &'static str {
     // DECISION: en Windows el ejecutable lleva extensión; en el resto, no.
-    if cfg!(windows) { "ez.exe" } else { "ez" }
+    if cfg!(windows) {
+        "ez.exe"
+    } else {
+        "ez"
+    }
 }
 
 fn start_server(

@@ -37,7 +37,7 @@ pub fn init_tracing() {
 /// autocomprobación de la vista, que escribe su informe en esa ruta.
 pub fn run(demo: bool, selfcheck: Option<PathBuf>) -> tauri::Result<()> {
     let state = commands::AppState::with_selfcheck(demo, selfcheck.clone());
-    let runtime = state.runtime();
+    let changed = state.runtime().map(|runtime| runtime.subscribe_changed());
     // El informe se escribe antes de cerrar; si la ruta sigue sin existir en 20 s,
     // la vista no avisó. El hilo no retiene ningún candado durante la espera.
     if let Some(path) = selfcheck {
@@ -69,8 +69,19 @@ pub fn run(demo: bool, selfcheck: Option<PathBuf>) -> tauri::Result<()> {
             commands::selfcheck_report,
         ])
         .setup(move |app| {
-            if let Some(runtime) = runtime {
-                runtime.attach_app(app.handle().clone());
+            use tauri::Emitter;
+            if let Some(receiver) = changed {
+                let handle = app.handle().clone();
+                thread::Builder::new()
+                    .name("ez-hub-changed".to_string())
+                    .spawn(move || {
+                        while receiver.recv().is_ok() {
+                            if let Err(error) = handle.emit("hub://changed", ()) {
+                                tracing::debug!(%error, "la vista ya no escucha cambios");
+                            }
+                        }
+                    })
+                    .expect("hilo de avisos a la vista");
             }
             Ok(())
         })

@@ -203,7 +203,10 @@ mod tests {
         let tokens = ElephantTokens::load(path.clone());
         assert_eq!(tokens.get("s1"), None);
         tokens.set("s1", "abc").expect("guardar");
-        assert_eq!(ElephantTokens::load(path.clone()).get("s1").as_deref(), Some("abc"));
+        assert_eq!(
+            ElephantTokens::load(path.clone()).get("s1").as_deref(),
+            Some("abc")
+        );
         tokens.remove("s1");
         assert_eq!(ElephantTokens::load(path).get("s1"), None);
     }
