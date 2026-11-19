@@ -38,7 +38,7 @@ pub(crate) fn load(data_dir: &Path) -> Vec<MainAgent> {
 /// Guarda la lista de agentes con escritura atómica.
 pub(crate) fn save(data_dir: &Path, agents: HashMap<String, MainAgent>) -> Result<(), Rejection> {
     let mut list: Vec<MainAgent> = agents.into_values().collect();
-    list.sort_by(|left, right| left.key.storage_key().cmp(&right.key.storage_key()));
+    list.sort_by_key(|left| left.key.storage_key());
     let bytes = serde_json::to_vec_pretty(&AgentsFile { agents: list }).map_err(|error| {
         Rejection::new(
             "R12",
@@ -206,5 +206,71 @@ impl ArbiterShared {
             .main_agents
             .get(&key.storage_key())
             .cloned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{current_branch, merge};
+    use std::path::Path;
+
+    fn run(folder: &Path, args: &[&str]) {
+        let mut command = crate::exec::command("git");
+        command.arg("-C").arg(folder).args(args);
+        assert!(command.status().expect("git").success(), "git {args:?}");
+    }
+
+    fn repo(name: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "ez-arbiter-merge-{name}-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).expect("crear raíz");
+        run(&root, &["init", "-q"]);
+        run(&root, &["config", "user.name", "Pez de prueba"]);
+        run(&root, &["config", "user.email", "pez@example.test"]);
+        std::fs::write(root.join("x.txt"), "base").expect("escribir x");
+        run(&root, &["add", "x.txt"]);
+        run(&root, &["commit", "-q", "-m", "inicial"]);
+        root
+    }
+
+    #[test]
+    fn merges_a_branch_with_new_work() {
+        let root = repo("ok");
+        let branch = current_branch(&root).expect("rama base");
+        run(&root, &["checkout", "-q", "-b", "ez/prueba"]);
+        std::fs::write(root.join("nuevo.txt"), "hecho").expect("nuevo archivo");
+        run(&root, &["add", "nuevo.txt"]);
+        run(&root, &["commit", "-q", "-m", "trabajo"]);
+        run(&root, &["checkout", "-q", &branch]);
+        merge(&root, "ez/prueba", "Tarea").expect("integrar");
+        assert!(root.join("nuevo.txt").is_file());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_conflict_leaves_the_working_tree_unchanged() {
+        let root = repo("conflicto");
+        let branch = current_branch(&root).expect("rama base");
+        run(&root, &["checkout", "-q", "-b", "ez/prueba"]);
+        std::fs::write(root.join("x.txt"), "del worktree").expect("cambiar x");
+        run(&root, &["add", "x.txt"]);
+        run(&root, &["commit", "-q", "-m", "trabajo"]);
+        run(&root, &["checkout", "-q", &branch]);
+        std::fs::write(root.join("x.txt"), "de la base").expect("cambiar x en base");
+        run(&root, &["add", "x.txt"]);
+        run(&root, &["commit", "-q", "-m", "base"]);
+        let error = merge(&root, "ez/prueba", "Tarea").expect_err("conflicto");
+        assert!(error.contains("conflicto"), "{error}");
+        assert_eq!(
+            std::fs::read_to_string(root.join("x.txt")).expect("x"),
+            "de la base"
+        );
+        assert!(
+            !root.join("MERGE_HEAD").exists(),
+            "no quedó una fusión a medias"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

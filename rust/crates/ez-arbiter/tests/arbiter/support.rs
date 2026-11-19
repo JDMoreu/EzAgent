@@ -213,6 +213,17 @@ impl Fixture {
         }
     }
 
+    /// Abre un segundo árbitro sobre los mismos datos (para probar la recarga).
+    pub fn reopen(&self) -> Arbiter {
+        Arbiter::new(
+            self.data_dir.clone(),
+            self.launcher.clone(),
+            Arc::new(FakeWriter),
+            self.clock.clone(),
+        )
+        .expect("reabrir el árbitro")
+    }
+
     /// Igual que `new`, pero sin repositorio git (para R2).
     pub fn without_git(name: &str) -> Self {
         let fixture = Self::new(name);
@@ -474,6 +485,20 @@ pub fn live_kind(event: &ez_arbiter::ArbiterEvent) -> String {
         .as_str()
         .expect("tipo del evento")
         .to_string()
+}
+
+/// Ejecuta git y devuelve stdout, sin shell y sin ventana de consola.
+pub fn git_output(folder: &Path, args: &[&str]) -> String {
+    let mut command = std::process::Command::new("git");
+    command.arg("-C").arg(folder).args(args);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    let output = command.output().expect("ejecutar git");
+    assert!(output.status.success(), "git {args:?} falló");
+    String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
 /// Ejecuta git sin shell y sin ventana de consola.

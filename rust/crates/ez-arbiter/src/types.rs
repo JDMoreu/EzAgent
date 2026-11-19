@@ -26,24 +26,17 @@ impl Clock for SystemClock {
 }
 
 /// Identidad de un agente principal de un espacio (diseño §15.1).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ElephantKey {
     pub space: String,
     /// `e` + 8 hex; `e00000000` es el agente principal por omisión del espacio.
     pub elephant: String,
 }
 
-impl Default for ElephantKey {
-    fn default() -> Self {
-        Self {
-            space: String::new(),
-            elephant: String::new(),
-        }
-    }
-}
-
 impl ElephantKey {
     /// Agente principal por omisión: trabaja en la carpeta original del espacio.
+    // DECISION: id fijo `e00000000` para que las tareas antiguas y las pruebas
+    // puedan resolver al agente principal sin consultar `agentes.json`.
     pub fn default_for(space: &str) -> Self {
         Self {
             space: space.to_string(),

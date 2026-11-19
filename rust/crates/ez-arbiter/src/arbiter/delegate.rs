@@ -91,6 +91,8 @@ impl ArbiterShared {
     ) -> Result<LaunchPlan, Rejection> {
         let round = task.round;
         let attempt = task.attempts(role, round) + 1;
+        // DECISION: el id del hijo lleva el id del padre para que no choque con
+        // el pez del mismo papel lanzado por el agente principal en la ronda.
         let fish = format!("{}-{}", parent_key.fish, role.short());
         let key = FishKey {
             space: task.space.id.clone(),

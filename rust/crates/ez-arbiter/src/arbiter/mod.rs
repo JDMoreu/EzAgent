@@ -15,10 +15,15 @@ mod fish;
 mod lifecycle;
 mod load;
 mod round;
+mod setup;
 mod task_cmds;
 mod team;
 
 pub use api::Arbiter;
+
+pub(crate) use setup::{
+    elephant_queue, fish_slot, normalize_scope, scope, scope_elephant, scope_space, ElephantQueue,
+};
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -47,16 +52,9 @@ pub(crate) type JobValue = Box<dyn Any + Send>;
 type JobRun = Box<dyn FnOnce(&ArbiterShared) -> Result<JobValue, Rejection> + Send>;
 
 /// Petición encolada y canal por el que se devuelve el resultado al llamador.
-struct Job {
+pub(crate) struct Job {
     run: JobRun,
     done: Sender<Result<JobValue, Rejection>>,
-}
-
-/// Cola de novedades de un espacio para `ez wait`.
-#[derive(Clone)]
-pub(crate) struct ElephantQueue {
-    pub tx: Sender<ElephantEvent>,
-    pub rx: Receiver<ElephantEvent>,
 }
 
 /// Estado compartido protegido por un candado.
@@ -78,41 +76,6 @@ pub(crate) struct Inner {
     pub cards: HashMap<String, Card>,
 }
 
-/// Cola nueva y vacía.
-fn elephant_queue() -> ElephantQueue {
-    let (tx, rx) = crossbeam_channel::unbounded();
-    ElephantQueue { tx, rx }
-}
-
-/// Clave de cola y ejecutor de un agente principal.
-pub(crate) fn scope(key: &ElephantKey) -> String {
-    key.storage_key()
-}
-
-/// Acepta claves nuevas (`space|elephant`) y las antiguas (solo `space`).
-pub(crate) fn normalize_scope(value: &str) -> String {
-    if value.contains('|') {
-        value.to_string()
-    } else {
-        scope(&ElephantKey::default_for(value))
-    }
-}
-
-/// Id del espacio dentro de una clave de cola.
-pub(crate) fn scope_space(value: &str) -> String {
-    value.split('|').next().unwrap_or("").to_string()
-}
-
-/// Id del agente principal dentro de una clave de cola.
-pub(crate) fn scope_elephant(value: &str) -> Option<String> {
-    value.split('|').nth(1).map(str::to_string)
-}
-
-/// Clave de la cola de novedades de un pez, sin el intento (§15.5).
-pub(crate) fn fish_slot(key: &FishKey) -> String {
-    format!("{}|{}|{}|{}", key.space, key.task, key.elephant, key.fish)
-}
-
 /// Núcleo del árbitro, compartido por la API pública y los hilos ejecutores.
 pub(crate) struct ArbiterShared {
     pub(crate) data_dir: PathBuf,
@@ -125,124 +88,6 @@ pub(crate) struct ArbiterShared {
 }
 
 impl ArbiterShared {
-    /// Construye el núcleo y recarga las tareas no finales.
-    fn new(
-        data_dir: PathBuf,
-        launcher: Arc<dyn FishLauncher>,
-        writer: Arc<dyn InstructionWriter>,
-        clock: Arc<dyn Clock>,
-    ) -> Result<ArbiterShared, String> {
-        std::fs::create_dir_all(&data_dir)
-            .map_err(|error| format!("No se pudo crear {}: {error}.", data_dir.display()))?;
-        let loaded = load::load_tasks(&data_dir);
-        let mut spaces = HashMap::new();
-        let mut elephants = HashMap::new();
-        let mut tasks = HashMap::new();
-        let mut main_agents: HashMap<String, MainAgent> = agents::load(&data_dir)
-            .into_iter()
-            .map(|agent| (agent.key.storage_key(), agent))
-            .collect();
-        for mut task in loaded {
-            if task.elephant.elephant.is_empty() {
-                task.elephant = ElephantKey::default_for(&task.space.id);
-            }
-            let key = task.elephant.clone();
-            spaces
-                .entry(task.space.id.clone())
-                .or_insert_with(|| task.space.clone());
-            let slot = scope(&key);
-            main_agents.entry(slot.clone()).or_insert_with(|| {
-                let branch = agents::current_branch(&task.space.folder).unwrap_or_default();
-                MainAgent {
-                    key: key.clone(),
-                    name: "Agente principal".to_string(),
-                    worktree: task.space.folder.clone(),
-                    branch: branch.clone(),
-                    base_branch: branch,
-                }
-            });
-            elephants.entry(slot).or_insert_with(elephant_queue);
-            tasks.insert(task.id.clone(), task);
-        }
-        for agent in main_agents.values() {
-            elephants
-                .entry(scope(&agent.key))
-                .or_insert_with(elephant_queue);
-        }
-        let shared = ArbiterShared {
-            data_dir,
-            launcher,
-            writer,
-            clock,
-            inner: Mutex::new(Inner {
-                spaces,
-                tasks,
-                subscribers: Vec::new(),
-                elephants,
-                fish_queues: HashMap::new(),
-                main_agents,
-                tokens: HashMap::new(),
-                queues: HashMap::new(),
-                cards: HashMap::new(),
-            }),
-            seq: AtomicU64::new(0),
-        };
-        shared.restart();
-        Ok(shared)
-    }
-
-    /// Devuelve (y crea, si hace falta) el canal del ejecutor de un espacio.
-    /// El `Mutex` solo se toma para consultar e insertar, nunca durante E/S.
-    fn queue_sender(self: &Arc<Self>, value: &str) -> Sender<Job> {
-        let key = normalize_scope(value);
-        let (sender, receiver) = {
-            let mut inner = self.inner.lock();
-            if let Some(sender) = inner.queues.get(&key) {
-                return sender.clone();
-            }
-            let (sender, receiver) = crossbeam_channel::unbounded();
-            inner.queues.insert(key.clone(), sender.clone());
-            (sender, receiver)
-        };
-        let shared = self.clone();
-        let name = format!("ez-arbiter-{key}");
-        std::thread::Builder::new()
-            .name(name)
-            .spawn(move || {
-                for job in receiver {
-                    let result = (job.run)(&shared);
-                    let _ = job.done.send(result);
-                }
-            })
-            .expect("crear el hilo ejecutor del árbitro");
-        sender
-    }
-
-    /// Registra o actualiza un espacio (lo llama la ventana al abrirlo).
-    pub(crate) fn register_space(&self, space: Space) {
-        let key = ElephantKey::default_for(&space.id);
-        let slot = scope(&key);
-        let exists = self.inner.lock().main_agents.contains_key(&slot);
-        let branch = if exists {
-            String::new()
-        } else {
-            agents::current_branch(&space.folder).unwrap_or_default()
-        };
-        let mut inner = self.inner.lock();
-        inner
-            .main_agents
-            .entry(slot.clone())
-            .or_insert_with(|| MainAgent {
-                key,
-                name: "Agente principal".to_string(),
-                worktree: space.folder.clone(),
-                branch: branch.clone(),
-                base_branch: branch,
-            });
-        inner.elephants.entry(slot).or_insert_with(elephant_queue);
-        inner.spaces.insert(space.id.clone(), space);
-    }
-
     /// Ejecuta un comando del elefante o de un pez.
     pub(crate) fn dispatch(&self, caller: &Caller, command: Command) -> Result<Outcome, Rejection> {
         if let Caller::Elephant(key) = caller {

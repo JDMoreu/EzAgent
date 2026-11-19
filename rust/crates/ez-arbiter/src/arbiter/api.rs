@@ -93,6 +93,14 @@ impl Arbiter {
         })
     }
 
+    /// La persona aprueba la tarea de un agente principal concreto (§15.1).
+    pub fn approve_task_for(&self, key: &ElephantKey) -> Result<Outcome, Rejection> {
+        let slot = scope(key);
+        self.enqueue(&slot.clone(), move |arbiter| {
+            arbiter.approve_task_impl(&slot)
+        })
+    }
+
     /// La persona rechaza la tarea con un comentario para el elefante.
     pub fn reject_task(&self, space: &str, comment: &str) -> Result<Outcome, Rejection> {
         let space = space.to_string();
@@ -107,6 +115,14 @@ impl Arbiter {
         let space = space.to_string();
         self.person(space, "approve_team", |arbiter, space| {
             arbiter.approve_team_inner(space)
+        })
+    }
+
+    /// La persona aprueba el equipo de un agente principal concreto (§15.1).
+    pub fn approve_team_for(&self, key: &ElephantKey) -> Result<Outcome, Rejection> {
+        let slot = scope(key);
+        self.enqueue(&slot.clone(), move |arbiter| {
+            arbiter.approve_team_impl(&slot)
         })
     }
 

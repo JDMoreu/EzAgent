@@ -132,16 +132,35 @@ impl ArbiterShared {
     ) -> Result<Outcome, Rejection> {
         let token = plan.request.token.clone();
         let launched = self.launcher.launch(&plan.request);
-        let (terminal, mut message) = self.delivery_result(task, &plan, launched)?;
+        let (terminal, message) = self.delivery_result(task, &plan, launched)?;
         self.remember_token(&plan.key, &token);
         task.last_fp = Some(plan.start.clone());
-        let parent = plan.key.parent.clone();
+        self.register_work(task, &plan, &terminal, depth);
+        let mut effects = Effects::default();
+        let message = self.launch_message(task, &plan, &terminal, message, &mut effects);
+        self.commit(task, effects);
+        Ok(Outcome {
+            message,
+            data: serde_json::json!({
+                "fish": plan.fish, "terminal": terminal, "attempt": plan.key.attempt,
+            }),
+        })
+    }
+
+    /// Ficha del pez y trabajo pendiente que deja la entrega.
+    fn register_work(
+        &self,
+        task: &mut crate::state::Task,
+        plan: &LaunchPlan,
+        terminal: &str,
+        depth: u32,
+    ) {
         task.fish.push(FishRecord {
             key: plan.key.clone(),
             role: plan.role.clone(),
-            terminal: terminal.clone(),
+            terminal: terminal.to_string(),
             round: task.round,
-            start: Some(plan.start),
+            start: Some(plan.start.clone()),
             report: None,
             corrections: 0,
             depth,
@@ -154,8 +173,19 @@ impl ArbiterShared {
             state: WorkState::Pending,
             started_ts: self.now(),
         });
-        let mut effects = Effects::default();
-        if let Some(parent) = &parent {
+    }
+
+    /// Evento de traza y mensaje, según lo lanzara el principal o un pez (§15.5).
+    fn launch_message(
+        &self,
+        task: &crate::state::Task,
+        plan: &LaunchPlan,
+        terminal: &str,
+        message: String,
+        effects: &mut Effects,
+    ) -> String {
+        let mut message = message;
+        if let Some(parent) = &plan.key.parent {
             self.inner
                 .lock()
                 .fish_queues
@@ -173,7 +203,7 @@ impl ArbiterShared {
                     "attempt": plan.key.attempt,
                 }),
             ));
-            message = texts::delegated_launched(&plan.fish, parent, &terminal);
+            message = texts::delegated_launched(&plan.fish, parent, terminal);
         } else {
             effects.event(self.event(
                 task,
@@ -184,17 +214,11 @@ impl ArbiterShared {
                 }),
             ));
         }
-        self.commit(task, effects);
         message.push_str(&format!(
             " Informa con --file \"{}\".",
             plan.report_path.display()
         ));
-        Ok(Outcome {
-            message,
-            data: serde_json::json!({
-                "fish": plan.fish, "terminal": terminal, "attempt": plan.key.attempt,
-            }),
-        })
+        message
     }
 
     /// Interpreta la entrega del lanzador: terminal y mensaje, o fallo del trabajo.
