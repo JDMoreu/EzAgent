@@ -20,6 +20,7 @@ members = [
     "crates/ez-arbiter",
     "crates/ez-ctl",
     "crates/ez-hub",
+    "crates/ez-scan",
 ]
 exclude = ["vendor"]
 
@@ -40,6 +41,7 @@ windows = { version = "=0.62.2", features = [
     "Win32_System_Ole",
     "Win32_System_Memory",
     "Win32_System_Diagnostics_Debug",
+    "Win32_System_ProcessStatus",
     "Win32_System_DataExchange",
     "Win32_System_Com",
     "Win32_Storage_FileSystem",
@@ -107,6 +109,12 @@ dotenvy = "=0.15.7"
 ndarray = "=0.17.2"
 bytemuck = "=1.25.2"
 anyhow = "=1.0.104"
+# Recursos en vivo e inventario (docs/designs/inventario-recursos.md); solo ez-scan.
+sysinfo = { version = "=0.40.4", default-features = false, features = [
+    "system",
+    "disk",
+    "gpu",
+] }
 
 # FreeType 2.14.3: la misma versión que enlaza Pillow 13 (la rueda del oráculo).
 # `freetype-sys 0.23` trae 2.13.2, cuyo intérprete de TrueType hintea distinto los

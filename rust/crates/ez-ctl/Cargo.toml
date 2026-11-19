@@ -20,6 +20,7 @@ path = "examples/e2e_delegate.rs"
 [dependencies]
 ez-core = { path = "../ez-core" }
 ez-herdr = { path = "../ez-herdr" }
+ez-scan = { path = "../ez-scan" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tiny_http = { workspace = true }

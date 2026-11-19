@@ -9,6 +9,7 @@ use serde_json::{json, Map, Value};
 use crate::client::{self, ClientError};
 use crate::local::{self, LocalDelegate};
 use crate::protocol::{Reply, Request};
+use crate::scan_cmds;
 
 /// Manual del agente principal. Es un contrato: no se edita.
 pub const SKILL: &str = include_str!("skill.md");
@@ -19,7 +20,15 @@ pub(crate) const MISSING_ENV: &str =
 const DEFAULT_WAIT_SECONDS: u64 = 170;
 
 /// Opciones que no llevan valor.
-const FLAG_OPTIONS: [&str; 5] = ["no-notify", "outlive-parent", "hc-notes", "pass", "fail"];
+const FLAG_OPTIONS: [&str; 7] = [
+    "no-notify",
+    "outlive-parent",
+    "hc-notes",
+    "pass",
+    "fail",
+    "refresh",
+    "local",
+];
 
 const USAGE: &str = "
 ez — comando del espacio de trabajo de EzAgent
@@ -43,6 +52,11 @@ Uso:
   ez wait [--timeout SEGUNDOS]
   ez report --verdict pass|fail --file MD --blocking N --major N --minor N
             [--mutations-tried N] [--mutations-caught N]
+
+Recursos e inventario (siempre locales, no hablan con el árbitro):
+  ez init [--refresh] [--json]
+  ez resources [--json]
+  ez inventory --local [--json]
 
 Modo local (Herdr, sin EZ_URL ni EZ_TOKEN):
   ez delegate <papel> --agent <tipo> [--model <modelo>] [--effort <nivel>]
@@ -70,13 +84,15 @@ pub(crate) enum CliError {
 }
 
 /// Lo que hace el comando: hablar con el árbitro o delegar en Herdr.
-enum Command {
+pub(crate) enum Command {
     /// Una orden para el árbitro (la de siempre).
     Arbiter(Request),
     /// Una delegación en el modo local (Herdr).
     Local(LocalDelegate),
     /// Una orden del estado de los subagentes en el modo local (Herdr).
     LocalState(local::LocalState),
+    /// Recursos, inventario o `ez init` (siempre local).
+    Scan(scan_cmds::ScanCommand),
 }
 
 /// Los argumentos de la línea de comandos, ya analizados.
@@ -216,7 +232,16 @@ fn build(
     match command.as_str() {
         "status" => parsed.finish("status", json!({})),
         // DECISION: `--json` solo controla la salida; el inventario viaja en `data`.
-        "inventory" => parsed.finish("inventory", json!({})),
+        // Con `--local` el inventario se mide en esta máquina y no va al árbitro.
+        "inventory" => {
+            if parsed.flag("local") {
+                scan_cmds::build_inventory(parsed)
+            } else {
+                parsed.finish("inventory", json!({}))
+            }
+        }
+        "init" => scan_cmds::build_init(parsed),
+        "resources" => scan_cmds::build_resources(parsed),
         "verify" => parsed.finish("verify", json!({})),
         "close" => parsed.finish("task.close", json!({})),
         "pause" => {
@@ -547,6 +572,7 @@ pub fn main_with(
         Command::Arbiter(request) => send_to_arbiter(&request, url, token, parsed.json, out, err),
         Command::Local(request) => delegate_in_herdr(&request, env, parsed.json, out, err),
         Command::LocalState(state) => local::run_state(&state, env, parsed.json, out, err),
+        Command::Scan(scan) => scan_cmds::run(&scan, env, cwd, parsed.json, out, err),
     }
 }
 
