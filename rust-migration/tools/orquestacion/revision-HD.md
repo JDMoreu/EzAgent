@@ -238,3 +238,15 @@
   limit») → falsos `bloqueado` y agentes anotados como agotados. El diseño listaba esos
   patrones genéricos (error del elefante, corregido en §3). NV-1b: solo con el agente parado,
   pantalla estable, últimas 15 líneas y frases completas.
+
+### DX-1b (arreglo del congelamiento del chat, mcode) — validado y fusionado (sin recompilar la app)
+- Medido por el subagente (antes→después): cuadro con 1 000 mensajes 53 s → 7 ms; RSS con
+  100 mensajes 288 → 35 MB; clic durante un cuadro de 400 ms bloqueado → < 100 ms; repintado
+  en reposo 2/s → 0; registro a archivo con rotación de 7 días.
+- Comprobado por el elefante: `chat_frame_cost` 3/3, `hud_chat_parity` en verde, 162 pruebas
+  `chat` de ez-hud, `log_rotation` 2/2. Mutación: volver a maquetar al abrir → falla
+  `opening_the_chat_does_not_lay_out_the_history`. Bien.
+- Pendiente (fase B, paso 2): el primer render sigue costando ~74 ms por mensaje (ya en el
+  hilo de pintura, no congela la app): con 33 mensajes el contenido tarda ~2,4 s en aparecer.
+  La virtualización lo resuelve.
+- La app de la persona no cambia hasta recompilar: se le pregunta antes.
