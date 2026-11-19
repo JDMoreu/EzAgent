@@ -418,12 +418,22 @@ fn speech_start_event_is_ignored_without_a_call() {
     assert!(!app.inner.session.user_speaking.load(Ordering::SeqCst));
 }
 
-/// Líneas `ack_fast` ya registradas en el registro real de latencia.
+/// Líneas `ack_fast` ya registradas en el registro temporal de las pruebas.
 fn ack_fast_records() -> usize {
     let text = std::fs::read_to_string(ez_core::dirs::latency_path()).unwrap_or_default();
     text.lines()
         .filter(|line| line.contains("ack_fast"))
         .count()
+}
+
+/// Tamaño y fecha de la ruta real, sin la variable `EZAGENT_LOGS_DIR`.
+fn real_latency_stamp() -> Option<(u64, Option<std::time::SystemTime>)> {
+    let real = ez_core::dirs::app_data_dir()
+        .join("logs")
+        .join("latency.jsonl");
+    std::fs::metadata(&real)
+        .ok()
+        .map(|meta| (meta.len(), meta.modified().ok()))
 }
 
 /// Prepara una salida hablada reciente para probar el camino rápido del acuse.
@@ -464,6 +474,28 @@ fn ack_after_a_statement_speaks_one_short_phrase_without_the_llm() {
     assert_eq!(
         app.inner.speech.last_outbound_kind.read().as_deref(),
         Some("ack")
+    );
+}
+
+#[test]
+fn the_ack_fast_path_writes_to_the_test_logs_not_the_real_one() {
+    let before = real_latency_stamp();
+    let fixture = SpeakingFixture::new();
+    let app = &fixture.app;
+    install_client(app, ScriptedClient::new(Vec::new()));
+    app.start_call();
+    let generation = turn_gen(app);
+    let ack_records = ack_fast_records();
+    arm_outbound(&fixture, "announce", false);
+
+    app.handle_event(AppEvent::Transcribed("ok".to_string(), generation));
+
+    // La ruta real no cambia: ni tamaño ni fecha.
+    assert_eq!(before, real_latency_stamp());
+    // El registro temporal sí recibe la línea del acuse.
+    assert!(
+        ack_fast_records() > ack_records,
+        "el acuse debe registrarse en el registro temporal"
     );
 }
 

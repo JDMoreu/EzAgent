@@ -53,9 +53,7 @@ impl VoiceApp {
         let tasks = Arc::new(TaskRegistry::new(
             tasks_path.unwrap_or_else(|| config_path().with_file_name("tasks.json")),
         ));
-        let latency_path = config_path()
-            .parent()
-            .map(|parent| parent.join("logs").join("latency.jsonl"));
+        let latency_path = Some(ez_core::dirs::latency_path());
         let mic_info = {
             let mic = parts.mic.lock();
             (

@@ -6,7 +6,7 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -155,6 +155,21 @@ pub(crate) fn chunk(text: &str) -> Chunk {
     }
 }
 
+/// Apunta latencia y auditoría de todo el proceso de pruebas a un temporal.
+/// Se llama antes de construir cualquier app: `EZAGENT_LOGS_DIR` es global y
+/// `Once` evita carreras entre pruebas paralelas sin retener cerrojos en esperas.
+static LOGS_REDIRECT: Once = Once::new();
+
+pub(crate) fn redirect_logs() {
+    LOGS_REDIRECT.call_once(|| {
+        let dir = std::env::temp_dir().join(format!(
+            "ezagent-dx2c-logs-{}",
+            std::process::id()
+        ));
+        std::env::set_var("EZAGENT_LOGS_DIR", &dir);
+    });
+}
+
 /// App con dobles, chat sin disco y micrófono que nunca abre un dispositivo.
 pub(crate) struct Fixture {
     pub app: VoiceApp,
@@ -169,6 +184,7 @@ impl Fixture {
     }
 
     pub(crate) fn with_config(cfg: VoiceConfig) -> Self {
+        redirect_logs();
         let mic = Arc::new(Mutex::new(MicCapture::new(None, VadSettings::default())));
         mic.lock().set_device_index(None);
         let speaker = RecordingSpeaker::new();
