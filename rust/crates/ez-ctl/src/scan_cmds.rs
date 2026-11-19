@@ -366,6 +366,11 @@ fn write_usage_facts(out: &mut dyn Write, agent: &ez_scan::usage::AgentUsage) {
         facts.push(format!("{cost:.2} USD"));
     }
     facts.push(format!("ventana {:.1} h", agent.window_hours));
+    if let Some(hours) = agent.observed_window_hours {
+        if (hours - agent.window_hours).abs() > 0.01 {
+            facts.push(format!("ventana observada {hours:.1} h"));
+        }
+    }
     match &agent.limit {
         Some(limit) => facts.push(format!(
             "límite {} {}",

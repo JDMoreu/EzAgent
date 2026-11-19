@@ -52,6 +52,14 @@ fn build(row: RateRow, window: &Window, now_ms: u64, sessions: usize) -> Reading
             .push("El último rate_limits de Codex no trae ventanas utilizables.".to_string());
         return reading;
     };
+    if let Some(minutes) = block.window_minutes {
+        if minutes != window.minutes() {
+            reading.warnings.push(format!(
+                "Codex no trae una ventana de {} min; uso la de {minutes} min.",
+                window.minutes()
+            ));
+        }
+    }
     apply_block(&mut reading, block, row.reached);
     apply_freshness(
         &mut reading,

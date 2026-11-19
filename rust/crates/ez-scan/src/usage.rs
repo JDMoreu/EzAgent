@@ -453,9 +453,6 @@ fn state_of(reading: &Reading, limit: Option<&UsageLimit>) -> (UsageState, Strin
     if let Some(source) = reading.depleted.as_deref() {
         return (UsageState::Agotado, source.to_string());
     }
-    if let Some(stale) = reading.stale.as_deref() {
-        return (UsageState::Desconocido, stale.to_string());
-    }
     if let Some(limit) = limit {
         if let Some(ratio) = used_ratio(reading, limit) {
             let percent = ratio * 100.0;
@@ -463,6 +460,9 @@ fn state_of(reading: &Reading, limit: Option<&UsageLimit>) -> (UsageState, Strin
             let source = format!("{percent:.1} % de lo declarado en planes.toml");
             return (state, source);
         }
+    }
+    if let Some(stale) = reading.stale.as_deref() {
+        return (UsageState::Desconocido, stale.to_string());
     }
     if let Some(percent) = reading.used_percent {
         let state = bucket(percent);
