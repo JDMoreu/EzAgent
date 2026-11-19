@@ -185,7 +185,7 @@ mod tests {
                 "una respuesta que ocupa más de una línea",
             ),
         ];
-        let mut view = rich_view(messages.clone());
+        let view = rich_view(messages.clone());
         for msg in &messages {
             let measured = view.measure_entry(msg);
             let painted = view.build_entry(msg).height;
