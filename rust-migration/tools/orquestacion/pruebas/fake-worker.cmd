@@ -9,7 +9,6 @@ for /f "usebackq delims=" %%i in (".fake-mode") do set "MODE=%%i"
 if not defined ID exit /b 1
 ping -n 4 127.0.0.1 >nul
 if /i "%MODE%"=="fail" exit /b 0
-python -c "import os; os.makedirs('rust-migration/reports', exist_ok=True)"
 set "REPORT=rust-migration\reports\%ID%-r1.md"
 (
 echo ## Resultado

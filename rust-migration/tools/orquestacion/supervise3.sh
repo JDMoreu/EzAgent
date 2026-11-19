@@ -24,6 +24,7 @@
 # tras MAX intentos. Los reintentos continúan la sesión del worker.
 ID="$1"; DIR="$2"; PROMPT_FILE="$3"; MODE="${4:-new}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+if command -v python3 >/dev/null 2>&1 && python3 -c 'pass' 2>/dev/null; then PYTHON=python3; else PYTHON=python; fi
 MAX="${EZ_MAX:-8}"
 LOG_DIR="${EZ_LOG_DIR:-${TMPDIR:-/tmp}}"
 REPORT="$DIR/rust-migration/reports/$ID-r1.md"
@@ -46,7 +47,7 @@ session_id() {
   opencode session list 2>/dev/null | awk -v t="$ID-s1" '$2 == t { print $1; exit }'
 }
 field() { # field <address> <python-expr sobre t>
-  hc get "$1" --json 2>/dev/null | python -c "import json,sys
+  hc get "$1" --json 2>/dev/null | $PYTHON -c "import json,sys
 try:
     t=json.load(sys.stdin); print($2)
 except Exception:
@@ -56,7 +57,7 @@ launch() { # launch <argv...>  → imprime la dirección de la terminal
   hc run --bg --json --name "$NAME" --cwd "$DIR" --no-notify \
     --label "ez.agent=$AGENT" --label "ez.model=$MODEL" --label ez.role=developer \
     --label "ez.brief=$ID" --label "ez.parent=${HC_TERMINAL_ID:-none}" -- "$@" \
-    | python -c "import json,sys; print(json.load(sys.stdin).get('address',''))"
+    | $PYTHON -c "import json,sys; print(json.load(sys.stdin).get('address',''))"
 }
 show() { # da pestaña o panel si se pidió (el padre no cambia)
   # herdr-app tarda en ver una terminal recién creada («no running terminal»):
@@ -104,7 +105,7 @@ for attempt in $(seq 1 $MAX); do
     SESSION="$(session_id)"
   fi
   # Una terminal terminada con el mismo nombre se retira para reutilizarlo.
-  OLD="$(hc ls --all --json 2>/dev/null | python -c "import json,sys
+  OLD="$(hc ls --all --json 2>/dev/null | $PYTHON -c "import json,sys
 for t in json.load(sys.stdin).get('terminals',[]):
     if t.get('name')=='$NAME' and t.get('state')=='finished': print(t['address'])")"
   for a in $OLD; do hc rm "$a" >/dev/null 2>&1; done

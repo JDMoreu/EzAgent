@@ -4,10 +4,11 @@
 # No usa EZ_SHOW: no toca la ventana de Herdr de la persona.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
+if command -v python3 >/dev/null 2>&1 && python3 -c 'pass' 2>/dev/null; then PYTHON=python3; else PYTHON=python; fi
 # hc no inyecta HC_TERMINAL_ID en comandos directos: si falta, se deriva del
 # nombre de esta terminal (primer argumento) con hc get.
 if [ -z "${HC_TERMINAL_ID:-}" ] && [ -n "${1:-}" ]; then
-  HC_TERMINAL_ID="$(hc get "$1" --json 2>/dev/null | python -c "import json,sys; print(json.load(sys.stdin).get('address',''))")"
+  HC_TERMINAL_ID="$(hc get "$1" --json 2>/dev/null | $PYTHON -c "import json,sys; print(json.load(sys.stdin).get('address',''))")"
 fi
 [ -n "${HC_TERMINAL_ID:-}" ] || { echo "FALLO: ejecuta probar.sh desde una terminal de hc"; exit 3; }
 WORK="${TEMP:-/tmp}/hd0-probar-$$"
@@ -43,10 +44,10 @@ mkrepo() { # mkrepo <carpeta> <id> <modo: exit|tui|fail>
 
 addrs_for() { # direcciones de terminales con la etiqueta ez.brief=<id>
   hc ls --all --json --label "ez.brief=$1" 2>/dev/null \
-    | python -c "import json,sys; print(' '.join(t['address'] for t in json.load(sys.stdin).get('terminals',[])))"
+    | $PYTHON -c "import json,sys; print(' '.join(t['address'] for t in json.load(sys.stdin).get('terminals',[])))"
 }
 
-field() { hc get "$1" --json 2>/dev/null | python -c "import json,sys; d=json.load(sys.stdin); print($2)"; }
+field() { hc get "$1" --json 2>/dev/null | $PYTHON -c "import json,sys; d=json.load(sys.stdin); print($2)"; }
 
 check() { # check <nombre> <valor> <esperado>
   if [ "$2" = "$3" ]; then
