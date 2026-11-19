@@ -281,3 +281,65 @@
   de la app de hoy; los de instancias muertas quedaron vivos. El elefante cerró 5 (+ sus
   envolturas de PowerShell); el de las 07:55 da «Acceso denegado» (probablemente elevado).
   Virtual libre → 15,4 GB. Bug del producto → DX-3 (Job Object, reutilizar el sano).
+
+### Cambio de proveedor (19-nov ~14:10): créditos de mcode agotados
+- `hd-0e` mostró «Code: 50110 … switch provider». DX-1d y HD-0e pasan a OpenCode + DeepSeek
+  V4.1 Flash con notas de relevo (`DX-1d-relevo.md`, `prompt-HD-0e-relevo.txt`). DX-1c
+  sigue en pausa. Desde aquí, todos los subagentes con OpenCode + DeepSeek.
+
+### NV-1b — revisión 1: devuelto (NV-1c)
+- Bien: frases completas de §3, `working` excluido, el recorte vale también para reanudar,
+  pruebas de palabras sueltas, frase alta y frase al final con pantalla estable (300/300).
+- Mal 1: `last_lines` cuenta líneas en blanco. Captura real de OpenCode (`hc read --lines 0`,
+  121 líneas): las 15 últimas son 7 vacías + la caja de entrada + `[hc] incomplete…`; ni una
+  línea de la conversación. El caso real de IR-1 nunca se habría detectado. Las pantallas
+  falsas de las pruebas no tienen ese relleno.
+- Mal 2: «la primera lectura cuenta como estable» contradice §3: al reiniciar el vigilante,
+  un hijo `idle` que cite una frase queda `bloqueado` en la primera vuelta.
+- NV-1c: líneas con texto (alfanuméricas), dos vueltas iguales, fixture desde la captura
+  real (`briefs/NV-1c-pantalla-opencode.txt`).
+
+### IR-1 — parado sin motivo (19-nov ~14:40)
+- Dejó `cargo` en segundo plano y cerró su turno («en cuanto termine sigo…»): OpenCode
+  interactivo no vuelve solo. La compilación ya había acabado; se le escribió que siga y que
+  compile en primer plano. Es el caso «sin avance» de §3 (NV-1).
+
+### NV-1c — validado y fusionado (6c5bd30)
+- Líneas «con texto» (al menos un alfanumérico), primera lectura no estable, fixture con
+  la captura real. Corrida del elefante: fmt, clippy, 304 + paridades en verde.
+- Mutaciones (todas detectadas): contar líneas vacías → 2 fallos (incl. la captura real);
+  primera lectura estable → 5; ignorar `working` → 1; pantalla entera → 4.
+- Tras fusionar en `eco/main`: `cargo test -p ez-herdr -p ez-ctl` en verde. Worktree NV-1
+  retirado; terminal `nv-1b` cerrada.
+- Riesgo anotado: un agente `idle` cuyo último mensaje cite una frase completa de límite
+  queda `bloqueado` tras dos vueltas (inherente a §3; se resuelve al cambiar la pantalla).
+
+### IR-1 — revisión 1: devuelto (IR-1b)
+- Bien: crate `ez-scan` con `Probe`, `entorno.json` atómico, inventario real sin abrir
+  agentes (lista Claude Code, OpenCode, mcode, Codex, Pi; Qwen no instalado), GPU por
+  `sysinfo` sin `unsafe`, `ez init`/`resources`/`inventory`.
+- Mal 1 (medido a la vez): `ez resources` → commit libre 27 179 MB; Windows
+  `FreeVirtualMemory` → 14 162 MB. RAM libre + swap libre ≠ commit libre: en el incidente
+  de memoria la guarda habría dejado lanzar. IR-1b: `GetPerformanceInfo` /
+  `GlobalMemoryStatusEx` con un único `unsafe` autorizado (excepción a `_COMMON-ECO`).
+- Mal 2: cuenta como «pesados» a todos los hijos vivos (§4 dice compilando o midiendo):
+  el agente principal no podría delegar con 4 hijos vivos aunque estén parados. IR-1b:
+  pesado = árbol con `cargo`/`rustc`/`link`… o ≥ `heavy_mb`.
+
+### Registro de estados: un archivo dañado deja ciego al vigilante → HD-10
+- `ez tasks` falla entero con `registro inválido …ir-1.json` (escrito por el supervisor
+  viejo: `validation` con campos `null`). Peor: `Watcher` usa `list(..).unwrap_or_default()`
+  → con un archivo dañado no ve a **ningún** hijo y deja de avisar sin decir nada.
+- HD-10 (OpenCode + DeepSeek, `hd-10` t1nb): lista tolerante, `validation` toda en `null` =
+  `None`, `ez tasks` nombra los ilegibles, el vigilante avisa una vez por archivo.
+- Además, el supervisor de HD-0d/0e escribe en `…\EzAgent\subagents` (inglés) y el producto
+  lee `…\EzAgent\subagentes`: los registros del supervisor no se verían. Va a HD-0f.
+
+### IR-1b — validado y fusionado (c25aa5d)
+- `GetPerformanceInfo` en `ez-scan/src/real/commit.rs` (único `unsafe`, con `// SAFETY:`);
+  pesado = árbol con `cargo`/`rustc`/`link`/`lld-link`/`cl` (editable) o ≥ 1500 MB.
+- Corrida del elefante: fmt, clippy y pruebas de `ez-scan` + `ez-ctl` en verde; commit libre
+  medido 3 veces contra `Win32_OperatingSystem.FreeVirtualMemory`: 0,72 %, 0,08 %, 1,62 %.
+- Mutaciones: contar a todos como pesados → 2 fallos; quitar la regla de memoria → 2.
+- Tras fusionar: clippy y 20 suites de `ez-scan`, `ez-ctl`, `ez-herdr` en verde. Worktree
+  IR-1 retirado; terminal `ir-1` cerrada. IR-2 lanzado (`ir-2` t1p2, OpenCode + DeepSeek).
