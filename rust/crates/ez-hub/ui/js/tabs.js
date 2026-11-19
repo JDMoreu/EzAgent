@@ -17,6 +17,18 @@ export function activeTerminalsWithData() {
   return terminalsWithData();
 }
 
+/** Banda inferior y alto de celda de la terminal activa (para la autocomprobación). */
+export function activeTerminalMetrics() {
+  const tab = activeTab();
+  const screen = tab?.view ? tab.host.querySelector(".xterm-screen") : null;
+  if (!screen || !tab.view.term.rows) return { banda: 0, celda: 0 };
+  const screenHeight = screen.getBoundingClientRect().height;
+  return {
+    banda: Math.max(0, tab.host.clientHeight - screenHeight),
+    celda: screenHeight / tab.view.term.rows,
+  };
+}
+
 /** Reajusta todas las terminales montadas al cambiar el tamaño de la ventana. */
 export function fitAll() {
   for (const tab of tabs) tab.view?.fit();
@@ -34,7 +46,9 @@ function renderBar() {
     button.type = "button";
     button.className = `tab${tab.key === activeKey ? " active" : ""}`;
     const label = document.createElement("span");
+    label.className = "tab-label";
     label.textContent = tab.label;
+    label.title = tab.title;
     const close = document.createElement("span");
     close.className = "tab-close";
     close.textContent = "×";
@@ -87,9 +101,12 @@ export async function openTab(space, node, demo) {
   const host = document.createElement("div");
   host.className = "terminal-host";
   const view = await mountTerminal(host, { argv, cwd });
+  // Los subagentes se distinguen por su id; los principales por su nombre.
+  const subagent = Boolean(node.role);
   const tab = {
     key: node.id,
-    label: node.name || node.id,
+    label: subagent ? node.id : node.name || node.id,
+    title: `${subagent ? node.role : node.name || node.id} · ${node.agent ?? ""} · ${node.model ?? ""}`,
     node,
     space,
     host,

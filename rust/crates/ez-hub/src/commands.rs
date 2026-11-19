@@ -534,6 +534,11 @@ mod tests {
             terminales_con_datos: 2,
             eventos: 6,
             tarjetas: 1,
+            traza_ancho_min: 320.0,
+            panel_ancho: 320.0,
+            etiquetas_pestanas: vec!["Arquitecto".to_string(), "dev-r1-1".to_string()],
+            banda_terminal_px: 2.0,
+            alto_celda_px: 12.0,
             ..SelfcheckReport::default()
         };
         assert!(state.submit_selfcheck(&report).expect("informe"));

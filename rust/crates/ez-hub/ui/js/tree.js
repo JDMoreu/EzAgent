@@ -46,7 +46,7 @@ export function toggleCollapse(container, key) {
   }
 }
 
-function row(container, { key, parent, depth, label, sub, status, twisty, space }) {
+function row(container, { key, parent, depth, label, sub, status, twisty, space, title }) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = `tree-row${space ? " space-row" : ""}`;
@@ -75,10 +75,19 @@ function row(container, { key, parent, depth, label, sub, status, twisty, space 
     dot.title = status ?? "";
     button.appendChild(dot);
   }
+  const info = document.createElement("span");
+  info.className = "row-info";
   const name = document.createElement("span");
   name.className = "label";
   name.textContent = label;
-  button.appendChild(name);
+  info.appendChild(name);
+  if (title) {
+    const task = document.createElement("span");
+    task.className = "task-title";
+    task.textContent = title;
+    info.appendChild(task);
+  }
+  button.appendChild(info);
   if (sub) {
     const detail = document.createElement("span");
     detail.className = "sub-label";
@@ -123,12 +132,13 @@ export function renderTree(container, spaces, activeSpace, nodes, onSpace, onNod
 function addNode(container, node, depth, parent, space, onNode) {
   let label = node.name || node.id;
   let sub;
+  let title;
   if (node.role) {
     label = node.id;
     sub = node.role;
   } else {
     sub = `${agentLabel(node.agent)} · ${node.model ?? ""}`;
-    if (node.title) sub += ` · ${node.title}`;
+    title = node.title ?? undefined;
   }
   const button = row(container, {
     key: node.id,
@@ -136,6 +146,7 @@ function addNode(container, node, depth, parent, space, onNode) {
     depth,
     label,
     sub,
+    title,
     status: node.status,
     twisty: node.children.length > 0,
   });

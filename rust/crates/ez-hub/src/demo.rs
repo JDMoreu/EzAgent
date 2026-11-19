@@ -74,9 +74,10 @@ pub fn tree() -> SpaceTree {
     }
 }
 
-fn event(event_type: &str, data: Value) -> Value {
+fn event(time: &str, event_type: &str, data: Value) -> Value {
     let mut value = data;
     value["type"] = json!(event_type);
+    value["time"] = json!(time);
     value["texto"] = json!(texts::event_text(event_type, &value));
     value
 }
@@ -112,17 +113,17 @@ pub fn trace() -> Value {
     );
     json!({
         "eventos": [
-            event("task_approved", json!({})),
-            event("team_approved", json!({})),
-            event("round_started", json!({ "round": 1 })),
-            event("fish_launched", json!({
+            event("09:41:03", "task_approved", json!({})),
+            event("09:41:20", "team_approved", json!({})),
+            event("09:42:05", "round_started", json!({ "round": 1 })),
+            event("09:42:11", "fish_launched", json!({
                 "role": "Desarrollador", "fish": "dev-r1-1",
                 "agente": "OpenCode", "modelo": "deepseek-v4.1-flash"
             })),
-            event("fish_reported", json!({
+            event("09:47:58", "fish_reported", json!({
                 "fish": "qa-r1", "verdict": "pass", "blocking": 0, "major": 0
             })),
-            event("verification", json!({ "aprobados": 3, "total": 3 })),
+            event("09:48:02", "verification", json!({ "aprobados": 3, "total": 3 })),
         ],
         "tarjetas": [json!({
             "id": card.id, "kind": "team", "title": card.title, "body": card.body
