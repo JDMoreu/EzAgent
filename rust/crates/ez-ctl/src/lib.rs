@@ -10,4 +10,4 @@ mod server;
 
 pub use cli::{main_with, SKILL};
 pub use protocol::{new_token, Caller, Handler, Reply, Request, Tokens};
-pub use server::{CtlServer, HOST, MAX_BODY_BYTES, WORKERS};
+pub use server::{CtlServer, HOST, MAX_BODY_BYTES, MAX_WAITS, WORKERS};

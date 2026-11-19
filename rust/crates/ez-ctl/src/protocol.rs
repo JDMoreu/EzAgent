@@ -9,8 +9,15 @@ use serde_json::Value;
 /// Quién hace una petición: el elefante del espacio o uno de sus peces.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Caller {
-    Elephant { space: String },
-    Fish { space: String, fish: String },
+    Elephant {
+        space: String,
+    },
+    Fish {
+        space: String,
+        task: String,
+        fish: String,
+        attempt: u32,
+    },
 }
 
 /// Una petición del protocolo: `{"command": "...", "args": {...}}`.
@@ -87,6 +94,14 @@ impl Tokens {
     pub fn lookup(&self, token: &str) -> Option<Caller> {
         self.callers.read().get(token).cloned()
     }
+
+    /// Revoca los tokens cuyo [`Caller`] cumple `predicate` y devuelve cuántos.
+    pub fn revoke_all_for(&self, predicate: impl Fn(&Caller) -> bool) -> usize {
+        let mut callers = self.callers.write();
+        let before = callers.len();
+        callers.retain(|_, caller| !predicate(caller));
+        before - callers.len()
+    }
 }
 
 /// Token nuevo: un uuid v4 en forma simple (32 caracteres hexadecimales).
@@ -110,6 +125,35 @@ mod tests {
         assert_eq!(tokens.lookup("otro"), None);
         tokens.revoke("abc");
         assert_eq!(tokens.lookup("abc"), None);
+    }
+
+    #[test]
+    fn revoke_all_for_removes_only_matching_fish() {
+        let tokens = Tokens::new();
+        tokens.register(
+            "elefante",
+            Caller::Elephant {
+                space: "espacio".to_string(),
+            },
+        );
+        for (token, task) in [("pez-viejo", "t-vieja"), ("pez-nuevo", "t-nueva")] {
+            tokens.register(
+                token,
+                Caller::Fish {
+                    space: "espacio".to_string(),
+                    task: task.to_string(),
+                    fish: "dev".to_string(),
+                    attempt: 1,
+                },
+            );
+        }
+        let removed = tokens.revoke_all_for(
+            |caller| matches!(caller, Caller::Fish { task, .. } if task == "t-vieja"),
+        );
+        assert_eq!(removed, 1);
+        assert_eq!(tokens.lookup("pez-viejo"), None);
+        assert!(tokens.lookup("pez-nuevo").is_some());
+        assert!(tokens.lookup("elefante").is_some());
     }
 
     #[test]

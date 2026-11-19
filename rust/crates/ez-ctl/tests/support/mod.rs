@@ -13,6 +13,7 @@ use ez_ctl::{Caller, CtlServer, Handler, Reply, Request, Tokens};
 pub const TOKEN: &str = "token-elefante";
 pub const FISH_TOKEN: &str = "token-pez";
 pub const SPACE: &str = "espacio";
+pub const TASK: &str = "tarea-1";
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -120,7 +121,9 @@ impl Harness {
             FISH_TOKEN,
             Caller::Fish {
                 space: SPACE.to_string(),
+                task: TASK.to_string(),
                 fish: "dev-r1-1".to_string(),
+                attempt: 1,
             },
         );
         let server = CtlServer::start(handler.clone(), tokens).expect("servidor");

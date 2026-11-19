@@ -5,7 +5,7 @@ mod support;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
-use support::{Harness, FISH_TOKEN, SPACE, TOKEN};
+use support::{Harness, FISH_TOKEN, SPACE, TASK, TOKEN};
 
 use ez_ctl::Caller;
 
@@ -135,10 +135,31 @@ fn inventory_and_wait_carry_their_arguments() {
     assert_eq!(harness.run(&["wait", "--timeout", "7"]).0, 0);
 
     let calls = harness.handler.calls();
-    assert_eq!(calls[0].1.args, json!({ "json": false }));
-    assert_eq!(calls[1].1.args, json!({ "json": true }));
+    assert_eq!(calls[0].1.args, json!({}));
+    assert_eq!(calls[1].1.args, json!({}));
     assert_eq!(calls[2].1.args, json!({ "timeout": 170 }));
     assert_eq!(calls[3].1.args, json!({ "timeout": 7 }));
+    harness.stop();
+}
+
+#[test]
+fn json_prints_the_whole_reply_for_any_command() {
+    let mut harness = Harness::new();
+    let cases: [(&[&str], &str); 3] = [
+        (&["status", "--json"], "status"),
+        (&["--json", "inventory"], "inventory"),
+        (&["inventory", "--json"], "inventory"),
+    ];
+    for (argv, command) in cases {
+        let (code, out, err) = harness.run(argv);
+        assert_eq!(code, 0, "{err}");
+        let reply: Value = serde_json::from_str(out.trim()).expect("respuesta json");
+        assert_eq!(reply["ok"], true);
+        assert_eq!(reply["message"], format!("hecho: {command}"));
+        assert_eq!(reply["data"]["eco"], command);
+    }
+    let calls = harness.handler.calls();
+    assert!(calls.iter().all(|(_, request)| request.args == json!({})));
     harness.stop();
 }
 
@@ -169,7 +190,19 @@ fn report_carries_verdict_counts_and_mutations() {
     assert_eq!(code, 0, "{err}");
     let (code, _, err) = harness.run_as(
         FISH_TOKEN,
-        &["report", "--verdict", "fail", "--file", "informe.md"],
+        &[
+            "report",
+            "--verdict",
+            "fail",
+            "--file",
+            "informe.md",
+            "--blocking",
+            "0",
+            "--major",
+            "0",
+            "--minor",
+            "0",
+        ],
     );
     assert_eq!(code, 0, "{err}");
 
@@ -178,7 +211,9 @@ fn report_carries_verdict_counts_and_mutations() {
         calls[0].0,
         Caller::Fish {
             space: SPACE.to_string(),
+            task: TASK.to_string(),
             fish: "dev-r1-1".to_string(),
+            attempt: 1,
         }
     );
     let file = calls[0].1.args["file"].as_str().expect("ruta");
