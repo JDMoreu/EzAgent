@@ -432,3 +432,19 @@
 - Falta: correr `scripts/tests/humo-whisper.ps1` y la mutación sin `KILL_ON_JOB_CLOSE`. Se
   aplaza porque abre otra instancia de la app de voz con micrófono y la persona está
   haciendo una prueba con EzAgent. Terminal `dx-3` cerrada; el worktree se conserva.
+
+### IR-3 + IR-3b + IR-3c — validado y fusionado (c76b3f2)
+- IR-3: `modelos.toml` de fábrica editable, `ez recommend` con razones, `ez delegate` sin
+  `--agent`, guarda con código 4 y `--force` (si la medición falla, no bloquea y avisa),
+  aviso de memoria por episodio con `MemoryProbe` (sin dependencia circular), frase de
+  créditos de mcode. Devuelto dos veces por agotamientos: IR-3b (por modelo: si no, el
+  gratuito agotaría a todo OpenCode) e IR-3c (sin hora también vencen: si no, mcode quedaría
+  agotado para siempre).
+- Corrida del elefante: 21 suites de `ez-scan` + `ez-ctl` + `ez-herdr`; `ez recommend` real:
+  developer → OpenCode · deepseek-v4.1-flash · high; qa_validator y planner →
+  deepseek-v4-pro · high. Mutaciones: sin regla de familia → 2 fallos; guarda que no mide →
+  2; agotamiento sin modelo → 5.
+- Nota: el «último developer» del padre t6h es `ir-1` (modelo gratuito, familia desconocida)
+  porque los subagentes lanzados con `hc run` a mano no entran en el registro; por eso
+  qa_validator no cambió de familia. Se arregla al delegar con `ez delegate`.
+- NV-2 lanzado (`nv-2` t1x6).
