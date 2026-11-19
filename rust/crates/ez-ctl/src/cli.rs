@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use crate::client::{self, ClientError};
 use crate::protocol::{Reply, Request};
 
-/// Manual del elefante. Es contrato del elefante: no se edita.
+/// Manual del agente principal. Es un contrato: no se edita.
 pub const SKILL: &str = include_str!("skill.md");
 
 const MISSING_ENV: &str =
@@ -20,7 +20,7 @@ const USAGE: &str = "\
 ez — comando del espacio de trabajo de EzAgent
 
 Uso:
-  ez --skill                     Imprime el manual del elefante
+  ez --skill                     Imprime el manual del agente principal
   ez --help                      Muestra esta ayuda
   ez --version                   Muestra la versión
   ez status                      Estado de la tarea y de la ronda
@@ -29,8 +29,9 @@ Uso:
   ez team propose --file TOML
   ez round start
   ez round close
-  ez fish <papel> --brief MD
-  ez send <pez> --file MD
+  ez delegate <papel> --brief MD
+  ez send <subagente> --file MD
+  ez roles                       Papeles disponibles
   ez verify
   ez close
   ez pause --reason TEXTO
@@ -154,7 +155,8 @@ fn build(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
         "task" => build_task(parsed, cwd),
         "team" => build_team(parsed, cwd),
         "round" => build_round(parsed),
-        "fish" => build_fish(parsed, cwd),
+        "delegate" => build_delegate(parsed, cwd),
+        "roles" => parsed.finish("roles", json!({})),
         "send" => build_send(parsed, cwd),
         "report" => build_report(parsed, cwd),
         other => Err(CliError::Usage(format!("Comando desconocido: {other}."))),
@@ -199,22 +201,22 @@ fn build_round(parsed: &mut Parsed) -> Result<Request, CliError> {
     }
 }
 
-fn build_fish(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
-    let role = parsed.word("Falta el papel del pez.")?;
+fn build_delegate(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
+    let role = parsed.word("Falta el papel del subagente.")?;
     if role.trim().is_empty() {
         return Err(CliError::Usage(
-            "El papel del pez no puede estar vacío.".to_string(),
+            "El papel del subagente no puede estar vacío.".to_string(),
         ));
     }
     let brief = existing(&parsed.required("brief")?, cwd)?;
-    parsed.finish("fish.new", json!({ "role": role, "brief": brief }))
+    parsed.finish("agent.delegate", json!({ "role": role, "brief": brief }))
 }
 
 fn build_send(parsed: &mut Parsed, cwd: &Path) -> Result<Request, CliError> {
-    let fish = parsed.word("Falta el pez.")?;
+    let fish = parsed.word("Falta el subagente.")?;
     if fish.trim().is_empty() {
         return Err(CliError::Usage(
-            "El nombre del pez no puede estar vacío.".to_string(),
+            "El nombre del subagente no puede estar vacío.".to_string(),
         ));
     }
     let file = existing(&parsed.required("file")?, cwd)?;

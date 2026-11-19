@@ -12,9 +12,10 @@ use ez_ctl::Caller;
 #[test]
 fn leaf_commands_use_their_protocol_names() {
     let mut harness = Harness::new();
-    let argv: [&[&str]; 6] = [
+    let argv: [&[&str]; 7] = [
         &["status"],
         &["verify"],
+        &["roles"],
         &["round", "start"],
         &["round", "close"],
         &["close"],
@@ -35,6 +36,7 @@ fn leaf_commands_use_their_protocol_names() {
         [
             "status",
             "verify",
+            "roles",
             "round.start",
             "round.close",
             "task.close",
@@ -49,7 +51,7 @@ fn leaf_commands_use_their_protocol_names() {
     );
     assert_eq!(calls[0].1.args, json!({}));
     assert_eq!(
-        calls[5].1.args,
+        calls[6].1.args,
         json!({ "reason": "Necesito una decisión" })
     );
     harness.stop();
@@ -82,7 +84,10 @@ fn file_commands_send_absolute_paths() {
             "task.new",
         ),
         (&["team", "propose", "--file", &team_path], "team.propose"),
-        (&["fish", "developer", "--brief", "encargo.md"], "fish.new"),
+        (
+            &["delegate", "developer", "--brief", "encargo.md"],
+            "agent.delegate",
+        ),
         (&["send", "dev-r1-1", "--file", "informe.md"], "fish.send"),
     ];
     for (args, command) in cases {
