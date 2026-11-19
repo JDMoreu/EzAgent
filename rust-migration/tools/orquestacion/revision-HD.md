@@ -264,3 +264,14 @@
 - `latency.jsonl` real: copia en `latency.jsonl.bak-2026-11-19` (470 líneas) y retiradas las 9
   líneas `ack_fast` que escribieron las pruebas antes de DX-2c (quedan 461).
 - Recompilar la app de voz (release) con DX-1b + DX-2 y reiniciarla.
+
+### Incidente: DX-1b hace caer la app al abrir el chat (19-nov 13:52) — revertido
+- Tras recompilar con DX-1b + DX-2, la persona abrió el chat y la app se cerró: Windows
+  `Application Error` 1000, `0xc0000409`, desplazamiento `0xbe3f2e` (pánico en un callback de
+  Windows → aborto). Las pruebas de DX-1b (y la validación del elefante) nunca abrieron el
+  chat en la app real: **fallo de validación del elefante**.
+- Medidas: `git revert` de la fusión de DX-1b en `eco/main` (82b25b2); app recompilada con DX-2
+  y sin DX-1b, reabierta (PID 22384) y viva. DX-1c en pausa (está sobre DX-1b). DX-1d (mcode)
+  reproduce, corrige, añade `panic hook` y una prueba de humo de la app real.
+- Regla nueva: todo cambio de interfaz necesita una prueba de humo de la app real antes de
+  validarlo.
