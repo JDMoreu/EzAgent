@@ -25,9 +25,14 @@ path = "src/bin/fake_hc.rs"
 name = "fake-agent"
 path = "src/bin/fake_agent.rs"
 
+[[bin]]
+name = "fake-ws-agent"
+path = "src/bin/fake_ws_agent.rs"
+
 [dependencies]
 tiny_http = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+toml = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
