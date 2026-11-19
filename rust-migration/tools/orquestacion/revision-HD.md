@@ -205,3 +205,14 @@
 - Revisado: sin claves, tokens, correos ni rutas de proyectos (solo tipos de plan). Hallazgo
   clave: Codex guarda `used_percent`, `window_minutes` y `resets_at`; Claude Code, OpenCode,
   mcode y Pi solo tokens y costo; Qwen Code no está instalado. IR-2 implementa sus lectores.
+
+### HD-9 (fallos de la punta a punta, mcode) — validado y fusionado
+- B1 (JSON de error por stderr), B2 (`&` de PowerShell con programa citado), B3 (el vigilante
+  no lee voice.json con `--hc`), B4 (pestaña del hijo por la etiqueta `herdr.space` del
+  padre, sin mover el foco). Atajos del ejemplo quitados (verificado: sin `space.select` ni
+  rutas con barras normales).
+- El elefante corrió el ejemplo: **131/131**, código 0, foco intacto. 362 pruebas de
+  ez-herdr y ez-ctl en verde. Mutaciones: sin `&` → fallan 3 pruebas de `text`; sin leer
+  stderr → falla `un_nombre_ocupado_por_stderr_tambien_se_reconoce`. Bien.
+- Cosmético (no bloquea): en «está bajo su padre» el detalle dice «no está en sub_agents»
+  aunque la comprobación pasa; es el texto del ejemplo.
