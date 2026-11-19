@@ -43,3 +43,10 @@
   falló una vez bajo carga (279 s) y pasa 3/3 aislada: inestable, no causada por HD-2.
 - Menor, no bloquea (R2-1, va en HD-4): el resultado pone `visible: false` aunque quede
   en pestaña o panel; debe ser `placed != tree`.
+
+### HD-0 (supervisor) — revisión 1: cumplido el original, devuelto con C0-1 y C0-2 (HD-0b)
+- `probar.sh` en verde (OpenCode y mcode falsos con padre, nombre, etiquetas; reintento sin
+  informe → código 2). Sin comandos `hc server`: el «core restarted» de su informe no lo
+  causó el supervisor.
+- Devuelto con HD-0b: C0-1 (OpenCode interactivo vía `env.exe` + `--session`) y C0-2
+  (registro §13 + avisos al padre).
