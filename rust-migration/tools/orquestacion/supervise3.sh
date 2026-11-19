@@ -11,20 +11,33 @@
 #   worker queda sin padre (y oculto): se avisa y se sigue.
 # - Sin notas al padre (--no-notify): el seguimiento lo hace este script.
 # - El worker muere con su padre (por omisión de hc).
-# - EZ_WORKER_CMD: comando de prueba en lugar de OpenCode (palabras separadas por
-#   espacios, sin comillas), para validar el mecanismo sin gastar cuota.
+# - EZ_AGENT=opencode|mcode: tipo de trabajador (por omisión opencode). mcode es
+#   interactivo y visible; sus reintentos continúan la última sesión de la carpeta.
+# - EZ_MODEL: modelo, con valor por omisión según el tipo de trabajador.
+# - EZ_AGENT_BIN: ruta del programa en lugar de opencode/mcode (solo para pruebas).
+# - EZ_WORKER_CMD: comando de prueba en lugar del agente (palabras separadas por
+#   espacios). Sin informe completado cuenta como intento fallido.
+# - EZ_MAX: número máximo de intentos (por omisión 8).
 # - EZ_SHOW=tab|right|down: además del árbol, le da pestaña o panel en Herdr.
 #
-# Termina cuando aparece el informe del worker o tras MAX intentos. Los reintentos
-# continúan la sesión de OpenCode titulada «<ID>-s1».
+# Termina cuando aparece el informe del worker y el worktree queda confirmado, o
+# tras MAX intentos. Los reintentos continúan la sesión del worker.
 ID="$1"; DIR="$2"; PROMPT_FILE="$3"; MODE="${4:-new}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-MAX=8
+MAX="${EZ_MAX:-8}"
 LOG_DIR="${EZ_LOG_DIR:-${TMPDIR:-/tmp}}"
 REPORT="$DIR/rust-migration/reports/$ID-r1.md"
 PROMPT="$(cat "$PROMPT_FILE")"
 CONT="Continúa exactamente donde lo dejaste: la ejecución se cortó. Revisa git status y git log de esta rama, ejecuta de nuevo lo que falte y termina la tarea de rust-migration/briefs/$ID.md (commit + informe rust-migration/reports/$ID-r1.md con la verificación real, sin «pendiente»)."
-MODEL="${EZ_MODEL:-opencode/hy4-flash-free}"
+AGENT="${EZ_AGENT:-opencode}"
+case "$AGENT" in
+  opencode) DEFAULT_MODEL="opencode/hy4-flash-free" ;;
+  mcode) DEFAULT_MODEL="minimax/MiniMax-M3.1-Flash" ;;
+  *) echo "[$ID] aviso: agente «$AGENT» desconocido; uso opencode"; AGENT=opencode; DEFAULT_MODEL="opencode/hy4-flash-free" ;;
+esac
+# DECISION: EZ_MODEL explícito manda; si no, se usa el modelo por omisión del tipo.
+MODEL="${EZ_MODEL:-$DEFAULT_MODEL}"
+BIN="${EZ_AGENT_BIN:-$AGENT}"
 NAME="$(echo "$ID" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_.\n-' '-' | cut -c1-32)"
 
 [ -z "$HC_TERMINAL_ID" ] && echo "[$ID] aviso: sin HC_TERMINAL_ID; el worker no tendrá padre en Herdr"
@@ -41,7 +54,7 @@ except Exception:
 }
 launch() { # launch <argv...>  → imprime la dirección de la terminal
   hc run --bg --json --name "$NAME" --cwd "$DIR" --no-notify \
-    --label ez.agent=opencode --label "ez.model=$MODEL" --label ez.role=developer \
+    --label "ez.agent=$AGENT" --label "ez.model=$MODEL" --label ez.role=developer \
     --label "ez.brief=$ID" --label "ez.parent=${HC_TERMINAL_ID:-none}" -- "$@" \
     | python -c "import json,sys; print(json.load(sys.stdin).get('address',''))"
 }
@@ -64,6 +77,13 @@ done_report() {
   [ -f "$REPORT" ] && grep -qiE "Estado:[^a-z]*completado" "$REPORT" \
     && ! grep -qiE "^[-*] .*: *(\*\*)?pendiente" "$REPORT"
 }
+wait_for_commit() { # espera hasta 15 min a que el worktree quede confirmado
+  for _ in $(seq 1 60); do
+    [ -z "$(git -C "$DIR" status --porcelain 2>/dev/null)" ] && return 0
+    sleep 15
+  done
+  echo "[$ID] aviso: el worktree sigue con cambios tras 15 min; cierro el worker"
+}
 save_log() { hc read "$1" --lines 4000 > "$LOG" 2>&1; }
 finish() {
   powershell -NoProfile -ExecutionPolicy Bypass -File "$HERE/cleanup_worker.ps1" -Dir "$DIR" >/dev/null 2>&1
@@ -79,7 +99,10 @@ if [ "$MODE" = "resume" ] && [ -f "$REPORT" ]; then
 fi
 for attempt in $(seq 1 $MAX); do
   LOG="$LOG_DIR/$ID-hc$attempt.log"
-  SESSION="$(session_id)"
+  SESSION=""
+  if [ "$AGENT" = "opencode" ] && [ "$BIN" = "opencode" ] && [ -z "$EZ_WORKER_CMD" ]; then
+    SESSION="$(session_id)"
+  fi
   # Una terminal terminada con el mismo nombre se retira para reutilizarlo.
   OLD="$(hc ls --all --json 2>/dev/null | python -c "import json,sys
 for t in json.load(sys.stdin).get('terminals',[]):
@@ -88,28 +111,34 @@ for t in json.load(sys.stdin).get('terminals',[]):
   if [ -n "$EZ_WORKER_CMD" ]; then
     # shellcheck disable=SC2086
     ADDR="$(launch $EZ_WORKER_CMD)"
+  elif [ "$AGENT" = "opencode" ]; then
+    if [ "$attempt" -eq 1 ] && [ "$MODE" != "resume" ]; then
+      ADDR="$(launch "$BIN" run --model "$MODEL" --title "$ID-s1" --auto "$PROMPT")"
+    elif [ -n "$SESSION" ]; then
+      ADDR="$(launch "$BIN" run --session "$SESSION" --model "$MODEL" --auto "$CONT")"
+    else
+      echo "[$ID] no encuentro la sesión $ID-s1; empiezo una nueva"
+      ADDR="$(launch "$BIN" run --model "$MODEL" --title "$ID-s1" --auto "$PROMPT")"
+    fi
   elif [ "$attempt" -eq 1 ] && [ "$MODE" != "resume" ]; then
-    ADDR="$(launch opencode run --model "$MODEL" --title "$ID-s1" --auto "$PROMPT")"
-  elif [ -n "$SESSION" ]; then
-    ADDR="$(launch opencode run --session "$SESSION" --model "$MODEL" --auto "$CONT")"
+    ADDR="$(launch "$BIN" -m "$MODEL" "$PROMPT")"
   else
-    echo "[$ID] no encuentro la sesión $ID-s1; empiezo una nueva"
-    ADDR="$(launch opencode run --model "$MODEL" --title "$ID-s1" --auto "$PROMPT")"
+    ADDR="$(launch "$BIN" -c "$CONT")"
   fi
   if [ -z "$ADDR" ]; then
     echo "[$ID] hc no lanzó el intento $attempt; reintento en 30 s"; sleep 30; MODE=resume; continue
   fi
-  echo "[$ID] intento $attempt en $ADDR (padre ${HC_TERMINAL_ID:-ninguno})"
+  echo "[$ID] intento $attempt en $ADDR (padre ${HC_TERMINAL_ID:-ninguno}, agente $AGENT)"
   show "$ADDR"
   START=$(date +%s)
-  low_priority
+  [ -z "$EZ_AGENT_BIN" ] && [ -z "$EZ_WORKER_CMD" ] && low_priority
   while [ "$(field "$ADDR" "t['state']")" = "live" ]; do
     sleep 15
     if done_report; then
-      # El worker suele seguir ajustando tras escribir el informe: se le deja
-      # terminar por su cuenta (hasta 15 min) en vez de cortarlo a medias.
-      for _ in $(seq 1 60); do [ "$(field "$ADDR" "t['state']")" = "live" ] || break; sleep 15; done
-      hc kill "$ADDR" >/dev/null 2>&1; save_log "$ADDR"
+      # Los TUI (mcode) no salen solos: se espera a que confirmen el worktree
+      # (hasta 15 min) y luego se guarda la pantalla y se cierra la terminal.
+      wait_for_commit
+      save_log "$ADDR"; hc kill "$ADDR" >/dev/null 2>&1
       echo "[$ID] informe completado en el intento $attempt"; finish 0
     fi
     NOW=$(date +%s)
@@ -119,8 +148,10 @@ for t in json.load(sys.stdin).get('terminals',[]):
     fi
   done
   save_log "$ADDR"
-  done_report && { echo "[$ID] terminó con informe completado en el intento $attempt"; finish 0; }
-  [ -n "$EZ_WORKER_CMD" ] && { echo "[$ID] comando de prueba terminado (código $(field "$ADDR" "t.get('exit_code')"))"; finish 0; }
+  if done_report; then
+    wait_for_commit
+    echo "[$ID] terminó con informe completado en el intento $attempt"; finish 0
+  fi
   [ -f "$REPORT" ] && mv "$REPORT" "${REPORT%.md}.parcial.md"
   MODE=resume
   echo "[$ID] intento $attempt terminó sin informe; reintento"
