@@ -13,6 +13,7 @@ use uuid::Uuid;
 use crate::hub::{self, HubState};
 use crate::input;
 use crate::pty::{self, EventSink, PtyEvent, Session, Size};
+use crate::runtime::{FishInfo, HubRuntime, RuntimeStatus};
 use crate::selfcheck::{self, SelfcheckReport};
 use crate::space::{self, Space, SpaceStore};
 use crate::texts;
@@ -28,6 +29,7 @@ pub struct AppState {
     hub: Mutex<HubState>,
     selfcheck_path: Option<PathBuf>,
     voice: Arc<VoiceNotes>,
+    runtime: Option<Arc<HubRuntime>>,
 }
 
 impl AppState {
@@ -54,6 +56,18 @@ impl AppState {
             };
             (spaces, HubState::default())
         };
+        let data_dir = crate::dirs::app_data_dir().join("hub");
+        let runtime = if demo {
+            None
+        } else {
+            match HubRuntime::start(&data_dir) {
+                Ok(runtime) => Some(Arc::new(runtime)),
+                Err(error) => {
+                    tracing::error!(%error, "no pude arrancar el motor del espacio de trabajo");
+                    Some(Arc::new(HubRuntime::failed(&data_dir, &error)))
+                }
+            }
+        };
         Self {
             demo,
             store,
@@ -63,7 +77,48 @@ impl AppState {
             hub: Mutex::new(hub),
             selfcheck_path,
             voice: Arc::new(VoiceNotes::new()),
+            runtime,
         }
+    }
+
+    /// Motor del espacio de trabajo, si la ventana no está en demostración.
+    pub fn runtime(&self) -> Option<Arc<HubRuntime>> {
+        self.runtime.clone()
+    }
+
+    /// Estado del motor para la vista.
+    pub fn runtime_status(&self) -> RuntimeStatus {
+        if self.demo {
+            return RuntimeStatus::demo();
+        }
+        match &self.runtime {
+            Some(runtime) => runtime.status(),
+            None => RuntimeStatus::degraded("El motor del espacio de trabajo no pudo arrancar."),
+        }
+    }
+
+    /// Dirección hc del elefante del espacio (lo lanza si hace falta).
+    pub fn space_elephant(&self, space: &str) -> Result<String, String> {
+        self.runtime
+            .as_ref()
+            .ok_or_else(|| "El motor del espacio de trabajo no está disponible.".to_string())?
+            .ensure_elephant(space)
+    }
+
+    /// Peces vivos del espacio.
+    pub fn space_fish(&self, space: &str) -> Result<Vec<FishInfo>, String> {
+        self.runtime
+            .as_ref()
+            .ok_or_else(|| "El motor del espacio de trabajo no está disponible.".to_string())?
+            .space_fish(space)
+    }
+
+    /// Envía texto crudo a la terminal del elefante.
+    pub fn elephant_send(&self, space: &str, text: &str) -> Result<(), String> {
+        self.runtime
+            .as_ref()
+            .ok_or_else(|| "El motor del espacio de trabajo no está disponible.".to_string())?
+            .elephant_send(space, text)
     }
 
     /// Ruta del informe de autocomprobación, si está activa.
@@ -321,6 +376,34 @@ pub fn card_action(
         tracing::warn!(%error, "no pude avisar a la vista");
     }
     Ok(())
+}
+
+/// Estado del motor del espacio de trabajo (normal, degradado o demo).
+#[tauri::command]
+pub fn runtime_status(state: State<'_, AppState>) -> RuntimeStatus {
+    state.runtime_status()
+}
+
+/// Dirección hc del elefante del espacio; lo lanza si no está vivo.
+#[tauri::command]
+pub fn space_elephant(state: State<'_, AppState>, space: String) -> Result<String, String> {
+    state.space_elephant(&space)
+}
+
+/// Peces vivos del espacio con dirección, papel, agente, modelo y estado.
+#[tauri::command]
+pub fn space_fish(state: State<'_, AppState>, space: String) -> Result<Vec<FishInfo>, String> {
+    state.space_fish(&space)
+}
+
+/// Envía el texto de la barra al elefante por herdr-core.
+#[tauri::command]
+pub fn elephant_send(
+    state: State<'_, AppState>,
+    space: String,
+    text: String,
+) -> Result<(), String> {
+    state.elephant_send(&space, &text)
 }
 
 /// Texto transcrito por la nota de voz.

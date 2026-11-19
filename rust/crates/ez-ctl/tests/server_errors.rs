@@ -2,10 +2,11 @@
 
 mod support;
 
-use std::net::TcpStream;
+use std::net::{TcpListener, TcpStream};
+use std::sync::Arc;
 
-use ez_ctl::MAX_BODY_BYTES;
-use support::{Harness, TOKEN};
+use ez_ctl::{CtlServer, Handler, Reply, Request, Tokens, MAX_BODY_BYTES};
+use support::{FakeHandler, Harness, TOKEN};
 
 fn request(url: &str, method: &str, token: Option<&str>, body: &[u8]) -> (u16, String) {
     let client = reqwest::blocking::Client::new();
@@ -96,6 +97,33 @@ fn a_body_over_one_mib_is_413() {
     assert!(text.contains("demasiado grande"), "{text}");
     assert!(harness.handler.calls().is_empty());
     harness.stop();
+}
+
+#[test]
+fn start_on_binds_the_requested_free_port() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("puerto libre");
+    let port = listener.local_addr().expect("dirección").port();
+    drop(listener);
+    let handler: Arc<dyn Handler> = FakeHandler::new();
+    let server = CtlServer::start_on(port, handler, Arc::new(Tokens::new())).expect("servidor");
+    assert_eq!(server.url(), format!("http://127.0.0.1:{port}"));
+    server.stop();
+}
+
+#[test]
+fn start_on_fails_when_the_port_is_busy() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("puerto ocupado");
+    let port = listener.local_addr().expect("dirección").port();
+    let handler: Arc<dyn Handler> = Arc::new(BusyHandler);
+    assert!(CtlServer::start_on(port, handler, Arc::new(Tokens::new())).is_err());
+}
+
+struct BusyHandler;
+
+impl Handler for BusyHandler {
+    fn handle(&self, _caller: &ez_ctl::Caller, _request: &Request) -> Reply {
+        Reply::ok("hecho", serde_json::Value::Null)
+    }
 }
 
 #[test]

@@ -47,8 +47,18 @@ pub struct CtlServer {
 impl CtlServer {
     /// Empieza a escuchar en un puerto libre de `127.0.0.1`.
     pub fn start(handler: Arc<dyn Handler>, tokens: Arc<Tokens>) -> io::Result<CtlServer> {
-        let server =
-            Arc::new(Server::http((HOST, 0)).map_err(|error| io::Error::other(error.to_string()))?);
+        Self::start_on(0, handler, tokens)
+    }
+
+    /// Empieza a escuchar en `port` de `127.0.0.1`; `0` elige un puerto libre.
+    pub fn start_on(
+        port: u16,
+        handler: Arc<dyn Handler>,
+        tokens: Arc<Tokens>,
+    ) -> io::Result<CtlServer> {
+        let server = Arc::new(
+            Server::http((HOST, port)).map_err(|error| io::Error::other(error.to_string()))?,
+        );
         let address = server.server_addr().to_ip().ok_or_else(|| {
             io::Error::other("el servidor de EzAgent no escucha en una dirección IP")
         })?;

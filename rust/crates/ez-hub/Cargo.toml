@@ -21,6 +21,11 @@ tauri-build = { workspace = true }
 ez-core = { path = "../ez-core" }
 ez-audio = { path = "../ez-audio" }
 ez-stt = { path = "../ez-stt" }
+ez-arbiter = { path = "../ez-arbiter" }
+ez-ctl = { path = "../ez-ctl" }
+ez-herdr = { path = "../ez-herdr" }
+ez-team = { path = "../ez-team" }
+ez-term = { path = "../ez-term" }
 tauri = { workspace = true }
 portable-pty = { workspace = true }
 serde = { workspace = true }

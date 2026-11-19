@@ -1159,9 +1159,14 @@ name = "ez-hub"
 version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
+ "ez-arbiter",
  "ez-audio",
  "ez-core",
+ "ez-ctl",
+ "ez-herdr",
  "ez-stt",
+ "ez-team",
+ "ez-term",
  "parking_lot 0.13.0",
  "portable-pty",
  "serde",
