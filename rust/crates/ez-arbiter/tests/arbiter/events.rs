@@ -4,14 +4,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::support::role;
-use ez_arbiter::{Arbiter, Command, Verdict};
+use ez_arbiter::{Arbiter, Command, ElephantKey, Verdict};
 use ez_team::builtin;
 
 use super::support::{kind, live_kind, FakeWriter, Fixture};
 
 fn next(f: &Fixture) -> String {
     f.arbiter
-        .wait_for_elephant("s1", Duration::from_millis(100))
+        .wait_for_main(
+            &ElephantKey::default_for("s1"),
+            Duration::from_millis(100),
+        )
         .expect("evento para el elefante")
         .kind
 }
@@ -66,7 +69,10 @@ fn r12_elephant_events_arrive_in_order_and_timeout() {
         .expect("informe del desarrollador");
     let event = f
         .arbiter
-        .wait_for_elephant("s1", Duration::from_millis(100))
+        .wait_for_main(
+            &ElephantKey::default_for("s1"),
+            Duration::from_millis(100),
+        )
         .expect("informe");
     assert_eq!(event.kind, "fish_reported");
     assert_eq!(event.data["fish"], "dev-r1-1");
@@ -82,7 +88,10 @@ fn r12_elephant_events_arrive_in_order_and_timeout() {
     assert_eq!(next(&f), "paused");
     assert!(f
         .arbiter
-        .wait_for_elephant("s1", Duration::from_millis(10))
+        .wait_for_main(
+            &ElephantKey::default_for("s1"),
+            Duration::from_millis(10),
+        )
         .is_none());
 }
 

@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use crate::support::role;
-use ez_arbiter::{Caller, Command, FishKey, Outcome, Rejection, Verdict};
+use ez_arbiter::{Caller, Command, ElephantKey, FishKey, Outcome, Rejection, Verdict};
 use ez_team::builtin;
 
 use super::support::Fixture;
@@ -173,7 +173,10 @@ fn r3_changed_criteria_pauses_on_round_start() {
     for _ in 0..4 {
         let event = f
             .arbiter
-            .wait_for_elephant("s1", std::time::Duration::from_millis(50))
+            .wait_for_main(
+                &ElephantKey::default_for("s1"),
+                std::time::Duration::from_millis(50),
+            )
             .expect("evento del elefante");
         if event.kind == "paused" {
             paused = Some(event);
