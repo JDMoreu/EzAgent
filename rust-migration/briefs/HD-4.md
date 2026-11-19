@@ -89,3 +89,8 @@ Pruebas unitarias del análisis de argumentos y de la escritura del registro.
 ## Criterios de aceptación
 fmt, clippy y test de `ez-herdr`, `ez-ctl` y `ez-fakes` en verde. Informe en
 `rust-migration/reports/HD-4-r1.md`.
+
+## Corrección heredada de la revisión de HD-2 (R2-1)
+En `rust/crates/ez-herdr/src/herdr/child.rs` (`child_where_row`), `visible` debe ser
+`true` cuando el subagente quedó en pestaña o panel (`placed != tree`) y `background`
+su contrario. Autorizado tocar solo esas líneas, con su prueba.

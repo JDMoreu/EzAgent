@@ -28,3 +28,18 @@
   decía que escriben configuración: falso, son puras); R3-2 esfuerzo sin modelo en
   OpenCode se aceptaba (`--effort ultra`); R3-3 `check_program` debe usar
   `agent_command` como el lanzamiento.
+
+### HD-2 (lanzar como hijo y ubicar, mcode) — validado y fusionado
+- Revisado `child.rs`: `hc run --bg --parent --name --cwd [--no-notify] [--outlive-parent]
+  --label agent=… --label …(orden) -- <envoltura>`, ubicación tree/tab/right/down con
+  `pane.focus` del padre y reintento ante «no running terminal» (0,5 s, tope 15 s),
+  `name_taken` marcado, padre real releído con `hc get`. Corrección del `--name` inválido
+  del lanzamiento en segundo plano (`hc_slug`) con el fixture de paridad ajustado (7
+  expectativas `--name`; aceptado: el oráculo Python está retirado).
+- ez-herdr 198 + paridad en verde. Mutaciones: sin `--parent` → falla
+  `con_padre_el_lanzamiento_va_por_hc_run_con_parent`; sin reintento → falla
+  `terminal_keep_reintenta…`; panel sin enfocar al padre → fallan dos pruebas. Bien.
+- ez-app: 348/349; `autonomous::tests::team::a_dirty_round_creates_one_fix_task_per_blocking_finding`
+  falló una vez bajo carga (279 s) y pasa 3/3 aislada: inestable, no causada por HD-2.
+- Menor, no bloquea (R2-1, va en HD-4): el resultado pone `visible: false` aunque quede
+  en pestaña o panel; debe ser `placed != tree`.
