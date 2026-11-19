@@ -20,7 +20,7 @@ retry ir-1 --auto | ez retry ir-1 --agent … | esperar.`
 ## 3. Novedades que detecta el vigilante (cada vuelta, solo lectura)
 | Novedad | Cómo se detecta | Estado y acción |
 |---|---|---|
-| Límite de uso | pantalla del hijo (`hc read --lines 0`) con patrones por agente: «Free limit reached», «usage limit», «rate limit», «quota», «5 hour usage limit», «You've hit your usage limit», «resets at …» (lista en `novedades.toml`, editable) | `bloqueado` + aviso; hora de reinicio si aparece; se anota en `uso.json` (agente/modelo agotado hasta esa hora) para que la recomendación lo evite |
+| Límite de uso | pantalla del hijo (`hc read --lines 0`), **solo si el agente no está `working` y la pantalla no cambió desde la vuelta anterior**, buscando en sus **últimas 15 líneas** frases completas por agente: «Free limit reached», «5 hour usage limit reached», «You've hit your usage limit», «Usage limit reached», «rate limit reached», «quota exceeded», con la hora de «resets at …» (lista en `novedades.toml`, editable). Palabras sueltas como «quota» o «rate limit» **no** cuentan: un agente que escribe código sobre límites no está bloqueado | `bloqueado` + aviso; hora de reinicio si aparece; se anota en `uso.json` (agente/modelo agotado hasta esa hora) para que la recomendación lo evite |
 | Diálogo o permiso | `status.state = blocked` de hc, o pantalla con un diálogo conocido (confianza en la carpeta, permiso) | `bloqueado` + aviso (EzAgent no pulsa nada por la persona) |
 | Sin avance | `en_proceso`, `status` `idle` y la pantalla sin cambios durante `stall_min` (10 min) sin informe | aviso «lleva N min sin avance» (sin cambiar estado) |
 | Murió sin informe | ya existe (§13) | `fallido` + aviso |

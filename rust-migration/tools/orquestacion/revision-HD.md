@@ -231,3 +231,10 @@
   «ir-1 (OpenCode · opencode/hy4-flash-free) falló»). Detenidos por proceso (4 procesos).
   Desde ahora: detener un supervisor = TaskStop **y** `Stop-Process` de todo proceso con
   `supervise3.sh` en su línea de comandos.
+
+### NV-1 (estado bloqueado y novedades, OpenCode) — revisión 1: devuelto (NV-1b)
+- Bien: estado y transiciones, `uso.json`, diálogo solo fuera de `working`, aviso por episodio.
+- Mal: el límite se detecta con el agente `working` y con palabras sueltas («quota», «rate
+  limit») → falsos `bloqueado` y agentes anotados como agotados. El diseño listaba esos
+  patrones genéricos (error del elefante, corregido en §3). NV-1b: solo con el agente parado,
+  pantalla estable, últimas 15 líneas y frases completas.
