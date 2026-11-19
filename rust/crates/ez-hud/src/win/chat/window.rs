@@ -325,10 +325,46 @@ impl ChatPanel {
     }
 
     /// `render`: the panel frame for the window, BGRA premultiplied.
+    ///
+    /// DECISION: the frame is **not** painted with the panel lock taken
+    /// (DX-1, paso 5). The content layer —the expensive part, the one that
+    /// repaints the history—is drawn with the view out of the state, so a
+    /// slow frame does not freeze the app: the bar, the menu and the hotkeys
+    /// keep answering while the chat paints. The input of the panel finds no
+    /// view while it paints and lets the event go instead of waiting.
     pub fn render(&self) -> Frame {
         let Some(window) = self.window.lock().clone() else {
             return Frame::new(1, 1);
         };
+        let now = monotonic();
+
+        // (1) The signature of the content and the state of the morph.
+        let (sig, anim) = {
+            let mut state = self.state.lock();
+            let PanelState {
+                anim,
+                view,
+                base,
+                content,
+                act,
+                pal_seen,
+                last,
+                ..
+            } = &mut *state;
+            let Some(view) = view.as_mut() else {
+                return Frame::new(1, 1);
+            };
+            self.refresh_view(view, pal_seen, base, content);
+            update_live(self.ui.as_ref(), view, act, last, now);
+            (compose::content_signature(view), anim.state)
+        };
+
+        // (2) The content layer, with the view out of the state.
+        if anim != AnimState::Closing && !self.content_is_fresh(&sig) {
+            self.paint_content(now, sig);
+        }
+
+        // (3) The frame, with the state taken (it is short).
         let mut state = self.state.lock();
         let PanelState {
             anim,
@@ -338,16 +374,12 @@ impl ChatPanel {
             content,
             resize,
             act,
-            pal_seen,
-            last,
             finished,
             ..
         } = &mut *state;
         let Some(view) = view.as_mut() else {
             return Frame::new(1, 1);
         };
-        self.refresh_view(view, pal_seen, base, content);
-        let now = monotonic();
         let p = step(anim, now, self.ui.reduced(), finished);
         // La traza de cada cuadro del morph: sin ella, un ciclo de vida roto y
         // una composición lenta se ven igual desde fuera.
@@ -358,7 +390,6 @@ impl ChatPanel {
             finished = *finished,
             "cuadro del chat"
         );
-        update_live(self.ui.as_ref(), view, act, last, now);
         if matches!(anim.state, AnimState::Opening | AnimState::Open) {
             self.ui.set_form_hidden(true);
         }
@@ -385,6 +416,27 @@ impl ChatPanel {
         } else {
             compose::compose(&mut scene, p, true, window_rect, content)
         }
+    }
+
+    /// Whether the cached content layer is the one of this signature.
+    fn content_is_fresh(&self, sig: &compose::ContentSig) -> bool {
+        self.state.lock().content.matches(sig)
+    }
+
+    /// Paints the content layer with the view out of the panel state.
+    ///
+    /// The content layer is the expensive one (it repaints the history), so it
+    /// is drawn without the lock: while it paints, the app keeps answering.
+    fn paint_content(&self, now: f64, sig: compose::ContentSig) {
+        let mut state = self.state.lock();
+        let Some(mut view) = state.view.take() else {
+            return;
+        };
+        drop(state);
+        let layer = view.render_content(now, false);
+        let mut state = self.state.lock();
+        state.content.store(sig, layer);
+        state.view = Some(view);
     }
 }
 

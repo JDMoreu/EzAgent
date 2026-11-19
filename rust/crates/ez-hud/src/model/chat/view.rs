@@ -100,6 +100,8 @@ pub struct ChatView {
     pub status: String,
     /// Live orb of the header: `(cx, cy, diameter)` in logical pixels.
     pub orb: Option<(f64, f64, f64)>,
+    /// How many times the content layer has been painted.
+    pub(crate) content_renders: u64,
 }
 
 impl ChatView {
@@ -132,6 +134,7 @@ impl ChatView {
             flash: None,
             status: String::new(),
             orb: None,
+            content_renders: 0,
         }
     }
 
@@ -252,6 +255,17 @@ impl ChatView {
     // ------------------------------------------------------------- drawing
     /// The whole panel without its background: header, body and footer.
     pub fn render(&mut self, now: f64) -> Layer {
+        self.render_content(now, true)
+    }
+
+    /// The panel without the blinking caret.
+    ///
+    /// DECISION: the caret is painted apart from the content (DX-1, paso 4).
+    /// The content layer is cached and the caret is the only thing of the
+    /// panel that changes twice a second: keeping it inside meant
+    /// repainting the whole history twice a second.
+    pub(crate) fn render_content(&mut self, now: f64, caret: bool) -> Layer {
+        self.content_renders += 1;
         let mut buf = Layer::new(
             canvas::size_px(self.g.width * self.g.scale),
             canvas::size_px(self.g.height * self.g.scale),
@@ -264,7 +278,7 @@ impl ChatView {
             self.draw_messages(&mut buf, now, HEADER_H, self.g.height - footer);
         }
         self.draw_header(&mut buf);
-        self.draw_footer(&mut buf, now, footer);
+        self.draw_footer(&mut buf, now, footer, caret);
         buf
     }
 
@@ -291,6 +305,14 @@ impl ChatView {
     /// nothing new did not touch the history (DX-1, paso 3).
     pub fn layouts(&self) -> u64 {
         self.cache.layouts()
+    }
+
+    /// How many times the content layer has been painted.
+    ///
+    /// The content layer is the expensive one: it repaints the whole history.
+    /// At rest it must not be painted at all (DX-1, paso 4).
+    pub fn content_renders(&self) -> u64 {
+        self.content_renders
     }
 
     /// Shows for a moment that `text` was copied («COPIADO» where «COPIAR» was).

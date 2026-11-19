@@ -355,6 +355,44 @@ fn the_layout_cache_does_not_empty_itself_past_the_old_cap() {
     );
 }
 
+/// En reposo el contenido no se repinta, aunque el cursor parpadee.
+///
+/// DECISION: la firma del contenido y la del cuadro están separadas (DX-1,
+/// paso 4). Antes el parpadeo del cursor y el tic del orbe invalidaban la
+/// capa de contenido, así que la historia entera se repintaba dos veces por
+/// segundo (y treinta mientras el modelo contestaba).
+#[test]
+fn the_content_is_not_repainted_at_rest() {
+    let ui = FakeUi::new();
+    let (mut view, _) = view_for(20);
+    let mut content = ContentCache::default();
+    let window = WindowRect {
+        x: 0,
+        y: 0,
+        width: 472,
+        height: 672,
+    };
+    // Un segundo de cuadros: el cursor parpadea dos veces en ese tiempo.
+    let mut painted = 0;
+    for step in 0..20 {
+        let now = step as f64 * 0.05;
+        let mut scene = Scene {
+            ui: &ui,
+            view: &mut view,
+            anim: AnimState::Open,
+            form: (0.0, 0.0, 472.0, 672.0),
+            act: 0.0,
+            now,
+        };
+        compose_cached(&mut scene, 1.0, true, window, &mut content);
+        painted = view.content_renders();
+    }
+    assert_eq!(
+        painted, 1,
+        "the content layer was painted {painted} times in one second at rest"
+    );
+}
+
 /// La firma del panel no copia el historial.
 ///
 /// La vista necesita los mensajes para dibujarlos (las copias del dibujo);

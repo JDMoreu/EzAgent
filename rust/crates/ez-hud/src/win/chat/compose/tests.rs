@@ -225,7 +225,7 @@ fn the_closing_frames_reuse_the_open_content_layer() {
         height: 120,
     };
     let mut content = ContentCache::default();
-    // Open frame: the caret blink is baked into the layer (blink = 1 at 0,6 s).
+    // Open frame: the caret is painted apart from the content layer.
     let mut open = Scene {
         ui: ui.as_ref(),
         view: &mut view,
@@ -240,10 +240,13 @@ fn the_closing_frames_reuse_the_open_content_layer() {
         .as_ref()
         .map(|(sig, _)| sig.clone())
         .expect("la capa de contenido del panel abierto");
-    // Closing no longer ticks: the signature differs and a rebuild would cost
-    // the whole history again, eating the 0,20 s shrink.
-    let later = 0.7;
-    assert_ne!(signature(&mut view, later, false), painted);
+    // The content does not depend on the caret's phase (DX-1, paso 4): the
+    // closing frame reuses the layer the open panel left, and a rebuild would
+    // cost the whole history again, eating the 0,20 s shrink. The phase does
+    // change between the two instants (0,5 s each).
+    let later = 1.1;
+    assert_eq!(content_signature(&view), painted);
+    assert_ne!(frame_signature(&view, later), frame_signature(&view, 0.6));
     let mut closing = Scene {
         ui: ui.as_ref(),
         view: &mut view,
