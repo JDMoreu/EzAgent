@@ -77,3 +77,7 @@
 - Hueco: permitir `validado → terminado` no lo detecta ninguna prueba. HD-7b: tabla
   completa de 16 transiciones y estado inicial de `create`.
 - Aceptado: aviso corto propio para `en_proceso` (lo usa el supervisor cuando lanza).
+
+### HD-7b — validado; HD-7 fusionado
+- Tabla de 16 transiciones y `create` con estados finales. Mutaciones `validado→terminado`
+  y `fallido→en_proceso` → fallan `transition_table_all_sixteen_pairs` (y otra). 203 en verde.
