@@ -40,13 +40,15 @@ pub(super) const DEFAULT_STALL_MIN: u64 = 10;
 pub(super) const LIMIT_TAIL_LINES: usize = 15;
 
 /// Patrones de fábrica de §3: frases completas, nunca palabras sueltas.
-const FACTORY_PATTERNS: [&str; 6] = [
+const FACTORY_PATTERNS: [&str; 7] = [
     "Free limit reached",
     "5 hour usage limit reached",
     "You've hit your usage limit",
     "Usage limit reached",
     "rate limit reached",
     "quota exceeded",
+    // MiniMax Code avisa así cuando se acaba el crédito (error 50110, 19-nov).
+    "Check /usage or switch provider",
 ];
 
 static USAGE_SEQ: AtomicU64 = AtomicU64::new(0);

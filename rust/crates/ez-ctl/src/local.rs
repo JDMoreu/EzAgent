@@ -20,6 +20,7 @@ use serde_json::{json, Map, Value};
 use crate::cli::{CliError, Parsed};
 use crate::protocol::Request;
 
+pub(crate) mod choice;
 mod state;
 mod watch;
 
@@ -50,7 +51,7 @@ pub enum Delegate {
 pub struct DelegateOptions {
     /// El papel tal como se escribió.
     pub role: String,
-    /// El tipo pedido (`opencode`, `qwen`…).
+    /// El tipo pedido (`opencode`, `qwen`…); vacío = lo elige la recomendación.
     pub agent: Option<String>,
     /// El modelo pedido, si lo hubo.
     pub model: Option<String>,
@@ -70,6 +71,8 @@ pub struct DelegateOptions {
     pub outlive_parent: bool,
     /// El pedido trae opciones que solo valen en el modo local.
     pub local_options: bool,
+    /// Se salta la guarda de recursos.
+    pub force: bool,
 }
 
 /// Una delegación en el modo local: todo lo que el comando ya validó.
@@ -95,6 +98,8 @@ pub struct LocalDelegate {
     pub notify: bool,
     /// Si el subagente sobrevive al cierre del padre.
     pub outlive_parent: bool,
+    /// Se salta la guarda de recursos (§4).
+    pub force: bool,
 }
 
 /// Por qué no se pudo delegar.
@@ -106,13 +111,18 @@ pub enum LocalError {
     Unavailable(String),
     /// El catálogo o `hc` lo rechazaron (código 1).
     Rejected(String),
+    /// La guarda de recursos de §4 (código 4).
+    Resources(String),
 }
 
 impl LocalError {
     /// El texto para la persona.
     pub fn message(&self) -> &str {
         match self {
-            Self::Usage(message) | Self::Unavailable(message) | Self::Rejected(message) => message,
+            Self::Usage(message)
+            | Self::Unavailable(message)
+            | Self::Rejected(message)
+            | Self::Resources(message) => message,
         }
     }
 
@@ -122,6 +132,7 @@ impl LocalError {
             Self::Usage(_) => 2,
             Self::Unavailable(_) => 3,
             Self::Rejected(_) => 1,
+            Self::Resources(_) => 4,
         }
     }
 }
@@ -167,6 +178,7 @@ pub(crate) fn build_delegate(
         cwd: options.cwd,
         notify: options.notify,
         outlive_parent: options.outlive_parent,
+        force: options.force,
     }))
 }
 
@@ -181,6 +193,7 @@ struct LocalFlags {
     no_notify: bool,
     outlive_parent: bool,
     hc_notes: bool,
+    force: bool,
 }
 
 impl LocalFlags {
@@ -196,6 +209,7 @@ impl LocalFlags {
             no_notify: parsed.flag("no-notify"),
             outlive_parent: parsed.flag("outlive-parent"),
             hc_notes: parsed.flag("hc-notes"),
+            force: parsed.flag("force"),
         }
     }
 
@@ -210,6 +224,7 @@ impl LocalFlags {
             || self.no_notify
             || self.outlive_parent
             || self.hc_notes
+            || self.force
     }
 }
 
@@ -264,6 +279,7 @@ fn delegate_options(
         notify: flags.hc_notes,
         outlive_parent: flags.outlive_parent,
         local_options: flags.any(),
+        force: flags.force,
     };
     if validate_local {
         validate_local_options(&mut options)?;
@@ -271,13 +287,15 @@ fn delegate_options(
     Ok(options)
 }
 
-/// Las opciones del modo local: el tipo es obligatorio y el resto se valida.
+/// Las opciones del modo local: el tipo es opcional (lo elige la
+/// recomendación), el nombre se valida y una cadena vacía no vale.
 fn validate_local_options(options: &mut DelegateOptions) -> Result<(), CliError> {
-    let agent = options.agent.clone().unwrap_or_default();
-    if agent.trim().is_empty() {
-        return Err(CliError::Usage(
-            "Falta --agent: el tipo del subagente.".to_string(),
-        ));
+    if let Some(agent) = options.agent.as_deref() {
+        if agent.trim().is_empty() {
+            return Err(CliError::Usage(
+                "El tipo del subagente no puede estar vacío.".to_string(),
+            ));
+        }
     }
     if let Some(name) = options.name.clone() {
         if !ez_herdr::herdr::valid_name(&name) {
@@ -308,9 +326,27 @@ fn describe(error: CliError) -> String {
 }
 
 /// Delega en un subagente desde la terminal `parent`.
-pub fn delegate(request: &LocalDelegate, parent: &str) -> Result<Map<String, Value>, LocalError> {
+///
+/// Antes de lanzar aplica la guarda de recursos (§4) y, si falta el tipo o el
+/// modelo, los completa con la recomendación (§6) y lo dice en la salida.
+pub fn delegate(
+    request: &LocalDelegate,
+    parent: &str,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Result<Map<String, Value>, LocalError> {
     let brief = read_brief(&request.brief_path)?;
     let cfg = VoiceConfig::load(None).map_err(LocalError::Unavailable)?;
+    let workdir = request
+        .cwd
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let thresholds = choice::thresholds(env);
+    let guard = choice::resource_guard(request.force, || {
+        ez_scan::check_capacity(parent, &thresholds)
+    })?;
+    let inputs = choice::gather(env, &cfg, parent, &workdir);
+    let filled = choice::fill(request, &inputs)?;
     let herdr = Arc::new(Herdr::new(cfg.clone()));
     let driver = AgentDriver::new(Arc::clone(&herdr), cfg);
     let launcher = driver.clone();
@@ -319,9 +355,9 @@ pub fn delegate(request: &LocalDelegate, parent: &str) -> Result<Map<String, Val
     };
     let delegate_request = DelegateRequest {
         role: request.role.clone(),
-        agent: request.agent.clone(),
-        model: request.model.clone(),
-        effort: request.effort.clone(),
+        agent: filled.agent,
+        model: filled.model,
+        effort: filled.effort,
         brief,
         name: request.name.clone(),
         show: request.show,
@@ -330,7 +366,7 @@ pub fn delegate(request: &LocalDelegate, parent: &str) -> Result<Map<String, Val
         notify: request.notify,
         outlive_parent: request.outlive_parent,
     };
-    herdr
+    let mut row = herdr
         .delegate(
             launcher,
             &check,
@@ -340,7 +376,20 @@ pub fn delegate(request: &LocalDelegate, parent: &str) -> Result<Map<String, Val
         .map_err(|error| match error {
             DelegateError::Rejected(message) => LocalError::Rejected(message),
             DelegateError::Unavailable(message) => LocalError::Unavailable(message),
-        })
+        })?;
+    if let Some(chosen) = filled.chosen {
+        row.insert("chosen".to_string(), Value::String(chosen));
+    }
+    let mut extra = filled.warnings;
+    if let Some(warning) = guard {
+        extra.push(warning);
+    }
+    if !extra.is_empty() {
+        let mut all = warnings(&row);
+        all.extend(extra);
+        row.insert("warnings".to_string(), json!(all));
+    }
+    Ok(row)
 }
 
 /// El registro del subagente y el vigilante que avisa al padre (§13).
@@ -397,7 +446,11 @@ pub fn summary(row: &Map<String, Value>) -> String {
     if !state.is_empty() {
         line.push_str(&format!(" Estado: {state}."));
     }
-    line
+    // La elección de la recomendación va delante, como la pidió el diseño.
+    match row.get("chosen").and_then(Value::as_str) {
+        Some(chosen) if !chosen.trim().is_empty() => format!("{chosen}\n{line}"),
+        _ => line,
+    }
 }
 
 /// Los avisos que dejó la delegación.
