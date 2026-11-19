@@ -79,6 +79,7 @@ impl ArbiterShared {
             })?;
         let start =
             git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R6", message))?;
+        task.last_fp = Some(start.clone());
         if let Some(record) = task.fish_by_key_mut(&record.key) {
             record.corrections = number;
             record.start = Some(start);
@@ -189,6 +190,7 @@ impl ArbiterShared {
         let sha = paths::sha256_file(&copy).map_err(|message| Rejection::new("R7", message))?;
         let after =
             git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R7", message))?;
+        task.last_fp = Some(after.clone());
         let record = task
             .fish_by_key(key)
             .cloned()

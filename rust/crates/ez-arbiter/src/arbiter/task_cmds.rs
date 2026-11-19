@@ -6,10 +6,12 @@ use ez_team::Seat;
 
 use crate::criteria;
 use crate::events::CardKind;
+use crate::git;
 use crate::paths;
-use crate::state::{Status, Task, TeamStatus};
+use crate::state::{Status, Task, TeamStatus, WorkState};
 use crate::texts;
 use crate::types::{Caller, FishKey, Outcome, Rejection};
+use crate::verify;
 
 use super::emit::Effects;
 use super::{new_task_id, ArbiterShared};
@@ -207,6 +209,9 @@ impl ArbiterShared {
         task.encargo_sha = encargo_sha;
         task.status = Status::Approved;
         task.approved_at = Some(self.now());
+        task.last_fp = Some(
+            git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R2", message))?,
+        );
         let mut effects = Effects::default();
         effects.both(
             self.event(&task, "task_approved", serde_json::json!({})),
@@ -270,9 +275,34 @@ impl ArbiterShared {
                 texts::paused(&self.pause_text(&task)),
             ));
         }
+        if task.status != Status::BetweenRounds {
+            return Err(Rejection::new("R10", texts::close_between_rounds()));
+        }
+        if let Err(rejection) = self.check_frozen(&task) {
+            return Err(self.pause_task(task, "R3", "criterios_modificados", rejection.message));
+        }
         if let Err(rejection) = self.check_artifacts(&task) {
             return Err(self.pause_task(task, "R3", "artefactos_modificados", rejection.message));
         }
+        let criteria = self.load_criteria(&task)?;
+        let checks = verify::run_all(&task.space.folder, &criteria);
+        let failed = checks.iter().filter(|check| !check.ok).count();
+        if failed > 0 {
+            return Err(Rejection::new(
+                "R10",
+                texts::verify_failed(failed, checks.len()),
+            ));
+        }
+        let current =
+            git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R10", message))?;
+        if task
+            .last_clean_close
+            .as_ref()
+            .is_some_and(|fingerprint| fingerprint != &current)
+        {
+            return Err(Rejection::new("R10", texts::project_changed_since_clean()));
+        }
+        task.last_fp = Some(current);
         if task.clean_streak < 2 {
             return Err(Rejection::new(
                 "R10",
@@ -340,6 +370,12 @@ impl ArbiterShared {
             self.restore_artifacts(&mut task)?;
             message = texts::ARTIFACTS_RESTORED.to_string();
         }
+        if task.pause_reason.as_deref() == Some("cambios_fuera_de_ronda") {
+            task.clean_streak = 0;
+            task.last_fp = Some(
+                git::snapshot(&task.space.folder).map_err(|reason| Rejection::new("R4", reason))?,
+            );
+        }
         task.resume(self.now());
         let mut effects = Effects::default();
         effects.both(
@@ -403,6 +439,33 @@ impl ArbiterShared {
         task.pause_message
             .clone()
             .unwrap_or_else(|| texts::PAUSED_NO_REASON.to_string())
+    }
+
+    /// Detecta cambios del elefante cuando no hay trabajo pendiente (§14.4).
+    /// Se llama antes de cada comando del elefante; nunca retiene el candado
+    /// mientras calcula la huella.
+    pub(crate) fn check_elephant_changes(&self, space: &str) -> Result<(), Rejection> {
+        let Some(task) = self.task_for_elephant(space).ok() else {
+            return Ok(());
+        };
+        if task
+            .work
+            .iter()
+            .any(|item| item.state == WorkState::Pending)
+        {
+            return Ok(());
+        }
+        let Some(expected) = task.last_fp.clone() else {
+            return Ok(());
+        };
+        let current =
+            git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R11", message))?;
+        if current == expected {
+            return Ok(());
+        }
+        let changed = git::changed(&expected, &current);
+        let message = texts::elephant_changed_outside_round(&changed);
+        Err(self.pause_task(task, "R11", "cambios_fuera_de_ronda", message))
     }
 
     /// Verificación de R3: los criterios no cambiaron desde la aprobación.

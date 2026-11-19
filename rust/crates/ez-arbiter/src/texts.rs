@@ -387,6 +387,16 @@ pub fn reports_not_clean(fish: &[String]) -> String {
 pub fn role_changed_files(role: &str, paths: &[String]) -> String {
     format!("{role} cambió archivos del proyecto: {}", paths.join(", "))
 }
+/// R10: la tarea solo se cierra entre rondas.
+pub fn close_between_rounds() -> String {
+    "Todavía no: la tarea solo se cierra entre rondas.".to_string()
+}
+/// R10/§14.4: el proyecto cambió desde la última ronda limpia.
+pub fn project_changed_since_clean() -> String {
+    "El proyecto cambió desde la última ronda limpia: hace falta otra ronda.".to_string()
+}
+/// §14.5: las tareas no finales se pausan al reiniciar.
+pub const RESTART: &str = "El árbitro se reinició: revisa el trabajo pendiente y reanuda.";
 /// §14.5: la persona amplía el margen y reanuda.
 pub fn more_time(rounds: u32, hours: f64) -> String {
     format!("La tarea se reanudó con {rounds} rondas y {hours} horas de margen adicionales.")

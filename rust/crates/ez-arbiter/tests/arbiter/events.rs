@@ -124,10 +124,14 @@ fn r12_reload_keeps_unfinished_task_and_trace() {
     reopened.register_space(Fixture::space(&f.folder));
     let snapshot = reopened.snapshot("s1").expect("tarea recargada");
     assert_eq!(snapshot["task"], task);
-    assert_eq!(snapshot["status"], "in_round");
+    // §14.5: al reiniciar, las tareas no finales quedan pausadas.
+    assert_eq!(snapshot["status"], "paused");
+    assert_eq!(snapshot["pause_reason"], "reinicio");
     assert_eq!(snapshot["round"], 1);
     assert_eq!(snapshot["fish"][0]["id"], "plan-r1");
     assert_eq!(snapshot["fish"][1]["id"], "dev-r1-1");
     assert_eq!(snapshot["fish"][1]["attempt"], 1);
-    assert_eq!(f.bitacora(&task).len(), 13);
+    // `seq` es monotónico por proceso: el reinicio emitió dos eventos.
+    assert_eq!(snapshot["last_seq"].as_u64().expect("last_seq"), 2);
+    assert_eq!(f.bitacora(&task).len(), 15);
 }

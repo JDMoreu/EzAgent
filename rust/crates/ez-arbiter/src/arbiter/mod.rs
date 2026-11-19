@@ -292,7 +292,7 @@ impl ArbiterShared {
                 .or_insert_with(elephant_queue);
             tasks.insert(task.id.clone(), task);
         }
-        Ok(ArbiterShared {
+        let shared = ArbiterShared {
             data_dir,
             launcher,
             writer,
@@ -307,7 +307,65 @@ impl ArbiterShared {
                 cards: HashMap::new(),
             }),
             seq: AtomicU64::new(0),
-        })
+        };
+        shared.restart();
+        Ok(shared)
+    }
+
+    /// Pausa las tareas no finales al reiniciar y falla su trabajo pendiente
+    /// con sus eventos (diseño §14.5).
+    fn restart(&self) {
+        let tasks: Vec<Task> = self.inner.lock().tasks.values().cloned().collect();
+        let now = self.now();
+        for mut task in tasks {
+            let mut effects = emit::Effects::default();
+            let failed: Vec<FishKey> = task
+                .work
+                .iter_mut()
+                .filter(|item| item.state == WorkState::Pending)
+                .map(|item| {
+                    item.state = WorkState::Failed;
+                    item.key.clone()
+                })
+                .collect();
+            for key in failed {
+                let data = serde_json::json!({
+                    "fish": key.fish, "attempt": key.attempt, "reason": "reinicio",
+                });
+                effects.both(
+                    self.event(&task, "fish_failed", data.clone()),
+                    self.elephant_event(
+                        &task,
+                        "fish_failed",
+                        texts::fish_failed(&key.fish, "reinicio"),
+                        data,
+                    ),
+                );
+            }
+            task.pause("reinicio", texts::RESTART.to_string(), now);
+            let card = self.open_card(
+                &task.space.id,
+                Some(&task.id),
+                CardKind::Pause,
+                "Tarea en pausa".to_string(),
+                texts::RESTART,
+            );
+            effects.event(self.card_opened_event(&card));
+            effects.both(
+                self.event(
+                    &task,
+                    "paused",
+                    serde_json::json!({ "reason": "reinicio", "message": texts::RESTART }),
+                ),
+                self.elephant_event(
+                    &task,
+                    "paused",
+                    texts::RESTART.to_string(),
+                    serde_json::json!({ "reason": "reinicio" }),
+                ),
+            );
+            self.commit(&task, effects);
+        }
     }
 
     /// Devuelve (y crea, si hace falta) el canal del ejecutor de un espacio.
@@ -348,6 +406,9 @@ impl ArbiterShared {
 
     /// Ejecuta un comando del elefante o de un pez.
     pub(crate) fn dispatch(&self, caller: &Caller, command: Command) -> Result<Outcome, Rejection> {
+        if let Caller::Elephant { space } = caller {
+            self.check_elephant_changes(space)?;
+        }
         match command {
             Command::Status => self.status(caller),
             Command::Report {

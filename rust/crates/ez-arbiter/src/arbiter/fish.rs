@@ -153,6 +153,7 @@ impl ArbiterShared {
             Err(detail) => return Err(self.fail_launch(task, &plan, &detail)),
         };
         self.remember_token(&plan.key, &token);
+        task.last_fp = Some(plan.start.clone());
         task.fish.push(FishRecord {
             key: plan.key.clone(),
             role: plan.role,
