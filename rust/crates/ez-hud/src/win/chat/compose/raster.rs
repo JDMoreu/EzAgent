@@ -267,6 +267,9 @@ pub(super) fn shade_frame(
 }
 
 /// `_paint_content` without the temporary: content × coverage × row mask.
+///
+/// `skip` is the rectangle of the source that is painted apart (the caret);
+/// those pixels are composited by [`composite_caret`].
 #[allow(clippy::too_many_arguments)]
 pub(super) fn composite_masked(
     canvas: &mut Array3<f32>,
@@ -278,6 +281,7 @@ pub(super) fn composite_masked(
     rows: usize,
     x0: i32,
     y0: i32,
+    skip: Option<Skip>,
 ) {
     let (coverage_height, coverage_width) = coverage.dim();
     let Some(clip) = span(canvas, x0, y0, 0, columns, 0, rows) else {
@@ -292,23 +296,181 @@ pub(super) fn composite_masked(
         let source_column = clip.src_column;
         debug_assert!(source_row < mask.len() && source_row < coverage_height);
         let opacity = mask[source_row];
-        let start = ((clip.dst_row + row) * canvas_w + clip.dst_column) * 4;
-        let under = &mut target[start..start + clip.columns * 4];
-        let pixels = &source[(source_row * src_width + source_column) * 4..][..clip.columns * 4];
-        let mattes = &cover[source_row * coverage_width + source_column..][..clip.columns];
-        for ((bottom, top), &value) in under
-            .as_chunks_mut::<4>()
-            .0
-            .iter_mut()
-            .zip(pixels.as_chunks::<4>().0)
-            .zip(mattes)
-        {
-            // `src * matte` is the premultiplied layer: its own alpha is the
-            // blend factor, as `_composite` reads `src[..., 3]`.
-            let matte = value * opacity;
-            let alpha = top[3] * matte;
+        let last = source_column + clip.columns;
+        let (lo, hi) = match skip {
+            Some(skip) if skip.contains_row(source_row) => {
+                (skip.x0.max(source_column), skip.x1.min(last))
+            }
+            _ => (last, last),
+        };
+        if source_column < lo {
+            composite_range(
+                target,
+                source,
+                cover,
+                canvas_w,
+                clip.dst_row + row,
+                clip.dst_column,
+                source_column,
+                source_row,
+                src_width,
+                coverage_width,
+                opacity,
+                source_column,
+                lo,
+            );
+        }
+        if hi < last {
+            composite_range(
+                target,
+                source,
+                cover,
+                canvas_w,
+                clip.dst_row + row,
+                clip.dst_column,
+                source_column,
+                source_row,
+                src_width,
+                coverage_width,
+                opacity,
+                hi,
+                last,
+            );
+        }
+    }
+}
+
+/// A rectangle of the source that is not composited with the rest.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Skip {
+    /// Left edge, in source pixels.
+    pub x0: usize,
+    /// Top edge, in source pixels.
+    pub y0: usize,
+    /// Right edge, in source pixels.
+    pub x1: usize,
+    /// Bottom edge, in source pixels.
+    pub y1: usize,
+}
+
+impl Skip {
+    /// Whether the row is inside the rectangle.
+    fn contains_row(&self, row: usize) -> bool {
+        row >= self.y0 && row < self.y1
+    }
+}
+
+/// One range of columns of a row, with the arithmetic of the content.
+#[allow(clippy::too_many_arguments)]
+fn composite_range(
+    target: &mut [f32],
+    source: &[f32],
+    cover: &[f32],
+    canvas_w: usize,
+    dst_row: usize,
+    dst_column: usize,
+    src_column: usize,
+    src_row: usize,
+    src_width: usize,
+    coverage_width: usize,
+    opacity: f32,
+    from: usize,
+    to: usize,
+) {
+    if from >= to {
+        return;
+    }
+    // The source column `from` lands on the canvas column `dst_column` plus
+    // the columns it moved since the first one of the clip.
+    let start = (dst_row * canvas_w + dst_column + (from - src_column)) * 4;
+    let under = &mut target[start..start + (to - from) * 4];
+    let pixels = &source[(src_row * src_width + from) * 4..][..(to - from) * 4];
+    let mattes = &cover[src_row * coverage_width + from..][..to - from];
+    for ((bottom, top), &value) in under
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(pixels.as_chunks::<4>().0)
+        .zip(mattes)
+    {
+        // `src * matte` is the premultiplied layer: its own alpha is the
+        // blend factor, as `_composite` reads `src[..., 3]`.
+        let matte = value * opacity;
+        let alpha = top[3] * matte;
+        for channel in 0..4 {
+            bottom[channel] = bottom[channel] * (1.0 - alpha) + top[channel] * matte;
+        }
+    }
+}
+
+/// The caret over the content, with the arithmetic of the rest of the layer.
+///
+/// DECISION: the caret is painted apart from the content layer (DX-1, paso 4)
+/// because it is the only thing that changes twice a second; but the pixels
+/// have to be the same ones: the content under the caret is blended with the
+/// colour of the caret and the result is composited with the same coverage
+/// and row mask as the rest of the layer.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn composite_caret(
+    canvas: &mut Array3<f32>,
+    content: &[f32],
+    content_width: usize,
+    patch: &[f32],
+    patch_width: usize,
+    patch_height: usize,
+    patch_x: usize,
+    patch_y: usize,
+    coverage: &Array2<f32>,
+    mask: &[f32],
+    x0: i32,
+    y0: i32,
+) {
+    let (coverage_height, coverage_width) = coverage.dim();
+    let canvas_w = canvas_width(canvas);
+    let cover = coverage.as_slice().expect("coverage is contiguous");
+    // The clips are computed before the mutable borrow of the canvas.
+    let clips: Vec<(usize, Span)> = (0..patch_height)
+        .filter_map(|row| {
+            let source_row = patch_y + row;
+            if source_row >= coverage_height || source_row >= mask.len() {
+                return None;
+            }
+            span(
+                canvas,
+                x0,
+                y0,
+                patch_x,
+                patch_x + patch_width,
+                source_row,
+                source_row + 1,
+            )
+            .map(|clip| (row, clip))
+        })
+        .collect();
+    let target = points_mut(canvas);
+    for (row, clip) in clips {
+        let source_row = patch_y + row;
+        let opacity = mask[source_row];
+        for index in 0..clip.columns {
+            let source_column = clip.src_column + index;
+            let dst_column = clip.dst_column + index;
+            let patch_index =
+                ((source_row - patch_y) * patch_width + (source_column - patch_x)) * 4;
+            let content_index = (source_row * content_width + source_column) * 4;
+            let cover = cover[source_row * coverage_width + source_column];
+            let matte = cover * opacity;
+            // The caret over the content, as if it had been painted inside.
+            let k = patch[patch_index + 3];
+            let mut combined = [0.0f32; 4];
             for channel in 0..4 {
-                bottom[channel] = bottom[channel] * (1.0 - alpha) + top[channel] * matte;
+                combined[channel] =
+                    content[content_index + channel] * (1.0 - k) + patch[patch_index + channel];
+            }
+            let alpha = combined[3] * matte;
+            let start = (clip.dst_row * canvas_w + dst_column) * 4;
+            for channel in 0..4 {
+                target[start + channel] =
+                    target[start + channel] * (1.0 - alpha) + combined[channel] * matte;
             }
         }
     }
@@ -492,6 +654,7 @@ mod tests {
             2,
             0,
             0,
+            None,
         );
         assert!((canvas[[0, 0, 3]] - 0.5).abs() < 1e-6);
         assert!((canvas[[1, 0, 3]] - 0.375).abs() < 1e-6);
