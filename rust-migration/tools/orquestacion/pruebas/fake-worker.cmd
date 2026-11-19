@@ -20,8 +20,8 @@ if /i "%MODE%"=="retry" if not exist ".fake-attempt2" (
   >".fake-attempt2" echo 2
   exit /b 0
 )
-set "REPORT=rust-migration\reports\%ID%-r1.md"
 :escribir
+set "REPORT=rust-migration\reports\%ID%-r1.md"
 (
 echo ## Resultado
 echo - Brief/tarea: %ID%
