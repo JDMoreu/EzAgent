@@ -11,8 +11,7 @@ use ez_arbiter::{
 };
 use ez_ctl::{Caller, Tokens};
 use ez_team::{
-    builtin, library_dir, load_roles, AgentProfile, InstructionContext, LaunchCommand, RoleId,
-    Seat,
+    builtin, library_dir, load_roles, AgentProfile, InstructionContext, LaunchCommand, RoleId, Seat,
 };
 use ez_term::{Delivery as TermDelivery, HcClient, RunSpec, Terminal};
 use parking_lot::RwLock;
@@ -20,8 +19,7 @@ use parking_lot::RwLock;
 use crate::runtime::spaces::MainChoice;
 
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
-const MISSING_MODEL: &str =
-    "El agente principal necesita configurar su modelo en el formulario.";
+const MISSING_MODEL: &str = "El agente principal necesita configurar su modelo en el formulario.";
 
 /// Operaciones sobre terminales que necesita el motor. `HcClient` las cumple;
 /// las pruebas usan un doble que no abre procesos.
@@ -119,7 +117,8 @@ impl RuntimeLauncher {
         let mut extra = BTreeMap::new();
         if command.prelaunch.as_deref() == Some("opencode_state") {
             let effort = choice.effort.as_deref().unwrap_or_default();
-            for (name, value) in ez_herdr::prelaunch::prepare_opencode_state(&choice.model, effort) {
+            for (name, value) in ez_herdr::prelaunch::prepare_opencode_state(&choice.model, effort)
+            {
                 if let Some(text) = value.as_str() {
                     extra.insert(name, text.to_string());
                 }
@@ -279,8 +278,7 @@ impl InstructionWriter for TeamInstructionWriter {
         // DECISION: los papeles de la tarea viven en el worktree; se cargan desde
         // ahí para que sus instrucciones usen el cuerpo definido por la persona.
         let folder = context.folder.join(".ez").join("borrador").join("papeles");
-        let roles = load_roles(Some(&folder), &library_dir())
-            .map_err(|error| error.to_string())?;
+        let roles = load_roles(Some(&folder), &library_dir()).map_err(|error| error.to_string())?;
         let def = roles
             .into_iter()
             .find(|def| def.id == context.role)

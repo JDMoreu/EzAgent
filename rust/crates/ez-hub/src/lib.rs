@@ -12,6 +12,7 @@ pub mod hub;
 pub mod input;
 pub mod pty;
 pub mod runtime;
+pub mod runtime_commands;
 pub mod selfcheck;
 pub mod space;
 pub mod texts;
@@ -56,19 +57,19 @@ pub fn run(demo: bool, selfcheck: Option<PathBuf>) -> tauri::Result<()> {
             commands::view_resize,
             commands::view_close,
             commands::elephant_input,
-            commands::hub_state,
-            commands::card_action,
+            runtime_commands::hub_state,
+            runtime_commands::card_action,
             commands::runtime_status,
             commands::space_elephant,
             commands::space_fish,
             commands::elephant_send,
-            commands::main_agent_create,
-            commands::main_agent_remove,
-            commands::space_tree,
-            commands::node_address,
-            commands::agent_send,
-            commands::roles_list,
-            commands::inventory,
+            runtime_commands::main_agent_create,
+            runtime_commands::main_agent_remove,
+            runtime_commands::space_tree,
+            runtime_commands::node_address,
+            runtime_commands::agent_send,
+            runtime_commands::roles_list,
+            runtime_commands::inventory,
             commands::voice_note_start,
             commands::voice_note_stop,
             commands::voice_insert,

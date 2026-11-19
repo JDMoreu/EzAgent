@@ -383,9 +383,21 @@ fn a_fish_delegating_sends_agent_delegate_with_its_full_key() {
     if let Caller::Fish { parent, .. } = &mut fish {
         *parent = Some("dev-r1-1".to_string());
     }
-    assert!(call(&h, &fish, "agent.delegate", json!({ "role": "qa", "brief": brief })).ok);
+    assert!(
+        call(
+            &h,
+            &fish,
+            "agent.delegate",
+            json!({ "role": "qa", "brief": brief })
+        )
+        .ok
+    );
     let calls = api.calls.lock();
-    assert!(matches!(&calls[0].1, Command::AgentDelegate { .. }), "{:?}", calls[0]);
+    assert!(
+        matches!(&calls[0].1, Command::AgentDelegate { .. }),
+        "{:?}",
+        calls[0]
+    );
     assert!(matches!(
         &calls[0].0,
         ArbiterCaller::Fish(key) if key.parent.as_deref() == Some("dev-r1-1")
@@ -406,7 +418,9 @@ fn roles_include_one_from_the_task_draft_folder() {
     let reply = call(&h, &elephant_call(), "roles", json!({}));
     assert!(reply.ok, "{reply:?}");
     assert!(
-        reply.message.contains("security_auditor · Auditor de seguridad"),
+        reply
+            .message
+            .contains("security_auditor · Auditor de seguridad"),
         "{}",
         reply.message
     );

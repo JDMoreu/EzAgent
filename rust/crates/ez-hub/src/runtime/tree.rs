@@ -171,10 +171,10 @@ fn attach_to(node: &mut TreeNode, loose: &[&Terminal]) {
     }
 }
 
-fn terminal_for<'a>(
-    terminals: &'a [Terminal],
+fn terminal_for(
+    terminals: &[Terminal],
     predicate: impl Fn(&BTreeMap<String, String>) -> bool,
-) -> Option<&'a Terminal> {
+) -> Option<&Terminal> {
     terminals
         .iter()
         .find(|terminal| predicate(&terminal.labels))

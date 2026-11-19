@@ -384,7 +384,10 @@ fn ensure_main_agent_launches_when_absent_and_registers_the_token() {
         Some(Caller::Elephant { .. })
     ));
     let records = terminals.launches.lock();
-    assert_eq!(records[0].spec.env.get("EZ_ROLE").map(String::as_str), Some("main"));
+    assert_eq!(
+        records[0].spec.env.get("EZ_ROLE").map(String::as_str),
+        Some("main")
+    );
     assert!(records[0]
         .spec
         .labels

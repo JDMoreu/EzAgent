@@ -101,7 +101,10 @@ impl ArbiterHandler {
     }
 
     /// Sustituye el descubrimiento de modelos de Codex (para pruebas).
-    pub fn with_codex_models(mut self, discover: impl Fn() -> Vec<String> + Send + Sync + 'static) -> Self {
+    pub fn with_codex_models(
+        mut self,
+        discover: impl Fn() -> Vec<String> + Send + Sync + 'static,
+    ) -> Self {
         self.codex_models = Arc::new(discover);
         self
     }
@@ -159,12 +162,7 @@ impl ArbiterHandler {
         Reply::ok(found.text(), found.json())
     }
 
-    fn team_propose(
-        &self,
-        space: &str,
-        elephant: &str,
-        args: &Value,
-    ) -> Result<Command, String> {
+    fn team_propose(&self, space: &str, elephant: &str, args: &Value) -> Result<Command, String> {
         let file = PathBuf::from(require_text(args, "file")?);
         let folder = self.folder(space, elephant);
         let file = inside(&folder, &file)?;
@@ -245,10 +243,7 @@ impl ArbiterHandler {
                 let found = self.inventory();
                 Ok(Reply::ok(found.text(), found.json()))
             }
-            "roles" => Ok(Reply::ok(
-                self.roles_message(&space, &elephant),
-                json!({}),
-            )),
+            "roles" => Ok(Reply::ok(self.roles_message(&space, &elephant), json!({}))),
             "wait" => Ok(self.wait(&space, args)),
             "task.new" => Ok(self.execute(
                 &arbiter_caller,
@@ -258,10 +253,9 @@ impl ArbiterHandler {
                     criteria: PathBuf::from(require_text(args, "criteria")?),
                 },
             )),
-            "team.propose" => Ok(self.execute(
-                &arbiter_caller,
-                self.team_propose(&space, &elephant, args)?,
-            )),
+            "team.propose" => {
+                Ok(self.execute(&arbiter_caller, self.team_propose(&space, &elephant, args)?))
+            }
             "round.start" => Ok(self.execute(&arbiter_caller, Command::RoundStart)),
             "agent.delegate" => {
                 // El elefante lanza un pez; un subagente delega en uno de sus hijos.
@@ -315,12 +309,10 @@ impl ArbiterHandler {
 
 fn to_arbiter_caller(caller: &Caller) -> ArbiterCaller {
     match caller {
-        Caller::Elephant { space, elephant } => {
-            ArbiterCaller::Elephant(ElephantKey {
-                space: space.clone(),
-                elephant: elephant.clone(),
-            })
-        }
+        Caller::Elephant { space, elephant } => ArbiterCaller::Elephant(ElephantKey {
+            space: space.clone(),
+            elephant: elephant.clone(),
+        }),
         Caller::Fish {
             space,
             task,
