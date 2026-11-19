@@ -145,15 +145,15 @@ impl ArbiterHandler {
         }
     }
 
-    fn role_defs(&self, space: &str, elephant: &str) -> Vec<ez_team::RoleDef> {
+    fn role_defs(&self, space: &str, elephant: &str) -> Result<Vec<ez_team::RoleDef>, String> {
         let folder = self.folder(space, elephant);
         let drafts = folder.join(".ez").join("borrador").join("papeles");
-        load_roles(Some(&drafts), &library_dir()).unwrap_or_else(|_| ez_team::builtin_roles())
+        load_roles(Some(&drafts), &library_dir()).map_err(|error| error.to_string())
     }
 
     /// Texto de `ez roles` para el agente principal dado (lo usa también la vista).
-    pub fn roles_message(&self, space: &str, elephant: &str) -> String {
-        roles_text(&self.role_defs(space, elephant))
+    pub fn roles_message(&self, space: &str, elephant: &str) -> Result<String, String> {
+        Ok(roles_text(&self.role_defs(space, elephant)?))
     }
 
     /// Datos de `ez inventory` para la vista.
@@ -168,7 +168,7 @@ impl ArbiterHandler {
         let file = inside(&folder, &file)?;
         let text = std::fs::read_to_string(&file)
             .map_err(|error| format!("No pude leer {}: {error}.", file.display()))?;
-        let roles = self.role_defs(space, elephant);
+        let roles = self.role_defs(space, elephant)?;
         let seats = ez_team::team::parse(&text, &roles).map_err(|error| error.to_string())?;
         let found = self.inventory();
         let check = ez_team::team::validate(&seats, &found, &roles);
@@ -243,7 +243,7 @@ impl ArbiterHandler {
                 let found = self.inventory();
                 Ok(Reply::ok(found.text(), found.json()))
             }
-            "roles" => Ok(Reply::ok(self.roles_message(&space, &elephant), json!({}))),
+            "roles" => Ok(Reply::ok(self.roles_message(&space, &elephant)?, json!({}))),
             "wait" => Ok(self.wait(&space, args)),
             "task.new" => Ok(self.execute(
                 &arbiter_caller,

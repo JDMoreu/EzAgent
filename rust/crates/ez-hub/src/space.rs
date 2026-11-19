@@ -26,8 +26,31 @@ pub struct Space {
     pub name: String,
     #[serde(rename = "carpeta")]
     pub folder: String,
-    #[serde(rename = "elefante")]
+    /// El archivo guarda solo id, nombre y carpeta (§15.1); la elección del
+    /// agente principal vive en `principales.json`. Se acepta el campo viejo y
+    /// se rellena con este valor por omisión al leer.
+    #[serde(rename = "elefante", default = "default_elephant")]
     pub elephant: Elephant,
+}
+
+fn default_elephant() -> Elephant {
+    Elephant {
+        agent: "opencode".to_string(),
+        argv: vec!["opencode".to_string()],
+    }
+}
+
+/// Forma que se escribe: solo identidad y carpeta (§15.1).
+#[derive(Serialize)]
+struct StoredSpace<'a> {
+    id: &'a str,
+    nombre: &'a str,
+    carpeta: &'a str,
+}
+
+#[derive(Serialize)]
+struct StoredSpaces<'a> {
+    espacios: Vec<StoredSpace<'a>>,
 }
 
 /// Forma del archivo completo.
@@ -149,8 +172,15 @@ impl SpaceStore {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let file = SpacesFile {
-            espacios: spaces.to_vec(),
+        let file = StoredSpaces {
+            espacios: spaces
+                .iter()
+                .map(|space| StoredSpace {
+                    id: &space.id,
+                    nombre: &space.name,
+                    carpeta: &space.folder,
+                })
+                .collect(),
         };
         let text = serde_json::to_string_pretty(&file)?;
         let tmp = self.path.with_extension(format!("{}.tmp", Uuid::new_v4()));
@@ -189,20 +219,20 @@ mod tests {
     }
 
     #[test]
-    fn json_uses_the_agreed_keys() {
+    fn json_uses_the_agreed_keys_and_drops_the_agent_choice() {
         let dir = TempDir::new("spaces-keys");
         let store = SpaceStore::at(dir.path().join("espacios.json"));
         let space = create_space("Ez", &dir.path().display().to_string(), "claude").expect("alto");
         store.save(&[space]).expect("guardar");
         let text = fs::read_to_string(store.path()).expect("leer texto");
-        for key in [
-            "\"espacios\"",
-            "\"nombre\"",
-            "\"carpeta\"",
-            "\"elefante\"",
-            "\"agente\"",
-        ] {
+        for key in ["\"espacios\"", "\"id\"", "\"nombre\"", "\"carpeta\""] {
             assert!(text.contains(key), "falta {key} en {text}");
+        }
+        for old in ["\"elefante\"", "\"agente\""] {
+            assert!(
+                !text.contains(old),
+                "el formato nuevo no debe guardar {old}"
+            );
         }
     }
 

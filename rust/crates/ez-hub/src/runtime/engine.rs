@@ -330,7 +330,11 @@ impl HubRuntime {
             .handler
             .as_ref()
             .ok_or_else(|| self.status.reason.clone())?;
-        Ok(Value::String(handler.roles_message(space, elephant)))
+        Ok(Value::String(
+            handler
+                .roles_message(space, elephant)
+                .map_err(|error| error.to_string())?,
+        ))
     }
 
     /// Los mismos datos que `ez inventory`.
