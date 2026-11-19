@@ -158,3 +158,12 @@
 - La mutación «la raíz se toma a sí misma» no la detecta ninguna prueba porque es
   equivalente con el flujo actual (al reabrir, `members.rs:162`/la recuperación borran la
   dirección antes de relanzar); la guarda queda como defensa. Aceptado.
+
+### HD-0c — validado; HD-0 fusionado (paso 1 completo)
+- C0-3 (`hc get` fallido = desconocido; `free_name` evita `name_taken`), C0-4 (ejecutable
+  nativo de OpenCode), C0-5 (sesión `ses_…s1`). `probar.sh` en verde con 8 casos falsos y
+  el humo real sin encargo (OpenCode abre, hc lo ve `idle`, se cierra).
+- Comprobado por el elefante: `EZ_RESOLVE_OPENCODE=1` resuelve `…/@opencode/cli/bin/opencode.exe`,
+  modo interactivo, `SID=ses_hd0crevs1`, sin lanzar nada.
+- Observación: el núcleo de hc se reinició varias veces durante el día (lo vieron HD-0, HD-0b
+  y HD-0c); el supervisor ya lo tolera.
