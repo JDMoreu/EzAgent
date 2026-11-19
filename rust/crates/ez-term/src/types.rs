@@ -161,3 +161,14 @@ pub struct SendOutcome {
     #[serde(default)]
     pub status: Option<String>,
 }
+
+/// Resultado de entregar la primera línea a un pez recién lanzado (§14.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Delivery {
+    /// El pez pasó a `working`: recibió la primera línea.
+    Delivered,
+    /// `hc` no informó si arrancó; no se puede confirmar la entrega.
+    Unconfirmed,
+    /// No se pudo entregar; el texto explica el motivo.
+    Failed(String),
+}

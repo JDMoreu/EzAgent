@@ -90,6 +90,7 @@ fn subscribe_sends_labels_and_keeps_snapshot() {
     assert_eq!(stream.snapshot().len(), 1);
     assert_eq!(stream.snapshot()[0].address, "t1");
     assert_eq!(stream.snapshot()[0].name.as_deref(), Some("uno"));
+    assert_eq!(stream.snapshot_seq(), Some(10));
     assert_eq!(next(&stream), TermEvent::Closed);
     script.join().expect("guion");
 }
@@ -98,14 +99,22 @@ fn subscribe_sends_labels_and_keeps_snapshot() {
 fn created_status_and_finished_events() {
     let (stream, script) = support::events_scripted(script_created_status_finished);
     match next(&stream) {
-        TermEvent::Created(terminal) => assert_eq!(terminal.name.as_deref(), Some("dos")),
+        TermEvent::Created { terminal, seq } => {
+            assert_eq!(terminal.name.as_deref(), Some("dos"));
+            assert_eq!(seq, 11);
+        }
         other => panic!("se esperaba Created: {other:?}"),
     }
     match next(&stream) {
-        TermEvent::Status { terminal, status } => {
+        TermEvent::Status {
+            terminal,
+            status,
+            seq,
+        } => {
             assert_eq!(terminal, "t2");
             assert_eq!(status.state, "working");
             assert_eq!(status.progress, Some(40));
+            assert_eq!(seq, 12);
         }
         other => panic!("se esperaba Status: {other:?}"),
     }
@@ -121,10 +130,12 @@ fn created_status_and_finished_events() {
             terminal,
             exit_code,
             reason,
+            seq,
         } => {
             assert_eq!(terminal, "t2");
             assert_eq!(exit_code, Some(0));
             assert_eq!(reason.as_deref(), Some("exited"));
+            assert_eq!(seq, 14);
         }
         other => panic!("se esperaba Finished: {other:?}"),
     }
@@ -138,7 +149,8 @@ fn removed_heartbeat_and_missed_events() {
     assert_eq!(
         next(&stream),
         TermEvent::Removed {
-            terminal: "t2".to_string()
+            terminal: "t2".to_string(),
+            seq: 15,
         }
     );
     match next(&stream) {
@@ -146,6 +158,7 @@ fn removed_heartbeat_and_missed_events() {
             terminal,
             kind,
             data,
+            ..
         } => {
             assert_eq!(terminal, "t2");
             assert_eq!(kind, "foreground");
@@ -155,16 +168,19 @@ fn removed_heartbeat_and_missed_events() {
     }
     assert_eq!(next(&stream), TermEvent::Heartbeat);
     match next(&stream) {
-        TermEvent::Missed { snapshot } => {
+        TermEvent::Missed { snapshot, seq } => {
+            let snapshot = snapshot.expect("foto del missed");
             assert_eq!(snapshot.len(), 1);
             assert_eq!(snapshot[0].address, "t3");
+            assert_eq!(seq, Some(20));
         }
         other => panic!("se esperaba Missed: {other:?}"),
     }
     assert_eq!(
         next(&stream),
         TermEvent::Missed {
-            snapshot: Vec::new()
+            snapshot: None,
+            seq: None,
         }
     );
     assert_eq!(next(&stream), TermEvent::Closed);
@@ -172,6 +188,52 @@ fn removed_heartbeat_and_missed_events() {
         .events()
         .recv_timeout(Duration::from_secs(1))
         .is_err());
+    script.join().expect("guion");
+}
+
+#[test]
+fn missed_discards_old_events_and_keeps_new_ones() {
+    let (stream, script) = support::events_scripted(|fake| {
+        fake.hello();
+        let subscribe = fake.request();
+        fake.respond(
+            &subscribe,
+            json!({"channel": null, "seq": 10, "terminals": []}),
+        );
+        fake.notify(json!({"seq": 11, "terminal": "t1", "type": "removed", "data": {}}));
+        // Llega un `missed` con foto en la secuencia 12.
+        fake.raw(json!({
+            "jsonrpc": "2.0",
+            "method": "missed",
+            "params": {"seq": 12, "terminals": [support::terminal("t1", "uno")]},
+        }));
+        // 11 y 12 ya están en la foto: se descartan; 13 es nuevo: pasa.
+        fake.notify(json!({"seq": 11, "terminal": "t1", "type": "lost", "data": {}}));
+        fake.notify(json!({"seq": 12, "terminal": "t1", "type": "lost", "data": {}}));
+        fake.notify(json!({"seq": 13, "terminal": "t1", "type": "restarted", "data": {}}));
+    });
+    assert_eq!(
+        next(&stream),
+        TermEvent::Removed {
+            terminal: "t1".to_string(),
+            seq: 11,
+        }
+    );
+    match next(&stream) {
+        TermEvent::Missed { snapshot, seq } => {
+            assert_eq!(snapshot.expect("foto")[0].address, "t1");
+            assert_eq!(seq, Some(12));
+        }
+        other => panic!("se esperaba Missed: {other:?}"),
+    }
+    assert_eq!(
+        next(&stream),
+        TermEvent::Restarted {
+            terminal: "t1".to_string(),
+            seq: 13,
+        }
+    );
+    assert_eq!(next(&stream), TermEvent::Closed);
     script.join().expect("guion");
 }
 

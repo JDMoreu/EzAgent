@@ -95,7 +95,8 @@ fn created_event_from_doc() {
         .recv_timeout(Duration::from_secs(2))
         .expect("evento created")
     {
-        TermEvent::Created(terminal) => {
+        TermEvent::Created { terminal, seq } => {
+            assert_eq!(seq, 157);
             assert_eq!(terminal.address, "t73");
             assert_eq!(terminal.name.as_deref(), Some("ezprobe3"));
             assert_eq!(
@@ -136,10 +137,12 @@ fn finished_event_from_doc() {
             terminal,
             exit_code,
             reason,
+            seq,
         } => {
             assert_eq!(terminal, "t73");
             assert_eq!(exit_code, Some(0));
             assert_eq!(reason.as_deref(), Some("exited"));
+            assert_eq!(seq, 160);
         }
         other => panic!("se esperaba Finished: {other:?}"),
     }

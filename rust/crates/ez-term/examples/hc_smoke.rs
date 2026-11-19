@@ -90,6 +90,7 @@ fn wait_for_finished(stream: &EventStream, address: &str, name: &str) -> bool {
                 terminal,
                 exit_code,
                 reason,
+                ..
             }) if terminal == address || terminal == name => {
                 tracing::info!(%terminal, ?exit_code, ?reason, "evento finished");
                 return true;
