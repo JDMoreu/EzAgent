@@ -362,22 +362,23 @@ fn el_tasks_sigue_listando_con_un_registro_ilegible() {
     assert_eq!(code, 0, "{err}");
     assert!(out.contains("dev1-opencode"), "{out}");
     assert!(
-        out.contains(&format!("registro ilegible: {}:", broken.display())),
-        "{out}"
+        !out.contains("registro ilegible"),
+        "stdout solo trae la tabla: {out}"
+    );
+    assert!(
+        err.contains(&format!("registro ilegible: {}:", broken.display())),
+        "{err}"
     );
 
     let (code, out, err) = run_local(&["tasks", "--json"], dir.path(), Some("t6h"), &root);
     assert_eq!(code, 0, "{err}");
-    let value: serde_json::Value = serde_json::from_str(out.trim()).expect("json");
-    assert_eq!(value["tasks"].as_array().expect("lista").len(), 1);
-    assert_eq!(value["invalid"].as_array().expect("ilegibles").len(), 1);
-    assert!(
-        value["invalid"][0]["path"]
-            .as_str()
-            .unwrap_or_default()
-            .ends_with("ir-1.json"),
-        "{value}"
-    );
+    let rows: Vec<serde_json::Value> =
+        serde_json::from_str(out.trim()).expect("stdout es el array de registros");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["name"], "dev1-opencode");
+    assert!(!out.contains("ir-1"), "{out}");
+    assert!(err.contains("registro ilegible"), "{err}");
+    assert!(err.contains("ir-1.json"), "{err}");
 }
 
 #[test]
