@@ -25,23 +25,73 @@ impl Clock for SystemClock {
     }
 }
 
-/// Identidad completa de un pez (diseño §14.1). Un pez solo actúa mientras su
-/// clave coincida entera con un trabajo vigente de una tarea activa.
+/// Identidad de un agente principal de un espacio (diseño §15.1).
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ElephantKey {
+    pub space: String,
+    /// `e` + 8 hex; `e00000000` es el agente principal por omisión del espacio.
+    pub elephant: String,
+}
+
+impl ElephantKey {
+    /// Agente principal por omisión: trabaja en la carpeta original del espacio.
+    // DECISION: id fijo `e00000000` para que las tareas antiguas y las pruebas
+    // puedan resolver al agente principal sin consultar `agentes.json`.
+    pub fn default_for(space: &str) -> Self {
+        Self {
+            space: space.to_string(),
+            elephant: "e00000000".to_string(),
+        }
+    }
+
+    /// Agente principal nuevo, con id `e` + 8 hex de un uuid v4.
+    pub fn new(space: &str) -> Self {
+        let simple = uuid::Uuid::new_v4().simple().to_string();
+        Self {
+            space: space.to_string(),
+            elephant: format!("e{}", &simple[..8]),
+        }
+    }
+
+    /// Clave de texto para colas y registros en memoria (no se persiste).
+    pub fn storage_key(&self) -> String {
+        format!("{}|{}", self.space, self.elephant)
+    }
+}
+
+/// Un agente principal y su carpeta de trabajo aislada (diseño §15.1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MainAgent {
+    pub key: ElephantKey,
+    pub name: String,
+    pub worktree: PathBuf,
+    pub branch: String,
+    pub base_branch: String,
+}
+
+/// Identidad completa de un pez (diseño §14.1 y §15.1). Un pez solo actúa
+/// mientras su clave coincida entera con un trabajo vigente de una tarea activa.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FishKey {
     pub space: String,
     pub task: String,
+    /// Id del agente principal dueño de la tarea.
+    #[serde(default)]
+    pub elephant: String,
     pub fish: String,
     /// Empieza en 1; sube al relanzar un papel que falló.
     pub attempt: u32,
+    /// Id del pez que lo delegó; `None` si lo lanzó el agente principal.
+    #[serde(default)]
+    pub parent: Option<String>,
 }
 
 impl FishKey {
     /// Clave de texto para el registro de tokens en memoria (no se persiste).
     pub fn storage_key(&self) -> String {
         format!(
-            "{}|{}|{}|{}",
-            self.space, self.task, self.fish, self.attempt
+            "{}|{}|{}|{}|{}",
+            self.space, self.task, self.elephant, self.fish, self.attempt
         )
     }
 }
@@ -107,10 +157,10 @@ pub struct Space {
     pub folder: PathBuf,
 }
 
-/// Quién ejecuta un comando: el elefante de un espacio o un pez concreto.
+/// Quién ejecuta un comando: un agente principal o un pez concreto.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Caller {
-    Elephant { space: String },
+    Elephant(ElephantKey),
     Fish(FishKey),
 }
 
@@ -137,6 +187,11 @@ pub enum Command {
     FishSend {
         fish: String,
         file: PathBuf,
+    },
+    /// Un pez con un papel que puede delegar lanza uno de sus hijos (§15.5).
+    AgentDelegate {
+        role: RoleId,
+        brief: PathBuf,
     },
     Verify,
     RoundClose,

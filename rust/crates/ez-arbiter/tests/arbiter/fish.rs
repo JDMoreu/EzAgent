@@ -303,8 +303,10 @@ fn r7_unknown_fish_cannot_report() {
             &Caller::Fish(FishKey {
                 space: "s1".into(),
                 task: "t000000000000".into(),
+                elephant: "e00000000".into(),
                 fish: "dev-r9-9".into(),
                 attempt: 1,
+                parent: None,
             }),
             Command::Report {
                 verdict: Verdict::Pass,

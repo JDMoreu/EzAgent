@@ -38,13 +38,13 @@ pub(crate) fn attempt_suffix(attempt: u32) -> String {
 }
 
 /// Todo lo que se necesita para entregar el encargo a un pez.
-struct LaunchPlan {
-    key: FishKey,
-    fish: String,
-    role: RoleId,
-    report_path: PathBuf,
-    start: git::Fingerprint,
-    request: crate::types::LaunchRequest,
+pub(crate) struct LaunchPlan {
+    pub(crate) key: FishKey,
+    pub(crate) fish: String,
+    pub(crate) role: RoleId,
+    pub(crate) report_path: PathBuf,
+    pub(crate) start: git::Fingerprint,
+    pub(crate) request: crate::types::LaunchRequest,
 }
 
 impl ArbiterShared {
@@ -74,11 +74,11 @@ impl ArbiterShared {
             ));
         }
         let plan = self.prepare_launch(&task, &role, &seat, brief)?;
-        self.deliver(&mut task, plan)
+        self.deliver(&mut task, plan, 1)
     }
 
     /// Identidad, archivos de la ronda y petición de lanzamiento.
-    fn prepare_launch(
+    pub(crate) fn prepare_launch(
         &self,
         task: &crate::state::Task,
         role: &RoleId,
@@ -100,15 +100,17 @@ impl ArbiterShared {
         let key = FishKey {
             space: task.space.id.clone(),
             task: task.id.clone(),
+            elephant: task.elephant.elephant.clone(),
             fish: fish.clone(),
             attempt,
+            parent: None,
         };
         let folder = paths::round_dir(&task.space.folder, &task.id, round);
         let fish_brief = folder.join(format!("{fish}{suffix}.encargo.md"));
         let instructions = folder.join(format!("{fish}{suffix}.instrucciones.md"));
         let report_path = folder.join(format!("{fish}{suffix}.informe.md"));
         let start = self.copy_fish_brief(task, &brief, &fish_brief)?;
-        let context = self.instruction_context(task, role, seat, &key, round)?;
+        let context = self.instruction_context(task, role, seat, &key, round, None)?;
         self.write_instructions(&context, &instructions, &fish)?;
         let token = new_token();
         Ok(LaunchPlan {
@@ -122,24 +124,46 @@ impl ArbiterShared {
     }
 
     /// Ejecuta la entrega, registra el trabajo y emite la traza (§14.2).
-    fn deliver(
+    pub(crate) fn deliver(
         &self,
         task: &mut crate::state::Task,
         plan: LaunchPlan,
+        depth: u32,
     ) -> Result<Outcome, Rejection> {
         let token = plan.request.token.clone();
         let launched = self.launcher.launch(&plan.request);
-        let (terminal, mut message) = self.delivery_result(task, &plan, launched)?;
+        let (terminal, message) = self.delivery_result(task, &plan, launched)?;
         self.remember_token(&plan.key, &token);
         task.last_fp = Some(plan.start.clone());
+        self.register_work(task, &plan, &terminal, depth);
+        let mut effects = Effects::default();
+        let message = self.launch_message(task, &plan, &terminal, message, &mut effects);
+        self.commit(task, effects);
+        Ok(Outcome {
+            message,
+            data: serde_json::json!({
+                "fish": plan.fish, "terminal": terminal, "attempt": plan.key.attempt,
+            }),
+        })
+    }
+
+    /// Ficha del pez y trabajo pendiente que deja la entrega.
+    fn register_work(
+        &self,
+        task: &mut crate::state::Task,
+        plan: &LaunchPlan,
+        terminal: &str,
+        depth: u32,
+    ) {
         task.fish.push(FishRecord {
             key: plan.key.clone(),
             role: plan.role.clone(),
-            terminal: terminal.clone(),
+            terminal: terminal.to_string(),
             round: task.round,
-            start: Some(plan.start),
+            start: Some(plan.start.clone()),
             report: None,
             corrections: 0,
+            depth,
         });
         task.work.push(WorkItem {
             key: plan.key.clone(),
@@ -149,26 +173,52 @@ impl ArbiterShared {
             state: WorkState::Pending,
             started_ts: self.now(),
         });
-        let mut effects = Effects::default();
-        effects.event(self.event(
-            task,
-            "fish_launched",
-            serde_json::json!({
-                "fish": plan.fish, "role": plan.role.as_str(), "terminal": terminal,
-                "attempt": plan.key.attempt,
-            }),
-        ));
-        self.commit(task, effects);
+    }
+
+    /// Evento de traza y mensaje, según lo lanzara el principal o un pez (§15.5).
+    fn launch_message(
+        &self,
+        task: &crate::state::Task,
+        plan: &LaunchPlan,
+        terminal: &str,
+        message: String,
+        effects: &mut Effects,
+    ) -> String {
+        let mut message = message;
+        if let Some(parent) = &plan.key.parent {
+            self.inner
+                .lock()
+                .fish_queues
+                .entry(super::fish_slot(&crate::types::FishKey {
+                    parent: None,
+                    fish: parent.clone(),
+                    ..plan.key.clone()
+                }))
+                .or_insert_with(super::elephant_queue);
+            effects.event(self.event(
+                task,
+                "agent_delegated",
+                serde_json::json!({
+                    "fish": plan.fish, "parent": parent, "role": plan.role.as_str(),
+                    "attempt": plan.key.attempt,
+                }),
+            ));
+            message = texts::delegated_launched(&plan.fish, parent, terminal);
+        } else {
+            effects.event(self.event(
+                task,
+                "fish_launched",
+                serde_json::json!({
+                    "fish": plan.fish, "role": plan.role.as_str(), "terminal": terminal,
+                    "attempt": plan.key.attempt,
+                }),
+            ));
+        }
         message.push_str(&format!(
             " Informa con --file \"{}\".",
             plan.report_path.display()
         ));
-        Ok(Outcome {
-            message,
-            data: serde_json::json!({
-                "fish": plan.fish, "terminal": terminal, "attempt": plan.key.attempt,
-            }),
-        })
+        message
     }
 
     /// Interpreta la entrega del lanzador: terminal y mensaje, o fallo del trabajo.
@@ -206,7 +256,7 @@ impl ArbiterShared {
     }
 
     /// Copia el encargo del pez y toma la foto de git antes de lanzarlo.
-    fn copy_fish_brief(
+    pub(crate) fn copy_fish_brief(
         &self,
         task: &crate::state::Task,
         brief: &Path,
@@ -242,6 +292,7 @@ impl ArbiterShared {
             start: None,
             report: None,
             corrections: 0,
+            depth: 1,
         });
         task.work.push(WorkItem {
             key: plan.key.clone(),
@@ -265,13 +316,14 @@ impl ArbiterShared {
     }
 
     /// Contexto de las plantillas de `ez-team` para este pez.
-    fn instruction_context(
+    pub(crate) fn instruction_context(
         &self,
         task: &crate::state::Task,
         role: &RoleId,
         seat: &ez_team::Seat,
         key: &FishKey,
         round: u32,
+        parent: Option<&str>,
     ) -> Result<InstructionContext, Rejection> {
         let def = task
             .role_def(role)
@@ -294,7 +346,7 @@ impl ArbiterShared {
             role: role.clone(),
             role_name: def.name.clone(),
             fish: key.fish.clone(),
-            parent: None,
+            parent: parent.map(str::to_string),
             round,
             folder: task.space.folder.clone(),
             brief: task_dir.join("encargo.md"),
@@ -315,7 +367,7 @@ impl ArbiterShared {
     }
 
     /// Renderiza y guarda `<pez>.instrucciones.md`.
-    fn write_instructions(
+    pub(crate) fn write_instructions(
         &self,
         context: &InstructionContext,
         path: &Path,
@@ -336,7 +388,7 @@ impl ArbiterShared {
     }
 
     /// Identidad, etiquetas y primer mensaje del pez.
-    fn launch_request(
+    pub(crate) fn launch_request(
         &self,
         task: &crate::state::Task,
         role: &RoleId,
@@ -356,6 +408,10 @@ impl ArbiterShared {
         labels.insert("ez_role".to_string(), role.as_str().to_string());
         labels.insert("ez_fish".to_string(), key.fish.clone());
         labels.insert("ez_attempt".to_string(), key.attempt.to_string());
+        labels.insert("ez_elephant".to_string(), key.elephant.clone());
+        if let Some(parent) = &key.parent {
+            labels.insert("ez_parent".to_string(), parent.clone());
+        }
         crate::types::LaunchRequest {
             fish: key.fish.clone(),
             hc_name: hc_name(&task.id, &key.fish, key.attempt),

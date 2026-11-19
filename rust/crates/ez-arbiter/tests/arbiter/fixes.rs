@@ -91,8 +91,10 @@ fn old_fish_key_is_rejected_after_relaunch() {
     let old = FishKey {
         space: "s1".into(),
         task,
+        elephant: "e00000000".into(),
         fish: "plan-r1".into(),
         attempt: 1,
+        parent: None,
     };
     let error = report_with(&f, old, Verdict::Pass, 0, 0).expect_err("clave vieja");
     assert_eq!(error.rule, "R1");

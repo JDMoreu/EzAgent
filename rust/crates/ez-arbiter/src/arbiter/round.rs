@@ -342,6 +342,38 @@ fn evaluate(
     if !any_reported {
         reasons.push(texts::no_verifier_reported());
     }
+    verifier_reasons(task, round, criteria, verifiers, &mut reasons);
+    let protected = task.protected_files(round);
+    let touched: Vec<String> = task
+        .rounds
+        .iter()
+        .find(|record| record.number == round)
+        .map(|record| {
+            task.roles
+                .iter()
+                .filter(|def| !def.is_verifier())
+                .flat_map(|def| record.files_of(&def.id).into_iter())
+                .collect::<std::collections::BTreeSet<String>>()
+        })
+        .unwrap_or_default()
+        .intersection(&protected)
+        .cloned()
+        .collect();
+    if !touched.is_empty() {
+        reasons.push(texts::protected_touched(&touched));
+    }
+    other_violations(task, round, &mut reasons);
+    (reasons.is_empty(), reasons)
+}
+
+/// Motivos de cada verificador: informe limpio y mutaciones (§15.4).
+fn verifier_reasons(
+    task: &Task,
+    round: u32,
+    criteria: &Criteria,
+    verifiers: Vec<&ez_team::RoleDef>,
+    reasons: &mut Vec<String>,
+) {
     for def in verifiers {
         let report = task
             .fish_in_round(round)
@@ -364,27 +396,6 @@ fn evaluate(
             }
         }
     }
-    let protected = task.protected_files(round);
-    let touched: Vec<String> = task
-        .rounds
-        .iter()
-        .find(|record| record.number == round)
-        .map(|record| {
-            task.roles
-                .iter()
-                .filter(|def| !def.is_verifier())
-                .flat_map(|def| record.files_of(&def.id).into_iter())
-                .collect::<std::collections::BTreeSet<String>>()
-        })
-        .unwrap_or_default()
-        .intersection(&protected)
-        .cloned()
-        .collect();
-    if !touched.is_empty() {
-        reasons.push(texts::protected_touched(&touched));
-    }
-    other_violations(task, round, &mut reasons);
-    (reasons.is_empty(), reasons)
 }
 
 /// Informes sucios y papeles que no debían tocar el proyecto (§14.3, §14.4).

@@ -65,17 +65,29 @@ impl ArbiterShared {
         if def.is_verifier() {
             self.check_verifier_entry(task, round, stage, first_verifier_stage)?;
         }
-        if count > 1 || role.as_str() == builtin::DEVELOPER {
-            let alive = task
-                .fish_in_round(round)
-                .filter(|fish| fish.role == *role && self.launcher.alive(&fish.terminal))
-                .count() as u32;
-            if alive >= count.max(1) {
-                return Err(Rejection::new(
-                    "R5",
-                    texts::too_many_fish(alive, count.max(1)),
-                ));
-            }
+        self.check_alive_count(task, role, round, count)
+    }
+
+    /// Respeta el número de puestos simultáneos del papel (§15.3).
+    fn check_alive_count(
+        &self,
+        task: &crate::state::Task,
+        role: &RoleId,
+        round: u32,
+        count: u32,
+    ) -> Result<(), Rejection> {
+        if count <= 1 && role.as_str() != builtin::DEVELOPER {
+            return Ok(());
+        }
+        let alive = task
+            .fish_in_round(round)
+            .filter(|fish| fish.role == *role && self.launcher.alive(&fish.terminal))
+            .count() as u32;
+        if alive >= count.max(1) {
+            return Err(Rejection::new(
+                "R5",
+                texts::too_many_fish(alive, count.max(1)),
+            ));
         }
         Ok(())
     }

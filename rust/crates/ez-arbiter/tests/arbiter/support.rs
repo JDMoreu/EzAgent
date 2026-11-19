@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use ez_arbiter::{
-    Arbiter, Caller, Clock, Command, Delivery, FishKey, FishLauncher, InstructionWriter,
-    LaunchRequest, Launched, Outcome, Rejection, Space, Verdict,
+    Arbiter, Caller, Clock, Command, Delivery, ElephantKey, FishKey, FishLauncher,
+    InstructionWriter, LaunchRequest, Launched, Outcome, Rejection, Space, Verdict,
 };
 use ez_team::{builtin, InstructionContext, RoleId, Seat};
 
@@ -213,6 +213,17 @@ impl Fixture {
         }
     }
 
+    /// Abre un segundo árbitro sobre los mismos datos (para probar la recarga).
+    pub fn reopen(&self) -> Arbiter {
+        Arbiter::new(
+            self.data_dir.clone(),
+            self.launcher.clone(),
+            Arc::new(FakeWriter),
+            self.clock.clone(),
+        )
+        .expect("reabrir el árbitro")
+    }
+
     /// Igual que `new`, pero sin repositorio git (para R2).
     pub fn without_git(name: &str) -> Self {
         let fixture = Self::new(name);
@@ -229,8 +240,14 @@ impl Fixture {
     }
 
     pub fn elephant() -> Caller {
-        Caller::Elephant {
+        Caller::Elephant(ElephantKey::default_for("s1"))
+    }
+
+    /// Clave de un agente principal adicional en el espacio de prueba.
+    pub fn elephant_key(id: &str) -> ElephantKey {
+        ElephantKey {
             space: "s1".to_string(),
+            elephant: id.to_string(),
         }
     }
 
@@ -255,15 +272,8 @@ impl Fixture {
             else {
                 continue;
             };
-            let key = FishKey {
-                space: record["key"]["space"]
-                    .as_str()
-                    .expect("espacio")
-                    .to_string(),
-                task: record["key"]["task"].as_str().expect("tarea").to_string(),
-                fish: record["key"]["fish"].as_str().expect("pez").to_string(),
-                attempt: record["key"]["attempt"].as_u64().expect("intento") as u32,
-            };
+            let key: FishKey =
+                serde_json::from_value(record["key"].clone()).expect("clave del pez");
             let works = state["work"].as_array();
             let find_work = |state_filter: Option<&str>| -> Option<PathBuf> {
                 works?.iter().rev().find_map(|item| {
@@ -475,6 +485,20 @@ pub fn live_kind(event: &ez_arbiter::ArbiterEvent) -> String {
         .as_str()
         .expect("tipo del evento")
         .to_string()
+}
+
+/// Ejecuta git y devuelve stdout, sin shell y sin ventana de consola.
+pub fn git_output(folder: &Path, args: &[&str]) -> String {
+    let mut command = std::process::Command::new("git");
+    command.arg("-C").arg(folder).args(args);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    let output = command.output().expect("ejecutar git");
+    assert!(output.status.success(), "git {args:?} falló");
+    String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
 /// Ejecuta git sin shell y sin ventana de consola.

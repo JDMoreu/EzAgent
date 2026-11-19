@@ -16,6 +16,8 @@ pub enum CardKind {
     Task,
     Team,
     Pause,
+    /// Integrar o dejar la rama de un agente principal (§15.1).
+    Integrate,
 }
 
 impl CardKind {
@@ -25,6 +27,7 @@ impl CardKind {
             CardKind::Task => "task",
             CardKind::Team => "team",
             CardKind::Pause => "pause",
+            CardKind::Integrate => "integrate",
         }
     }
 }
@@ -99,6 +102,17 @@ pub enum EventKind {
         file: PathBuf,
         report: PathBuf,
     },
+    /// Subagente lanzado por otro subagente (§15.5).
+    AgentDelegated {
+        fish: String,
+        parent: String,
+        role: String,
+        attempt: u32,
+    },
+    /// Rama del agente principal integrada en la base (§15.1).
+    Integrated {
+        branch: String,
+    },
     Verification {
         ok: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -138,7 +152,9 @@ impl EventKind {
             "task_proposed" | "task_approved" | "task_rejected" | "team_proposed"
             | "team_approved" | "team_rejected" => Self::approval_event(kind, data),
             "round_started" | "fish_launched" | "fish_reported" | "fish_blocked"
-            | "fish_exited" | "fish_failed" | "fish_corrected" => Self::fish_event(kind, data),
+            | "fish_exited" | "fish_failed" | "fish_corrected" | "agent_delegated" => {
+                Self::fish_event(kind, data)
+            }
             _ => Self::round_event(kind, data),
         }
     }
@@ -214,6 +230,12 @@ impl EventKind {
                 file: PathBuf::from(Self::text(data, "file")),
                 report: PathBuf::from(Self::text(data, "report")),
             },
+            "agent_delegated" => Self::AgentDelegated {
+                fish,
+                parent: Self::text(data, "parent"),
+                role: Self::text(data, "role"),
+                attempt,
+            },
             _ => Self::FishExited { fish, attempt },
         }
     }
@@ -256,6 +278,9 @@ impl EventKind {
             },
             "resumed" => Self::Resumed {},
             "task_closed" => Self::TaskClosed {},
+            "integrated" => Self::Integrated {
+                branch: Self::text(data, "branch"),
+            },
             "stopped" | "task_stopped" => Self::TaskStopped {},
             other => Self::Rejected {
                 rule: "R12".to_string(),
@@ -272,6 +297,9 @@ pub struct ArbiterEvent {
     pub seq: u64,
     pub kind: EventKind,
     pub space: String,
+    /// Id del agente principal dueño del evento (§15.1).
+    #[serde(default)]
+    pub elephant: Option<String>,
     pub task: Option<String>,
     /// Segundos desde 1970, del reloj del árbitro.
     pub ts: f64,
@@ -282,6 +310,9 @@ pub struct ArbiterEvent {
 pub struct ElephantEvent {
     pub kind: String,
     pub space: String,
+    /// Id del agente principal al que va dirigido (§15.1).
+    #[serde(default)]
+    pub elephant: Option<String>,
     pub task: Option<String>,
     pub ts: f64,
     pub message: String,
@@ -301,6 +332,7 @@ impl ElephantEvent {
         Self {
             kind: kind.into(),
             space: space.into(),
+            elephant: None,
             task: None,
             ts,
             message: message.into(),

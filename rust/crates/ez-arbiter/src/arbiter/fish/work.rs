@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use crate::events::ElephantEvent;
 use crate::git;
 use crate::paths;
 use crate::state::{FishRecord, ReportRecord, Status, WorkItem, WorkKind, WorkState};
@@ -223,7 +224,40 @@ impl ArbiterShared {
             self.elephant_event(task, "fish_reported", message.clone(), data),
         );
         self.commit(task, effects);
+        self.notify_parent(task, key, input.verdict);
         Ok(Outcome::new(message))
+    }
+
+    /// Avisa al pez que delegó el trabajo de que uno de sus hijos informó (§15.5).
+    fn notify_parent(&self, task: &crate::state::Task, key: &FishKey, verdict: Verdict) {
+        let Some(parent) = &key.parent else {
+            return;
+        };
+        let slot = super::super::fish_slot(&FishKey {
+            parent: None,
+            fish: parent.clone(),
+            ..key.clone()
+        });
+        let sender = self
+            .inner
+            .lock()
+            .fish_queues
+            .get(&slot)
+            .map(|queue| queue.tx.clone());
+        if let Some(sender) = sender {
+            let mut event = ElephantEvent::new(
+                "fish_reported",
+                task.space.id.clone(),
+                self.now(),
+                texts::report_received(&key.fish, verdict),
+                serde_json::json!({
+                    "fish": key.fish, "parent": parent, "verdict": verdict.id(),
+                }),
+            );
+            event.elephant = Some(task.elephant.elephant.clone());
+            event.task = Some(task.id.clone());
+            let _ = sender.send(event);
+        }
     }
 
     /// Guarda la copia privada del informe y devuelve su sha256.

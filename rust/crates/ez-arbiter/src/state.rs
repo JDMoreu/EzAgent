@@ -7,7 +7,7 @@ use ez_team::{RoleDef, RoleId, Seat};
 use serde::{Deserialize, Serialize};
 
 use crate::git::Fingerprint;
-use crate::types::{FishKey, Space, Verdict};
+use crate::types::{ElephantKey, FishKey, Space, Verdict};
 use crate::verify::CheckRecord;
 
 /// Estado de la tarea (diseño §8).
@@ -124,6 +124,13 @@ pub struct FishRecord {
     /// Último informe aceptado.
     pub report: Option<ReportRecord>,
     pub corrections: u32,
+    /// 1 si lo lanzó el agente principal; hijos de un pez suman 1 (§15.5).
+    #[serde(default = "one")]
+    pub depth: u32,
+}
+
+fn one() -> u32 {
+    1
 }
 
 impl FishRecord {
@@ -172,6 +179,9 @@ pub struct Task {
     pub id: String,
     pub title: String,
     pub space: Space,
+    /// Agente principal dueño de la tarea (fijado al crearla).
+    #[serde(default)]
+    pub elephant: ElephantKey,
     pub status: Status,
     pub paused_from: Option<Status>,
     /// Código del motivo (`tope_rondas`, `criterios_modificados`…).
@@ -282,6 +292,14 @@ impl Task {
             .find(|item| &item.key == key && item.state == WorkState::Pending)
     }
 
+    /// Trabajos delegados por un pez (hijos directos, §15.5).
+    pub fn children_of(&self, parent: &FishKey) -> Vec<&WorkItem> {
+        self.work
+            .iter()
+            .filter(|item| item.key.parent.as_deref() == Some(parent.fish.as_str()))
+            .collect()
+    }
+
     /// Trabajos pendientes de una ronda.
     pub fn pending_in_round(&self, round: u32) -> Vec<&WorkItem> {
         self.work
@@ -363,6 +381,9 @@ impl Task {
                     "terminal": fish.terminal,
                     "round": fish.round,
                     "attempt": fish.key.attempt,
+                    "elephant": fish.key.elephant,
+                    "parent": fish.key.parent,
+                    "depth": fish.depth,
                 })
             })
             .collect();
@@ -381,6 +402,7 @@ impl Task {
         serde_json::json!({
             "space": self.space.id,
             "space_name": self.space.name,
+            "elephant": self.elephant.elephant,
             "task": self.id,
             "title": self.title,
             "status": self.status.id(),
