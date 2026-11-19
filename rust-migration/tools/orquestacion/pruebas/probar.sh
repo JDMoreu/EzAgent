@@ -67,6 +67,12 @@ mkrepo() { # mkrepo <carpeta> <id> <modo: exit|tui|fail|retry>
   printf '%s\n' "$id" > "$dir/.fake-id"
   printf '%s\n' "$mode" > "$dir/.fake-mode"
   printf 'Encargo de prueba %s. Escribe el informe y haz commit.\n' "$id" > "$WORK/prompt.txt"
+  # HD-0f: el informe del caso 18 va como archivo: hc no hereda el entorno del
+  # supervisor, así que el trabajador falso no puede leerlo de una variable.
+  if [ "$mode" = "acentos" ]; then
+    printf '%s\n' '## Resultado' "- Brief/tarea: $id" \
+      '- Estado: completado — verificación → ok' > "$dir/.fake-report"
+  fi
   git -C "$dir" init -q
   git -C "$dir" add -A
   git -C "$dir" -c user.email=hd0@example.com -c user.name=HD0Test commit -q -m "inicio"
@@ -288,11 +294,14 @@ printf '%s\n' "$LAST_OUT" | grep -q "informe completado" \
 
 echo "[pruebas] caso 8: HD-0d una terminal viva con el mismo nombre se sigue; no se mata ni se duplica"
 LIVE_ADDR="$(hc run --bg --json --name hd0t8 --cwd "$WORK" --no-notify \
-  --parent "$HC_TERMINAL_ID" -- "C:/Program Files/Git/bin/bash.exe" -c 'sleep 25' \
+  --parent "$HC_TERMINAL_ID" -- "C:/Program Files/Git/bin/bash.exe" -c 'sleep 60' \
   | $PYTHON -c "import json,sys; print(json.load(sys.stdin).get('address',''))")"
 [ -n "$LIVE_ADDR" ] || { echo "FALLO: caso 8 no pude crear la terminal previa"; FAIL=1; }
 ADDRS="$ADDRS $LIVE_ADDR"
 sleep 2
+# HD-0f: una vez el supervisor llegó tarde y la terminal de 25 s ya había
+# terminado; 60 s y esta comprobación dejan claro si la terminal previa vive.
+check "caso 8 terminal previa viva" "$(field "$LIVE_ADDR" "d.get('state','')")" "live"
 run_case HD0T8 "$WORK/live" exit EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd"
 code=$?
 [ "$code" -eq 0 ] || { echo "FALLO: caso 8 devolvió $code (esperado 0)"; FAIL=1; }
@@ -406,6 +415,80 @@ grep -Fq "Free limit reached" "$WORK/log/HD0T15-hc1.log" \
   && echo "OK caso 15: la frase estaba en la pantalla (pero el agente estaba trabajando)" \
   || { echo "FALLO caso 15: la frase no llegó a la pantalla"; FAIL=1; }
 check "registro caso 15" "$(reg_field HD0T15 "d['state']")" "terminado"
+
+echo "[pruebas] caso 16: HD-0f una pantalla que cambia con una frase de límite no es un límite"
+run_case HD0T16 "$WORK/changing" changing EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd"
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 16 devolvió $code (esperado 0)"; FAIL=1; }
+no_tocado HD0T16 "$WORK/changing" "$WORK/log/HD0T16-hc1.log"
+grep -Fq "Free limit reached" "$WORK/log/HD0T16-hc1.log" \
+  && echo "OK caso 16: la frase de límite estaba en la pantalla" \
+  || { echo "FALLO caso 16: la frase no llegó a la pantalla"; FAIL=1; }
+grep -Fq "contador" "$WORK/log/HD0T16-hc1.log" \
+  && echo "OK caso 16: la pantalla cambiaba (contador)" \
+  || { echo "FALLO caso 16: la pantalla no cambiaba"; FAIL=1; }
+check "registro caso 16" "$(reg_field HD0T16 "d['state']")" "terminado"
+
+echo "[pruebas] caso 17: HD-0f la captura real de OpenCode con el límite al final de la conversación"
+# Dato real de NV-1c; la frase se añade antes de las filas vacías, al final de
+# la conversación, como la vería la persona.
+awk 'BEGIN { done = 0 }
+  { if (!done && NR > 30 && $0 ~ /^[[:space:]]*$/) {
+      print "Free limit reached. Resets at 7:00 p.m."; done = 1 }
+    print }' \
+  "$HERE/NV-1c-pantalla-opencode.txt" > "$WORK/screen17.txt"
+run_case HD0T17 "$WORK/screen17" quiet EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" \
+  PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=idle EZ_REAL_HC="$REAL_HC" \
+  EZ_FAKE_SCREEN="$(cygpath -w "$WORK/screen17.txt")"
+code=$?
+[ "$code" -eq 2 ] || { echo "FALLO: caso 17 devolvió $code (esperado 2)"; FAIL=1; }
+printf '%s\n' "$LAST_OUT" | grep -q "límite de uso" \
+  || { echo "FALLO: caso 17 no detectó el límite de la captura real"; FAIL=1; }
+check "registro caso 17 estado" "$(reg_field HD0T17 "d['state']")" "fallido"
+detalle="$(reg_field HD0T17 "d['history'][-1]['detail']")"
+case "$detalle" in
+  *"Free limit reached. Resets at 7:00 p.m."*) echo "OK registro detalle caso 17: $detalle" ;;
+  *) echo "FALLO registro detalle caso 17: «$detalle»"; FAIL=1 ;;
+esac
+notice "aviso caso 17" "hd0t17 (OpenCode · opencode/hy4-flash-free) falló: límite de uso:"
+check "caso 17 sin reintento" "$(name_count hd0t17)" "1"
+
+echo "[pruebas] caso 18: HD-0f un resumen con acentos y símbolos llega intacto al registro"
+run_case HD0T18 "$WORK/acentos" acentos EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd"
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 18 devolvió $code (esperado 0)"; FAIL=1; }
+check "resumen con acentos" "$(reg_field HD0T18 "d.get('summary','')")" \
+  "Estado: completado — verificación → ok"
+
+echo "[pruebas] producto lee el registro del supervisor"
+EZ_BIN="${EZ_BIN:-C:/Users/JDMoreu/Documents/EzAgent/rust/target/debug/ez.exe}"
+if [ -f "$EZ_BIN" ]; then
+  EZ_SUBAGENTS_DIR="$EZ_SUBAGENTS_DIR" "$EZ_BIN" tasks --parent "$HC_TERMINAL_ID" --json \
+    > "$WORK/tasks.json" 2> "$WORK/tasks.err"
+  code=$?
+  check "producto tasks código" "$code" "0"
+  names="$($PYTHON - "$WORK/tasks.json" <<'PY'
+import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding='utf-8'))
+except Exception:
+    print('sin JSON'); sys.exit(0)
+names = {r.get('name') for r in data if isinstance(r, dict)}
+esperados = {'hd0t%d' % i for i in range(1, 19)}
+falta = sorted(esperados - names)
+print('OK' if not falta else 'FALTA ' + ','.join(falta))
+PY
+)"
+  check "producto tasks nombres" "$names" "OK"
+  if grep -Fq "registro ilegible" "$WORK/tasks.err"; then
+    echo "FALLO producto tasks: stderr con «registro ilegible»"; FAIL=1
+  else
+    echo "OK producto tasks: stderr sin «registro ilegible»"
+  fi
+  [ -s "$WORK/tasks.err" ] && echo "[pruebas] stderr de ez tasks: $(cat "$WORK/tasks.err")"
+else
+  echo "FALLO producto tasks: no existe EZ_BIN=$EZ_BIN (no se salta la prueba)"; FAIL=1
+fi
 
 [ "${EZ_HUMO_REAL:-0}" = "1" ] && humo_real
 

@@ -6,6 +6,13 @@
 # HD-0e: EZ_FAKE_STATUS=idle|working|blocked — el estado que «reporta» el
 # agente en `hc get --json` (así se prueba que un agente trabajando no está
 # bloqueado y que uno parado sí).
+#
+# HD-0f: EZ_FAKE_SCREEN=<archivo> — `hc read` devuelve ese archivo en vez de la
+# pantalla real (la captura de un TUI de OpenCode para el caso 17).
+if [ "$1" = "read" ] && [ -n "${EZ_FAKE_SCREEN:-}" ]; then
+  cat "$EZ_FAKE_SCREEN"
+  exit 0
+fi
 if [ "$1" = "get" ] && [ -n "${EZ_HC_FAIL_FILE:-}" ] && [ -f "$EZ_HC_FAIL_FILE" ]; then
   n="$(cat "$EZ_HC_FAIL_FILE" 2>/dev/null)"
   case "$n" in

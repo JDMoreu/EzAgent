@@ -32,6 +32,17 @@
 #   agente que lee o escribe sobre límites de uso no está bloqueado
 #   (§3 de docs/designs/novedades-subagentes.md).
 #
+# v6 (2026-11-19, HD-0f): el producto ve lo que escribe el supervisor:
+#   - el registro va en `%LOCALAPPDATA%\EzAgent\subagentes` (español), la misma
+#     carpeta que lee `Registry::from_env` (`EZ_SUBAGENTS_DIR` sigue mandando).
+#   - `validation` se escribe `null` en los registros nuevos (forma canónica);
+#     no se borra una validación que ya exista.
+#   - todo Python del script escribe en UTF-8 (PYTHONIOENCODING/PYTHONUTF8):
+#     antes, con la salida en una tubería, los resúmenes con tildes o «→» se
+#     corrompían o salían vacíos.
+#   - `screen_tail` cuenta como línea con texto la que tiene una letra o un
+#     dígito (igual que NV-1c): los bordes del TUI (`┃`, `╹▀▀▀`) no ocupan cupo.
+#
 # - Padre: la terminal que hereda este script (HC_TERMINAL_ID). Sin ella el
 #   worker queda sin padre (y oculto): se avisa y se sigue.
 # - Sin notas al padre (--no-notify): el seguimiento lo hace este script.
@@ -65,6 +76,10 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 if [ -n "${EZ_PYTHON:-}" ]; then
   PYTHON="$EZ_PYTHON"
 elif command -v python3 >/dev/null 2>&1 && python3 -c 'pass' 2>/dev/null; then PYTHON=python3; else PYTHON=python; fi
+# HD-0f: todo Python del script escribe datos en UTF-8. El de Windows usa
+# cp1252 cuando la salida es una tubería: los resúmenes con tildes o «→» se
+# corrompían o salían vacíos (UnicodeEncodeError tragado por 2>/dev/null).
+export PYTHONIOENCODING=utf-8 PYTHONUTF8=1
 # ÚNICO ayudante para el \r de Windows: todo lo que el script compara o usa
 # como dato pasa por aquí. Sin él, «live\r» no es «live» (C0-3) y el supervisor
 # confunde una terminal sana con una desconocida (HD-0d).
@@ -100,7 +115,7 @@ PREV_TAIL=""
 PREV_TAIL_AT=0
 # Frase de límite detectada en la última vuelta (HD-0e).
 LIMIT_HIT=""
-SUBAGENTS_ROOT="${EZ_SUBAGENTS_DIR:-${LOCALAPPDATA:-$USERPROFILE/AppData/Local}/EzAgent/subagents}"
+SUBAGENTS_ROOT="${EZ_SUBAGENTS_DIR:-${LOCALAPPDATA:-$USERPROFILE/AppData/Local}/EzAgent/subagentes}"
 # C0-5: OpenCode solo acepta ids de sesión que empiezan por «ses».
 # DECISION: id estable por trabajador para que los reintentos continúen la sesión.
 SID_PREFIX="ses_$(printf '%s' "$ID" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
@@ -231,7 +246,9 @@ d.update(name=os.environ['NAME'], terminal=os.environ.get('TERMINAL', ''),
     effort='', role='developer', cwd=os.environ['CWD_TXT'],
     brief_head=os.environ['BRIEF_HEAD'], state=state, since_ms=now,
     summary=os.environ['SUMMARY'], report=os.environ['RPT'],
-    validation=d.get('validation') or {'by':None,'verdict':None,'summary':None,'file':None,'at_ms':None})
+    # HD-0f: forma canónica del producto; un registro nuevo lleva null y una
+    # validación ya puesta por `ez validate` se conserva.
+    validation=d.get('validation'))
 if os.environ['NOTIFY'] != '__KEEP__': d['notified'] = os.environ['NOTIFY']
 d.setdefault('history', []).append({'state':state,'at_ms':now,'by':'supervisor','detail':os.environ['DETAIL']})
 os.makedirs(os.path.dirname(reg), exist_ok=True)
@@ -315,9 +332,10 @@ live_addr() { # dirección de una terminal VIVA con este nombre (vacío si no ha
 agent_state() { # agent_state <address> — estado que reporta el agente (idle|working|…)
   field "$1" "str((t.get('status') or {}).get('state','') if isinstance(t.get('status'),dict) else (t.get('status') or ''))"
 }
-screen_tail() { # screen_tail <address> — las últimas 15 líneas con texto de la pantalla
+screen_tail() { # screen_tail <address> — las últimas 15 líneas con letra o dígito
+  # HD-0f: mismo criterio que NV-1c; los bordes del TUI (`┃`, `╹▀▀▀`) no cuentan.
   hc read "$1" --lines 200 2>/dev/null | strip_cr \
-    | awk -v max="$LIMIT_TAIL_LINES" 'NF { b[n % max] = $0; n++ }
+    | awk -v max="$LIMIT_TAIL_LINES" '/[[:alnum:]]/ { b[n % max] = $0; n++ }
         END { s = (n > max ? n - max : 0); for (i = s; i < n; i++) print b[i % max] }'
 }
 # HD-0e (C0-6): un límite de uso solo cuenta si el agente NO está «working», la

@@ -17,6 +17,9 @@ if /i "%MODE%"=="limit" goto limit
 if /i "%MODE%"=="limit-top" goto limittop
 if /i "%MODE%"=="limit-work" goto limitwork
 if /i "%MODE%"=="chatter" goto chatter
+if /i "%MODE%"=="changing" goto changing
+if /i "%MODE%"=="quiet" goto quiet
+if /i "%MODE%"=="acentos" goto acentos
 if /i "%MODE%"=="slow" goto slow
 if /i "%MODE%"=="fail" exit /b 0
 if /i "%MODE%"=="retry" if not exist ".fake-attempt2" (
@@ -31,6 +34,7 @@ echo - Brief/tarea: %ID%
 echo - Estado: completado
 echo - Verificado con el agente falso de HD-0.
 ) > "%REPORT%"
+:commit
 git add -A
 git -c user.email=hd0@example.com -c user.name=HD0Test commit -q -m "Informe de prueba %ID%" >nul 2>&1
 if /i "%MODE%"=="tui" goto tui
@@ -60,6 +64,26 @@ rem la ventana de pantalla quieta para que el supervisor llegue a buscar la fras
 echo revisando el informe de IR-0: "quota", "rate limit" y "usage limit" salen en el texto
 ping -n 45 127.0.0.1 >nul
 goto escribir
+:changing
+rem HD-0f: hay una frase completa de límite en las últimas líneas, pero la
+rem pantalla cambia (un contador) cada pocos segundos durante más de la ventana
+rem de pantalla quieta: no es un límite.
+for /L %%i in (1,1,12) do (
+  echo contador %%i: el agente sigue vivo
+  echo Free limit reached. Resets at 7:00 p.m.
+  ping -n 3 127.0.0.1 >nul
+)
+goto escribir
+:quiet
+rem HD-0f: no escribe informe; deja que el supervisor evalúe la pantalla falsa
+rem de fake-hc (EZ_FAKE_SCREEN) y se detenga por el límite.
+ping -n 120 127.0.0.1 >nul
+exit /b 0
+:acentos
+rem HD-0f: informe con acentos y símbolos, escrito por probar.sh en UTF-8
+rem (mkrepo lo deja en .fake-report).
+if exist ".fake-report" copy /y ".fake-report" "rust-migration\reports\%ID%-r1.md" >nul
+goto commit
 :limitwork
 rem HD-0e: la frase COMPLETA de límite está en pantalla, pero el agente está
 rem «working»: no está bloqueado y el supervisor no debe tocarlo.
