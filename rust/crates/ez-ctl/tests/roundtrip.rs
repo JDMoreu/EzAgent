@@ -46,7 +46,8 @@ fn leaf_commands_use_their_protocol_names() {
     assert_eq!(
         calls[0].0,
         Caller::Elephant {
-            space: SPACE.to_string()
+            space: SPACE.to_string(),
+            elephant: "e00000000".to_string(),
         }
     );
     assert_eq!(calls[0].1.args, json!({}));
@@ -217,8 +218,10 @@ fn report_carries_verdict_counts_and_mutations() {
         Caller::Fish {
             space: SPACE.to_string(),
             task: TASK.to_string(),
+            elephant: "e00000000".to_string(),
             fish: "dev-r1-1".to_string(),
             attempt: 1,
+            parent: None,
         }
     );
     let file = calls[0].1.args["file"].as_str().expect("ruta");

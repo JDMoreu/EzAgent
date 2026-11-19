@@ -78,6 +78,7 @@ fn a_rejected_request_is_exit_1_and_prints_its_message() {
         "token-prueba",
         Caller::Elephant {
             space: "espacio".to_string(),
+            elephant: "e00000000".to_string(),
         },
     );
     let server = CtlServer::start(Arc::new(Rejecting), tokens).expect("servidor");

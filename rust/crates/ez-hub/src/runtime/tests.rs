@@ -5,7 +5,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ez_arbiter::{Caller as ArbiterCaller, Command, Delivery, FishKey, LaunchRequest};
+use ez_arbiter::{
+    Arbiter, Caller as ArbiterCaller, Command, Delivery, ElephantKey, FishKey, LaunchRequest,
+};
 use ez_ctl::{Caller, Handler, Reply, Request, Tokens};
 use ez_team::{builtin, AgentProfile, RoleId, Seat, Subscription};
 use ez_term::{Delivery as TermDelivery, RunSpec, Terminal};
@@ -13,8 +15,8 @@ use parking_lot::{Mutex, RwLock};
 use serde_json::{json, Value};
 
 use super::handler::{ArbiterApi, ArbiterHandler};
-use super::launcher::{RuntimeLauncher, Terminals};
-use super::spaces::SpaceConfig;
+use super::launcher::{RuntimeLauncher, TeamInstructionWriter, Terminals};
+use super::spaces::{ElephantTokens, MainChoice, Principales, SpaceConfig};
 use super::HubRuntime;
 
 #[derive(Clone)]
@@ -160,7 +162,8 @@ fn labels() -> BTreeMap<String, String> {
         ("ez".to_string(), "1".to_string()),
         ("ez_space".to_string(), "s1".to_string()),
         ("ez_task".to_string(), "t1".to_string()),
-        ("ez_role".to_string(), "sub".to_string()),
+        ("ez_elephant".to_string(), "e00000000".to_string()),
+        ("ez_role".to_string(), "developer".to_string()),
         ("ez_fish".to_string(), "dev-r1-1".to_string()),
         ("ez_attempt".to_string(), "1".to_string()),
     ])
@@ -199,10 +202,43 @@ fn space_config_in(folder: PathBuf) -> SpaceConfig {
         id: "s1".to_string(),
         name: "Ez".to_string(),
         folder,
+        suggested: Some(main_choice()),
+    }
+}
+
+fn main_choice() -> MainChoice {
+    MainChoice {
         agent: "opencode".to_string(),
         model: "opencode-go/deepseek-v4.1-flash".to_string(),
         effort: None,
     }
+}
+
+/// Árbitro real sobre un repositorio git temporal, con el espacio `s1` registrado.
+pub(crate) fn test_arbiter(dir: &crate::testutil::TempDir, tokens: Arc<Tokens>) -> Arc<Arbiter> {
+    let mut command = std::process::Command::new("git");
+    command.args(["init"]).current_dir(dir.path());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    assert!(command.status().expect("git init").success());
+    let terminals = FakeTerminals::with_tokens(tokens);
+    let launcher = launcher(terminals, Arc::new(Tokens::new()));
+    let arbiter = Arbiter::new(
+        dir.path().to_path_buf(),
+        launcher as Arc<dyn ez_arbiter::FishLauncher>,
+        Arc::new(TeamInstructionWriter),
+        Arc::new(ez_arbiter::SystemClock),
+    )
+    .expect("árbitro");
+    arbiter.register_space(ez_arbiter::Space {
+        id: "s1".to_string(),
+        name: "Ez".to_string(),
+        folder: dir.path().to_path_buf(),
+    });
+    Arc::new(arbiter)
 }
 
 #[test]
@@ -287,52 +323,76 @@ fn alive_uses_the_live_terminal_state() {
     assert!(!ez_arbiter::FishLauncher::alive(&*launcher, "dead"));
 }
 
-fn elephant_labels() -> BTreeMap<String, String> {
+fn main_labels() -> BTreeMap<String, String> {
     BTreeMap::from([
         ("ez".to_string(), "1".to_string()),
         ("ez_space".to_string(), "s1".to_string()),
-        ("ez_role".to_string(), "elephant".to_string()),
+        ("ez_elephant".to_string(), "e00000000".to_string()),
+        ("ez_role".to_string(), "main".to_string()),
     ])
 }
 
-#[test]
-fn ensure_elephant_reuses_a_live_terminal() {
-    let dir = crate::testutil::TempDir::new("runtime-reuse");
-    let tokens = Arc::new(Tokens::new());
-    let terminals = FakeTerminals::with_tokens(Arc::clone(&tokens));
-    terminals.add("e1", elephant_labels(), "live");
-    let runtime = HubRuntime::with_parts(
-        vec![space_config()],
-        launcher(terminals, tokens),
-        Arc::new(Tokens::new()),
-        super::spaces::ElephantTokens::load(dir.path().join("elefantes.json")),
-        false,
-    );
-    assert_eq!(runtime.ensure_elephant("s1").expect("elefante"), "e1");
+fn parts(
+    dir: &crate::testutil::TempDir,
+    terminals: Arc<FakeTerminals>,
+    tokens: Arc<Tokens>,
+    need_relaunch: bool,
+) -> HubRuntime {
+    let arbiter = test_arbiter(dir, Arc::clone(&tokens));
+    HubRuntime::with_parts(
+        vec![space_config_in(dir.path().to_path_buf())],
+        launcher(terminals, Arc::clone(&tokens)),
+        arbiter,
+        tokens,
+        ElephantTokens::load(dir.path().join("elefantes.json")),
+        Principales::load(dir.path().join("principales.json")),
+        need_relaunch,
+    )
 }
 
 #[test]
-fn ensure_elephant_relaunches_when_required_and_launches_when_absent() {
-    let dir = crate::testutil::TempDir::new("runtime-relaunch");
+fn ensure_main_agent_reuses_a_live_terminal() {
+    let dir = crate::testutil::TempDir::new("runtime-reuse");
     let tokens = Arc::new(Tokens::new());
     let terminals = FakeTerminals::with_tokens(Arc::clone(&tokens));
-    terminals.add("e1", elephant_labels(), "live");
-    let saved = super::spaces::ElephantTokens::load(dir.path().join("elefantes.json"));
-    let runtime = HubRuntime::with_parts(
-        vec![space_config()],
-        launcher(Arc::clone(&terminals), Arc::clone(&tokens)),
-        Arc::clone(&tokens),
-        saved,
-        true,
+    terminals.add("e1", main_labels(), "live");
+    let runtime = parts(&dir, terminals, tokens, false);
+    assert_eq!(
+        runtime
+            .ensure_main_agent("s1", "e00000000")
+            .expect("agente principal"),
+        "e1"
     );
-    assert_eq!(runtime.ensure_elephant("s1").expect("elefante"), "t1");
-    assert_eq!(terminals.killed.lock().as_slice(), &["e1".to_string()]);
-    assert_eq!(terminals.launches.lock().len(), 1);
-    let saved = runtime.elephant_tokens.get("s1").expect("token guardado");
+}
+
+#[test]
+fn ensure_main_agent_launches_when_absent_and_registers_the_token() {
+    let dir = crate::testutil::TempDir::new("runtime-launch");
+    let tokens = Arc::new(Tokens::new());
+    let terminals = FakeTerminals::with_tokens(Arc::clone(&tokens));
+    let runtime = parts(&dir, Arc::clone(&terminals), Arc::clone(&tokens), false);
+    let address = runtime
+        .ensure_main_agent("s1", "e00000000")
+        .expect("agente principal");
+    assert_eq!(address, "t1");
+    let saved = runtime
+        .elephant_tokens
+        .get("e00000000")
+        .expect("token guardado");
     assert!(matches!(
         tokens.lookup(&saved),
         Some(Caller::Elephant { .. })
     ));
+    let records = terminals.launches.lock();
+    assert_eq!(
+        records[0].spec.env.get("EZ_ROLE").map(String::as_str),
+        Some("main")
+    );
+    assert!(records[0]
+        .spec
+        .labels
+        .get("ez_elephant")
+        .is_some_and(|id| id == "e00000000"));
 }
 
 #[test]
@@ -345,13 +405,7 @@ fn space_fish_reports_address_role_agent_model_and_status() {
     labels.insert("ez_model".to_string(), "opencode-go/x".to_string());
     labels.insert("ez_role_fish".to_string(), "developer".to_string());
     terminals.add("f1", labels, "live");
-    let runtime = HubRuntime::with_parts(
-        vec![space_config()],
-        launcher(terminals, tokens),
-        Arc::new(Tokens::new()),
-        super::spaces::ElephantTokens::load(dir.path().join("elefantes.json")),
-        false,
-    );
+    let runtime = parts(&dir, terminals, tokens, false);
     let fish = runtime.space_fish("s1").expect("peces");
     assert_eq!(fish.len(), 1);
     assert_eq!(fish[0].address, "f1");
@@ -366,14 +420,8 @@ fn elephant_send_uses_the_raw_text() {
     let dir = crate::testutil::TempDir::new("runtime-send");
     let tokens = Arc::new(Tokens::new());
     let terminals = FakeTerminals::with_tokens(Arc::clone(&tokens));
-    terminals.add("e1", elephant_labels(), "live");
-    let runtime = HubRuntime::with_parts(
-        vec![space_config()],
-        launcher(Arc::clone(&terminals), Arc::clone(&tokens)),
-        Arc::new(Tokens::new()),
-        super::spaces::ElephantTokens::load(dir.path().join("elefantes.json")),
-        false,
-    );
+    terminals.add("e1", main_labels(), "live");
+    let runtime = parts(&dir, Arc::clone(&terminals), Arc::clone(&tokens), false);
     runtime
         .elephant_send("s1", "hola\n\nmundo")
         .expect("enviar");
@@ -384,3 +432,4 @@ fn elephant_send_uses_the_raw_text() {
 }
 
 mod handler;
+mod integration;

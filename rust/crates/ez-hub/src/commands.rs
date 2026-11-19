@@ -7,7 +7,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use serde::Serialize;
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
 use uuid::Uuid;
 
 use crate::hub::{self, HubState};
@@ -21,15 +21,15 @@ use crate::voicenote::VoiceNotes;
 
 /// Estado que comparten todos los comandos de la ventana.
 pub struct AppState {
-    demo: bool,
+    pub(crate) demo: bool,
     store: SpaceStore,
-    spaces: Mutex<Vec<Space>>,
+    pub(crate) spaces: Mutex<Vec<Space>>,
     views: Mutex<HashMap<String, Arc<Session>>>,
     elephants: Mutex<HashMap<String, String>>,
     hub: Mutex<HubState>,
     selfcheck_path: Option<PathBuf>,
     voice: Arc<VoiceNotes>,
-    runtime: Option<Arc<HubRuntime>>,
+    pub(crate) runtime: Option<Arc<HubRuntime>>,
 }
 
 impl AppState {
@@ -97,14 +97,6 @@ impl AppState {
         }
     }
 
-    /// Dirección hc del elefante del espacio (lo lanza si hace falta).
-    pub fn space_elephant(&self, space: &str) -> Result<String, String> {
-        self.runtime
-            .as_ref()
-            .ok_or_else(|| "El motor del espacio de trabajo no está disponible.".to_string())?
-            .ensure_elephant(space)
-    }
-
     /// Peces vivos del espacio.
     pub fn space_fish(&self, space: &str) -> Result<Vec<FishInfo>, String> {
         self.runtime
@@ -156,7 +148,17 @@ impl AppState {
     }
 
     /// Crea un espacio y lo guarda; en demostración solo vive en memoria.
-    pub fn create_space(&self, nombre: &str, carpeta: &str, agente: &str) -> Result<Space, String> {
+    pub fn create_space(
+        &self,
+        nombre: &str,
+        carpeta: &str,
+        agente: Option<&str>,
+    ) -> Result<Space, String> {
+        // DECISION: la elección de agente pasa a `main_agent_create`; si la vista
+        // antigua envía `agente`, se usa solo para el espacio de demostración.
+        let agente = agente
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("opencode");
         let space = space::create_space(nombre, carpeta, agente)?;
         let mut next = self.spaces.lock().clone();
         next.push(space.clone());
@@ -249,7 +251,7 @@ impl AppState {
         self.write_view(&view, &input::encode_input(text))
     }
 
-    /// Peces, traza y tarjetas del espacio.
+    /// Peces, traza y tarjetas del espacio (estado de demostración).
     pub fn hub_state(&self, space: &str) -> HubState {
         if self.demo && space == hub::DEMO_SPACE_ID {
             return self.hub.lock().clone();
@@ -296,15 +298,16 @@ pub fn spaces_list(state: State<'_, AppState>) -> Vec<Space> {
     state.spaces()
 }
 
-/// Crea un espacio con nombre, carpeta existente y agente.
+/// Crea un espacio con nombre y carpeta existente. `agente` es opcional: la
+/// elección real del agente principal se hace con `main_agent_create` (§15.1).
 #[tauri::command]
 pub fn space_create(
     state: State<'_, AppState>,
     nombre: String,
     carpeta: String,
-    agente: String,
+    agente: Option<String>,
 ) -> Result<Space, String> {
-    state.create_space(&nombre, &carpeta, &agente)
+    state.create_space(&nombre, &carpeta, agente.as_deref())
 }
 
 /// Abre una vista PTY. `space` la registra como la terminal del elefante.
@@ -354,28 +357,6 @@ pub fn elephant_input(
     text: String,
 ) -> Result<(), String> {
     state.elephant_input(&space, &text)
-}
-
-/// Peces, traza y tarjetas del espacio.
-#[tauri::command]
-pub fn hub_state(state: State<'_, AppState>, space: String) -> HubState {
-    state.hub_state(&space)
-}
-
-/// Aprueba o rechaza una tarjeta y avisa a la vista.
-#[tauri::command]
-pub fn card_action(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    card: String,
-    action: String,
-    comment: Option<String>,
-) -> Result<(), String> {
-    state.card_action(&card, &action, comment.as_deref())?;
-    if let Err(error) = app.emit("hub://changed", ()) {
-        tracing::warn!(%error, "no pude avisar a la vista");
-    }
-    Ok(())
 }
 
 /// Estado del motor del espacio de trabajo (normal, degradado o demo).
@@ -484,7 +465,7 @@ mod tests {
             .ok();
         let dir = TempDir::new("demo-create");
         let space = state
-            .create_space("Nuevo", &dir.path().display().to_string(), "claude")
+            .create_space("Nuevo", &dir.path().display().to_string(), Some("claude"))
             .expect("crear en memoria");
         let after = std::fs::metadata(state.store.path())
             .and_then(|meta| meta.modified())

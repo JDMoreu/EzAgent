@@ -128,17 +128,16 @@ fn keys_from(terminals: &[Terminal]) -> HashMap<String, FishKey> {
 }
 
 fn fish_key(labels: &BTreeMap<String, String>) -> Option<FishKey> {
-    if labels.get("ez_role").map(String::as_str) != Some("fish") {
-        return None;
-    }
     Some(FishKey {
         space: labels.get("ez_space")?.clone(),
         task: labels.get("ez_task")?.clone(),
+        elephant: labels.get("ez_elephant")?.clone(),
         fish: labels.get("ez_fish")?.clone(),
         attempt: labels
             .get("ez_attempt")
             .and_then(|value| value.parse().ok())
             .unwrap_or(1),
+        parent: labels.get("ez_parent").cloned(),
     })
 }
 
@@ -150,9 +149,10 @@ mod tests {
     fn labels() -> BTreeMap<String, String> {
         BTreeMap::from([
             ("ez".to_string(), "1".to_string()),
-            ("ez_role".to_string(), "fish".to_string()),
+            ("ez_role".to_string(), "developer".to_string()),
             ("ez_space".to_string(), "s".to_string()),
             ("ez_task".to_string(), "t".to_string()),
+            ("ez_elephant".to_string(), "e12345678".to_string()),
             ("ez_fish".to_string(), "dev-r1-1".to_string()),
             ("ez_attempt".to_string(), "1".to_string()),
         ])
@@ -162,8 +162,10 @@ mod tests {
         FishKey {
             space: "s".to_string(),
             task: "t".to_string(),
+            elephant: "e12345678".to_string(),
             fish: "dev-r1-1".to_string(),
             attempt: 1,
+            parent: None,
         }
     }
 

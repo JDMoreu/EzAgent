@@ -115,6 +115,7 @@ impl Harness {
             TOKEN,
             Caller::Elephant {
                 space: SPACE.to_string(),
+                elephant: "e00000000".to_string(),
             },
         );
         tokens.register(
@@ -122,8 +123,10 @@ impl Harness {
             Caller::Fish {
                 space: SPACE.to_string(),
                 task: TASK.to_string(),
+                elephant: "e00000000".to_string(),
                 fish: "dev-r1-1".to_string(),
                 attempt: 1,
+                parent: None,
             },
         );
         let server = CtlServer::start(handler.clone(), tokens).expect("servidor");
