@@ -78,3 +78,17 @@ integrados.
 fmt y clippy de `ez-ctl` en verde, y **ejecuta** el ejemplo y pega su salida completa y su
 código en `rust-migration/reports/HD-6-r1.md`. Si falla por el producto, el diagnóstico con
 evidencia (no lo arregles).
+
+## 9. Humo con los CLI reales, sin encargo (opt-in: `EZ_E2E_REAL=1`)
+Los agentes falsos no detectan fallos del lanzamiento real (la revisión de HD-0b encontró
+dos: el guion de bash de npm y los ids de sesión de OpenCode; HD-4 vio un OpenCode real
+salir con código 1). Con `EZ_E2E_REAL=1`, para cada tipo del catálogo **instalado**
+(`claude`, `opencode`, `codex`, `qwen`, `mcode`, `pi`), usa la **ruta del producto**
+(`Herdr::run_agent` con `parent` = el padre falso, `show = tree` y **tarea vacía**, con el
+`voice.json` real en solo lectura): abrir la interfaz sin encargo no llama a ningún
+modelo. Espera hasta 30 s a que el programa arranque (`hc get`: no terminó; `status` si lo
+reporta), lee la pantalla (`hc read --lines 0`) y ciérralo (`hc kill` + `hc rm`).
+Resultado por tipo: arrancó / salió con código N (con las últimas líneas de pantalla) /
+no instalado. **Nunca** escribas nada en esas interfaces ni les envíes mensajes. El agente
+principal avisará a la persona antes de ejecutar este paso: déjalo implementado y
+ejecuta solo la parte con agentes falsos; el humo real lo corre el agente principal.
