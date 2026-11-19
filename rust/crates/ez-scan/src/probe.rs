@@ -25,8 +25,12 @@ pub trait Probe: Send + Sync {
     /// Espacio libre en MB del disco de `workdir`.
     fn disk_free_mb(&self, workdir: &Path) -> Option<u64>;
 
-    /// Terminales vivas con `ez.parent=<parent>` y la memoria de su árbol.
-    fn subagents(&self, parent: &str) -> Result<Vec<SubagentUsage>, String>;
+    /// Terminales vivas con `ez.parent=<parent>`, su memoria y si son pesadas.
+    fn subagents(
+        &self,
+        parent: &str,
+        thresholds: &crate::capacity::Thresholds,
+    ) -> Result<Vec<SubagentUsage>, String>;
 
     /// `shutil.which`: el programa del catálogo, resuelto en el PATH.
     fn which(&self, program: &str) -> Option<PathBuf>;

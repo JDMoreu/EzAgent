@@ -1,5 +1,7 @@
 //! El medidor real: `sysinfo` para el equipo y `hc`/`herdr-app` para Herdr.
 
+mod commit;
+
 use std::path::{Path, PathBuf};
 
 use ez_core::config::VoiceConfig;
@@ -58,10 +60,12 @@ impl Probe for RealProbe {
         Ok(bytes_to_mb(system.free_memory()))
     }
 
-    /// DECISION: en Windows la memoria virtual libre se aproxima con la RAM
-    /// libre más el archivo de paginación libre; `sysinfo` no expone el límite
-    /// de commit del sistema.
+    /// En Windows se lee el commit real (`CommitLimit − CommitTotal`); fuera de
+    /// Windows, o si la API falla, se aproxima con RAM libre + swap libre.
     fn free_commit_mb(&self) -> Result<u64, String> {
+        if let Some((free, _)) = commit::free_and_total_mb() {
+            return Ok(free);
+        }
         let mut system =
             System::new().map_err(|error| format!("No pude medir la memoria: {error}"))?;
         system.refresh_memory();
@@ -106,7 +110,11 @@ impl Probe for RealProbe {
         }
     }
 
-    fn subagents(&self, parent: &str) -> Result<Vec<SubagentUsage>, String> {
+    fn subagents(
+        &self,
+        parent: &str,
+        thresholds: &crate::Thresholds,
+    ) -> Result<Vec<SubagentUsage>, String> {
         if parent.trim().is_empty() {
             return Ok(Vec::new());
         }
@@ -135,7 +143,8 @@ impl Probe for RealProbe {
             }
             let address = text_of(object.get("address"));
             let name = text_of(object.get("name"));
-            let memory_mb = terminal_memory_mb(&herdr, &address).unwrap_or(0);
+            let (memory_mb, processes) = terminal_tree(&herdr, &address).unwrap_or((0, Vec::new()));
+            let reason = crate::resources::heavy_reason(memory_mb, &processes, thresholds);
             out.push(SubagentUsage {
                 name: if name.is_empty() {
                     address.clone()
@@ -145,6 +154,8 @@ impl Probe for RealProbe {
                 terminal: address,
                 agent: text_of(object.get("agent")),
                 memory_mb,
+                heavy: reason.is_some(),
+                heavy_reason: reason,
             });
         }
         Ok(out)
@@ -222,8 +233,8 @@ fn text_of(value: Option<&Value>) -> String {
         .to_string()
 }
 
-/// Ejecuta `hc get <terminal>` y suma la memoria de su árbol de procesos.
-fn terminal_memory_mb(herdr: &Herdr, address: &str) -> Option<u64> {
+/// Ejecuta `hc get <terminal>` y resume su árbol: memoria y nombres.
+fn terminal_tree(herdr: &Herdr, address: &str) -> Option<(u64, Vec<String>)> {
     if address.is_empty() {
         return None;
     }
@@ -236,24 +247,26 @@ fn terminal_memory_mb(herdr: &Herdr, address: &str) -> Option<u64> {
     let completed = herdr.run_command(&argv, 10.0, false).ok()?;
     let data = parse_json(&herdr.hc_path(), &completed.stdout).ok()?;
     let pid = u32::try_from(data.get("pid")?.as_u64()?).ok()?;
-    Some(bytes_to_mb(process_tree_bytes(pid)))
+    Some(process_tree(pid))
 }
 
-fn process_tree_bytes(root: u32) -> u64 {
+fn process_tree(root: u32) -> (u64, Vec<String>) {
     let Ok(mut system) = System::new_with_specifics(
         RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing().with_memory()),
     ) else {
-        return 0;
+        return (0, Vec::new());
     };
     system.refresh_processes(ProcessesToUpdate::All, true);
     let root = Pid::from_u32(root);
     let mut total: u64 = 0;
+    let mut names = Vec::new();
     for (pid, process) in system.processes() {
         if *pid == root || descends_from(&system, *pid, root) {
             total = total.saturating_add(process.memory());
+            names.push(process.name().to_string_lossy().into_owned());
         }
     }
-    total
+    (bytes_to_mb(total), names)
 }
 
 fn descends_from(system: &System, pid: Pid, root: Pid) -> bool {
@@ -308,12 +321,22 @@ mod tests {
     fn el_arbol_de_procesos_incluye_al_hijo() {
         // El propio proceso de prueba y su padre forman un árbol real.
         let me = std::process::id();
-        assert!(process_tree_bytes(me) > 0);
+        let (memory_mb, names) = process_tree(me);
+        assert!(!names.is_empty());
+        assert!(memory_mb <= bytes_to_mb(1_024 * 1_024 * 1_024));
         assert!(!descends_from(
             &System::new().expect("sistema"),
             Pid::from_u32(me),
             Pid::from_u32(u32::MAX)
         ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn el_commit_libre_es_positivo_y_cabe_en_el_limite() {
+        let (free, total) = commit::free_and_total_mb().expect("commit de Windows");
+        assert!(free > 0, "commit libre: {free}");
+        assert!(free <= total, "libre {free} > límite {total}");
     }
 
     #[test]

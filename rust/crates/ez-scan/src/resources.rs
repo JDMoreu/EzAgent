@@ -4,6 +4,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use crate::capacity::Thresholds;
 use crate::probe::Probe;
 
 /// Bytes a MB, redondeando hacia abajo.
@@ -18,6 +19,36 @@ pub struct SubagentUsage {
     pub terminal: String,
     pub agent: String,
     pub memory_mb: u64,
+    /// Compila, mide o pasa del umbral de memoria (§4).
+    pub heavy: bool,
+    /// El compilador encontrado o la memoria, si es pesado.
+    pub heavy_reason: Option<String>,
+}
+
+/// ¿Es pesado? Devuelve el motivo (`rustc` o `2048 MB`) o `None`.
+pub fn heavy_reason(
+    memory_mb: u64,
+    processes: &[String],
+    thresholds: &Thresholds,
+) -> Option<String> {
+    for process in processes {
+        let stem = process_stem(process);
+        if thresholds
+            .heavy_processes
+            .iter()
+            .any(|wanted| wanted.eq_ignore_ascii_case(&stem))
+        {
+            return Some(stem);
+        }
+    }
+    (memory_mb >= thresholds.heavy_mb).then(|| format!("{memory_mb} MB"))
+}
+
+fn process_stem(name: &str) -> String {
+    std::path::Path::new(name)
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().to_lowercase())
+        .unwrap_or_else(|| name.to_lowercase())
 }
 
 /// Lo que muestra `ez resources`.
@@ -31,98 +62,20 @@ pub struct Resources {
 }
 
 /// Mide los recursos con `probe`; `parent` vacío no lista subagentes.
-pub fn collect(probe: &dyn Probe, parent: &str, workdir: &Path) -> Result<Resources, String> {
+pub fn collect(
+    probe: &dyn Probe,
+    parent: &str,
+    workdir: &Path,
+    thresholds: &Thresholds,
+) -> Result<Resources, String> {
     Ok(Resources {
         free_ram_mb: probe.free_ram_mb()?,
         free_commit_mb: probe.free_commit_mb()?,
         cpu_percent: probe.cpu_percent()?,
         disk_free_mb: probe.disk_free_mb(workdir).unwrap_or(0),
-        subagents: probe.subagents(parent)?,
+        subagents: probe.subagents(parent, thresholds)?,
     })
 }
 
 #[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use super::*;
-    use crate::system::SystemInfo;
-
-    struct Fake {
-        ram: u64,
-        commit: u64,
-        cpu: f32,
-        disk: Option<u64>,
-        subagents: Vec<SubagentUsage>,
-    }
-
-    impl Probe for Fake {
-        fn system(&self, _workdir: &Path) -> Result<SystemInfo, String> {
-            Err("no se usa".into())
-        }
-        fn free_ram_mb(&self) -> Result<u64, String> {
-            Ok(self.ram)
-        }
-        fn free_commit_mb(&self) -> Result<u64, String> {
-            Ok(self.commit)
-        }
-        fn cpu_percent(&self) -> Result<f32, String> {
-            Ok(self.cpu)
-        }
-        fn disk_free_mb(&self, _workdir: &Path) -> Option<u64> {
-            self.disk
-        }
-        fn subagents(&self, _parent: &str) -> Result<Vec<SubagentUsage>, String> {
-            Ok(self.subagents.clone())
-        }
-        fn which(&self, _program: &str) -> Option<PathBuf> {
-            None
-        }
-        fn version(&self, _program: &Path) -> Option<String> {
-            None
-        }
-        fn opencode_models(&self, _program: &Path) -> Vec<String> {
-            Vec::new()
-        }
-    }
-
-    fn fake() -> Fake {
-        Fake {
-            ram: 3_200,
-            commit: 8_000,
-            cpu: 12.5,
-            disk: Some(40_000),
-            subagents: vec![SubagentUsage {
-                name: "dev1-opencode".into(),
-                terminal: "t12".into(),
-                agent: "opencode".into(),
-                memory_mb: 640,
-            }],
-        }
-    }
-
-    #[test]
-    fn recoge_todo_lo_medido() {
-        let resources = collect(&fake(), "t6h", Path::new("C:\\ws")).expect("medición");
-        assert_eq!(resources.free_ram_mb, 3_200);
-        assert_eq!(resources.free_commit_mb, 8_000);
-        assert_eq!(resources.cpu_percent, 12.5);
-        assert_eq!(resources.disk_free_mb, 40_000);
-        assert_eq!(resources.subagents.len(), 1);
-        assert_eq!(resources.subagents[0].name, "dev1-opencode");
-    }
-
-    #[test]
-    fn sin_disco_queda_en_cero() {
-        let mut probe = fake();
-        probe.disk = None;
-        let resources = collect(&probe, "", Path::new("C:\\ws")).expect("medición");
-        assert_eq!(resources.disk_free_mb, 0);
-    }
-
-    #[test]
-    fn los_bytes_se_redondean_hacia_abajo() {
-        assert_eq!(bytes_to_mb(1_048_575), 0);
-        assert_eq!(bytes_to_mb(2_097_152), 2);
-    }
-}
+mod tests;

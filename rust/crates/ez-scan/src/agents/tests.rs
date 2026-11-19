@@ -87,7 +87,11 @@ impl Probe for Fake {
     fn disk_free_mb(&self, _workdir: &Path) -> Option<u64> {
         None
     }
-    fn subagents(&self, _parent: &str) -> Result<Vec<SubagentUsage>, String> {
+    fn subagents(
+        &self,
+        _parent: &str,
+        _thresholds: &crate::capacity::Thresholds,
+    ) -> Result<Vec<SubagentUsage>, String> {
         Ok(Vec::new())
     }
     fn which(&self, program: &str) -> Option<PathBuf> {

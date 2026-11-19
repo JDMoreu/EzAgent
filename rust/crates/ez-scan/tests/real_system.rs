@@ -24,7 +24,7 @@ fn el_sistema_real_da_numeros_positivos() {
 fn los_recursos_reales_se_pueden_medir() {
     let resources = ez_scan::resources("", &std::env::temp_dir()).expect("medir recursos");
     assert!(resources.free_ram_mb > 0, "sin RAM libre");
-    assert!(resources.free_commit_mb >= resources.free_ram_mb);
+    assert!(resources.free_commit_mb > 0, "sin memoria virtual libre");
     assert!(resources.cpu_percent >= 0.0);
     assert!(resources.disk_free_mb > 0);
     assert!(resources.subagents.is_empty());

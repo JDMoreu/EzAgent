@@ -32,9 +32,11 @@ pub fn system(workdir: &Path) -> Result<SystemInfo, String> {
 
 /// Recursos en vivo del equipo y de los subagentes vivos de `parent`.
 ///
-/// `parent` vacío mide solo el equipo (no lista terminales).
+/// `parent` vacío mide solo el equipo (no lista terminales). Los umbrales de
+/// «pesado» se leen de `voice.json` (`resources.*`).
 pub fn resources(parent: &str, workdir: &Path) -> Result<Resources, String> {
-    resources::collect(&RealProbe, parent, workdir)
+    let thresholds = Thresholds::load(None);
+    resources::collect(&RealProbe, parent, workdir, &thresholds)
 }
 
 /// Inventario de los tipos del catálogo de `voice.json`; nunca abre un agente.

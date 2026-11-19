@@ -140,6 +140,20 @@ fn dedupe(items: Vec<String>) -> Vec<String> {
 /// La ruta nativa: si `found` es un guion de npm, el `.exe` al que apunta o el
 /// `.cmd` que Windows puede ejecutar.
 pub fn native_path(found: &Path) -> PathBuf {
+    normalize(native_path_inner(found))
+}
+
+#[cfg(windows)]
+fn normalize(path: PathBuf) -> PathBuf {
+    PathBuf::from(path.to_string_lossy().replace('/', "\\"))
+}
+
+#[cfg(not(windows))]
+fn normalize(path: PathBuf) -> PathBuf {
+    path
+}
+
+fn native_path_inner(found: &Path) -> PathBuf {
     if has_extension(found, "exe") {
         return found.to_path_buf();
     }

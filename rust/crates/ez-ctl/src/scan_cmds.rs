@@ -114,13 +114,19 @@ fn run_resources(
             } else {
                 let _ = writeln!(out, "Subagentes de {parent}:");
                 for agent in &resources.subagents {
+                    let heavy = agent
+                        .heavy_reason
+                        .as_deref()
+                        .map(|reason| format!(" — pesado: {reason}"))
+                        .unwrap_or_default();
                     let _ = writeln!(
                         out,
-                        "  {} ({}, {}): {}",
+                        "  {} ({}, {}): {}{}",
                         agent.name,
                         agent.terminal,
                         agent.agent,
-                        format_mb(agent.memory_mb)
+                        format_mb(agent.memory_mb),
+                        heavy
                     );
                 }
             }
