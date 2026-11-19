@@ -6,7 +6,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use super::{parent_folder, validate_name, Change, Record, RegistryError, TaskState};
+use super::{
+    parent_folder, validate_name, Change, InvalidRecord, ListOutcome, Record, RegistryError,
+    TaskState,
+};
 
 const LOCK_RETRY_MS: u64 = 50;
 const LOCK_TIMEOUT_S: u64 = 3;
@@ -72,9 +75,15 @@ impl Registry {
         read_record(&path)
     }
 
-    /// Todos los registros de un padre.
+    /// Todos los registros de un padre; un archivo ilegible es un error.
     pub fn list(&self, parent: &str) -> Result<Vec<Record>, RegistryError> {
-        read_dir_records(&self.folder(parent)?)
+        strict(read_dir_outcome(&self.folder(parent)?)?)
+    }
+
+    /// Como `list`, pero los archivos ilegibles se devuelven aparte en vez de
+    /// hacer fallar la carpeta: uno dañado no puede ocultar a los demás.
+    pub fn list_lenient(&self, parent: &str) -> Result<ListOutcome, RegistryError> {
+        read_dir_outcome(&self.folder(parent)?)
     }
 
     /// Busca en todos los padres el registro de esa terminal.
@@ -168,22 +177,65 @@ impl Registry {
 }
 
 fn read_dir_records(folder: &Path) -> Result<Vec<Record>, RegistryError> {
+    strict(read_dir_outcome(folder)?)
+}
+
+/// La lectura tolerante: cada archivo ilegible va a `invalid` y se avisa por
+/// `tracing`; los errores de la carpeta siguen siendo error.
+fn read_dir_outcome(folder: &Path) -> Result<ListOutcome, RegistryError> {
     let entries = match std::fs::read_dir(folder) {
         Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(ListOutcome::default())
+        }
         Err(error) => return Err(io_error(error, folder)),
     };
-    let mut records = Vec::new();
+    let mut outcome = ListOutcome::default();
     for entry in entries {
         let path = entry.map_err(|error| io_error(error, folder))?.path();
         if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
             continue;
         }
-        if let Some(record) = read_record(&path)? {
-            records.push(record);
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            // DECISION: si el archivo desapareció entre el listado y la
+            // lectura no es ilegible: se salta, como hace `read_record`.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                let message = error.to_string();
+                tracing::warn!("registro ilegible {}: {message}", path.display());
+                outcome.invalid.push(InvalidRecord {
+                    path,
+                    error: message,
+                });
+                continue;
+            }
+        };
+        match serde_json::from_str::<Record>(&text) {
+            Ok(record) => outcome.records.push(record),
+            Err(error) => {
+                let message = error.to_string();
+                tracing::warn!("registro ilegible {}: {message}", path.display());
+                outcome.invalid.push(InvalidRecord {
+                    path,
+                    error: message,
+                });
+            }
         }
     }
-    Ok(records)
+    Ok(outcome)
+}
+
+/// La lectura estricta: el primer archivo ilegible es un error.
+fn strict(outcome: ListOutcome) -> Result<Vec<Record>, RegistryError> {
+    match outcome.invalid.into_iter().next() {
+        Some(invalid) => Err(RegistryError::Invalid(format!(
+            "registro inválido {}: {}",
+            invalid.path.display(),
+            invalid.error
+        ))),
+        None => Ok(outcome.records),
+    }
 }
 
 fn read_record(path: &Path) -> Result<Option<Record>, RegistryError> {

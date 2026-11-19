@@ -8,7 +8,7 @@
 //! `hc` y el reloj se inyectan ([`WatchRuntime`]) para que las pruebas no
 //! dependan de Herdr ni esperen de verdad.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -18,7 +18,9 @@ use serde_json::Value;
 
 use crate::herdr::{hc_slug, HerdrRuntime};
 
-use super::{notice_text, pending_notices, Record, Registry, TaskState};
+use super::{
+    notice_text, pending_notices, InvalidRecord, ListOutcome, Record, Registry, TaskState,
+};
 
 mod novelties;
 #[cfg(test)]
@@ -197,6 +199,8 @@ pub struct Watcher {
     novelty_file: Option<PathBuf>,
     /// La última pantalla vista de cada hijo, para «sin avance».
     screens: HashMap<String, ScreenMemory>,
+    /// Los archivos ilegibles de los que ya se avisó.
+    warned_invalid: HashSet<PathBuf>,
 }
 
 impl Watcher {
@@ -211,6 +215,7 @@ impl Watcher {
             active_at: now,
             novelty_file: Some(ez_core::dirs::app_data_dir().join("novedades.toml")),
             screens: HashMap::new(),
+            warned_invalid: HashSet::new(),
         }
     }
 
@@ -223,7 +228,7 @@ impl Watcher {
     /// Una vuelta: mira las terminales, marca lo que terminó y avisa.
     pub fn tick(&mut self) -> Tick {
         let mut tick = Tick::default();
-        let records = self.registry.list(&self.config.parent).unwrap_or_default();
+        let outcome = self.records();
         let Some(children) = self.children() else {
             // DECISION: si `hc` no responde no se cambia nada: se reintenta en
             // la vuelta siguiente en vez de dar por muerto al subagente.
@@ -234,15 +239,25 @@ impl Watcher {
         if !alive {
             return tick;
         }
-        self.mark_failed(&records, &children, &mut tick);
+        self.mark_failed(&outcome.records, &children, &mut tick);
         // DECISION: se releen los registros: el aviso sale del estado nuevo
         // (por ejemplo, «falló» y no «está en proceso»).
-        let fresh = self.registry.list(&self.config.parent).unwrap_or_default();
-        self.detect_novelties(&fresh, &children, &mut tick);
-        let fresh = self.registry.list(&self.config.parent).unwrap_or_default();
-        self.notify(&fresh, &mut tick);
+        let fresh = self.records();
+        self.notify_invalid(&fresh.invalid);
+        self.detect_novelties(&fresh.records, &children, &mut tick);
+        let fresh = self.records();
+        self.notify(&fresh.records, &mut tick);
         self.refresh_activity();
         tick
+    }
+
+    /// Los registros del padre sin que un archivo dañado oculte a los demás.
+    fn records(&self) -> ListOutcome {
+        // DECISION: un error de la carpeta se reintenta en la vuelta siguiente
+        // en vez de dar por terminado al vigilante.
+        self.registry
+            .list_lenient(&self.config.parent)
+            .unwrap_or_default()
     }
 
     /// El bucle: vuelve cada `interval_ms` hasta que termine.
@@ -343,6 +358,23 @@ impl Watcher {
         }
     }
 
+    /// Avisa una sola vez por archivo ilegible y sigue con los demás; nunca
+    /// borra ni reescribe el archivo.
+    fn notify_invalid(&mut self, invalid: &[InvalidRecord]) {
+        for item in invalid {
+            if self.warned_invalid.contains(&item.path) {
+                continue;
+            }
+            let text = format!(
+                "[EzAgent · aviso] Registro ilegible: {}. Lo salto; revisa el archivo.",
+                item.path.display()
+            );
+            if self.send(&text) {
+                self.warned_invalid.insert(item.path.clone());
+            }
+        }
+    }
+
     /// `hc send <padre> <aviso>`.
     fn send(&self, text: &str) -> bool {
         let args = vec![
@@ -359,11 +391,12 @@ impl Watcher {
 
     /// Anota que hay algo pendiente (para saber cuándo terminar).
     fn refresh_activity(&mut self) {
-        let records = self.registry.list(&self.config.parent).unwrap_or_default();
-        let pending = records
+        let outcome = self.records();
+        let pending = outcome
+            .records
             .iter()
             .any(|record| matches!(record.state, TaskState::InProgress | TaskState::Blocked))
-            || !pending_notices(&records).is_empty();
+            || !pending_notices(&outcome.records).is_empty();
         if pending {
             self.active_at = self.runtime.now_ms();
         }

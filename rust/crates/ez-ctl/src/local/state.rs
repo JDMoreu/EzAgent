@@ -434,17 +434,27 @@ fn run_tasks(
         );
         return 3;
     };
-    let records = match context.registry.list(&parent) {
-        Ok(records) => records,
+    let outcome = match context.registry.list_lenient(&parent) {
+        Ok(outcome) => outcome,
         Err(error) => {
             let _ = writeln!(err, "{error}");
             return 1;
         }
     };
     if json {
-        print_json(out, &records);
+        print_json(out, &outcome.records);
     } else {
-        print_table(out, &records);
+        print_table(out, &outcome.records);
+    }
+    // Los ilegibles van a stderr: stdout queda con una sola forma (la tabla o
+    // el array de registros válidos).
+    for invalid in &outcome.invalid {
+        let _ = writeln!(
+            err,
+            "registro ilegible: {}: {}",
+            invalid.path.display(),
+            invalid.error
+        );
     }
     0
 }
