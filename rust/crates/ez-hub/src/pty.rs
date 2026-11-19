@@ -2,6 +2,8 @@
 //!
 //! Cada vista es un proceso propio. Cuatro hilos por vista, todos con nombre:
 //! lector, agrupador (junta hasta 16 ms), escritor y espera de salida.
+// DECISION: separar lector/agrupador/escritor evita retener candados durante E/S;
+// `clone_killer` permite matar el proceso sin compartir el `Child` en espera.
 
 use std::ffi::OsString;
 use std::io::{Read, Write};
@@ -112,6 +114,8 @@ pub fn open(
     let program = argv
         .first()
         .ok_or_else(|| PtyError::Failed("argv vacío".to_string()))?;
+    // DECISION: resolver argv[0] antes de abrir el PTY da el mensaje «no encontré» y
+    // evita que el lanzamiento dependa del PATH que hereda el hijo.
     let resolved =
         resolve_program(program).ok_or_else(|| PtyError::ProgramNotFound(program.clone()))?;
 
