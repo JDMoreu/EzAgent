@@ -24,6 +24,8 @@ struct FakeState {
     send_fails: bool,
     /// Los mensajes enviados al padre.
     sent: Vec<String>,
+    /// La pantalla de cada terminal.
+    screens: std::collections::HashMap<String, String>,
 }
 
 /// El doble de `hc` y del reloj.
@@ -57,6 +59,27 @@ impl Fake {
     fn send_fails(self: &Arc<Self>, fails: bool) -> Arc<Fake> {
         self.state.lock().expect("estado").send_fails = fails;
         Arc::clone(self)
+    }
+
+    /// La pantalla que devuelve `hc read` para esa terminal.
+    fn with_screen(self: &Arc<Self>, address: &str, text: &str) -> Arc<Fake> {
+        self.state
+            .lock()
+            .expect("estado")
+            .screens
+            .insert(address.to_string(), text.to_string());
+        Arc::clone(self)
+    }
+
+    /// Arranca el reloj falso en un momento realista.
+    fn at(self: &Arc<Self>, now: u64) -> Arc<Fake> {
+        self.state.lock().expect("estado").now = now;
+        Arc::clone(self)
+    }
+
+    /// Adelanta el reloj falso.
+    fn advance(&self, ms: u64) {
+        self.state.lock().expect("estado").now += ms;
     }
 
     fn sent(&self) -> Vec<String> {
@@ -112,6 +135,15 @@ impl WatchRuntime for Fake {
                     stderr: String::new(),
                 })
             }
+            "read" => {
+                let address = args.get(1).cloned().unwrap_or_default();
+                let screen = state.screens.get(&address).cloned().unwrap_or_default();
+                Ok(HcOutput {
+                    code: 0,
+                    stdout: format!("{screen}\n"),
+                    stderr: String::new(),
+                })
+            }
             other => Err(format!("comando desconocido: {other}")),
         }
     }
@@ -136,6 +168,19 @@ fn temp_root(tag: &str) -> std::path::PathBuf {
     let _ = std::fs::remove_dir_all(&folder);
     std::fs::create_dir_all(&folder).expect("carpeta temporal");
     folder
+}
+
+/// `uso.json` del registro, como JSON.
+fn usage(root: &std::path::Path) -> serde_json::Value {
+    let text = std::fs::read_to_string(root.join("uso.json")).expect("uso.json");
+    serde_json::from_str(&text).expect("uso.json válido")
+}
+
+/// Los hijos vivos del padre, con el estado del agente pedido.
+fn live_children(agent_state: &str) -> String {
+    format!(
+        r#"{{"terminals":[{{"address":"t12","state":"live","status":{{"state":"{agent_state}","app":"opencode"}}}}]}}"#
+    )
 }
 
 /// Un registro en proceso del padre `t6h`.
@@ -169,7 +214,9 @@ fn make_watcher(fake: &Arc<Fake>, registry: Registry) -> Watcher {
         idle_ms: DEFAULT_IDLE_MS,
         grace_ms: 0,
     };
+    let novelty_file = registry.root().join("novedades.toml");
     Watcher::new(config, registry, Arc::clone(fake) as Arc<dyn WatchRuntime>)
+        .with_novelty_file(novelty_file)
 }
 
 #[test]
@@ -382,3 +429,6 @@ fn un_vigilante_nuevo_arranca() {
     let fake = Fake::new().with_run(0, r#"{"address":"t12"}"#, "");
     assert_eq!(ensure_watcher(&*fake, &setup()), WatcherState::Started);
 }
+
+mod novelties;
+mod pantalla;

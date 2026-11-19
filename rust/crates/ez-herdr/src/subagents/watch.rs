@@ -20,6 +20,7 @@ use crate::herdr::{hc_slug, HerdrRuntime};
 
 use super::{notice_text, pending_notices, Record, Registry, TaskState};
 
+mod novelties;
 #[cfg(test)]
 mod tests;
 
@@ -153,6 +154,12 @@ pub enum WatchStop {
 pub struct Tick {
     /// Los registros que se marcaron como `fallido`.
     pub failed: Vec<String>,
+    /// Los registros que quedaron `bloqueado`.
+    pub blocked: Vec<String>,
+    /// Los registros que volvieron a `en_proceso`.
+    pub resumed: Vec<String>,
+    /// Los avisos de «sin avance» (sin cambio de estado).
+    pub stalled: Vec<String>,
     /// Los avisos que se mandaron al padre.
     pub notified: Vec<String>,
     /// Si el padre sigue vivo (`None` si `hc` no respondió).
@@ -165,6 +172,16 @@ struct Child {
     address: String,
     live: bool,
     exit_code: Option<i64>,
+    /// `status.state` del agente: `working`, `idle`, `blocked`…
+    agent_state: String,
+}
+
+/// Lo último que se vio de la pantalla de un hijo.
+#[derive(Debug, Clone)]
+struct ScreenMemory {
+    screen: String,
+    changed_at: u64,
+    stall_notified: bool,
 }
 
 /// El vigilante de un padre.
@@ -176,6 +193,10 @@ pub struct Watcher {
     seen_at: HashMap<String, u64>,
     /// Cuándo fue la última vez que había algo pendiente.
     active_at: u64,
+    /// El `novedades.toml` de la persona (`%APPDATA%\EzAgent`).
+    novelty_file: Option<PathBuf>,
+    /// La última pantalla vista de cada hijo, para «sin avance».
+    screens: HashMap<String, ScreenMemory>,
 }
 
 impl Watcher {
@@ -188,7 +209,15 @@ impl Watcher {
             runtime,
             seen_at: HashMap::new(),
             active_at: now,
+            novelty_file: Some(ez_core::dirs::app_data_dir().join("novedades.toml")),
+            screens: HashMap::new(),
         }
+    }
+
+    /// Otro `novedades.toml` (las pruebas nunca leen el de la persona).
+    pub fn with_novelty_file(mut self, path: impl Into<PathBuf>) -> Self {
+        self.novelty_file = Some(path.into());
+        self
     }
 
     /// Una vuelta: mira las terminales, marca lo que terminó y avisa.
@@ -208,6 +237,8 @@ impl Watcher {
         self.mark_failed(&records, &children, &mut tick);
         // DECISION: se releen los registros: el aviso sale del estado nuevo
         // (por ejemplo, «falló» y no «está en proceso»).
+        let fresh = self.registry.list(&self.config.parent).unwrap_or_default();
+        self.detect_novelties(&fresh, &children, &mut tick);
         let fresh = self.registry.list(&self.config.parent).unwrap_or_default();
         self.notify(&fresh, &mut tick);
         self.refresh_activity();
@@ -264,7 +295,7 @@ impl Watcher {
     fn mark_failed(&mut self, records: &[Record], children: &[Child], tick: &mut Tick) {
         let now = self.runtime.now_ms();
         for record in records {
-            if record.state != TaskState::InProgress {
+            if !matches!(record.state, TaskState::InProgress | TaskState::Blocked) {
                 continue;
             }
             let first = *self.seen_at.entry(record.name.clone()).or_insert(now);
@@ -331,7 +362,7 @@ impl Watcher {
         let records = self.registry.list(&self.config.parent).unwrap_or_default();
         let pending = records
             .iter()
-            .any(|record| record.state == TaskState::InProgress)
+            .any(|record| matches!(record.state, TaskState::InProgress | TaskState::Blocked))
             || !pending_notices(&records).is_empty();
         if pending {
             self.active_at = self.runtime.now_ms();
@@ -370,9 +401,23 @@ fn parse_children(data: &Value) -> Vec<Child> {
             address: address.to_string(),
             live: state == "live",
             exit_code: terminal.get("exit_code").and_then(Value::as_i64),
+            agent_state: agent_state_of(terminal),
         });
     }
     children
+}
+
+/// El estado del agente (`status.state`), con el nivel superior como respaldo.
+fn agent_state_of(data: &Value) -> String {
+    match data.get("status") {
+        Some(Value::Object(status)) => status
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        Some(Value::String(state)) => state.clone(),
+        _ => state_of(data),
+    }
 }
 
 /// Lo que el vigilante necesita para arrancar.
