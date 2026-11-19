@@ -147,6 +147,11 @@ button.primary {
   border-top: 1px solid var(--border);
 }
 
+/* `display: flex` above overrides the UA rule for [hidden]; keep the form closed on boot. */
+.space-form[hidden] {
+  display: none;
+}
+
 .space-form label {
   color: var(--muted);
   font-size: 11px;

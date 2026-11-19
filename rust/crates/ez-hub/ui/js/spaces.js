@@ -27,11 +27,11 @@ export function renderSpaces(spaces, container, onSelect) {
     button.className = "space-item";
     button.dataset.id = space.id;
     const name = document.createElement("strong");
-    name.textContent = space.name;
+    name.textContent = space.nombre;
     const detail = document.createElement("span");
-    detail.textContent = agentLabel(space.elephant.agent);
+    detail.textContent = agentLabel(space.elefante.agente);
     const folder = document.createElement("small");
-    folder.textContent = space.folder;
+    folder.textContent = space.carpeta;
     button.append(name, detail, folder);
     button.addEventListener("click", () => onSelect(space));
     container.appendChild(button);

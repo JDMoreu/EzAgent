@@ -2,7 +2,7 @@
 
 import { TEXTS, agentLabel } from "./texts.js";
 import { loadSpaces, createSpace, renderSpaces, markSelected } from "./spaces.js";
-import { mountTerminal } from "./terminal.js";
+import { mountTerminal, terminalsWithData } from "./terminal.js";
 import { renderFish, renderTrace } from "./panel.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -40,10 +40,10 @@ async function selectSpace(space) {
   await closeViews();
   activeSpace = space;
   markSelected(byId("space-list"), space.id);
-  byId("elephant-header").textContent = TEXTS.elephantOf(agentLabel(space.elephant.agent));
+  byId("elephant-header").textContent = TEXTS.elephantOf(agentLabel(space.elefante.agente));
   elephantView = await mountTerminal(byId("elephant-view"), {
-    argv: space.elephant.argv,
-    cwd: space.folder,
+    argv: space.elefante.argv,
+    cwd: space.carpeta,
     space: space.id,
   });
   fitAll();
@@ -170,6 +170,29 @@ function wire() {
   });
 }
 
+async function maybeSelfcheck() {
+  const enabled = await invoke("selfcheck_enabled").catch(() => false);
+  if (!enabled) return;
+  setTimeout(() => reportSelfcheck(), 6000);
+}
+
+async function reportSelfcheck() {
+  const report = {
+    errores: window.__ezErrors ?? [],
+    cabecera: byId("elephant-header").textContent.trim(),
+    terminales: terminalsWithData(),
+    peces: byId("fish-pane").querySelectorAll(".fish-card").length,
+    eventos: byId("timeline-list").querySelectorAll(".timeline-row").length,
+    tarjetas: byId("card-list").querySelectorAll(".approval-card").length,
+    formulario_abierto: !byId("space-form").hidden,
+  };
+  try {
+    await invoke("selfcheck_report", { report });
+  } catch (error) {
+    window.__ezErrors?.push(String(error));
+  }
+}
+
 async function boot() {
   applyTexts();
   wire();
@@ -180,4 +203,11 @@ async function boot() {
   }
 }
 
-boot().catch((error) => notice(String(error)));
+boot()
+  .catch((error) => {
+    notice(String(error));
+    window.__ezErrors?.push(String(error));
+  })
+  .finally(() => {
+    maybeSelfcheck().catch((error) => console.warn(String(error)));
+  });
