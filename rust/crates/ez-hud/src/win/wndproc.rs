@@ -118,6 +118,18 @@ pub fn ensure_class() -> bool {
 // SAFETY: la firma `unsafe extern "system"` es la que exige `WNDPROC`; Windows
 // garantiza que los punteros del mensaje son válidos durante la llamada.
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    // DX-1d: un pánico no puede cruzar la frontera FFI (Rust aborta el proceso
+    // con 0xc0000409 y no queda rastro). Se atrapa, se registra y el mensaje
+    // sigue al procedimiento por defecto.
+    let handled =
+        ez_core::panics::catch_panic(|| unsafe { handle_message(hwnd, msg, wparam, lparam) });
+    match handled {
+        Some(Some(result)) => result,
+        Some(None) | None => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
+}
+
+unsafe fn handle_message(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
     if msg == WM_NCCREATE {
         // SAFETY: en WM_NCCREATE `lparam` apunta a un CREATESTRUCTW válido.
         let create = unsafe { &*(lparam.0 as *const CREATESTRUCTW) };
@@ -129,12 +141,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             .and_then(Weak::upgrade);
         if let Some(window) = window {
             if let Some(result) = dispatch(&window, msg, wparam, lparam) {
-                return result;
+                return Some(result);
             }
         }
     }
-    // SAFETY: mensajes no atendidos van al procedimiento por defecto.
-    unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+    None
 }
 
 /// `_on_message`: `None` deja que responda `DefWindowProcW`.
