@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
@@ -78,41 +78,41 @@ pub fn sha256_file(path: &Path) -> Result<String, String> {
         .map_err(|error| format!("{}: {error}", path.display()))
 }
 
-/// Normaliza `.` y `..` sin tocar el disco. `None` si se sale de la raíz.
-pub fn normalize(path: &Path) -> Option<PathBuf> {
-    let mut out = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if !out.pop() {
-                    return None;
-                }
-            }
-            other => out.push(other.as_os_str()),
-        }
-    }
-    Some(out)
-}
-
-/// Resuelve `candidate` (relativa a `folder` o absoluta) y comprueba que quede
-/// dentro de `folder`. Devuelve la ruta normalizada.
-pub fn resolve_inside(folder: &Path, candidate: &Path) -> Option<PathBuf> {
-    let base = folder
+/// Resuelve `path` dentro de `root` y comprueba que no se salga (diseño §14.7).
+/// Canonicaliza la raíz y el destino; si el archivo no existe, canonicaliza su
+/// padre y vuelve a juntar el nombre. `Path::starts_with` compara por componentes,
+/// así que `proyecto-otro` no cuenta como dentro de `proyecto`.
+pub fn inside(root: &Path, path: &Path) -> Result<PathBuf, String> {
+    let base = root
         .canonicalize()
-        .unwrap_or_else(|_| folder.to_path_buf());
-    let joined = if candidate.is_absolute() {
-        candidate.to_path_buf()
+        .map_err(|error| format!("No se pudo resolver {}: {error}.", root.display()))?;
+    let joined = if path.is_absolute() {
+        path.to_path_buf()
     } else {
-        base.join(candidate)
+        base.join(path)
     };
-    let resolved = joined
-        .canonicalize()
-        .unwrap_or_else(|_| normalize(&joined).unwrap_or_else(|| joined.clone()));
+    let resolved = match joined.canonicalize() {
+        Ok(path) => path,
+        Err(_) => {
+            let parent = joined.parent().ok_or_else(|| {
+                format!("La ruta {} no tiene carpeta padre.", joined.display())
+            })?;
+            let parent = parent.canonicalize().map_err(|error| {
+                format!("No se pudo resolver {}: {error}.", parent.display())
+            })?;
+            match joined.file_name() {
+                Some(name) => parent.join(name),
+                None => parent,
+            }
+        }
+    };
     if resolved.starts_with(&base) {
-        Some(resolved)
+        Ok(resolved)
     } else {
-        None
+        Err(format!(
+            "La ruta {} queda fuera de la carpeta del espacio.",
+            path.display()
+        ))
     }
 }
 

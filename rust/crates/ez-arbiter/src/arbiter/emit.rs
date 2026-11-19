@@ -139,7 +139,7 @@ impl Arbiter {
             return;
         };
         let path = crate::paths::data_task_dir(&self.data_dir, task).join("bitacora.jsonl");
-        match serde_json::to_string(&event.redacted()) {
+        match serde_json::to_string(event) {
             Ok(line) => {
                 if let Err(error) = crate::paths::append_line(&path, &line) {
                     tracing::warn!(%error, path = %path.display(), "no se pudo escribir la bitácora");
@@ -190,10 +190,5 @@ impl Arbiter {
             let _ = sender.send(message);
         }
         self.send_to_subscribers(&subscribers, std::slice::from_ref(&event));
-    }
-
-    /// Ruta de un archivo de datos de la tarea.
-    pub(crate) fn task_path(&self, task: &Task, name: &str) -> std::path::PathBuf {
-        crate::paths::data_task_dir(&self.data_dir, &task.id).join(name)
     }
 }

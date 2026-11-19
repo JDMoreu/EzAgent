@@ -32,6 +32,9 @@ impl Arbiter {
         if let Err(rejection) = self.check_frozen(&task) {
             return Err(self.pause_task(task, "R3", "criterios_modificados", rejection.message));
         }
+        if let Err(rejection) = self.check_artifacts(&task) {
+            return Err(self.pause_task(task, "R3", "artefactos_modificados", rejection.message));
+        }
         // R11: el elefante no cambió archivos del proyecto fuera de ronda.
         if let Some(previous) = &task.last_close {
             let current = git::snapshot(&task.space.folder)
@@ -81,6 +84,9 @@ impl Arbiter {
         if let Err(rejection) = self.check_frozen(&task) {
             return Err(self.pause_task(task, "R3", "criterios_modificados", rejection.message));
         }
+        if let Err(rejection) = self.check_artifacts(&task) {
+            return Err(self.pause_task(task, "R3", "artefactos_modificados", rejection.message));
+        }
         let criteria = self.load_criteria(&task)?;
         let checks = verify::run_all(&task.space.folder, &criteria);
         self.write_verification(&task, &checks)?;
@@ -115,7 +121,18 @@ impl Arbiter {
         if let Err(rejection) = self.check_frozen(&task) {
             return Err(self.pause_task(task, "R3", "criterios_modificados", rejection.message));
         }
+        if let Err(rejection) = self.check_artifacts(&task) {
+            return Err(self.pause_task(task, "R3", "artefactos_modificados", rejection.message));
+        }
         let round = task.round;
+        let pending: Vec<String> = task
+            .pending_in_round(round)
+            .iter()
+            .map(|item| item.key.fish.clone())
+            .collect();
+        if !pending.is_empty() {
+            return Err(Rejection::new("R9", texts::pending_work(&pending)));
+        }
         self.require_reports(&task, round)?;
         let criteria = self.load_criteria(&task)?;
         let checks = verify::run_all(&task.space.folder, &criteria);
@@ -354,6 +371,28 @@ fn evaluate(
         .collect();
     if !touched.is_empty() {
         reasons.push(texts::protected_touched(&touched));
+    }
+    let bad: Vec<String> = task
+        .fish_in_round(round)
+        .filter_map(|fish| fish.report.as_ref().map(|report| (fish, report)))
+        .filter(|(_, report)| {
+            report.verdict != Verdict::Pass || report.blocking > 0 || report.major > 0
+        })
+        .map(|(fish, _)| fish.id().to_string())
+        .collect();
+    if !bad.is_empty() {
+        reasons.push(texts::reports_not_clean(&bad));
+    }
+    for role in [Role::Planner, Role::PlanReviewer, Role::QaValidator] {
+        let changed: Vec<String> = task
+            .rounds
+            .iter()
+            .find(|record| record.number == round)
+            .map(|record| record.files_of(role).into_iter().collect())
+            .unwrap_or_default();
+        if !changed.is_empty() {
+            reasons.push(texts::role_changed_files(role.id(), &changed));
+        }
     }
     (reasons.is_empty(), reasons)
 }

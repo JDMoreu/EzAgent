@@ -7,7 +7,7 @@ use ez_team::{Role, Seat};
 use serde::{Deserialize, Serialize};
 
 use crate::git::GitSnapshot;
-use crate::types::{Space, Verdict};
+use crate::types::{FishKey, Space, Verdict};
 use crate::verify::CheckRecord;
 
 /// Estado de la tarea (diseño §8).
@@ -72,6 +72,9 @@ impl TeamStatus {
 pub struct ReportRecord {
     pub verdict: Verdict,
     pub file: PathBuf,
+    /// sha256 de la copia privada del informe.
+    #[serde(default)]
+    pub sha: String,
     pub blocking: u32,
     pub major: u32,
     pub minor: u32,
@@ -79,20 +82,55 @@ pub struct ReportRecord {
     pub mutations_caught: Option<u32>,
 }
 
-/// Pez lanzado en una ronda.
+/// Unidad de trabajo entregada a un pez (diseño §14.3).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkItem {
+    pub key: FishKey,
+    pub round: u32,
+    pub kind: WorkKind,
+    /// Ruta exacta del informe que debe enviar el pez.
+    pub report_path: PathBuf,
+    pub state: WorkState,
+    /// Segundos desde 1970 en que se entregó el trabajo.
+    pub started_ts: f64,
+}
+
+/// Origen del trabajo de un pez.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkKind {
+    Launch,
+    Correction(u32),
+}
+
+/// Estado de una unidad de trabajo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkState {
+    Pending,
+    Reported,
+    Failed,
+}
+
+/// Sesión de un pez lanzado en una ronda (una por intento).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FishRecord {
-    pub id: String,
+    pub key: FishKey,
     pub role: Role,
     pub terminal: String,
     pub round: u32,
-    /// Tiene trabajo entregado y todavía no informó en esta ronda.
-    pub pending: bool,
-    pub reported: bool,
     /// Foto de git al empezar su trabajo (para atribuir archivos).
     pub start: Option<GitSnapshot>,
+    /// Último informe aceptado.
     pub report: Option<ReportRecord>,
     pub corrections: u32,
+}
+
+impl FishRecord {
+    /// Id del pez (`qa-r1`), sin el sufijo de intento.
+    pub fn id(&self) -> &str {
+        &self.key.fish
+    }
 }
 
 /// Una ronda con sus verificaciones, motivos y atribución de archivos.
@@ -145,10 +183,19 @@ pub struct Task {
     pub clean_streak: u32,
     /// sha256 de los criterios congelados al aprobar.
     pub criteria_sha: String,
+    /// sha256 del encargo congelado al aprobar.
+    #[serde(default)]
+    pub encargo_sha: String,
+    /// sha256 del equipo congelado al aprobarlo.
+    #[serde(default)]
+    pub team_sha: Option<String>,
     /// Foto de git al cerrar la última ronda (para R11).
     pub last_close: Option<GitSnapshot>,
     pub rounds: Vec<RoundRecord>,
     pub fish: Vec<FishRecord>,
+    /// Trabajos pendientes, informados o fallidos de la tarea.
+    #[serde(default)]
+    pub work: Vec<WorkItem>,
 }
 
 impl Task {
@@ -157,14 +204,47 @@ impl Task {
         !self.status.is_terminal()
     }
 
-    /// Ficha de un pez.
+    /// Ficha de un pez por su id (se queda con el último intento).
     pub fn fish(&self, id: &str) -> Option<&FishRecord> {
-        self.fish.iter().find(|fish| fish.id == id)
+        self.fish.iter().rev().find(|fish| fish.id() == id)
     }
 
-    /// Ficha mutable de un pez.
-    pub fn fish_mut(&mut self, id: &str) -> Option<&mut FishRecord> {
-        self.fish.iter_mut().find(|fish| fish.id == id)
+    /// Ficha de un pez por su clave completa.
+    pub fn fish_by_key(&self, key: &FishKey) -> Option<&FishRecord> {
+        self.fish.iter().find(|fish| &fish.key == key)
+    }
+
+    /// Ficha mutable de un pez por su clave completa.
+    pub fn fish_by_key_mut(&mut self, key: &FishKey) -> Option<&mut FishRecord> {
+        self.fish.iter_mut().find(|fish| &fish.key == key)
+    }
+
+    /// Trabajo vigente (pendiente o informado) de una clave.
+    pub fn work_for_key(&self, key: &FishKey) -> Option<&WorkItem> {
+        self.work.iter().find(|item| &item.key == key)
+    }
+
+    /// Trabajo pendiente de una clave.
+    pub fn pending_work(&self, key: &FishKey) -> Option<&WorkItem> {
+        self.work
+            .iter()
+            .find(|item| &item.key == key && item.state == WorkState::Pending)
+    }
+
+    /// Trabajos pendientes de una ronda.
+    pub fn pending_in_round(&self, round: u32) -> Vec<&WorkItem> {
+        self.work
+            .iter()
+            .filter(|item| item.round == round && item.state == WorkState::Pending)
+            .collect()
+    }
+
+    /// Intentos de un papel en una ronda (peces lanzados).
+    pub fn attempts(&self, role: Role, round: u32) -> u32 {
+        self.fish
+            .iter()
+            .filter(|fish| fish.role == role && fish.round == round)
+            .count() as u32
     }
 
     /// Puesto del equipo de un papel.
@@ -214,12 +294,11 @@ impl Task {
             .iter()
             .map(|fish| {
                 serde_json::json!({
-                    "id": fish.id,
+                    "id": fish.id(),
                     "role": fish.role.id(),
                     "terminal": fish.terminal,
                     "round": fish.round,
-                    "pending": fish.pending,
-                    "reported": fish.reported,
+                    "attempt": fish.key.attempt,
                 })
             })
             .collect();

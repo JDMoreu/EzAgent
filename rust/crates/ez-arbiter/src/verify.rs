@@ -15,6 +15,8 @@ use crate::texts;
 pub const OUTPUT_TAIL: usize = 4000;
 /// Intervalo de `try_wait` mientras el comando corre.
 const POLL: Duration = Duration::from_millis(50);
+/// Tope para abandonar los lectores de salida (§14.7).
+const READER_GRACE: Duration = Duration::from_secs(2);
 
 /// Resultado de un criterio.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -74,7 +76,13 @@ pub fn run_one(folder: &Path, criterion: &Criterion) -> CheckRecord {
         salida: String::new(),
         motivo: None,
     };
-    let working_dir = criterion.working_dir(folder);
+    let working_dir = match criterion.working_dir(folder) {
+        Ok(path) => path,
+        Err(reason) => {
+            record.motivo = Some(reason);
+            return record;
+        }
+    };
     let mut command = crate::exec::command(&criterion.comando[0]);
     command
         .args(&criterion.comando[1..])
@@ -98,7 +106,7 @@ pub fn run_one(folder: &Path, criterion: &Criterion) -> CheckRecord {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
             Ok(None) if Instant::now() >= deadline => {
-                let _ = child.kill();
+                kill_tree(&mut child);
                 let status = child.wait().ok();
                 timed_out = true;
                 break status;
@@ -106,7 +114,7 @@ pub fn run_one(folder: &Path, criterion: &Criterion) -> CheckRecord {
             Ok(None) => std::thread::sleep(POLL),
             Err(error) => {
                 record.motivo = Some(texts::command_failed(&error.to_string()));
-                let _ = child.kill();
+                kill_tree(&mut child);
                 let _ = child.wait();
                 break None;
             }
@@ -120,6 +128,18 @@ pub fn run_one(folder: &Path, criterion: &Criterion) -> CheckRecord {
     record.motivo = judge(criterion, &record.codigo, &full, timed_out);
     record.ok = record.motivo.is_none();
     record
+}
+
+/// Mata el proceso y sus hijos al vencer el tope (diseño §14.7).
+fn kill_tree(child: &mut std::process::Child) {
+    #[cfg(windows)]
+    {
+        let _ = crate::exec::command("taskkill")
+            .args(["/T", "/F", "/PID"])
+            .arg(child.id().to_string())
+            .output();
+    }
+    let _ = child.kill();
 }
 
 fn spawn_reader<R: Read + Send + 'static>(
@@ -140,10 +160,19 @@ fn spawn_reader<R: Read + Send + 'static>(
         .expect("crear el hilo lector de verificación");
 }
 
+/// Lee las salidas hasta que responden los dos lectores o vence el margen:
+/// nunca se espera sin límite a un lector colgado (§14.7).
 fn collect_output(rx: mpsc::Receiver<(&'static str, Vec<u8>)>) -> (String, String) {
     let mut stdout = String::new();
     let mut stderr = String::new();
-    for (label, bytes) in rx.iter() {
+    let deadline = Instant::now() + READER_GRACE;
+    loop {
+        let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+            break;
+        };
+        let Ok((label, bytes)) = rx.recv_timeout(remaining) else {
+            break;
+        };
         let text = String::from_utf8_lossy(&bytes).into_owned();
         if label == "stdout" {
             stdout.push_str(&text);

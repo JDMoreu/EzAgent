@@ -75,10 +75,6 @@ pub fn already_in_round(role: &str) -> String {
 pub fn too_many_developers(alive: u32, max: u32) -> String {
     format!("Ya hay {alive} desarrolladores vivos y el equipo permite {max}.")
 }
-/// R5: el lanzador falló.
-pub fn launch_failed(fish: &str, detail: &str) -> String {
-    format!("No se pudo lanzar al pez {fish}: {detail}.")
-}
 /// R5: el archivo del encargo del pez no existe.
 pub fn fish_brief_missing(path: &Path) -> String {
     format!("No existe el encargo del pez: {}.", path.display())
@@ -97,11 +93,12 @@ pub fn terminal_dead(fish: &str) -> String {
 pub fn correction_missing(path: &Path) -> String {
     format!("No existe el archivo de la corrección: {}.", path.display())
 }
-/// R6: la línea exacta que se envía al pez.
-pub fn correction_line(round: u32, path: &Path) -> String {
+/// R6: la línea exacta que se envía al pez (diseño §14.3).
+pub fn correction_line(round: u32, number: u32, path: &Path, report: &Path) -> String {
     format!(
-        "Corrección de la ronda {round}: lee {} y vuelve a informar con ez report.",
-        path.display()
+        "Corrección {number} de la ronda {round}: lee {} y al terminar informa con ez report usando --file \"{}\".",
+        path.display(),
+        report.display()
     )
 }
 /// R7: el pez no tiene trabajo pendiente.
@@ -330,3 +327,64 @@ pub const CLOSE_ROUND_FIRST: &str = "Todavía no: cierra la ronda abierta antes 
 pub const ALREADY_PAUSED: &str = "La tarea ya está en pausa.";
 /// R4: no está en pausa.
 pub const NOT_PAUSED: &str = "La tarea no está en pausa.";
+
+/// R1: la clave del pez no coincide con ningún trabajo vigente (§14.1).
+pub const FISH_NOT_ACTIVE: &str = "Este pez ya no está activo en esta tarea.";
+/// R5: la entrega del encargo falló (§14.2).
+pub fn delivery_failed(fish: &str, detail: &str) -> String {
+    format!("No pude entregar el encargo a {fish}: {detail}")
+}
+/// R5: la entrega no se pudo confirmar; el trabajo sigue.
+pub fn delivery_unconfirmed(fish: &str) -> String {
+    format!(" No se pudo confirmar la entrega a {fish}; revisa su terminal.")
+}
+/// R7: el informe no está en la ruta del trabajo pendiente (§14.3).
+pub fn wrong_report_path(path: &Path) -> String {
+    format!("El informe debe ir en {}.", path.display())
+}
+/// R7: `pass` con hallazgos bloqueantes o mayores (§14.3).
+pub const PASS_WITH_FINDINGS: &str =
+    "El veredicto pass no puede llevar hallazgos bloqueantes o mayores.";
+/// R9: queda trabajo pendiente al cerrar (§14.3).
+pub fn pending_work(fish: &[String]) -> String {
+    format!("Hay trabajo pendiente: {}.", fish.join(", "))
+}
+/// R5/R6: el QA ya empezó en esta ronda (§14.3).
+pub const QA_STARTED: &str =
+    "Ya empezó el QA de esta ronda: las correcciones van en la ronda siguiente.";
+/// R5: el plan solo se hace en la ronda 1 (§14.3).
+pub const PLAN_ONLY_ROUND1: &str =
+    "El plan se hace en la ronda 1; para corregirlo usa ez send al planificador.";
+/// R3/§14.6: cambiaron los artefactos congelados.
+pub const ARTIFACTS_MODIFIED: &str =
+    "Los artefactos congelados de la tarea cambiaron: la tarea queda en pausa.";
+/// Reanudar una pausa de artefactos restaura las copias.
+pub const ARTIFACTS_RESTORED: &str = "Se restauraron los artefactos congelados.";
+/// Línea de validación en la tarjeta (§14.6).
+pub fn validation_line(mutations: u32, rounds: u32, hours: f64) -> String {
+    format!("Validación: mutaciones mínimas {mutations}, rondas máximas {rounds}, horas máximas {hours}.")
+}
+/// Novedad para el elefante: un pez falló antes de informar (§14.5).
+pub fn fish_failed(fish: &str, reason: &str) -> String {
+    format!("{fish} falló antes de informar: {reason}.")
+}
+/// R5: se agotaron los tres intentos de un papel en la ronda (§14.3).
+pub fn too_many_attempts(role: &str) -> String {
+    format!("{role} agotó los 3 intentos de esta ronda.")
+}
+/// R5: no se puede abrir una ronda solo de verificación (§14.3).
+pub fn no_verification_round() -> String {
+    "Solo se puede hacer una ronda sin desarrolladores si la anterior quedó limpia y el proyecto no cambió.".to_string()
+}
+/// R9: un informe de la ronda no fue `pass` limpio (§14.3).
+pub fn reports_not_clean(fish: &[String]) -> String {
+    format!(
+        "los informes de {} no son pass sin bloqueantes ni mayores",
+        fish.join(", ")
+    )
+}
+/// R9: un papel que no debe tocar el proyecto lo hizo (§14.3).
+pub fn role_changed_files(role: &str, paths: &[String]) -> String {
+    format!("{role} cambió archivos del proyecto: {}", paths.join(", "))
+}
+

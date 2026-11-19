@@ -2,7 +2,7 @@
 //!
 //! Regla de concurrencia: el `Mutex` interno solo se toma para leer o cambiar
 //! el estado en memoria. Git, los comandos de verificación, el lanzamiento de
-//! peces y el disco ocurren fuera del candado.
+//! peces, los tokens y el disco ocurren fuera del candado.
 
 mod emit;
 mod fish;
@@ -22,10 +22,10 @@ use parking_lot::Mutex;
 use ez_team::Role;
 
 use crate::events::{ArbiterEvent, ElephantEvent};
-use crate::state::Task;
+use crate::state::{Task, WorkState};
 use crate::texts;
 use crate::types::{
-    Caller, Clock, Command, FishLauncher, InstructionWriter, Outcome, Rejection, Space,
+    Caller, Clock, Command, FishKey, FishLauncher, InstructionWriter, Outcome, Rejection, Space,
 };
 
 /// Cola de novedades de un espacio para `ez wait`.
@@ -41,6 +41,8 @@ pub(crate) struct Inner {
     pub tasks: HashMap<String, Task>,
     pub subscribers: Vec<Sender<ArbiterEvent>>,
     pub elephants: HashMap<String, ElephantQueue>,
+    /// Tokens vivos por clave de pez. Nunca se serializan (§14.1).
+    pub tokens: HashMap<String, String>,
 }
 
 /// Cola nueva y vacía.
@@ -91,6 +93,7 @@ impl Arbiter {
                 tasks,
                 subscribers: Vec::new(),
                 elephants,
+                tokens: HashMap::new(),
             }),
         })
     }
@@ -126,9 +129,9 @@ impl Arbiter {
                 mutations_tried,
                 mutations_caught,
             } => {
-                let fish = self.fish_caller(caller)?;
+                let key = self.fish_caller(caller)?;
                 self.report(
-                    &fish,
+                    &key,
                     fish::ReportInput {
                         verdict,
                         file,
@@ -226,27 +229,85 @@ impl Arbiter {
     // --------------------------------------------------------------- señales
 
     /// La ventana vio que un pez quedó bloqueado en hc.
-    pub fn fish_blocked(&self, fish: &str, kind: Option<&str>) {
-        let Some(task) = self.task_for_fish(fish).ok() else {
+    pub fn fish_blocked(&self, key: &FishKey, kind: Option<&str>) {
+        let Some(task) = self.task_for_fish_key(key).ok() else {
             return;
         };
-        let message = texts::elephant_blocked(fish, kind);
-        let data = serde_json::json!({ "fish": fish, "kind": kind });
+        let message = texts::elephant_blocked(&key.fish, kind);
+        let data = serde_json::json!({
+            "fish": key.fish, "attempt": key.attempt, "kind": kind,
+        });
         let event = self.event(&task, "fish_blocked", data.clone());
         let elephant = self.elephant_event(&task, "fish_blocked", message, data);
         self.emit_only(&task.space.id, Some(&task.id), vec![event], vec![elephant]);
     }
 
-    /// La ventana vio que la terminal de un pez terminó.
-    pub fn fish_exited(&self, fish: &str) {
-        let Some(task) = self.task_for_fish(fish).ok() else {
+    /// La ventana vio que la terminal de un pez terminó antes de informar.
+    pub fn fish_exited(&self, key: &FishKey) {
+        self.fish_gone(key, "la terminal del pez terminó");
+    }
+
+    /// La ventana vio que un pez falló antes de informar (§14.5).
+    pub fn fish_failed(&self, key: &FishKey, motive: &str) {
+        self.fish_gone(key, motive);
+    }
+
+    /// Marca el trabajo como fallido, revoca el token y avisa al elefante.
+    fn fish_gone(&self, key: &FishKey, motive: &str) {
+        let Some(mut task) = self.task_for_fish_key(key).ok() else {
             return;
         };
-        let message = texts::elephant_exited(fish);
-        let data = serde_json::json!({ "fish": fish });
-        let event = self.event(&task, "fish_exited", data.clone());
-        let elephant = self.elephant_event(&task, "fish_exited", message, data);
-        self.emit_only(&task.space.id, Some(&task.id), vec![event], vec![elephant]);
+        let pending = task
+            .pending_work(key)
+            .map(|item| item.started_ts)
+            .is_some();
+        if !pending {
+            let message = texts::elephant_exited(&key.fish);
+            let data = serde_json::json!({ "fish": key.fish, "attempt": key.attempt });
+            let event = self.event(&task, "fish_exited", data.clone());
+            let elephant = self.elephant_event(&task, "fish_exited", message, data);
+            self.emit_only(&task.space.id, Some(&task.id), vec![event], vec![elephant]);
+            return;
+        }
+        for item in &mut task.work {
+            if &item.key == key && item.state == WorkState::Pending {
+                item.state = WorkState::Failed;
+            }
+        }
+        self.revoke_token(key);
+        let message = texts::fish_failed(&key.fish, motive);
+        let data = serde_json::json!({
+            "fish": key.fish, "attempt": key.attempt, "reason": motive,
+        });
+        let mut effects = emit::Effects::default();
+        effects.both(
+            self.event(&task, "fish_failed", data.clone()),
+            self.elephant_event(&task, "fish_failed", message, data),
+        );
+        self.commit(&task, effects);
+    }
+
+    /// Revoca el token vivo de una clave, sin retener el candado.
+    pub(crate) fn revoke_token(&self, key: &FishKey) {
+        let token = self.inner.lock().tokens.remove(&key.storage_key());
+        if let Some(token) = token {
+            self.launcher.revoke(&token);
+        }
+    }
+
+    /// Revoca todos los tokens de una tarea, sin retener el candado.
+    pub(crate) fn revoke_task_tokens(&self, task: &Task) {
+        for fish in &task.fish {
+            self.revoke_token(&fish.key);
+        }
+    }
+
+    /// Registra el token de un pez recién lanzado.
+    pub(crate) fn remember_token(&self, key: &FishKey, token: &str) {
+        self.inner
+            .lock()
+            .tokens
+            .insert(key.storage_key(), token.to_string());
     }
 
     /// Espera una novedad del elefante; `None` si vence el tope.
@@ -294,10 +355,10 @@ impl Arbiter {
         }
     }
 
-    /// Pez que llama.
-    pub(crate) fn fish_caller(&self, caller: &Caller) -> Result<String, Rejection> {
+    /// Pez que llama (R1).
+    pub(crate) fn fish_caller(&self, caller: &Caller) -> Result<FishKey, Rejection> {
         match caller {
-            Caller::Fish { fish } => Ok(fish.clone()),
+            Caller::Fish(key) => Ok(key.clone()),
             Caller::Elephant { .. } => Err(Rejection::new("R1", texts::FISH_ONLY)),
         }
     }
@@ -324,22 +385,22 @@ impl Arbiter {
             .ok_or_else(|| Rejection::new("R2", texts::NO_ACTIVE_TASK))
     }
 
-    /// Tarea activa que contiene al pez.
-    pub(crate) fn task_for_fish(&self, fish: &str) -> Result<Task, Rejection> {
+    /// Tarea activa que contiene un trabajo de la clave dada (R1).
+    pub(crate) fn task_for_fish_key(&self, key: &FishKey) -> Result<Task, Rejection> {
         self.inner
             .lock()
             .tasks
             .values()
-            .find(|task| task.is_active() && task.fish(fish).is_some())
+            .find(|task| task.is_active() && task.work_for_key(key).is_some())
             .cloned()
-            .ok_or_else(|| Rejection::new("R1", texts::UNKNOWN_FISH))
+            .ok_or_else(|| Rejection::new("R1", texts::FISH_NOT_ACTIVE))
     }
 
     /// Tarea de quien llama, si se puede resolver.
     pub(crate) fn task_for_caller(&self, caller: &Caller) -> Option<Task> {
         match caller {
             Caller::Elephant { space } => self.task_for_elephant(space).ok(),
-            Caller::Fish { fish } => self.task_for_fish(fish).ok(),
+            Caller::Fish(key) => self.task_for_fish_key(key).ok(),
         }
     }
 
@@ -380,22 +441,30 @@ impl Arbiter {
     }
 }
 
-/// Nombre hc de un pez: `ez-{4 últimos de la tarea}-{pez}`.
-pub(crate) fn hc_name(task: &str, fish: &str) -> String {
-    let tail: String = task
-        .chars()
-        .rev()
-        .take(4)
-        .collect::<Vec<char>>()
-        .into_iter()
-        .rev()
-        .collect();
-    format!("ez-{tail}-{fish}")
+/// Id de tarea: `t` + 12 hex de un uuid v4 (§14.1).
+pub(crate) fn new_task_id() -> String {
+    let simple = uuid::Uuid::new_v4().simple().to_string();
+    format!("t{}", &simple[..12])
 }
 
 /// Token nuevo de un pez (uuid v4 simple).
 pub(crate) fn new_token() -> String {
     uuid::Uuid::new_v4().simple().to_string()
+}
+
+/// Nombre hc: `ez-{8 hex de la tarea}-{pez}`, más `-a{n}` si `attempt > 1`.
+pub(crate) fn hc_name(task: &str, fish: &str, attempt: u32) -> String {
+    let hex: String = task
+        .chars()
+        .filter(|character| character.is_ascii_hexdigit())
+        .take(8)
+        .collect();
+    let suffix = if attempt > 1 {
+        format!("-a{attempt}")
+    } else {
+        String::new()
+    };
+    format!("ez-{hex}-{fish}{suffix}")
 }
 
 /// Id de pez de un papel en una ronda (`dev-r1-2`, `qa-r1`…).
