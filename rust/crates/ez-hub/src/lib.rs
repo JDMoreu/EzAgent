@@ -3,10 +3,15 @@
 //! En esta ola la ventana no habla con el árbitro ni con herdr-core: abre espacios,
 //! terminales PTY propias y un modo demostración en memoria.
 
+use std::path::PathBuf;
+use std::thread;
+use std::time::Duration;
+
 pub mod commands;
 pub mod hub;
 pub mod input;
 pub mod pty;
+pub mod selfcheck;
 pub mod space;
 pub mod texts;
 
@@ -26,10 +31,20 @@ pub fn init_tracing() {
         .try_init();
 }
 
-/// Arranca la ventana; `demo` usa un espacio en memoria.
-pub fn run(demo: bool) -> tauri::Result<()> {
+/// Arranca la ventana; `demo` usa un espacio en memoria y `selfcheck` activa la
+/// autocomprobación de la vista, que escribe su informe en esa ruta.
+pub fn run(demo: bool, selfcheck: Option<PathBuf>) -> tauri::Result<()> {
+    let state = commands::AppState::with_selfcheck(demo, selfcheck.clone());
+    // El informe se escribe antes de cerrar; si la ruta sigue sin existir en 20 s,
+    // la vista no avisó. El hilo no retiene ningún candado durante la espera.
+    if let Some(path) = selfcheck {
+        thread::Builder::new()
+            .name("ez-hub-selfcheck".to_string())
+            .spawn(move || watchdog(path))
+            .expect("hilo de vigilancia de la autocomprobación");
+    }
     tauri::Builder::default()
-        .manage(commands::AppState::new(demo))
+        .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::spaces_list,
             commands::space_create,
@@ -40,6 +55,19 @@ pub fn run(demo: bool) -> tauri::Result<()> {
             commands::elephant_input,
             commands::hub_state,
             commands::card_action,
+            commands::selfcheck_enabled,
+            commands::selfcheck_report,
         ])
         .run(tauri::generate_context!())
+}
+
+fn watchdog(path: PathBuf) {
+    thread::sleep(Duration::from_secs(20));
+    if path.exists() {
+        return;
+    }
+    if let Err(error) = selfcheck::write_timeout(&path) {
+        tracing::error!(%error, "no pude escribir el informe de autocomprobación");
+    }
+    std::process::exit(1);
 }

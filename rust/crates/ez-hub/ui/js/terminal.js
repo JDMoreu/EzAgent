@@ -6,6 +6,14 @@ import { TEXTS } from "./texts.js";
 
 const { invoke, Channel } = window.__TAURI__.core;
 
+// Terminales que recibieron al menos un bloque de bytes del PTY.
+const withData = new Set();
+
+/** Cuántas terminales montadas recibieron datos (para la autocomprobación). */
+export function terminalsWithData() {
+  return withData.size;
+}
+
 const THEME = {
   background: "#0f1115",
   foreground: "#e6e9ef",
@@ -47,18 +55,22 @@ export async function mountTerminal(host, { argv, cwd, space }) {
     // El panel todavía no tiene tamaño; se reajusta al mostrarlo.
   }
 
+  let viewId;
+  let gotData = false;
   const channel = new Channel();
   channel.onmessage = (message) => {
     if (message instanceof ArrayBuffer) {
+      gotData = true;
       term.write(new Uint8Array(message));
     } else if (message instanceof Uint8Array) {
+      gotData = true;
       term.write(message);
     } else if (message && message.event === "exit") {
       term.write(`\r\n${TEXTS.exited(message.code)}\r\n`);
     }
+    if (gotData && viewId) withData.add(viewId);
   };
 
-  let viewId;
   try {
     viewId = await invoke("view_open", {
       argv,
@@ -68,6 +80,7 @@ export async function mountTerminal(host, { argv, cwd, space }) {
       channel,
       space,
     });
+    if (gotData) withData.add(viewId);
   } catch (error) {
     term.dispose();
     host.replaceChildren();
@@ -98,6 +111,7 @@ export async function mountTerminal(host, { argv, cwd, space }) {
       }
     },
     close: async () => {
+      withData.delete(viewId);
       term.dispose();
       await invoke("view_close", { id: viewId });
     },

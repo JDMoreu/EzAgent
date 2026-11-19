@@ -1,7 +1,7 @@
 //! Estado compartido del hub y los comandos que expone a la vista (§10).
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::hub::{self, HubState};
 use crate::input;
 use crate::pty::{self, EventSink, PtyEvent, Session, Size};
+use crate::selfcheck::{self, SelfcheckReport};
 use crate::space::{self, Space, SpaceStore};
 use crate::texts;
 
@@ -23,11 +24,17 @@ pub struct AppState {
     views: Mutex<HashMap<String, Arc<Session>>>,
     elephants: Mutex<HashMap<String, String>>,
     hub: Mutex<HubState>,
+    selfcheck_path: Option<PathBuf>,
 }
 
 impl AppState {
     /// Carga `espacios.json` o prepara el espacio de demostración.
     pub fn new(demo: bool) -> Self {
+        Self::with_selfcheck(demo, None)
+    }
+
+    /// Como `new`, con la ruta donde la vista debe dejar su informe.
+    pub fn with_selfcheck(demo: bool, selfcheck_path: Option<PathBuf>) -> Self {
         let store = SpaceStore::for_app();
         let (spaces, hub) = if demo {
             let folder = std::env::current_dir()
@@ -51,7 +58,22 @@ impl AppState {
             views: Mutex::new(HashMap::new()),
             elephants: Mutex::new(HashMap::new()),
             hub: Mutex::new(hub),
+            selfcheck_path,
         }
+    }
+
+    /// Ruta del informe de autocomprobación, si está activa.
+    pub fn selfcheck_path(&self) -> Option<&Path> {
+        self.selfcheck_path.as_deref()
+    }
+
+    /// Escribe el informe fuera de candados y devuelve si pasó la evaluación.
+    pub fn submit_selfcheck(&self, report: &SelfcheckReport) -> Result<bool, String> {
+        let path = self
+            .selfcheck_path()
+            .ok_or_else(|| "La autocomprobación no está activa.".to_string())?;
+        selfcheck::write_json(path, report)?;
+        Ok(selfcheck::evaluate(report))
     }
 
     /// Espacios guardados (o el de demostración, en memoria).
@@ -282,6 +304,25 @@ pub fn card_action(
     Ok(())
 }
 
+/// La vista pregunta si debe enviar el informe de autocomprobación.
+#[tauri::command]
+pub fn selfcheck_enabled(state: State<'_, AppState>) -> bool {
+    state.selfcheck_path().is_some()
+}
+
+/// Recibe el informe de la vista, lo guarda y cierra la app con su código de salida.
+#[tauri::command]
+pub fn selfcheck_report(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    report: SelfcheckReport,
+) -> Result<(), String> {
+    let passed = state.submit_selfcheck(&report)?;
+    tracing::info!(passed, "informe de autocomprobación recibido");
+    app.exit(if passed { 0 } else { 1 });
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -346,5 +387,37 @@ mod tests {
     fn elephant_input_needs_an_open_terminal() {
         let state = AppState::new(true);
         assert!(state.elephant_input(hub::DEMO_SPACE_ID, "hola").is_err());
+    }
+
+    #[test]
+    fn selfcheck_writes_the_report_and_reports_the_verdict() {
+        let dir = TempDir::new("demo-selfcheck");
+        let path = dir.path().join("informe.json");
+        let state = AppState::with_selfcheck(true, Some(path.clone()));
+        assert!(state.selfcheck_path().is_some());
+        let report = SelfcheckReport {
+            cabecera: "Elefante · PowerShell".to_string(),
+            terminales: 3,
+            peces: 2,
+            eventos: 5,
+            tarjetas: 1,
+            ..SelfcheckReport::default()
+        };
+        assert!(state.submit_selfcheck(&report).expect("informe"));
+        let text = std::fs::read_to_string(&path).expect("leer informe");
+        let saved: SelfcheckReport = serde_json::from_str(&text).expect("json");
+        assert_eq!(saved, report);
+        let bad = SelfcheckReport {
+            terminales: 1,
+            ..report
+        };
+        assert!(!state.submit_selfcheck(&bad).expect("informe malo"));
+    }
+
+    #[test]
+    fn selfcheck_is_off_by_default() {
+        let state = AppState::new(true);
+        assert!(state.selfcheck_path().is_none());
+        assert!(state.submit_selfcheck(&SelfcheckReport::default()).is_err());
     }
 }
