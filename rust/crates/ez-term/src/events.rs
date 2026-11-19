@@ -222,6 +222,8 @@ fn event_from_params(params: &Value, min_seq: &mut Option<u64>) -> Option<TermEv
             return None;
         }
     }
+    // DECISION: `hc` siempre manda `params.seq` en `event`; si falta, se usa 0
+    // en vez de inventar un número de secuencia.
     let seq = notified_seq.unwrap_or(0);
     let kind = params
         .get("type")

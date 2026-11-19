@@ -75,6 +75,8 @@ impl HcClient {
     }
 
     /// Sobrescribe los topes con valores cortos para pruebas; no usar en producción.
+    // DECISION: las pruebas de integración no ven el `#[cfg(test)]` del crate,
+    // así que el inyector es público pero oculto del manual.
     #[doc(hidden)]
     pub fn with_timing(
         mut self,
@@ -241,6 +243,8 @@ impl HcClient {
             None => return Ok((terminal, Delivery::Unconfirmed)),
             Some(false) => {}
         }
+        // DECISION: 50 líneas dan un fragmento útil para el log; el recorte a
+        // 500 caracteres evita volcar una pantalla completa.
         let screen = self
             .read(&address, 50)
             .map(|text| truncate(&text.text, 500))
