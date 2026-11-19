@@ -359,13 +359,12 @@ no_tocado() { # no_tocado <id> <carpeta> <log> — comprueba que no hubo límite
   fi
   [ -f "$log" ] || { echo "FALLO caso $id: no hay log de pantalla"; FAIL=1; return; }
 }
-
 echo "[pruebas] caso 12: HD-0e palabras sueltas («quota», «rate limit») con el agente parado no son un límite"
 run_case HD0T12 "$WORK/chatter" chatter EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" \
   PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=idle EZ_REAL_HC="$REAL_HC"
 code=$?
 [ "$code" -eq 0 ] || { echo "FALLO: caso 12 devolvió $code (esperado 0)"; FAIL=1; }
-no_tocado 12 "$WORK/chatter" "$WORK/log/HD0T12-hc1.log"
+no_tocado HD0T12 "$WORK/chatter" "$WORK/log/HD0T12-hc1.log"
 grep -Fq "quota" "$WORK/log/HD0T12-hc1.log" \
   && echo "OK caso 12: las palabras sueltas estaban en la pantalla" \
   || { echo "FALLO caso 12: la pantalla no tenía las palabras sueltas"; FAIL=1; }
@@ -376,7 +375,7 @@ run_case HD0T13 "$WORK/chatterwork" chatter EZ_AGENT=opencode EZ_AGENT_BIN="$HER
   PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=working EZ_REAL_HC="$REAL_HC"
 code=$?
 [ "$code" -eq 0 ] || { echo "FALLO: caso 13 devolvió $code (esperado 0)"; FAIL=1; }
-no_tocado 13 "$WORK/chatterwork" "$WORK/log/HD0T13-hc1.log"
+no_tocado HD0T13 "$WORK/chatterwork" "$WORK/log/HD0T13-hc1.log"
 check "registro caso 13" "$(reg_field HD0T13 "d['state']")" "terminado"
 
 echo "[pruebas] caso 14: HD-0e la frase de límite arriba de una pantalla larga no cuenta"
@@ -384,7 +383,7 @@ run_case HD0T14 "$WORK/limittop" limit-top EZ_AGENT=opencode EZ_AGENT_BIN="$HERE
   PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=idle EZ_REAL_HC="$REAL_HC"
 code=$?
 [ "$code" -eq 0 ] || { echo "FALLO: caso 14 devolvió $code (esperado 0)"; FAIL=1; }
-no_tocado 14 "$WORK/limittop" "$WORK/log/HD0T14-hc1.log"
+no_tocado HD0T14 "$WORK/limittop" "$WORK/log/HD0T14-hc1.log"
 grep -Fq "Free limit reached" "$WORK/log/HD0T14-hc1.log" \
   && echo "OK caso 14: la frase estaba en la pantalla (pero no en las últimas 15 líneas)" \
   || { echo "FALLO caso 14: la frase no llegó a la pantalla"; FAIL=1; }
@@ -395,7 +394,7 @@ run_case HD0T15 "$WORK/limitwork" limit-work EZ_AGENT=opencode EZ_AGENT_BIN="$HE
   PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=working EZ_REAL_HC="$REAL_HC"
 code=$?
 [ "$code" -eq 0 ] || { echo "FALLO: caso 15 devolvió $code (esperado 0)"; FAIL=1; }
-no_tocado 15 "$WORK/limitwork" "$WORK/log/HD0T15-hc1.log"
+no_tocado HD0T15 "$WORK/limitwork" "$WORK/log/HD0T15-hc1.log"
 grep -Fq "Free limit reached" "$WORK/log/HD0T15-hc1.log" \
   && echo "OK caso 15: la frase estaba en la pantalla (pero el agente estaba trabajando)" \
   || { echo "FALLO caso 15: la frase no llegó a la pantalla"; FAIL=1; }

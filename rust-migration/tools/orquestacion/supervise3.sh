@@ -98,6 +98,8 @@ LIMIT_PATTERNS="free limit reached|5 hour usage limit reached|you've hit your us
 PREV_ADDR=""
 PREV_TAIL=""
 PREV_TAIL_AT=0
+# Frase de límite detectada en la última vuelta (HD-0e).
+LIMIT_HIT=""
 SUBAGENTS_ROOT="${EZ_SUBAGENTS_DIR:-${LOCALAPPDATA:-$USERPROFILE/AppData/Local}/EzAgent/subagents}"
 # C0-5: OpenCode solo acepta ids de sesión que empiezan por «ses».
 # DECISION: id estable por trabajador para que los reintentos continúen la sesión.
@@ -323,8 +325,12 @@ screen_tail() { # screen_tail <address> — las últimas 15 líneas con texto de
 # COMPLETA está en las últimas LIMIT_TAIL_LINES líneas. Palabras sueltas
 # («quota», «rate limit», «usage limit») no cuentan: quien escribe o lee sobre
 # límites de uso no está bloqueado (§3 del diseño).
-limit_hit() { # limit_hit <address> → la frase detectada (vacío si no hay límite)
+limit_hit() { # limit_hit <address> — deja la frase en LIMIT_HIT (vacía si no hay)
+  # DECISION (HD-0e): la función NO se llama en `$(...)`: en un subshell se
+  # perdería el estado de «pantalla quieta» (PREV_*), y la detección nunca
+  # llegaría a evaluarse.
   local addr="$1" cur now
+  LIMIT_HIT=""
   if [ "$(agent_state "$addr")" = "working" ]; then
     # El agente está trabajando: no está bloqueado y no se busca nada.
     PREV_ADDR="$addr"; PREV_TAIL=""; PREV_TAIL_AT=0
@@ -338,7 +344,7 @@ limit_hit() { # limit_hit <address> → la frase detectada (vacío si no hay lí
     return 0
   fi
   [ $((now - PREV_TAIL_AT)) -ge "$LIMIT_STABLE_SECS" ] || return 0
-  printf '%s\n' "$cur" | grep -iE -m 1 "$LIMIT_PATTERNS" || true
+  LIMIT_HIT="$(printf '%s\n' "$cur" | grep -iE -m 1 "$LIMIT_PATTERNS" || true)"
 }
 succeed() { # <address> <attempt> — informe completo: confirma, registra, guarda y cierra
   wait_for_commit
@@ -414,7 +420,9 @@ for attempt in $(seq 1 $MAX); do
     # C0-6 (HD-0e): la pantalla puede avisar de un límite de uso. El intento se
     # da por fallido con ese motivo, se avisa al padre y no se reintenta (mismo
     # modelo). Solo cuenta con el agente parado y la pantalla quieta (§3).
-    lim="$(limit_hit "$ADDR")"
+    lim=""
+    limit_hit "$ADDR"
+    lim="$LIMIT_HIT"
     if [ -n "$lim" ]; then
       lim="$(printf '%s' "$lim" | tr -s '[:space:]' ' ' | sed -e 's/^ //' -e 's/ $//')"
       echo "[$ID] límite de uso en $ADDR: $lim"
