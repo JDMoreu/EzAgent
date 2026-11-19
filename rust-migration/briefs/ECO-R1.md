@@ -52,7 +52,11 @@ agentes principales por espacio, worktrees y delegación (ECO-2d) **no** son de 
    - Prefijo del id de subagente: `RoleId::short()`.
    - Textos (§15.9): todo mensaje de rechazo, evento o tarjeta dice «agente principal» y
      «subagente», nunca «elefante» ni «pez». `EZ_ROLE` = `main` o `sub`.
-3. **`ez-ctl`.** `ez fish` → `ez delegate <papel> --brief <md>` (protocolo
+3. **`ez-ctl`.** La prueba `thirty_two_waits_do_not_block_report_and_the_next_wait_is_503`
+   (`tests/waits.rs`) falla una de cada tres veces también en `eco/main` («solo entraron N
+   esperas»). Encuentra la causa (¿se pierde o se retrasa alguna espera en el servidor?),
+   corrígela y demuestra con 10 corridas seguidas en verde. **No** subas el tope de tiempo
+   de la prueba. Después, `ez fish` → `ez delegate <papel> --brief <md>` (protocolo
    `agent.delegate`, args `{role, brief}`); comando nuevo `ez roles` (protocolo `roles`,
    args `{}`); ayuda y mensajes con los nombres nuevos; la prueba de `--skill` busca
    «# Manual del agente principal».
