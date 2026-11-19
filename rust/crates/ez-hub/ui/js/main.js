@@ -40,10 +40,10 @@ async function selectSpace(space) {
   await closeViews();
   activeSpace = space;
   markSelected(byId("space-list"), space.id);
-  byId("elephant-header").textContent = TEXTS.elephantOf(agentLabel(space.elephant.agent));
+  byId("elephant-header").textContent = TEXTS.elephantOf(agentLabel(space.elefante.agente));
   elephantView = await mountTerminal(byId("elephant-view"), {
-    argv: space.elephant.argv,
-    cwd: space.folder,
+    argv: space.elefante.argv,
+    cwd: space.carpeta,
     space: space.id,
   });
   fitAll();
