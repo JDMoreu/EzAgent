@@ -429,3 +429,4 @@ fn elephant_send_uses_the_raw_text() {
 }
 
 mod handler;
+mod integration;

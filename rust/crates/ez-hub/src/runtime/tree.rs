@@ -101,7 +101,8 @@ fn nest(
             .as_ref()
             .and_then(|role| names.get(role).cloned())
             .or_else(|| role_id.clone());
-        let nested = nest(&terminal.address, by_parent, names, seen);
+        // Los hijos se anidan por `ez_parent` (id del pez), no por dirección hc.
+        let nested = nest(&id, by_parent, names, seen);
         result.push(TreeNode {
             id,
             name: terminal

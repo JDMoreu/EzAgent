@@ -375,6 +375,122 @@ fn real_arbiter(dir: &crate::testutil::TempDir) -> Arc<ez_arbiter::Arbiter> {
 }
 
 #[test]
+fn a_fish_delegating_sends_agent_delegate_with_its_full_key() {
+    let api = Arc::new(FakeArbiter::default());
+    let (h, dir) = handler(Arc::clone(&api));
+    let brief = dir.path().join("encargo.md").to_string_lossy().into_owned();
+    let mut fish = fish_call();
+    if let Caller::Fish { parent, .. } = &mut fish {
+        *parent = Some("dev-r1-1".to_string());
+    }
+    assert!(call(&h, &fish, "agent.delegate", json!({ "role": "qa", "brief": brief })).ok);
+    let calls = api.calls.lock();
+    assert!(matches!(&calls[0].1, Command::AgentDelegate { .. }), "{:?}", calls[0]);
+    assert!(matches!(
+        &calls[0].0,
+        ArbiterCaller::Fish(key) if key.parent.as_deref() == Some("dev-r1-1")
+    ));
+}
+
+#[test]
+fn roles_include_one_from_the_task_draft_folder() {
+    let api = Arc::new(FakeArbiter::default());
+    let (h, dir) = handler(api);
+    let drafts = dir.path().join(".ez").join("borrador").join("papeles");
+    std::fs::create_dir_all(&drafts).expect("carpeta de borradores");
+    std::fs::write(
+        drafts.join("security_auditor.md"),
+        "+++\nnombre = \"Auditor de seguridad\"\ntipo = \"verificador\"\ndescripcion = \"Busca fallos\"\n+++\nCuerpo.\n",
+    )
+    .expect("papel de la tarea");
+    let reply = call(&h, &elephant_call(), "roles", json!({}));
+    assert!(reply.ok, "{reply:?}");
+    assert!(
+        reply.message.contains("security_auditor · Auditor de seguridad"),
+        "{}",
+        reply.message
+    );
+    assert!(reply.message.contains("(tarea):"), "{}", reply.message);
+}
+
+#[test]
+fn team_propose_sends_the_definition_of_a_task_role() {
+    let dir = crate::testutil::TempDir::new("runtime-team-task-role");
+    let drafts = dir.path().join(".ez").join("borrador").join("papeles");
+    std::fs::create_dir_all(&drafts).expect("borradores");
+    std::fs::write(
+        drafts.join("docs_writer.md"),
+        "+++\nnombre = \"Escritor de documentos\"\ntipo = \"ejecutor\"\ndescripcion = \"Escribe la documentación\"\n+++\nCuerpo.\n",
+    )
+    .expect("papel propio");
+    let team = dir.path().join("equipo.toml");
+    std::fs::write(
+        &team,
+        r#"[[papel]]
+papel = "docs_writer"
+agente = "opencode"
+modelo = "opencode-go/deepseek-v4.1-flash"
+
+[[papel]]
+papel = "qa"
+agente = "codex"
+modelo = "gpt-6"
+"#,
+    )
+    .expect("equipo");
+    let profiles = vec![
+        dummy_profile(&dir, "opencode", "opencode-go/deepseek-v4.1-flash"),
+        dummy_profile(&dir, "codex", "gpt-6"),
+    ];
+    let api = Arc::new(FakeArbiter::default());
+    let h = ArbiterHandler::new(
+        Arc::clone(&api) as Arc<dyn ArbiterApi>,
+        profiles,
+        vec![Subscription {
+            name: "Todo".to_string(),
+            agents: vec!["opencode".to_string(), "codex".to_string()],
+        }],
+        vec![space_config_in(dir.path().to_path_buf())],
+    );
+    let reply = call(
+        &h,
+        &elephant_call(),
+        "team.propose",
+        json!({ "file": team.to_string_lossy() }),
+    );
+    assert!(reply.ok, "{reply:?}");
+    let calls = api.calls.lock();
+    let Command::TeamPropose { roles, seats, .. } = &calls[0].1 else {
+        panic!("se esperaba TeamPropose");
+    };
+    assert!(seats.iter().any(|seat| seat.role.as_str() == "docs_writer"));
+    assert!(roles
+        .iter()
+        .any(|role| role.id.as_str() == "docs_writer" && role.name == "Escritor de documentos"));
+}
+
+#[test]
+fn inventory_completes_the_codex_models_with_the_discovery() {
+    let dir = crate::testutil::TempDir::new("runtime-codex-models");
+    let mut codex = dummy_profile(&dir, "codex", "");
+    codex.models.clear();
+    let api = Arc::new(FakeArbiter::default());
+    let h = ArbiterHandler::new(
+        api,
+        vec![codex],
+        vec![Subscription {
+            name: "Todo".to_string(),
+            agents: vec!["codex".to_string()],
+        }],
+        vec![space_config_in(dir.path().to_path_buf())],
+    )
+    .with_codex_models(|| vec!["gpt-6-nuevo".to_string()]);
+    let reply = call(&h, &elephant_call(), "inventory", json!({}));
+    assert!(reply.ok, "{reply:?}");
+    assert!(reply.message.contains("gpt-6-nuevo"), "{}", reply.message);
+}
+
+#[test]
 fn handler_with_the_real_arbiter_creates_a_task_and_wakes_the_elephant() {
     let dir = crate::testutil::TempDir::new("runtime-real-arbiter");
     let brief = dir.path().join("encargo.md");
