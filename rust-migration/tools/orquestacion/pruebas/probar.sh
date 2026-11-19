@@ -12,7 +12,7 @@ ENV_EXE="${EZ_ENV_EXE:-C:/Program Files/Git/usr/bin/env.exe}"
 if [ -z "${HC_TERMINAL_ID:-}" ] && [ -n "${1:-}" ]; then
   HC_TERMINAL_ID="$(hc get "$1" --json 2>/dev/null | $PYTHON -c "import json,sys; print(json.load(sys.stdin).get('address',''))")"
 fi
-[ -n "${HC_TERMINAL_ID:-}" ] || { echo "FALLO: ejecuta probar.sh desde una terminal de hc"; exit 3; }
+[ -n "${HC_TERMINAL_ID:-}" ] || echo "[pruebas] sin HC_TERMINAL_ID: la prueba corre fuera de hc (Git Bash); el padre falso se crea sin padre"
 WORK="${TEMP:-/tmp}/hd0-probar-$$"
 TOOLS="$WORK/tools"
 ADDRS=""
@@ -37,10 +37,18 @@ chmod +x "$WORK/bin/hc"
 
 # C0-2: padre falso propio. Todos los avisos van a él, nunca a la terminal de
 # la persona ni a la del agente principal.
+# HD-0d: la suite también se ejecuta fuera de hc (Git Bash), donde no hay
+# HC_TERMINAL_ID: entonces el padre falso se crea con --no-parent y no se toca
+# ninguna terminal de la persona.
 PARENT_CAP="$WORK/parent-notes.txt"
 : > "$PARENT_CAP"
+if [ -n "${HC_TERMINAL_ID:-}" ]; then
+  PARENT_PARENT="--parent $HC_TERMINAL_ID"
+else
+  PARENT_PARENT="--no-parent"
+fi
 PARENT_ADDR="$(hc run --bg --json --name "hd0bpadre$$" --cwd "$WORK" --no-notify \
-  --parent "$HC_TERMINAL_ID" -- "C:/Program Files/Git/bin/bash.exe" \
+  $PARENT_PARENT -- "C:/Program Files/Git/bin/bash.exe" \
   "$HERE/fake-parent.sh" "$PARENT_CAP" \
   | $PYTHON -c "import json,sys; print(json.load(sys.stdin).get('address',''))")"
 [ -n "$PARENT_ADDR" ] || { echo "FALLO: no pude crear el padre falso"; exit 3; }
@@ -271,9 +279,9 @@ printf '%s\n' "$LAST_OUT" | grep -q "estado desconocido" \
 printf '%s\n' "$LAST_OUT" | grep -q "informe completado" \
   || { echo "FALLO: caso 7 no acabó tras recuperarse hc"; FAIL=1; }
 
-echo "[pruebas] caso 8: C0-3 no lanza si el nombre ya está vivo"
+echo "[pruebas] caso 8: HD-0d una terminal viva con el mismo nombre se sigue; no se mata ni se duplica"
 LIVE_ADDR="$(hc run --bg --json --name hd0t8 --cwd "$WORK" --no-notify \
-  --parent "$HC_TERMINAL_ID" -- "C:/Program Files/Git/bin/bash.exe" -c 'sleep 600' \
+  --parent "$HC_TERMINAL_ID" -- "C:/Program Files/Git/bin/bash.exe" -c 'sleep 25' \
   | $PYTHON -c "import json,sys; print(json.load(sys.stdin).get('address',''))")"
 [ -n "$LIVE_ADDR" ] || { echo "FALLO: caso 8 no pude crear la terminal previa"; FAIL=1; }
 ADDRS="$ADDRS $LIVE_ADDR"
@@ -283,7 +291,58 @@ code=$?
 [ "$code" -eq 0 ] || { echo "FALLO: caso 8 devolvió $code (esperado 0)"; FAIL=1; }
 printf '%s\n' "$LAST_OUT" | grep -q "name_taken" \
   && { echo "FALLO: caso 8 chocó con name_taken"; FAIL=1; }
+printf '%s\n' "$LAST_OUT" | grep -q "sigue viva con el nombre" \
+  && echo "OK caso 8: siguió la terminal viva en vez de matarla" \
+  || { echo "FALLO: caso 8 no siguió la terminal viva"; FAIL=1; }
 check "caso 8 una sola terminal con el nombre" "$(name_count hd0t8)" "1"
+
+echo "[pruebas] caso 9: HD-0d un python que devuelve \r\n no debe parecer «desconocido»"
+# Envoltorio que devuelve cada línea con \r\n, como el python de Windows.
+printf '%s\n' '#!/bin/bash' '"$EZ_REAL_PYTHON" "$@" | sed -e "s/\r$//" -e "s/$/\r/"' > "$WORK/bin/python-cr"
+chmod +x "$WORK/bin/python-cr"
+run_case HD0T9 "$WORK/cr" slow EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" \
+  EZ_PYTHON="$WORK/bin/python-cr" EZ_REAL_PYTHON="$PYTHON" \
+  EZ_UNKNOWN_GRACE=10 EZ_UNKNOWN_EVERY=10
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 9 devolvió $code (esperado 0)"; FAIL=1; }
+if [ -f "$WORK/cr/rust-migration/reports/HD0T9-r1.md" ]; then
+  echo "OK caso 9: el trabajador vivo terminó su informe"
+else
+  echo "FALLO caso 9: el trabajador vivo no dejó informe (lo mataron)"
+  FAIL=1
+fi
+check "caso 9 una sola terminal" "$(name_count hd0t9)" "1"
+printf '%s\n' "$LAST_OUT" | grep -q "estado desconocido" \
+  && { echo "FALLO: caso 9 vio «estado desconocido» (el \r no se quitó)"; FAIL=1; }
+printf '%s\n' "$LAST_OUT" | grep -q "informe completado en el intento 1" \
+  && echo "OK caso 9: terminó en el primer intento" \
+  || { echo "FALLO: caso 9 no terminó en el primer intento"; FAIL=1; }
+
+echo "[pruebas] caso 10: HD-0d C0-6 un aviso de límite de uso deja el intento «fallido» sin reintento"
+run_case HD0T10 "$WORK/limit" limit EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd"
+code=$?
+[ "$code" -eq 2 ] || { echo "FALLO: caso 10 devolvió $code (esperado 2)"; FAIL=1; }
+printf '%s\n' "$LAST_OUT" | grep -q "límite de uso" \
+  || { echo "FALLO: caso 10 no detectó el límite de uso"; FAIL=1; }
+check "registro fallido por límite" "$(reg_field HD0T10 "d['state']")" "fallido"
+detalle="$(reg_field HD0T10 "d['history'][-1]['detail']")"
+case "$detalle" in
+  *"límite de uso"*) echo "OK registro detalle del límite: $detalle" ;;
+  *) echo "FALLO registro detalle del límite: «$detalle»"; FAIL=1 ;;
+esac
+notice "aviso de límite de uso" "hd0t10 (OpenCode · opencode/hy4-flash-free) falló: límite de uso:"
+check "caso 10 sin reintento" "$(name_count hd0t10)" "1"
+
+echo "[pruebas] caso 11: HD-0d C0-6 si EZ_MODEL cambia, se abre una sesión nueva"
+run_case HD0T11 "$WORK/model" exit EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" EZ_MODEL=opencode/m1
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 11 (primer modelo) devolvió $code (esperado 0)"; FAIL=1; }
+rm -f "$WORK/model/rust-migration/reports/HD0T11-r1.md"
+run_case HD0T11 "$WORK/model" exit EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" EZ_MODEL=opencode/m2
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 11 (modelo nuevo) devolvió $code (esperado 0)"; FAIL=1; }
+check "sesión nueva con el modelo nuevo" "$(grep -c -- '--session ses_hd0t11s2' "$WORK/model/.fake-argv.log")" "1"
+check "la sesión vieja no se repite" "$(grep -c -- '--session ses_hd0t11s1' "$WORK/model/.fake-argv.log")" "1"
 
 [ "${EZ_HUMO_REAL:-0}" = "1" ] && humo_real
 
