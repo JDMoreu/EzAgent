@@ -81,3 +81,28 @@
 ### HD-7b — validado; HD-7 fusionado
 - Tabla de 16 transiciones y `create` con estados finales. Mutaciones `validado→terminado`
   y `fallido→en_proceso` → fallan `transition_table_all_sixteen_pairs` (y otra). 203 en verde.
+
+### Incidente de memoria (19-nov, ~11:20)
+- La medición de DX-1 `diag_chat_history_cost` (ejemplo propio del subagente) llegó a
+  11,4 GB de RAM; la memoria virtual libre bajó a 0,6 GB y Claude Code detuvo los cinco
+  procesos de seguimiento del agente principal (supervisores de HD-5, HD-0b y DX-2b y
+  vigilantes de HD-4 y DX-1). Los subagentes siguieron vivos en sus terminales de hc.
+- El agente principal detuvo esa medición (RAM libre 4,2 → 15,1 GB) y le pidió a DX-1
+  repetir con 10/100/1000 entradas, una a la vez y con tope de 1 GB. El dato es evidencia
+  para el diagnóstico del congelamiento.
+- Lección para los briefs: toda medición con tope de memoria y tamaño; no más de 3
+  subagentes compilando Rust a la vez.
+
+### HD-4 (ez delegate --agent, mcode) — validado y fusionado
+- Revisado: validación antes de crear nada, nombre §6 con reintento por `name_taken` solo
+  si es automático, etiquetas §3, `notify=false` por omisión (`--hc-notes`), primer
+  mensaje §7, modo local vs. árbitro en `ez-ctl`, agente falso `--echo`, R2-1 (`visible`).
+  ez-herdr 230, ez-ctl 35, ez-fakes 62 en verde. Mutaciones: ignorar el rechazo del
+  catálogo → falla `un_rechazo_del_catalogo_no_crea_nada`; reintentar un nombre pedido →
+  falla `un_nombre_pedido_que_está_ocupado_es_un_rechazo`. Bien.
+- **Incidente**: el subagente ejecutó un `opencode` real con `ez delegate` (su terminal
+  tenía `HC_TERMINAL_ID`). Según su informe, OpenCode salió de inmediato con código 1 sin
+  recibir el encargo: sin llamada a modelos ni cuota. Pendiente investigar ese código 1
+  (puede ser un fallo real del lanzamiento de OpenCode como hijo).
+- Menor (R4-1, va en HD-8): `valid_name` de `delegate/names.rs` duplica `hc_valid_name` de
+  `child.rs`; unificar.

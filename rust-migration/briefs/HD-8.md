@@ -60,3 +60,13 @@
 ## Criterios de aceptación
 fmt, clippy y test de `ez-herdr`, `ez-ctl` y `ez-fakes` en verde. Informe en
 `rust-migration/reports/HD-8-r1.md`.
+
+## Correcciones y reglas heredadas de las revisiones
+- **R4-1**: `delegate/names.rs::valid_name` duplica `child.rs::hc_valid_name`: deja una sola
+  (`pub(crate)` en `child.rs`) y reúsala. Autorizado tocar esa visibilidad en `child.rs`.
+- **Nunca ejecutes `ez delegate` (ni `ez report`/`validate`/`watch`) contra el `hc` real**:
+  tu terminal tiene `HC_TERMINAL_ID` y lanzaría agentes de verdad (pasó en HD-4). Prueba
+  solo con el runtime falso; si quieres probar el binario, quita `HC_TERMINAL_ID` del
+  entorno y usa un `hc` falso.
+- **Memoria**: ninguna prueba o medición tuya puede pasar de 1 GB; el equipo es compartido
+  con otros subagentes.
