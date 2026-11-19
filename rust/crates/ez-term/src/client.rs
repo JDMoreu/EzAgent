@@ -122,6 +122,17 @@ impl HcClient {
         Ok(reply.terminals)
     }
 
+    /// Hijos vivos de una terminal (sin filtro de etiquetas).
+    pub fn children(&self, parent: &str) -> Result<Vec<Terminal>, TermError> {
+        let value = self.call("terminal.list", json!({}), self.timing.simple)?;
+        let reply: ListReply = decode(value, "terminal.list")?;
+        Ok(reply
+            .terminals
+            .into_iter()
+            .filter(|terminal| terminal.parent.as_deref() == Some(parent))
+            .collect())
+    }
+
     /// Los datos de una terminal, viva o terminada.
     pub fn get(&self, terminal: &str) -> Result<Terminal, TermError> {
         let value = self.call(

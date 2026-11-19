@@ -141,6 +141,8 @@ impl RuntimeLauncher {
             size: None,
             no_parent: true,
             no_notify: true,
+            parent: None,
+            outlive_parent: false,
         };
         let (terminal, delivery) = self.terminals.launch_and_deliver(
             &spec,
@@ -244,6 +246,8 @@ impl FishLauncher for RuntimeLauncher {
             size: None,
             no_parent: true,
             no_notify: true,
+            parent: None,
+            outlive_parent: false,
         };
         let (terminal, delivery) =
             self.terminals
