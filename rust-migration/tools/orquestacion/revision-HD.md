@@ -200,3 +200,8 @@
   por pantalla con hora de reinicio, diálogo, sin avance), `ez retry` con sesión nueva, y la
   app de voz como padre que anuncia y responde. Encargos NV-1 (tras HD-9), NV-2 (tras NV-1 e
   IR-3), NV-3 (tras NV-2 y DX-2).
+
+### IR-0 (investigación, mcode) — validado y fusionado
+- Revisado: sin claves, tokens, correos ni rutas de proyectos (solo tipos de plan). Hallazgo
+  clave: Codex guarda `used_percent`, `window_minutes` y `resets_at`; Claude Code, OpenCode,
+  mcode y Pi solo tokens y costo; Qwen Code no está instalado. IR-2 implementa sus lectores.
