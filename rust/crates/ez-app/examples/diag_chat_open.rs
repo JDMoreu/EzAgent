@@ -424,7 +424,13 @@ fn history() -> Vec<ChatMessage> {
         .collect()
 }
 
-fn view_for(messages: Vec<ChatMessage>, width: f64, height: f64, scale: f64) -> ChatView {
+fn view_for(
+    messages: Vec<ChatMessage>,
+    width: f64,
+    height: f64,
+    scale: f64,
+    theme: &str,
+) -> ChatView {
     let mut view = ChatView::new(
         Box::new(StoreModel {
             messages,
@@ -437,8 +443,8 @@ fn view_for(messages: Vec<ChatMessage>, width: f64, height: f64, scale: f64) -> 
         width,
         height,
         scale,
-        "dark",
-        ez_hud::tokens::palette("dark").expect("the dark palette exists"),
+        theme,
+        ez_hud::theme::card_palette(theme),
     );
     view.set_focus_instant(0.0);
     view
@@ -450,6 +456,7 @@ struct Case {
     width: f64,
     height: f64,
     scale: f64,
+    theme: &'static str,
 }
 
 fn cases() -> Vec<Case> {
@@ -459,24 +466,35 @@ fn cases() -> Vec<Case> {
             width: 900.0,
             height: 640.0,
             scale: 1.0,
+            theme: "dark",
         },
         Case {
             name: "440×600 escala 1,0",
             width: 440.0,
             height: 600.0,
             scale: 1.0,
+            theme: "dark",
         },
         Case {
             name: "900×640 escala 1,5",
             width: 900.0,
             height: 640.0,
             scale: 1.5,
+            theme: "dark",
         },
         Case {
             name: "472×672 escala 1,0 (la del chat)",
             width: 472.0,
             height: 672.0,
             scale: 1.0,
+            theme: "dark",
+        },
+        Case {
+            name: "434×704 escala 1,0 tema light",
+            width: 434.0,
+            height: 704.0,
+            scale: 1.0,
+            theme: "light",
         },
     ]
 }
@@ -505,7 +523,7 @@ fn frame(ui: &FakeUi, view: &mut ChatView, case: &Case, now: f64) {
 /// Un caso completo: abre, pinta y deja correr el cursor.
 fn run_case(case: &Case) -> Result<(), String> {
     let ui = FakeUi::new(case.scale);
-    let mut view = view_for(history(), case.width, case.height, case.scale);
+    let mut view = view_for(history(), case.width, case.height, case.scale, case.theme);
     // Diez segundos de cuadros: el cursor parpadea (fase 0 y 1) y el morph
     // paints rows.
     for step in 0..200 {

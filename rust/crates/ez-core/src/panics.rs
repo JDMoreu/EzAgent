@@ -87,11 +87,12 @@ pub fn catch_panic<T>(body: impl FnOnce() -> T) -> Option<T> {
         Err(payload) => {
             let message = message(payload.as_ref());
             let location = take_location();
+            // El hook permanente ya escribió la línea en el archivo; aquí solo
+            // falta el registro del `tracing` (con el candado del logger).
             tracing::error!(
-                "pánico atrapado en un borde de Windows: {message} ({}",
+                "pánico atrapado en un borde de Windows: {message} ({})",
                 location.as_deref().unwrap_or("ubicación desconocida")
             );
-            let _ = record(&message, location.as_deref());
             None
         }
     }

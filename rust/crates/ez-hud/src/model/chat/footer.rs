@@ -411,7 +411,12 @@ impl ChatView {
         let row = ((y - (input.y0 + (INPUT_MIN - INPUT_LINE) / 2.0)) / INPUT_LINE).floor() as i64;
         let last = lines.len().saturating_sub(first).saturating_sub(1) as i64;
         let row = row.clamp(0, last.max(0)) as usize + first;
-        let (a, b) = lines[row];
+        // DX-1d: una vista recién abierta todavía no tiene líneas (el primer
+        // cuadro de contenido las calcula); sin esta guarda el clic dentro del
+        // campo entra en pánico desde el `WndProc`.
+        let Some(&(a, b)) = lines.get(row) else {
+            return;
+        };
         let text = self.input.text().to_string();
         let target = x - (input.x0 + 14.0);
         let mut best = a;
