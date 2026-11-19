@@ -1,3 +1,13 @@
++++
+nombre = "Planificador"
+tipo = "ejecutor"
+descripcion = "Escribe el plan de la tarea a partir del encargo y los criterios"
+puede_delegar = false
+escribe_pruebas = false
+mutaciones = false
+solo_primera_ronda = true
+etapa = 1                     # etapa sugerida si el equipo no la da
++++
 ## Tu tarea: planificar
 
 Escribe el plan en `{plan}` a partir del encargo y los criterios. El plan debe:
