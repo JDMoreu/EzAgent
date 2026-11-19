@@ -45,9 +45,11 @@ pub fn first_message(role: &str, parent: &str, brief: &str) -> String; // §7 ex
 2. Nombre: `--name` (validado §6) o `default_name(role, n, key)` con `n` = 1 + cuántas
    terminales devuelve `hc ls --all --json --label ez.parent=<p> --label ez.role=<papel>`.
 3. Etiquetas §3: `ez.agent`, `ez.role`, `ez.parent` y, si hay, `ez.model`, `ez.effort`.
-4. `run_agent` con `parent`, `hc_name`, `name` (el mismo), `labels`, `show`, `notify`,
-   `outlive_parent`, `model`, `effort`, `cwd`, `confirmed: true` y `task =
-   first_message(...)`. Si vuelve `name_taken` y el nombre era el automático → `n+1`
+4. `run_agent` con `parent`, `hc_name`, `name` (el mismo), `labels`, `show`, `notify`
+   (**por omisión `false`**: los avisos los da EzAgent, §13; `--hc-notes` lo pone en
+   `true`; `--no-notify` se acepta y no cambia nada), `outlive_parent`, `model`, `effort`,
+   `cwd`, `confirmed: true` y `task = first_message(...)` (texto de §7 **actualizado**:
+   pide `ez report` al terminar; ese comando llega en HD-8, no lo implementes aquí). Si vuelve `name_taken` y el nombre era el automático → `n+1`
    (hasta 5). Otro error de hc → `Rejected` con su mensaje; hc no encontrado →
    `Unavailable`.
 5. Devuelve el mapa de §4 (`ok, terminal, name, agent, label, model, effort, role,

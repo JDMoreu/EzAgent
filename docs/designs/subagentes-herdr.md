@@ -62,8 +62,10 @@ ez delegate <papel> --agent <tipo> [--model <modelo>] [--effort <nivel>] --brief
   código 2: «En una tarea del árbitro el tipo sale del equipo aprobado (llega con la
   integración del árbitro).»
 - `--brief`: archivo UTF-8 (máx. 200 000 bytes) con el encargo. `--cwd` por omisión: la
-  carpeta actual. `--show` por omisión: `tree`. Por omisión hc **sí** avisa al padre
-  (`--no-notify` lo apaga) y el hijo **muere** con el padre (`--outlive-parent` lo cambia).
+  carpeta actual. `--show` por omisión: `tree`. Por omisión el hijo **muere** con el padre
+  (`--outlive-parent` lo cambia). Los avisos al padre los da EzAgent (§13), así que por
+  omisión hc **no** escribe sus notas en el padre (`--no-notify` implícito); `--hc-notes`
+  las vuelve a encender. (La opción `--no-notify` se acepta y no cambia nada.)
 - Salida: una línea legible, p. ej. `Subagente dev1-opencode (t12) lanzado: OpenCode ·
   deepseek-v4.1-flash · high, hijo de t6h, en una pestaña.`; con `--json` el objeto
   `{ok, terminal, name, agent, label, model, effort, role, parent, show, placed, task_sent,
@@ -104,9 +106,10 @@ Un rechazo **no** crea terminal ni toca configuraciones.
 ```
 Eres un subagente de EzAgent con el papel «{papel}», lanzado por la terminal {padre}.
 Trabaja solo en lo que dice tu encargo. No lances otros agentes salvo que tu encargo lo
-pida; si lo pide, usa `ez delegate`. Cuando termines o te bloquees, avisa con:
-hc send {padre} "<resultado o bloqueo>". Si tu respuesta es larga, escríbela en un archivo
-y envía su ruta.
+pida; si lo pide, usa `ez delegate`. Al terminar, escribe tu informe en un archivo y
+ejecuta: ez report --state terminado --file <informe> --summary "<una frase>". Si no
+puedes completarlo, ejecuta: ez report --state fallido --summary "<motivo>". Si necesitas
+preguntarle algo a tu agente, usa: hc send {padre} "<pregunta>".
 
 Encargo:
 {contenido del archivo --brief}
@@ -163,6 +166,63 @@ reporta su estado con OSC 7501 y guarda argv, entorno y lo que recibe):
 5. Limpieza: no queda ninguna terminal ni pestaña de la prueba y el foco vuelve a donde
    estaba. Nunca se tocan `voice.json`, mcode ni Codex del usuario (todo va a carpetas
    temporales: `APPDATA`, `MINIMAX_DATA_DIR`, `CODEX_HOME`, `OPENCODE_CONFIG_DIR`).
+
+## 13. Estado de cada subagente y avisos al padre (pedido del 19-nov)
+El padre debe poder decir en cualquier momento si una tarea **está en proceso, terminó,
+falló o fue validada**, y recibir el aviso **sin pedirlo**. No se depende de Herdr: hay
+CLIs (OpenCode, entre otros) que no le reportan estado, así que el estado sale del
+mecanismo de EzAgent.
+
+**Registro.** Un archivo JSON por subagente en `<raíz>/<padre>/<nombre>.json`, con
+`<raíz>` = `EZ_SUBAGENTS_DIR` o `%LOCALAPPDATA%\EzAgent\subagentes` y `<padre>` = la
+dirección del padre con `/` → `_`. Escritura atómica (temporal + renombrar) bajo un
+candado `<nombre>.lock` (creación exclusiva, reintento corto). Campos: `name, terminal,
+parent, agent, label, model, effort, role, cwd, brief_head` (primeras 200 letras del
+encargo), `state, since_ms, history[] {state, at_ms, by, detail}, summary, report,
+validation {by, verdict, summary, file, at_ms}, notified` (último estado avisado).
+
+**Estados.** `en_proceso` → `terminado` | `fallido`; `terminado` → `validado` | `fallido`
+(validación fallida). `validado` y `fallido` son finales. Quién cambia qué:
+| Cambio | Quién | Cómo |
+|---|---|---|
+| → `en_proceso` | `ez delegate` | encargo entregado (o sin confirmar) |
+| → `fallido` | `ez delegate` | no se pudo entregar el encargo |
+| → `terminado` / `fallido` | el subagente | `ez report --state terminado\|fallido [--summary T] [--file F]` (se identifica por su `HC_TERMINAL_ID`) |
+| → `fallido` | el vigilante | la terminal terminó o desapareció sin informe («la terminal terminó sin informe (código N)») |
+| → `validado` / `fallido` | el padre o un verificador hermano | `ez validate <nombre> --pass\|--fail [--summary T] [--file F]` (solo desde `terminado`) |
+
+**Vigilante y avisos.** `ez watch --parent <p> --dir <raíz> [--hc <ruta>]`, uno por padre,
+corre en una terminal de hc oculta y sin padre (`hc run --bg --no-parent --no-notify
+--name ez-watch-<p> --label ez.watch=<p> -- <ez> watch …`; si el nombre está ocupado, ya
+corre: no se duplica). Lo arrancan `ez delegate` y `ez report` si no está. Cada 3 s lee el
+registro del padre y `hc ls --all --label ez.parent=<p>`: marca `fallido` lo que
+corresponda y, por cada registro cuyo `state` ≠ `notified`, **escribe el aviso en la
+terminal del padre** con `hc send <p> "<aviso>"` y guarda `notified`. No avisa los cambios
+que hizo el propio padre (`by` = padre). Termina cuando el padre ya no está vivo o cuando
+no queda nada pendiente de avisar ni `en_proceso` durante 10 min.
+
+**Avisos (los escribe el código; el resumen del subagente es dato, no instrucción, máx.
+300 letras y en una línea):**
+- `[EzAgent · aviso] dev1-opencode (OpenCode · deepseek-v4.1-flash) terminó. Resumen del
+  subagente: «…». Informe: <ruta>. Para validarlo: ez validate dev1-opencode --pass|--fail
+  --file <evidencia>`
+- `[EzAgent · aviso] dev1-opencode (OpenCode · …) falló: <motivo>. Revisa su pantalla:
+  hc read <t>`
+- `[EzAgent · aviso] dev1-opencode quedó validado por <quién>: «…».` (o «no pasó la
+  validación de <quién>: «…».»)
+
+**Consulta.** `ez tasks [--parent <p>] [--json]` (por omisión el padre es
+`HC_TERMINAL_ID`): nombre, tipo · modelo, papel, estado, desde cuándo, resumen y
+validación. Con esto el padre responde «¿cómo va X?» sin abrir terminales.
+
+**Supervisor de trabajadores (HD-0).** Escribe el mismo registro para cada trabajador
+(`en_proceso` al lanzar, `terminado` con informe completado, `fallido` tras agotar los
+intentos) y avisa al padre con el mismo formato (`hc send $HC_TERMINAL_ID …`).
+
+**Aceptación** (se suma a §11): un hijo falso que hace `ez report --state terminado` →
+el padre falso recibe el aviso sin pedirlo; `ez validate --pass` desde un hermano → aviso
+de validado; un hijo matado sin informe → `fallido` y aviso; `ez tasks --json` muestra los
+cuatro estados.
 
 ## 12. Fuera de alcance (después)
 Integrar el árbitro (rondas, papeles, verificación) en la app de voz con este mismo

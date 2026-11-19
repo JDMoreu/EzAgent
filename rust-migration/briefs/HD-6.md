@@ -1,7 +1,8 @@
 # HD-6 — Prueba de punta a punta de `ez delegate` con Herdr real y agentes falsos
 
 **Lee `rust-migration/briefs/_COMMON-HD.md` y `docs/designs/subagentes-herdr.md` completo
-(sobre todo §11).** Parte de `eco/main` con HD-2, HD-3 y HD-4 integrados.
+(sobre todo §11 y §13).** Parte de `eco/main` con HD-2, HD-3, HD-4, HD-7 y HD-8
+integrados.
 
 ## Archivos que se tocan (solo estos)
 - Nuevo `rust/crates/ez-ctl/examples/e2e_delegate.rs` (+ módulos en
@@ -56,7 +57,17 @@
    `deepseek-v4-pro --effort low`; Codex modelo ausente del caché; mcode modelo ausente;
    Qwen Code con `--effort high`. Aceptado con aviso: Pi con modelo libre (ya en el paso 4).
    Uso (código 2): `--show arriba`; `--name T9`. Sin `HC_TERMINAL_ID` (código 3).
-7. Limpieza siempre (también si falla): mata y borra con `hc` toda terminal con
+6b. **Estado y avisos (§13)**, con `EZ_SUBAGENTS_DIR` temporal en todo lo que ejecutes:
+   el agente falso del tipo `claude` se lanza con `--report terminado --ez <ruta de ez>`
+   (ponlo en su comando del `voice.json` de prueba) y el de `qwen` sin informe. Comprueba:
+   el registro de `plan1-claude` pasa a `terminado` y el **padre falso recibe** (en sus
+   `lines`) el aviso «[EzAgent · aviso] plan1-claude (Claude Code · sonnet) terminó…» sin
+   que nadie lo pida; `ez validate plan1-claude --pass --summary ok` ejecutado con
+   `HC_TERMINAL_ID` = otro hijo del padre → `validado` y aviso de validado en el padre;
+   `hc kill` de `dev2-qwen` → `fallido` («la terminal terminó sin informe») y aviso en el
+   padre en menos de 15 s; `ez tasks --json` (con `HC_TERMINAL_ID` = padre) muestra
+   `validado`, `fallido` y `en_proceso`; el vigilante `ez-watch-…` existe una sola vez.
+7. Limpieza siempre (también si falla), incluido el vigilante `ez-watch-…`: mata y borra con `hc` toda terminal con
    `ez.parent=<padre>` y el padre; cierra el espacio (`space.close --id <id> --confirmed
    true`); devuelve el foco guardado (`pane.focus`); borra la carpeta temporal. Comprueba
    que `herdr-app ls` ya no tiene `ez-e2e-<id>` ni sus terminales.
