@@ -130,7 +130,9 @@ fn slug_char(character: char) -> char {
         'ú' | 'ù' | 'ü' | 'û' | 'ū' => 'u',
         'ñ' => 'n',
         'ç' => 'c',
-        other if other.is_ascii_alphanumeric() || other == '_' || other == '.' || other == '-' => other,
+        other if other.is_ascii_alphanumeric() || other == '_' || other == '.' || other == '-' => {
+            other
+        }
         _ => '-',
     }
 }
@@ -224,10 +226,7 @@ fn label_pairs(labels: Option<&Map<String, Value>>) -> Vec<(String, String)> {
 /// Las etiquetas que se piden a `hc`: la del tipo y las extra.
 fn requested_labels(plan: &LaunchPlan<'_>) -> Map<String, Value> {
     let mut labels = Map::new();
-    labels.insert(
-        "agent".to_string(),
-        Value::String(plan.key.clone()),
-    );
+    labels.insert("agent".to_string(), Value::String(plan.key.clone()));
     for (key, value) in label_pairs(plan.labels.as_ref()) {
         labels.insert(key, Value::String(value));
     }
@@ -236,10 +235,7 @@ fn requested_labels(plan: &LaunchPlan<'_>) -> Map<String, Value> {
 
 impl Herdr {
     /// Lanza un agente como hijo de otro y lo ubica (§8 del diseño).
-    pub(super) fn launch_child(
-        &self,
-        plan: &mut LaunchPlan<'_>,
-    ) -> Result<LaunchStep, HerdrError> {
+    pub(super) fn launch_child(&self, plan: &mut LaunchPlan<'_>) -> Result<LaunchStep, HerdrError> {
         let Some(parent) = plan
             .parent
             .map(str::trim)
@@ -309,11 +305,7 @@ impl Herdr {
             args.push(format!("{key}={value}"));
         }
         args.push("--".to_string());
-        args.extend(wrapped_argv(
-            &plan.argv,
-            &plan.launch.env,
-            plan.prepend,
-        ));
+        args.extend(wrapped_argv(&plan.argv, &plan.launch.env, plan.prepend));
         args
     }
 
@@ -326,7 +318,9 @@ impl Herdr {
         placed: &Placed,
         terminal: Option<&Value>,
     ) -> Map<String, Value> {
-        let real_parent = terminal.and_then(|data| data.get("parent")).and_then(Value::as_str);
+        let real_parent = terminal
+            .and_then(|data| data.get("parent"))
+            .and_then(Value::as_str);
         let real_name = terminal
             .and_then(|data| data.get("name"))
             .and_then(Value::as_str)
@@ -339,10 +333,13 @@ impl Herdr {
         let mut row = Map::new();
         row.insert("visible".to_string(), Value::Bool(false));
         row.insert("background".to_string(), Value::Bool(true));
-        row.insert(
-            "parent".to_string(),
-            Value::String(real_parent.unwrap_or(parent).to_string()),
-        );
+        // DECISION: si `hc get` respondió, el padre es el real (vacío si no
+        // tiene); si no respondió, se queda el pedido como mejor dato.
+        let parent_text = match terminal {
+            Some(_) => real_parent.unwrap_or_default().to_string(),
+            None => parent.to_string(),
+        };
+        row.insert("parent".to_string(), Value::String(parent_text));
         row.insert("name".to_string(), Value::String(real_name.to_string()));
         row.insert(
             "placed".to_string(),
@@ -429,7 +426,11 @@ impl Herdr {
     }
 
     /// `herdr-app do terminal.keep --terminal <t> --place <lugar>`.
-    fn keep_once(&self, terminal: &str, place: Placement) -> Result<Map<String, Value>, HerdrError> {
+    fn keep_once(
+        &self,
+        terminal: &str,
+        place: Placement,
+    ) -> Result<Map<String, Value>, HerdrError> {
         let data = self.app_do(
             &[
                 "do".to_string(),
@@ -483,11 +484,7 @@ impl Herdr {
     }
 
     /// `hc run --json`: distingue el error de «nombre ocupado».
-    fn hc_run_json(
-        &self,
-        args: &[String],
-        timeout: f64,
-    ) -> Result<Value, Map<String, Value>> {
+    fn hc_run_json(&self, args: &[String], timeout: f64) -> Result<Value, Map<String, Value>> {
         let mut argv = vec![self.hc_path()];
         argv.extend_from_slice(args);
         let completed = match self.run_command(&argv, timeout, false) {
@@ -524,13 +521,17 @@ impl Herdr {
 
     /// `hc get <t>`: el detalle de la terminal (padre y nombre reales).
     fn hc_get(&self, terminal: &str) -> Option<Value> {
-        self.json(&["get".to_string(), terminal.to_string()], 20.0).ok()
+        self.json(&["get".to_string(), terminal.to_string()], 20.0)
+            .ok()
     }
 }
 
 /// ¿El error es el «no running terminal» que Herdr da mientras ve la terminal?
 fn is_missing_terminal(error: &HerdrError) -> bool {
-    error.message().to_lowercase().contains("no running terminal")
+    error
+        .message()
+        .to_lowercase()
+        .contains("no running terminal")
 }
 
 /// El aviso cuando el padre real de la terminal no es el pedido.

@@ -180,31 +180,13 @@ impl Herdr {
         let Some((key, mut argv)) = self.launch_inputs(params.agent, &launch) else {
             return Ok(self.unavailable(params.agent, &launch.error));
         };
+        let (folder, label, task_text) = self.launch_texts(&params, &key);
         if let Some(extra) = &params.extra_args {
             argv.extend(extra.iter().cloned());
         }
         if let Some(env) = params.env {
             launch.env.extend(env);
         }
-        let folder = params
-            .cwd
-            .filter(|folder| !folder.is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| self.default_cwd());
-        let label = params
-            .name
-            .filter(|name| !name.is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| format!("{key} · voz"));
-        let task = py_strip(params.task).to_string();
-        // DECISION: sin tarea se abre el agente listo y a la espera.
-        let task_text = if task.is_empty() {
-            String::new()
-        } else if params.gui {
-            format!("{GUI_INSTRUCTION}{task}")
-        } else {
-            task
-        };
         let mut prepared = LaunchPlan {
             argv,
             launch,
@@ -236,6 +218,30 @@ impl Herdr {
             where_row,
         );
         self.finish_run(launcher, params.on_ready, &prepared, address, base)
+    }
+
+    /// Carpeta, etiqueta y tarea ya resueltas antes de abrir la terminal.
+    fn launch_texts(&self, params: &RunAgent<'_>, key: &str) -> (String, String, String) {
+        let folder = params
+            .cwd
+            .filter(|folder| !folder.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| self.default_cwd());
+        let label = params
+            .name
+            .filter(|name| !name.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{key} · voz"));
+        let task = py_strip(params.task).to_string();
+        // DECISION: sin tarea se abre el agente listo y a la espera.
+        let task_text = if task.is_empty() {
+            String::new()
+        } else if params.gui {
+            format!("{GUI_INSTRUCTION}{task}")
+        } else {
+            task
+        };
+        (folder, label, task_text)
     }
 
     /// `(key, argv)` si el agente existe y el perfil devolvió un comando.

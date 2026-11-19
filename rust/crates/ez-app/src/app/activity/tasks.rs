@@ -271,6 +271,7 @@ impl VoiceApp {
             env: None,
             path_prepend: None,
             extra_args: None,
+            ..RunAgent::default()
         };
         match herdr.run_agent(driver, params) {
             Ok(result) => Some(result),
