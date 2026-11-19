@@ -31,6 +31,7 @@ pub use super::scroll::{Scroll, SCROLL_STEP};
 mod draw;
 mod entries;
 mod interaction;
+mod measure;
 mod types;
 
 #[cfg(test)]
