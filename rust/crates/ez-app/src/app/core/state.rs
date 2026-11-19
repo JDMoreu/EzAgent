@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::process::Child;
-use std::sync::atomic::{AtomicBool, AtomicI64};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
@@ -231,6 +231,14 @@ pub struct SpeechState {
     pub busy_barged: AtomicBool,
     /// `_speaking_kind`: `answer`, `notice`…
     pub speaking_kind: RwLock<Option<String>>,
+    /// Tipo de la última frase hablada (`announce`, `answer`, `ack`…).
+    pub last_outbound_kind: RwLock<Option<String>>,
+    /// `monotonic()` cuando terminó la última frase hablada.
+    pub last_outbound_done_at: RwLock<f64>,
+    /// `true` si la última frase hablada terminaba en «?».
+    pub last_outbound_question: RwLock<bool>,
+    /// Índice para rotar las respuestas de acuse sin repetir la anterior.
+    pub ack_index: AtomicUsize,
 }
 
 /// Chat escrito y contexto por conversación (`chat`, `contexts`, `_condenser*`).

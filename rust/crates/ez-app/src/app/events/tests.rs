@@ -9,7 +9,10 @@ use serde_json::json;
 use super::support::Fixture;
 use super::{in_call, turn_gen};
 use crate::app::core::{AppEvent, MenuEvent, VoiceApp, LISTENING, SPEAKING, THINKING};
-use crate::app::states::tests::support::{install_client, ScriptedClient};
+use crate::app::states::tests::support::{
+    install_client, wait_event, Fixture as SpeakingFixture, ScriptedClient,
+};
+use crate::fast::ACK_REPLIES;
 
 fn set_state(app: &VoiceApp, state: &str) {
     *app.inner.session.state.write() = state.to_string();
@@ -413,4 +416,70 @@ fn speech_start_event_is_ignored_without_a_call() {
     set_state(app, LISTENING);
     app.handle_event(AppEvent::AudioSpeechStart(0.2));
     assert!(!app.inner.session.user_speaking.load(Ordering::SeqCst));
+}
+
+/// Prepara una salida hablada reciente para probar el camino rápido del acuse.
+fn arm_outbound(fixture: &SpeakingFixture, kind: &str, question: bool) {
+    let speech = &fixture.app.inner.speech;
+    *speech.last_outbound_kind.write() = Some(kind.to_string());
+    *speech.last_outbound_done_at.write() = monotonic();
+    *speech.last_outbound_question.write() = question;
+}
+
+#[test]
+fn ack_after_a_statement_speaks_one_short_phrase_without_the_llm() {
+    let fixture = SpeakingFixture::new();
+    let app = &fixture.app;
+    install_client(app, ScriptedClient::new(Vec::new()));
+    app.start_call();
+    let generation = turn_gen(app);
+    let before = app.inner.chat.chat.snapshot().1.len();
+    arm_outbound(&fixture, "announce", false);
+
+    app.handle_event(AppEvent::Transcribed("ok".to_string(), generation));
+
+    // El camino rápido no abre un turno del LLM: no se añade mensaje de usuario.
+    assert_eq!(app.inner.chat.chat.snapshot().1.len(), before);
+    wait_event(app, |event| matches!(event, AppEvent::SpeakDone(_)));
+    let spoken = fixture.speaker.spoken.lock();
+    assert_eq!(spoken.len(), 1, "{spoken:?}");
+    assert!(ACK_REPLIES.contains(&spoken[0].as_str()), "{spoken:?}");
+    drop(spoken);
+    // La respuesta se dice con kind `ack`: no rearma el atajo.
+    assert_eq!(
+        app.inner.speech.last_outbound_kind.read().as_deref(),
+        Some("ack")
+    );
+}
+
+#[test]
+fn ack_after_a_question_goes_to_the_llm_as_today() {
+    let fixture = SpeakingFixture::new();
+    let app = &fixture.app;
+    install_client(app, ScriptedClient::new(Vec::new()));
+    app.start_call();
+    let generation = turn_gen(app);
+    arm_outbound(&fixture, "announce", true);
+
+    app.handle_event(AppEvent::Transcribed("ok".to_string(), generation));
+
+    // No hay respuesta rápida: se consultó el contexto y se consumió el tipo.
+    assert!(fixture.speaker.spoken.lock().is_empty());
+    assert!(app.inner.speech.last_outbound_kind.read().is_none());
+}
+
+#[test]
+fn a_second_ack_without_a_new_outbound_goes_to_the_llm() {
+    let fixture = SpeakingFixture::new();
+    let app = &fixture.app;
+    install_client(app, ScriptedClient::new(Vec::new()));
+    app.start_call();
+    arm_outbound(&fixture, "announce", false);
+    app.handle_event(AppEvent::Transcribed("ok".to_string(), turn_gen(app)));
+    wait_event(app, |event| matches!(event, AppEvent::SpeakDone(_)));
+    assert_eq!(fixture.speaker.spoken.lock().len(), 1);
+
+    // Sin nueva salida hablada, el segundo «ok» ya no activa el atajo.
+    app.handle_event(AppEvent::Transcribed("ok".to_string(), turn_gen(app)));
+    assert_eq!(fixture.speaker.spoken.lock().len(), 1);
 }

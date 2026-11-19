@@ -81,6 +81,35 @@ const CLOSE_WORDS: [&str; 10] = [
 const HANGUP_WORDS: [&str; 4] = ["adios", "cuelga", "termina la llamada", "colgar"];
 const REPEAT_WORDS: [&str; 3] = ["repite", "repitelo", "otra vez"];
 
+/// Palabras que, solas, son un acuse. Sin «sí» ni «no»: pueden responder a
+/// una pregunta del aviso (DX-2b A2).
+const ACK_TOKENS: [&str; 15] = [
+    "ok", "okey", "oki", "oc", "k", "va", "vale", "bueno", "listo", "perfecto", "dale", "genial",
+    "gracias", "muchas", "mil",
+];
+const ACK_EXACT: [&str; 6] = [
+    "de acuerdo",
+    "ya esta",
+    "muy bien",
+    "esta bien",
+    "entendido",
+    "confirmado",
+];
+/// Valor por omisión de `ack_fast_window_secs`.
+pub const ACK_WINDOW_SECS: f64 = 10.0;
+/// Kind del TTS para la respuesta de acuse: así un segundo «ok» seguido no
+/// vuelve a activar el atajo (el kind grabado no es `announce`/`answer`).
+const ACK_SPEECH_KIND: &str = "ack";
+/// Respuestas cortas y variadas, generadas por código (nunca por el LLM).
+pub const ACK_REPLIES: [&str; 6] = [
+    "Listo, quedo atento.",
+    "Me avisas si necesitas algo.",
+    "Perfecto.",
+    "Dale, aquí sigo.",
+    "Entendido.",
+    "Cualquier cosa me dices.",
+];
+
 const STATE_NAMES: [(&str, &str); 4] = [
     ("working", "trabajando"),
     ("done", "terminado"),
@@ -123,6 +152,8 @@ pub struct FastOutcome {
     pub list_agents: bool,
     /// Hay que refrescar y mostrar la tarjeta de actividad.
     pub reveal_activity: bool,
+    /// El atajo fue un acuse rápido (para registrar `ack_fast`).
+    pub ack: bool,
 }
 
 /// Lo que `_fast_command` necesita de la app. Cada método corresponde a un
@@ -165,6 +196,22 @@ pub trait FastHost {
         } else {
             agent.to_string()
         }
+    }
+
+    /// `(segundos desde la última salida, tipo, era_pregunta)`.
+    /// `None` si no hubo salida hablada; la implementación real consume el tipo.
+    fn ack_context(&self) -> Option<(f64, Option<String>, bool)> {
+        None
+    }
+
+    /// Índice monótono para rotar las respuestas sin repetir la anterior.
+    fn ack_index(&self) -> usize {
+        0
+    }
+
+    /// Ventana en segundos para aceptar un acuse tras hablar.
+    fn ack_window_secs(&self) -> f64 {
+        ACK_WINDOW_SECS
     }
 }
 
@@ -223,6 +270,25 @@ fn answer(text: impl Into<String>) -> FastOutcome {
     }
 }
 
+/// Respuesta de acuse: se dice con kind `ack` para no rearmar el atajo.
+fn ack_answer(text: &'static str) -> FastOutcome {
+    FastOutcome {
+        handled: true,
+        speech: Some((ACK_SPEECH_KIND, text.to_string())),
+        ack: true,
+        ..FastOutcome::default()
+    }
+}
+
+/// `true` solo si todo el texto es un acuse, sin contenido nuevo.
+pub fn is_pure_acknowledgement(raw_key: &str) -> bool {
+    if ACK_EXACT.contains(&raw_key) {
+        return true;
+    }
+    let words: Vec<&str> = py_split(raw_key).collect();
+    !words.is_empty() && words.len() <= 3 && words.iter().all(|word| ACK_TOKENS.contains(word))
+}
+
 fn set_contains(set: &[&str], key: &str) -> bool {
     set.contains(&key)
 }
@@ -253,6 +319,19 @@ pub fn fast_command(text: &str, host: &dyn FastHost) -> FastOutcome {
     if set_contains(&TASK_WORDS, &key) {
         info!("Atajo local: listar tareas pendientes.");
         return tasks_outcome(host);
+    }
+    // DECISION: se comprueba al final para que los atajos reales ganen siempre.
+    // Solo se consulta el contexto si el texto es un acuse puro: así un atajo
+    // posterior («mutea») no consume el tipo de salida hablada.
+    if is_pure_acknowledgement(&raw_key) {
+        if let Some((seconds_since, kind, question)) = host.ack_context() {
+            let recent = seconds_since >= 0.0 && seconds_since <= host.ack_window_secs();
+            let after_outbound = matches!(kind.as_deref(), Some("announce") | Some("answer"));
+            if recent && after_outbound && !question {
+                info!("Atajo local: acuse corto.");
+                return ack_answer(ACK_REPLIES[host.ack_index() % ACK_REPLIES.len()]);
+            }
+        }
     }
     control_command(&key, host).unwrap_or_default()
 }
