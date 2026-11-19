@@ -151,3 +151,10 @@
   falla `el_validate_desde_un_desconocido_es_codigo_1`. Bien.
 - Aceptado: el alta lleva `by = "ez delegate"` para que el padre reciba también el aviso
   «en proceso» (la persona pidió los cuatro estados).
+
+### HD-5b — validado; HD-5 fusionado
+- Raíz = primer miembro siempre; la raíz reabierta no cuelga de nadie; con la raíz sin
+  dirección el tercero no cuelga del segundo. ez-swarm 136 en verde.
+- La mutación «la raíz se toma a sí misma» no la detecta ninguna prueba porque es
+  equivalente con el flujo actual (al reabrir, `members.rs:162`/la recuperación borran la
+  dirección antes de relanzar); la guarda queda como defensa. Aceptado.
