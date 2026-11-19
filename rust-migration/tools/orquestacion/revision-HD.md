@@ -59,3 +59,14 @@
   tras una pregunta, «ok/dale» = «sí». DX-2b: avisos de «terminó» como afirmación
   («Cuando quieras te cuento qué hizo.»), sin atajo tras una pregunta, y respuestas más
   naturales.
+
+### HD-3b — validado; HD-3 fusionado
+- R3-1 (reusa `match_mcode_model`/`resolve_codex`/`agent_command` como `pub(crate)`),
+  R3-2 (esfuerzo sin modelo contra el modelo por omisión o la unión) y R3-3 hechas.
+  ez-herdr 193 + paridad en verde. Mutación: quitar la validación sin modelo → falla
+  `esfuerzo_sin_modelo_usa_los_niveles_del_modelo_por_omision`. Bien.
+- C0-3 (nuevo, para el supervisor): durante un reinicio del núcleo de hc, `hc get` falló un
+  momento y `field` devolvió vacío: el bucle dio el intento por terminado con la terminal
+  viva y lanzó otro (falló por `name_taken`; no hubo dos trabajadores a la vez). Debe tratar
+  un `hc get` fallido como «desconocido» (reintentar) y no lanzar otro intento mientras una
+  terminal con su nombre siga viva.
