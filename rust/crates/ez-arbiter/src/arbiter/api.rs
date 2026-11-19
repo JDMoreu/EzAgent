@@ -8,10 +8,11 @@ use crossbeam_channel::Receiver;
 
 use crate::events::{ArbiterEvent, ElephantEvent};
 use crate::types::{
-    Caller, Clock, Command, FishKey, FishLauncher, InstructionWriter, Outcome, Rejection, Space,
+    Caller, Clock, Command, ElephantKey, FishKey, FishLauncher, InstructionWriter, MainAgent,
+    Outcome, Rejection, Space,
 };
 
-use super::{ArbiterShared, Job};
+use super::{normalize_scope, scope, ArbiterShared, Job, JobValue};
 
 /// El árbitro de un proceso: una tarea activa por espacio.
 ///
@@ -42,14 +43,40 @@ impl Arbiter {
         self.shared.register_space(space);
     }
 
+    /// Crea un agente principal con worktree propio (diseño §15.1).
+    pub fn create_main_agent(&self, space: &str, name: &str) -> Result<MainAgent, Rejection> {
+        let space = space.to_string();
+        let name = name.to_string();
+        let key = ElephantKey::default_for(&space);
+        let scope = scope(&key);
+        self.enqueue_any(&scope, move |arbiter| {
+            arbiter.create_main_agent(&space, &name)
+        })
+    }
+
+    /// Quita un agente principal sin tarea y con worktree limpio (§15.1).
+    pub fn remove_main_agent(&self, key: &ElephantKey) -> Result<(), Rejection> {
+        let key = key.clone();
+        let scope = scope(&key);
+        self.enqueue_any(&scope, move |arbiter| arbiter.remove_main_agent(&key))
+    }
+
+    /// Agentes principales registrados en un espacio (§15.1).
+    pub fn main_agents(&self, space: &str) -> Vec<MainAgent> {
+        self.shared.main_agents(space)
+    }
+
     /// Ejecuta un comando del elefante o de un pez, en el ejecutor del espacio.
     pub fn execute(&self, caller: &Caller, command: Command) -> Result<Outcome, Rejection> {
-        let space = match caller {
-            Caller::Elephant { space } => space.clone(),
-            Caller::Fish(key) => key.space.clone(),
+        let key = match caller {
+            Caller::Elephant(key) => scope(key),
+            Caller::Fish(key) => scope(&ElephantKey {
+                space: key.space.clone(),
+                elephant: key.elephant.clone(),
+            }),
         };
         let caller = caller.clone();
-        self.enqueue(&space, move |arbiter| {
+        self.enqueue(&key, move |arbiter| {
             let result = arbiter.dispatch(&caller, command);
             if let Err(rejection) = &result {
                 arbiter.log_rejection(&caller, rejection);
@@ -177,6 +204,16 @@ impl Arbiter {
         self.shared.wait_for_elephant(space, timeout)
     }
 
+    /// Novedades de un agente principal concreto (§15.1).
+    pub fn wait_for_main(&self, key: &ElephantKey, timeout: Duration) -> Option<ElephantEvent> {
+        self.shared.wait_for_main(key, timeout)
+    }
+
+    /// Novedades de los subagentes de un pez (§15.5).
+    pub fn wait_for_fish(&self, key: &FishKey, timeout: Duration) -> Option<ElephantEvent> {
+        self.shared.wait_for_fish(key, timeout)
+    }
+
     /// Suscribe la vista a la traza.
     pub fn subscribe(&self) -> Receiver<ArbiterEvent> {
         self.shared.subscribe()
@@ -187,22 +224,43 @@ impl Arbiter {
         self.shared.snapshot(space)
     }
 
-    /// Encola un trabajo en el ejecutor del espacio y espera su resultado.
+    /// Instantánea de la tarea de un agente principal concreto (§15.1).
+    pub fn snapshot_main(&self, key: &ElephantKey) -> Option<serde_json::Value> {
+        self.shared.snapshot_main(key)
+    }
+
+    /// Encola un trabajo en el ejecutor del agente y espera su resultado.
     fn enqueue<F>(&self, space: &str, run: F) -> Result<Outcome, Rejection>
     where
         F: FnOnce(&ArbiterShared) -> Result<Outcome, Rejection> + Send + 'static,
     {
+        self.enqueue_any(space, run)
+    }
+
+    /// Igual que `enqueue`, para trabajos que devuelven otro tipo.
+    fn enqueue_any<F, T>(&self, space: &str, run: F) -> Result<T, Rejection>
+    where
+        F: FnOnce(&ArbiterShared) -> Result<T, Rejection> + Send + 'static,
+        T: Send + 'static,
+    {
         let sender = self.shared.queue_sender(space);
         let (done_tx, done_rx) = crossbeam_channel::bounded(1);
+        let boxed = move |arbiter: &ArbiterShared| -> Result<JobValue, Rejection> {
+            run(arbiter).map(|value| Box::new(value) as JobValue)
+        };
         sender
             .send(Job {
-                run: Box::new(run),
+                run: Box::new(boxed),
                 done: done_tx,
             })
             .map_err(|_| Rejection::new("R12", "El ejecutor del árbitro se detuvo."))?;
-        done_rx
+        let value = done_rx
             .recv()
-            .unwrap_or_else(|_| Err(Rejection::new("R12", "El ejecutor del árbitro se detuvo.")))
+            .unwrap_or_else(|_| Err(Rejection::new("R12", "El ejecutor del árbitro se detuvo.")))?;
+        value
+            .downcast::<T>()
+            .map(|value| *value)
+            .map_err(|_| Rejection::new("R12", "El ejecutor del árbitro devolvió otro tipo."))
     }
 
     /// Acción de la persona: se encola y registra el rechazo si corresponde.
@@ -210,7 +268,7 @@ impl Arbiter {
     where
         F: FnOnce(&ArbiterShared, &str) -> Result<Outcome, Rejection> + Send + 'static,
     {
-        let key = space.clone();
+        let key = normalize_scope(&space);
         self.enqueue(&key, move |arbiter| {
             let result = action(arbiter, &space);
             if let Err(rejection) = &result {

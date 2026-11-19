@@ -8,7 +8,7 @@ use crate::git;
 use crate::paths;
 use crate::state::{Status, Task, TeamStatus, WorkState};
 use crate::texts;
-use crate::types::{Caller, FishKey, Outcome, Rejection};
+use crate::types::{Caller, ElephantKey, FishKey, Outcome, Rejection};
 use crate::verify;
 
 use super::emit::Effects;
@@ -23,18 +23,32 @@ impl ArbiterShared {
         brief: PathBuf,
         criteria_path: PathBuf,
     ) -> Result<Outcome, Rejection> {
-        let space = self.space(space_id)?;
+        let base = self.space(space_id)?;
+        let wanted = super::normalize_scope(space_id);
+        let key = ElephantKey {
+            space: base.id.clone(),
+            elephant: super::scope_elephant(&wanted)
+                .unwrap_or_else(|| ElephantKey::default_for(&base.id).elephant),
+        };
         {
             let inner = self.inner.lock();
             if inner
                 .tasks
                 .values()
-                .any(|task| task.is_active() && task.space.id == space_id)
+                .any(|task| task.is_active() && super::scope(&task.elephant) == wanted)
             {
                 return Err(Rejection::new("R2", texts::ACTIVE_TASK));
             }
         }
-        let (task, card) = self.build_task(&space, title, brief, criteria_path)?;
+        let worktree = self
+            .agent_for(&key)
+            .map(|agent| agent.worktree.clone())
+            .unwrap_or_else(|| base.folder.clone());
+        let space = crate::types::Space {
+            folder: worktree,
+            ..base
+        };
+        let (task, card) = self.build_task(&space, title, brief, criteria_path, &key)?;
         let mut effects = Effects::default();
         effects.event(self.event(
             &task,
@@ -89,6 +103,7 @@ impl ArbiterShared {
         title: String,
         brief: PathBuf,
         criteria_path: PathBuf,
+        key: &ElephantKey,
     ) -> Result<(Task, String), Rejection> {
         let (brief_abs, criteria_abs, parsed) =
             self.validate_inputs(space, &brief, &criteria_path)?;
@@ -113,7 +128,7 @@ impl ArbiterShared {
         let sha = paths::sha256_file(&frozen).map_err(|message| Rejection::new("R2", message))?;
         let brief_text = paths::read_text(&brief_abs).unwrap_or_default();
         let card = texts::task_card(&title, &brief_text, &parsed.card_lines());
-        let task = self.new_task_state(space, title, id, sha);
+        let task = self.new_task_state(space, key.clone(), title, id, sha);
         Ok((task, card))
     }
 
@@ -121,6 +136,7 @@ impl ArbiterShared {
     fn new_task_state(
         &self,
         space: &crate::types::Space,
+        elephant: ElephantKey,
         title: String,
         id: String,
         sha: String,
@@ -129,6 +145,7 @@ impl ArbiterShared {
             id,
             title,
             space: space.clone(),
+            elephant,
             status: Status::PendingApproval,
             paused_from: None,
             pause_reason: None,
@@ -160,9 +177,10 @@ impl ArbiterShared {
     /// Estado resumido para el elefante o para un pez.
     pub(crate) fn status(&self, caller: &Caller) -> Result<Outcome, Rejection> {
         match caller {
-            Caller::Elephant { space } => {
-                let space_info = self.space(space)?;
-                let Some(task) = self.task_for_elephant(space).ok() else {
+            Caller::Elephant(key) => {
+                let slot = super::scope(key);
+                let space_info = self.space(&slot)?;
+                let Some(task) = self.task_for_elephant(&slot).ok() else {
                     return Ok(Outcome::new(texts::STATUS_NO_TASK));
                 };
                 let message = texts::status_elephant(
@@ -323,8 +341,50 @@ impl ArbiterShared {
         let message = texts::task_closed(task.clean_streak);
         let mut effects = Effects::default();
         effects.event(self.event(&task, "task_closed", serde_json::json!({})));
+        let slot = super::scope(&task.elephant);
+        if let Some(agent) = self.agent_for(&task.elephant) {
+            let (title, body) = texts::integrate_card(&task.title, &agent.branch);
+            let opened = self.open_card(&slot, Some(&task.id), CardKind::Integrate, title, body);
+            effects.event(self.card_opened_event(&opened));
+        }
         self.commit(&task, effects);
         Ok(Outcome::new(message))
+    }
+
+    /// §15.1: integra la rama del agente principal en la rama base del espacio.
+    pub(crate) fn integrate_impl(&self, card: &crate::events::Card) -> Result<Outcome, Rejection> {
+        let Some(task_id) = card.task.as_deref() else {
+            return Err(Rejection::new("R12", "La tarjeta no tiene tarea asociada."));
+        };
+        let task = self
+            .inner
+            .lock()
+            .tasks
+            .get(task_id)
+            .cloned()
+            .ok_or_else(|| Rejection::new("R12", "No existe la tarea de la tarjeta."))?;
+        let agent = self
+            .agent_for(&task.elephant)
+            .ok_or_else(|| Rejection::new("R12", "No existe el agente principal de la tarea."))?;
+        let space = self.space(&super::scope(&task.elephant))?;
+        let branch = agent.branch.clone();
+        match super::agents::merge(&space.folder, &branch, &task.title) {
+            Ok(()) => {
+                let message = texts::integrated(&branch);
+                let mut effects = Effects::default();
+                effects.event(self.event(
+                    &task,
+                    "integrated",
+                    serde_json::json!({ "branch": branch }),
+                ));
+                self.commit(&task, effects);
+                Ok(Outcome::new(message))
+            }
+            Err(reason) => {
+                self.set_card_body(&card.id, texts::merge_failed(&reason));
+                Err(Rejection::new("R12", texts::merge_failed(&reason)))
+            }
+        }
     }
 
     /// `ez pause`: pausa manual de la persona o del elefante.
@@ -515,6 +575,15 @@ impl ArbiterShared {
     /// Verifica que la clave tenga trabajo pendiente (R7).
     pub(crate) fn report_allowed(&self, task: &Task, key: &FishKey) -> Result<(), Rejection> {
         if task.pending_work(key).is_some() {
+            let waiting: Vec<String> = task
+                .children_of(key)
+                .iter()
+                .filter(|item| item.state == WorkState::Pending)
+                .map(|item| item.key.fish.clone())
+                .collect();
+            if !waiting.is_empty() {
+                return Err(Rejection::new("R7", texts::children_pending(&waiting)));
+            }
             return Ok(());
         }
         let verifier = task

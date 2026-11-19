@@ -13,6 +13,13 @@ pub struct Validation {
     pub rondas_maximas: u32,
     #[serde(default = "default_hours")]
     pub horas_maximas: f64,
+    /// Profundidad máxima del árbol bajo el agente principal (§15.1).
+    #[serde(default = "default_depth")]
+    pub profundidad_maxima: u32,
+}
+
+fn default_depth() -> u32 {
+    3
 }
 
 fn default_min_mutations() -> u32 {
@@ -33,6 +40,7 @@ impl Default for Validation {
             mutaciones_minimas: default_min_mutations(),
             rondas_maximas: default_rounds(),
             horas_maximas: default_hours(),
+            profundidad_maxima: default_depth(),
         }
     }
 }
@@ -89,6 +97,7 @@ impl Criteria {
             self.validacion.mutaciones_minimas,
             self.validacion.rondas_maximas,
             self.validacion.horas_maximas,
+            self.validacion.profundidad_maxima,
         ));
         lines
     }
@@ -129,6 +138,9 @@ pub fn validate(criteria: &Criteria, folder: &Path) -> Result<(), String> {
         || validation.horas_maximas > 24.0
     {
         return Err("`horas_maximas` debe ser finito, mayor que 0 y como máximo 24.".into());
+    }
+    if !(1..=5).contains(&validation.profundidad_maxima) {
+        return Err("`profundidad_maxima` debe estar entre 1 y 5.".into());
     }
     if criteria.criteria.is_empty() {
         return Err("Los criterios no tienen ningún `[[criterio]]`: agrega al menos uno.".into());

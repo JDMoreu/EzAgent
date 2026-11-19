@@ -367,8 +367,8 @@ pub const ARTIFACTS_MODIFIED: &str =
 /// Reanudar una pausa de artefactos restaura las copias.
 pub const ARTIFACTS_RESTORED: &str = "Se restauraron los artefactos congelados.";
 /// Línea de validación en la tarjeta (§14.6).
-pub fn validation_line(mutations: u32, rounds: u32, hours: f64) -> String {
-    format!("Validación: mutaciones mínimas {mutations}, rondas máximas {rounds}, horas máximas {hours}.")
+pub fn validation_line(mutations: u32, rounds: u32, hours: f64, depth: u32) -> String {
+    format!("Validación: mutaciones mínimas {mutations}, rondas máximas {rounds}, horas máximas {hours}, profundidad máxima {depth}.")
 }
 /// Novedad para el agente principal: un subagente falló antes de informar (§14.5).
 pub fn fish_failed(fish: &str, reason: &str) -> String {
@@ -406,4 +406,49 @@ pub const RESTART: &str = "El árbitro se reinició: revisa el trabajo pendiente
 /// §14.5: la persona amplía el margen y reanuda.
 pub fn more_time(rounds: u32, hours: f64) -> String {
     format!("La tarea se reanudó con {rounds} rondas y {hours} horas de margen adicionales.")
+}
+
+/// §15.5: el papel del subagente no puede delegar.
+pub fn cannot_delegate(role: &str) -> String {
+    format!("El papel {role} no puede delegar: solo pueden los ejecutores con `delega_en`.")
+}
+/// §15.5: el papel delegado no está en `delega_en`.
+pub fn role_not_delegable(role: &str) -> String {
+    format!("Tu papel no puede delegar en {role}: no está en tu lista `delega_en`.")
+}
+/// §15.5: se alcanzó la profundidad máxima del árbol.
+pub fn too_deep(depth: u32, max: u32) -> String {
+    format!("No puedo delegar: la profundidad {depth} superaría el máximo de {max}.")
+}
+/// §15.5: el subagente tiene hijos con trabajo pendiente.
+pub fn children_pending(children: &[String]) -> String {
+    format!(
+        "Todavía no: tus subagentes {} siguen trabajando; espera sus informes.",
+        children.join(", ")
+    )
+}
+/// §15.5: subagente delegado lanzado.
+pub fn delegated_launched(fish: &str, parent: &str, terminal: &str) -> String {
+    format!("{parent} delegó en {fish}, lanzado en {terminal}.")
+}
+/// §15.1: tarjeta para integrar la rama del agente principal.
+pub fn integrate_card(title: &str, branch: &str) -> (String, String) {
+    (
+        "Integrar el trabajo".to_string(),
+        format!(
+            "La tarea «{title}» terminó en la rama {branch}. ¿Integrarla en la rama base o dejarla en su rama?"
+        ),
+    )
+}
+/// §15.1: integración hecha.
+pub fn integrated(branch: &str) -> String {
+    format!("La rama {branch} se integró en la rama base.")
+}
+/// §15.1: falló la integración; no se cambió nada.
+pub fn merge_failed(reason: &str) -> String {
+    format!("No pude integrar: {reason}. No cambié nada.")
+}
+/// §15.1: no se puede quitar un agente principal con tarea activa o worktree sucio.
+pub fn cannot_remove_agent(reason: &str) -> String {
+    format!("No se puede quitar el agente principal: {reason}.")
 }

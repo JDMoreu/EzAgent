@@ -44,8 +44,8 @@ mod verify;
 pub use arbiter::Arbiter;
 pub use events::{ArbiterEvent, Card, CardKind, ElephantEvent, EventKind};
 pub use types::{
-    Caller, Clock, Command, Delivery, FishKey, FishLauncher, InstructionWriter, LaunchRequest,
-    Launched, Outcome, Rejection, Space, SystemClock, Verdict,
+    Caller, Clock, Command, Delivery, ElephantKey, FishKey, FishLauncher, InstructionWriter,
+    LaunchRequest, Launched, MainAgent, Outcome, Rejection, Space, SystemClock, Verdict,
 };
 
 /// Resultado de una comprobación de un criterio (logueable y serializable).

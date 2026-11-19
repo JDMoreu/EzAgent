@@ -114,12 +114,20 @@ impl ArbiterShared {
         self.inner.lock().cards.remove(id);
     }
 
+    /// Cambia el cuerpo de una tarjeta abierta (fallo de integración, §15.1).
+    pub(crate) fn set_card_body(&self, id: &str, body: String) {
+        if let Some(card) = self.inner.lock().cards.get_mut(id) {
+            card.body = body;
+        }
+    }
+
     /// Evento de apertura de una tarjeta para la traza.
     pub(crate) fn card_opened_event(&self, card: &Card) -> ArbiterEvent {
         ArbiterEvent {
             seq: self.next_seq(),
             kind: EventKind::CardOpened(card.clone()),
-            space: card.space.clone(),
+            space: super::scope_space(&card.space),
+            elephant: super::scope_elephant(&card.space),
             task: card.task.clone(),
             ts: self.now(),
         }
@@ -135,7 +143,8 @@ impl ArbiterShared {
         ArbiterEvent {
             seq: self.next_seq(),
             kind: EventKind::CardClosed { id: id.to_string() },
-            space: space.to_string(),
+            space: super::scope_space(space),
+            elephant: super::scope_elephant(space),
             task: task.map(str::to_string),
             ts: self.now(),
         }

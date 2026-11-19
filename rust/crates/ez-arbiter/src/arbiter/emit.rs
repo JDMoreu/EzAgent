@@ -33,6 +33,7 @@ impl ArbiterShared {
             seq: self.next_seq(),
             kind: EventKind::from_parts(kind, &data),
             space: task.space.id.clone(),
+            elephant: Some(task.elephant.elephant.clone()),
             task: Some(task.id.clone()),
             ts: self.now(),
         }
@@ -49,6 +50,7 @@ impl ArbiterShared {
         ElephantEvent {
             kind: kind.to_string(),
             space: task.space.id.clone(),
+            elephant: Some(task.elephant.elephant.clone()),
             task: Some(task.id.clone()),
             ts: self.now(),
             message,
@@ -59,15 +61,13 @@ impl ArbiterShared {
     /// Guarda el estado, escribe la bitácora y reparte los eventos. Ningún
     /// candado queda tomado durante el disco.
     pub(crate) fn commit(&self, task: &Task, effects: Effects) {
+        let scope = task.elephant.storage_key();
         let (subscribers, elephant) = {
             let mut inner = self.inner.lock();
             inner.tasks.insert(task.id.clone(), task.clone());
             (
                 inner.subscribers.clone(),
-                inner
-                    .elephants
-                    .get(&task.space.id)
-                    .map(|queue| queue.tx.clone()),
+                inner.elephants.get(&scope).map(|queue| queue.tx.clone()),
             )
         };
         self.save_state(task);
@@ -85,7 +85,7 @@ impl ArbiterShared {
     /// Solo emite eventos (señales de la ventana que no cambian el estado).
     pub(crate) fn emit_only(
         &self,
-        space: &str,
+        scope: &str,
         task: Option<&str>,
         events: Vec<ArbiterEvent>,
         elephant: Vec<ElephantEvent>,
@@ -94,7 +94,7 @@ impl ArbiterShared {
             let inner = self.inner.lock();
             (
                 inner.subscribers.clone(),
-                inner.elephants.get(space).map(|queue| queue.tx.clone()),
+                inner.elephants.get(scope).map(|queue| queue.tx.clone()),
             )
         };
         for event in &events {
@@ -156,10 +156,15 @@ impl ArbiterShared {
         rejection: &crate::types::Rejection,
     ) {
         let task = self.task_for_caller(caller);
-        let space = match (&task, caller) {
-            (Some(task), _) => task.space.id.clone(),
-            (None, crate::types::Caller::Elephant { space }) => space.clone(),
-            (None, crate::types::Caller::Fish { .. }) => return,
+        let (scope, elephant) = match (&task, caller) {
+            (Some(task), _) => (
+                task.elephant.storage_key(),
+                Some(task.elephant.elephant.clone()),
+            ),
+            (None, crate::types::Caller::Elephant(key)) => {
+                (key.storage_key(), Some(key.elephant.clone()))
+            }
+            (None, crate::types::Caller::Fish(_)) => return,
         };
         let event = ArbiterEvent {
             seq: self.next_seq(),
@@ -167,7 +172,11 @@ impl ArbiterShared {
                 rule: rejection.rule.to_string(),
                 message: rejection.message.clone(),
             },
-            space: space.clone(),
+            space: task
+                .as_ref()
+                .map(|task| task.space.id.clone())
+                .unwrap_or_else(|| scope.split('|').next().unwrap_or("").to_string()),
+            elephant: elephant.clone(),
             task: task.as_ref().map(|task| task.id.clone()),
             ts: self.now(),
         };
@@ -175,7 +184,7 @@ impl ArbiterShared {
             let inner = self.inner.lock();
             (
                 inner.subscribers.clone(),
-                inner.elephants.get(&space).map(|queue| queue.tx.clone()),
+                inner.elephants.get(&scope).map(|queue| queue.tx.clone()),
             )
         };
         if task.is_some() {
@@ -184,7 +193,7 @@ impl ArbiterShared {
         if let Some(sender) = sender {
             let mut message = ElephantEvent::new(
                 "rejected",
-                space,
+                event.space.clone(),
                 event.ts,
                 rejection.message.clone(),
                 serde_json::json!({
@@ -192,6 +201,7 @@ impl ArbiterShared {
                     "message": rejection.message,
                 }),
             );
+            message.elephant = elephant;
             message.task = task.as_ref().map(|task| task.id.clone());
             let _ = sender.send(message);
         }

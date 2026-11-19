@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use crate::events::ElephantEvent;
 use crate::git;
 use crate::paths;
 use crate::state::{FishRecord, ReportRecord, Status, WorkItem, WorkKind, WorkState};
@@ -223,6 +224,33 @@ impl ArbiterShared {
             self.elephant_event(task, "fish_reported", message.clone(), data),
         );
         self.commit(task, effects);
+        if let Some(parent) = &key.parent {
+            let slot = super::super::fish_slot(&FishKey {
+                parent: None,
+                fish: parent.clone(),
+                ..key.clone()
+            });
+            let sender = self
+                .inner
+                .lock()
+                .fish_queues
+                .get(&slot)
+                .map(|queue| queue.tx.clone());
+            if let Some(sender) = sender {
+                let mut event = ElephantEvent::new(
+                    "fish_reported",
+                    task.space.id.clone(),
+                    self.now(),
+                    texts::report_received(&key.fish, input.verdict),
+                    serde_json::json!({
+                        "fish": key.fish, "parent": parent, "verdict": input.verdict.id(),
+                    }),
+                );
+                event.elephant = Some(task.elephant.elephant.clone());
+                event.task = Some(task.id.clone());
+                let _ = sender.send(event);
+            }
+        }
         Ok(Outcome::new(message))
     }
 
