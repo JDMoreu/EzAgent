@@ -40,8 +40,10 @@ fn r1_fish_cannot_use_elephant_commands() {
     let unknown = Caller::Fish(FishKey {
         space: "s1".into(),
         task: "t000000000000".into(),
+        elephant: "e00000000".into(),
         fish: "dev-r1-1".into(),
         attempt: 1,
+        parent: None,
     });
     let error = f
         .arbiter
@@ -77,8 +79,10 @@ fn r1_elephant_cannot_report_and_fish_is_its_own_identity() {
             &Caller::Fish(FishKey {
                 space: "s1".into(),
                 task,
+                elephant: "e00000000".into(),
                 fish: "otro".into(),
                 attempt: 1,
+                parent: None,
             }),
             Command::Verify,
         )

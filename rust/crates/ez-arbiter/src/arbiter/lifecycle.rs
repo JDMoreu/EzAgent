@@ -85,7 +85,7 @@ impl ArbiterShared {
         let id = format!("c{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
         let card = Card {
             id,
-            space: space.to_string(),
+            space: super::normalize_scope(space),
             task: task.map(str::to_string),
             kind,
             title: title.into(),
@@ -100,11 +100,12 @@ impl ArbiterShared {
 
     /// Cierra (y devuelve) la primera tarjeta abierta de un tipo en un espacio.
     pub(crate) fn take_card(&self, space: &str, kind: CardKind) -> Option<Card> {
+        let wanted = super::normalize_scope(space);
         let mut inner = self.inner.lock();
         let id = inner
             .cards
             .values()
-            .find(|card| card.space == space && card.kind == kind)
+            .find(|card| card.space == wanted && card.kind == kind)
             .map(|card| card.id.clone());
         id.and_then(|id| inner.cards.remove(&id))
     }

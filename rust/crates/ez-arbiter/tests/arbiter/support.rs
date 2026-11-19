@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use ez_arbiter::{
-    Arbiter, Caller, Clock, Command, Delivery, FishKey, FishLauncher, InstructionWriter,
-    LaunchRequest, Launched, Outcome, Rejection, Space, Verdict,
+    Arbiter, Caller, Clock, Command, Delivery, ElephantKey, FishKey, FishLauncher,
+    InstructionWriter, LaunchRequest, Launched, Outcome, Rejection, Space, Verdict,
 };
 use ez_team::{builtin, InstructionContext, RoleId, Seat};
 
@@ -229,8 +229,14 @@ impl Fixture {
     }
 
     pub fn elephant() -> Caller {
-        Caller::Elephant {
+        Caller::Elephant(ElephantKey::default_for("s1"))
+    }
+
+    /// Clave de un agente principal adicional en el espacio de prueba.
+    pub fn elephant_key(id: &str) -> ElephantKey {
+        ElephantKey {
             space: "s1".to_string(),
+            elephant: id.to_string(),
         }
     }
 
@@ -255,15 +261,8 @@ impl Fixture {
             else {
                 continue;
             };
-            let key = FishKey {
-                space: record["key"]["space"]
-                    .as_str()
-                    .expect("espacio")
-                    .to_string(),
-                task: record["key"]["task"].as_str().expect("tarea").to_string(),
-                fish: record["key"]["fish"].as_str().expect("pez").to_string(),
-                attempt: record["key"]["attempt"].as_u64().expect("intento") as u32,
-            };
+            let key: FishKey =
+                serde_json::from_value(record["key"].clone()).expect("clave del pez");
             let works = state["work"].as_array();
             let find_work = |state_filter: Option<&str>| -> Option<PathBuf> {
                 works?.iter().rev().find_map(|item| {
