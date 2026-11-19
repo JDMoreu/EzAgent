@@ -20,6 +20,8 @@ type Machine = NoteMachine<MicNoteRecorder, WhisperTranscriber, SystemClock>;
 
 /// `Idle` espera un clic; `Recording` tiene la máquina viva; `Busy` impide un
 /// segundo inicio mientras se transcribe fuera de cualquier candado.
+// DECISION: `Busy` also covers the interval while the microphone opens and the
+// transcription runs, so a fast double click can never start two notes.
 enum Slot {
     Idle,
     Recording(Box<Machine>),
@@ -94,6 +96,8 @@ impl VoiceNotes {
     }
 
     /// Vigila el reloj de la máquina; al vencer, transcribe y avisa a la vista.
+    // DECISION: se sondea una vez por segundo en vez de dormir 300 s, para que
+    // el tope use el mismo reloj que la máquina probada con reloj falso.
     fn watchdog(self: Arc<Self>, app: AppHandle) {
         loop {
             thread::sleep(Duration::from_secs(1));

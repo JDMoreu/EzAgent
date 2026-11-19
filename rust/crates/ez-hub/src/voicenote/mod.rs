@@ -190,6 +190,8 @@ pub fn join_fragments(fragments: &[Vec<u8>]) -> Vec<u8> {
 /// Inserta `added` en `cursor` y devuelve el texto y el nuevo cursor.
 ///
 /// Añade un espacio a cada lado solo cuando haría falta separar palabras.
+// DECISION: el brief pide «un espacio si hace falta»; se añade a izquierda y
+// derecha solo cuando hay texto pegado sin espacio, para no alterar saltos.
 pub fn insert_at(current: &str, cursor: usize, added: &str) -> (String, usize) {
     let cursor = floor_boundary(current, cursor);
     let before = &current[..cursor];

@@ -25,6 +25,8 @@ impl WhisperTranscriber {
 
 impl Transcriber for WhisperTranscriber {
     fn transcribe(&mut self, wav: &[u8]) -> Result<String, NoteError> {
+        // DECISION: el `Child` se guarda hasta que cae la app (Drop de
+        // `VoiceNotes`); si aparece otro, se mata ese para no dejar huérfanos.
         let mut config = self.config.clone();
         let started = ensure_whisper(&mut config);
         if let Some(mut process) = started {
