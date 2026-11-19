@@ -1,0 +1,119 @@
+//! R12: traza, eventos del elefante, suscriptores y recarga.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use ez_arbiter::{Arbiter, Command, Verdict};
+use ez_team::Role;
+
+use super::support::{FakeWriter, Fixture};
+
+fn next(f: &Fixture) -> String {
+    f.arbiter
+        .wait_for_elephant("s1", Duration::from_millis(100))
+        .expect("evento para el elefante")
+        .kind
+}
+
+#[test]
+fn r12_bitacora_has_one_event_per_action_and_rejections() {
+    let f = Fixture::new("r12-bitacora");
+    let task = f.setup();
+    let events = f.bitacora(&task);
+    let kinds: Vec<&str> = events
+        .iter()
+        .map(|event| event["kind"].as_str().expect("tipo"))
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![
+            "task_proposed",
+            "task_approved",
+            "team_proposed",
+            "team_approved",
+            "round_started",
+        ]
+    );
+    let error = f
+        .arbiter
+        .execute(&Fixture::elephant(), Command::TaskClose)
+        .expect_err("sin rondas limpias");
+    assert_eq!(error.rule, "R10");
+    let events = f.bitacora(&task);
+    assert_eq!(events.last().expect("último evento")["kind"], "rejected");
+    assert_eq!(events.last().expect("rechazo")["data"]["rule"], "R10");
+}
+
+#[test]
+fn r12_elephant_events_arrive_in_order_and_timeout() {
+    let f = Fixture::new("r12-cola");
+    let _ = f.setup();
+    assert_eq!(next(&f), "task_approved");
+    assert_eq!(next(&f), "team_approved");
+    f.launch(Role::Developer);
+    f.report("dev-r1-1", Verdict::Pass, None, None)
+        .expect("informe del desarrollador");
+    let event = f
+        .arbiter
+        .wait_for_elephant("s1", Duration::from_millis(100))
+        .expect("informe");
+    assert_eq!(event.kind, "fish_reported");
+    assert_eq!(event.data["fish"], "dev-r1-1");
+    assert!(event.message.contains("dev-r1-1"));
+    f.arbiter
+        .execute(
+            &Fixture::elephant(),
+            Command::Pause {
+                reason: "espera".to_string(),
+            },
+        )
+        .expect("pausar");
+    assert_eq!(next(&f), "paused");
+    assert!(f
+        .arbiter
+        .wait_for_elephant("s1", Duration::from_millis(10))
+        .is_none());
+}
+
+#[test]
+fn r12_subscribers_see_fish_launch_and_signals() {
+    let f = Fixture::new("r12-suscriptores");
+    let receiver = f.arbiter.subscribe();
+    let task = f.setup();
+    let fish = f.launch(Role::Developer);
+    f.arbiter.fish_blocked(&fish, Some("working"));
+    f.arbiter.fish_exited(&fish);
+    let kinds: Vec<String> = receiver.try_iter().map(|event| event.kind).collect();
+    assert!(kinds.contains(&"task_proposed".to_string()));
+    assert!(kinds.contains(&"fish_launched".to_string()));
+    assert!(kinds.contains(&"fish_blocked".to_string()));
+    assert!(kinds.contains(&"fish_exited".to_string()));
+    assert!(f
+        .bitacora(&task)
+        .iter()
+        .any(|event| event["kind"] == "fish_blocked"));
+}
+
+#[test]
+fn r12_reload_keeps_unfinished_task_and_trace() {
+    let f = Fixture::new("r12-recarga");
+    let task = f.setup();
+    f.launch(Role::Developer);
+    f.report("dev-r1-1", Verdict::Pass, None, None)
+        .expect("informe del desarrollador");
+    let reopened = Arbiter::new(
+        f.data_dir.clone(),
+        f.launcher.clone(),
+        Arc::new(FakeWriter),
+        f.clock.clone(),
+    )
+    .expect("reabrir el árbitro");
+    reopened.register_space(Fixture::space(&f.folder));
+    let snapshot = reopened.snapshot("s1").expect("tarea recargada");
+    assert_eq!(snapshot["task"], task);
+    assert_eq!(snapshot["status"], "in_round");
+    assert_eq!(snapshot["round"], 1);
+    assert_eq!(snapshot["fish"][0]["id"], "dev-r1-1");
+    assert_eq!(snapshot["fish"][0]["reported"], true);
+    assert_eq!(f.bitacora(&task).len(), 7);
+}
