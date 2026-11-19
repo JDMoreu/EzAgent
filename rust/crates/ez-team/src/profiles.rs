@@ -151,7 +151,10 @@ familia = "openai"
         );
         assert_eq!(first[0].prelaunch.as_deref(), Some("opencode_state"));
         assert_eq!(
-            first[0].env.get("OPENCODE_CONFIG_CONTENT").map(String::as_str),
+            first[0]
+                .env
+                .get("OPENCODE_CONFIG_CONTENT")
+                .map(String::as_str),
             Some(r#"{"model":"{modelo}{variante}"}"#)
         );
         assert_eq!(first[1].family.as_deref(), Some("anthropic"));
@@ -177,7 +180,10 @@ familia = "openai"
         .expect("write");
         let agents = super::load(dir.path()).expect("load");
         assert_eq!(agents[0].prelaunch.as_deref(), Some("opencode_state"));
-        assert_eq!(agents[0].env.get("CLAVE").map(String::as_str), Some("valor-{modelo}"));
+        assert_eq!(
+            agents[0].env.get("CLAVE").map(String::as_str),
+            Some("valor-{modelo}")
+        );
     }
 
     #[test]

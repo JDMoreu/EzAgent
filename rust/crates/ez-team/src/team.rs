@@ -173,9 +173,11 @@ fn check_effort(seat: &Seat, inventory: &Inventory, check: &mut TeamCheck) {
         return;
     };
     let can_apply = !agent.profile.effort_args.is_empty()
-        || agent.profile.env.values().any(|value| {
-            value.contains("{esfuerzo}") || value.contains("{variante}")
-        });
+        || agent
+            .profile
+            .env
+            .values()
+            .any(|value| value.contains("{esfuerzo}") || value.contains("{variante}"));
     if !can_apply {
         // DECISION: the name in the message is the profile's human name when the agent
         // is known; the id would be ambiguous for the person reading the card.
@@ -467,7 +469,10 @@ modelo = "opencode-go/gpt-6-luna"
             "[[papel]]\npapel = \"developer\"\nagente = \"codex\"\nmodelo = \"m\"\nesfuerzo = \"  \"\n",
         )
         .expect_err("empty effort");
-        assert!(error.to_string().contains("esfuerzo no puede estar vacío"), "{error}");
+        assert!(
+            error.to_string().contains("esfuerzo no puede estar vacío"),
+            "{error}"
+        );
     }
 
     #[test]

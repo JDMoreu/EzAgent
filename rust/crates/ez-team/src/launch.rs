@@ -52,7 +52,9 @@ pub struct LaunchCommand {
 /// `esfuerzo_args` (only present with an effort) and the values of `env`.
 pub fn command(profile: &AgentProfile, seat: &Seat) -> LaunchCommand {
     let effort = seat.effort.as_deref().filter(|effort| !effort.is_empty());
-    let variant = effort.map(|effort| format!("#{effort}")).unwrap_or_default();
+    let variant = effort
+        .map(|effort| format!("#{effort}"))
+        .unwrap_or_default();
     let mut argv: Vec<String> = profile
         .argv
         .iter()
@@ -249,7 +251,10 @@ mod tests {
         let launch = command(&opencode_profile(), &seat(Some("max")));
         assert_eq!(launch.argv, ["opencode", "--standalone"]);
         assert_eq!(
-            launch.env.get("OPENCODE_CONFIG_CONTENT").map(String::as_str),
+            launch
+                .env
+                .get("OPENCODE_CONFIG_CONTENT")
+                .map(String::as_str),
             Some(r#"{"model":"openai/gpt-6-luna#max"}"#)
         );
         assert_eq!(launch.prelaunch.as_deref(), Some("opencode_state"));
@@ -259,16 +264,26 @@ mod tests {
     fn command_for_opencode_without_effort_leaves_the_variant_empty() {
         let launch = command(&opencode_profile(), &seat(None));
         assert_eq!(
-            launch.env.get("OPENCODE_CONFIG_CONTENT").map(String::as_str),
+            launch
+                .env
+                .get("OPENCODE_CONFIG_CONTENT")
+                .map(String::as_str),
             Some(r#"{"model":"openai/gpt-6-luna"}"#)
         );
     }
 
     #[test]
     fn command_for_claude_appends_effort() {
-        let claude = profile("claude", &["claude", "--model", "{modelo}"], &["--effort", "{esfuerzo}"]);
+        let claude = profile(
+            "claude",
+            &["claude", "--model", "{modelo}"],
+            &["--effort", "{esfuerzo}"],
+        );
         let launch = command(&claude, &seat(Some("high")));
-        assert_eq!(launch.argv, ["claude", "--model", "openai/gpt-6-luna", "--effort", "high"]);
+        assert_eq!(
+            launch.argv,
+            ["claude", "--model", "openai/gpt-6-luna", "--effort", "high"]
+        );
     }
 
     #[test]

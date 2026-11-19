@@ -174,9 +174,11 @@ impl Inventory {
     }
 }
 
+type ModelsCache = Mutex<HashMap<(String, String), Vec<String>>>;
+
 /// Process-wide cache of `modelos_cmd` output, keyed by profile id and command line.
-fn models_cache() -> &'static Mutex<HashMap<(String, String), Vec<String>>> {
-    static CACHE: OnceLock<Mutex<HashMap<(String, String), Vec<String>>>> = OnceLock::new();
+fn models_cache() -> &'static ModelsCache {
+    static CACHE: OnceLock<ModelsCache> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -543,7 +545,10 @@ mod tests {
         let started = Instant::now();
         let output = super::RealSystem.run(&argv, Duration::from_millis(200));
         assert!(output.is_none(), "{output:?}");
-        assert!(started.elapsed() < Duration::from_secs(5), "tardó demasiado");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "tardó demasiado"
+        );
     }
 
     #[test]
