@@ -3,10 +3,13 @@
 //! Claude Code no guarda el porcentaje ni el reinicio de la ventana: aquí solo
 //! se pueden sumar tokens y detectar el aviso `fallback_credit`.
 
+use std::cmp::Reverse;
+use std::collections::BTreeMap;
+
 use serde_json::Value;
 
 use super::jsonl;
-use super::{Reading, TokenUsage, UsageDirs, Window};
+use super::{ModelUsage, Reading, TokenUsage, UsageDirs, UsageState, Window};
 
 pub(crate) fn read(dirs: &UsageDirs, window: &Window, now_ms: u64) -> Reading {
     let root = dirs.home.join(".claude").join("projects");
@@ -34,6 +37,7 @@ pub(crate) fn read(dirs: &UsageDirs, window: &Window, now_ms: u64) -> Reading {
     let mut messages = 0u64;
     let mut fallback = 0u64;
     let mut observed = 0u64;
+    let mut by_model: BTreeMap<String, Totals> = BTreeMap::new();
     for path in &files {
         jsonl::read_lines(path, |line| {
             let Ok(record) = serde_json::from_str::<Value>(line) else {
@@ -58,10 +62,26 @@ pub(crate) fn read(dirs: &UsageDirs, window: &Window, now_ms: u64) -> Reading {
             }
             messages += 1;
             observed = observed.max(timestamp);
-            input = input.saturating_add(number(usage, "input_tokens"));
-            output = output.saturating_add(number(usage, "output_tokens"));
-            cache_read = cache_read.saturating_add(number(usage, "cache_read_input_tokens"));
-            cache_write = cache_write.saturating_add(number(usage, "cache_creation_input_tokens"));
+            let model = record
+                .get("message")
+                .and_then(|message| message.get("model"))
+                .and_then(Value::as_str)
+                .unwrap_or("desconocido")
+                .to_string();
+            let totals = by_model.entry(model).or_default();
+            let input_tokens = number(usage, "input_tokens");
+            let output_tokens = number(usage, "output_tokens");
+            let read_tokens = number(usage, "cache_read_input_tokens");
+            let write_tokens = number(usage, "cache_creation_input_tokens");
+            input = input.saturating_add(input_tokens);
+            output = output.saturating_add(output_tokens);
+            cache_read = cache_read.saturating_add(read_tokens);
+            cache_write = cache_write.saturating_add(write_tokens);
+            totals.input = totals.input.saturating_add(input_tokens);
+            totals.output = totals.output.saturating_add(output_tokens);
+            totals.cache_read = totals.cache_read.saturating_add(read_tokens);
+            totals.cache_write = totals.cache_write.saturating_add(write_tokens);
+            totals.messages += 1;
             if usage
                 .get("fallback_credit")
                 .is_some_and(|credit| !credit.is_null())
@@ -73,6 +93,24 @@ pub(crate) fn read(dirs: &UsageDirs, window: &Window, now_ms: u64) -> Reading {
     // DECISION: Claude Code no guarda costo por token en disco; no se inventa.
     reading.tokens = Some(TokenUsage::new(input, output, cache_read, cache_write));
     reading.messages = Some(messages);
+    reading.models = by_model
+        .into_iter()
+        .map(|(model, totals)| ModelUsage {
+            model,
+            tokens: Some(TokenUsage::new(
+                totals.input,
+                totals.output,
+                totals.cache_read,
+                totals.cache_write,
+            )),
+            messages: Some(totals.messages),
+            cost_usd: None,
+            state: UsageState::Desconocido,
+        })
+        .collect();
+    reading
+        .models
+        .sort_by_key(|model| Reverse(model.tokens.map_or(0, |tokens| tokens.total)));
     reading.observed_ms = (observed > 0).then_some(observed);
     reading.sources.tokens = Some(format!(
         "message.usage de {} sesión(es) reciente(s) de Claude Code",
@@ -85,6 +123,15 @@ pub(crate) fn read(dirs: &UsageDirs, window: &Window, now_ms: u64) -> Reading {
         ));
     }
     reading
+}
+
+#[derive(Default)]
+struct Totals {
+    input: u64,
+    output: u64,
+    cache_read: u64,
+    cache_write: u64,
+    messages: u64,
 }
 
 fn number(value: &Value, key: &str) -> u64 {

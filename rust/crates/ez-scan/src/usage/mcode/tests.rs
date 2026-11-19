@@ -33,16 +33,16 @@ fn database(root: &std::path::Path) {
     connection
         .execute(
             "INSERT INTO local_runtime_token_usage
-             (ts, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd)
-             VALUES (?1, 10, 20, 30, 40, 0.5)",
+             (model, ts, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd)
+             VALUES ('minimax/MiniMax-M3.1-Flash', ?1, 10, 20, 30, 40, 0.5)",
             [1_767_353_400_000i64],
         )
         .expect("fila de la ventana");
     connection
         .execute(
             "INSERT INTO local_runtime_token_usage
-             (ts, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd)
-             VALUES (?1, 999, 999, 999, 999, 9.0)",
+             (model, ts, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd)
+             VALUES ('modelo-viejo', ?1, 999, 999, 999, 999, 9.0)",
             [1_767_315_600_000i64],
         )
         .expect("fila vieja");
@@ -57,6 +57,9 @@ fn suma_las_filas_de_la_ventana() {
     assert_eq!(tokens.total, 100);
     assert_eq!(reading.messages, Some(1));
     assert!((reading.cost_usd.expect("costo") - 0.5).abs() < 1e-9);
+    assert_eq!(reading.models.len(), 1);
+    assert_eq!(reading.models[0].model, "minimax/MiniMax-M3.1-Flash");
+    assert_eq!(reading.models[0].tokens.expect("tokens del modelo").total, 100);
     assert_eq!(reading.observed_ms, Some(1_767_353_400_000));
     let _ = std::fs::remove_dir_all(&root);
 }

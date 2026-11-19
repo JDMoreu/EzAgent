@@ -78,6 +78,7 @@ fn la_propuesta_no_sobrescribe_lo_que_ya_existe() {
             tokens: None,
             messages: None,
             cost_usd: None,
+            models: Vec::new(),
             limit: None,
             resets_ms: None,
             reset_text: None,

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use ez_core::config::VoiceConfig;
 use ez_scan::usage::{self, Priority, UsageDirs, UsageState};
+use rusqlite::Connection;
 use serde_json::json;
 
 const NOW: u64 = 1_767_355_200_000; // 2026-01-02T12:00:00Z
@@ -32,9 +33,65 @@ fn dirs(temp_root: &Path) -> UsageDirs {
         appdata: fixtures().join("appdata").join("EzAgent"),
         codex: home.join(".codex"),
         minimax: temp_root.join("minimax"),
-        opencode_data: home.join(".local").join("share").join("opencode"),
+        opencode_data: temp_root.join("opencode"),
         subagents: temp_root.join("subagentes"),
     }
+}
+
+/// Base de OpenCode con el esquema actual y un aviso `Free` vigente, pero con
+/// uso de `opencode-go` posterior: el agente no debe quedar agotado.
+fn opencode(temp_root: &Path) {
+    let folder = temp_root.join("opencode");
+    std::fs::create_dir_all(folder.join("log")).expect("carpeta de OpenCode");
+    let connection = Connection::open(folder.join("opencode.db")).expect("base de OpenCode");
+    connection
+        .execute_batch(
+            "CREATE TABLE session_message (
+                id TEXT, session_id TEXT, type TEXT, seq INTEGER,
+                time_created INTEGER, time_updated INTEGER, data TEXT
+            );",
+        )
+        .expect("tabla de OpenCode");
+    for (at, provider, model, tokens) in [
+        (
+            1_767_349_800_000i64,
+            "opencode",
+            "hy4-flash-free",
+            [10, 20, 30, 40],
+        ),
+        (
+            1_767_353_400_000i64,
+            "opencode-go",
+            "deepseek-v4.1-flash",
+            [100, 50, 20, 10],
+        ),
+    ] {
+        let data = json!({
+            "model": {"providerID": provider, "id": model},
+            "tokens": {
+                "input": tokens[0], "output": tokens[1], "reasoning": 0,
+                "cache": {"read": tokens[2], "write": tokens[3]}
+            },
+            "cost": 0.0,
+            "time": {"created": at}
+        });
+        connection
+            .execute(
+                "INSERT INTO session_message
+                 (id, session_id, type, seq, time_created, time_updated, data)
+                 VALUES (?1, 's', 'assistant', 0, ?2, ?2, ?3)",
+                rusqlite::params![format!("m-{at}"), at, data.to_string()],
+            )
+            .expect("fila de OpenCode");
+    }
+    drop(connection);
+    std::fs::write(
+        folder.join("log").join("opencode.log"),
+        "timestamp=2026-01-02T11:00:00.000Z level=ERROR run=fake \
+         message=\"Failed to drain Session\" cause=\"AI.Error: Free usage limit reached. \
+         Free models work in OpenCode; subscribe to OpenCode Go to keep going.\"\n",
+    )
+    .expect("registro de OpenCode");
 }
 
 fn config() -> VoiceConfig {
@@ -77,6 +134,7 @@ fn agent<'a>(report: &'a usage::UsageReport, key: &str) -> &'a usage::AgentUsage
 #[test]
 fn lee_los_ejemplos_de_cada_agente_sin_tocar_la_carpeta_real() {
     let temp_root = temp("lectores");
+    opencode(&temp_root);
     let dirs = dirs(&temp_root);
     let planes = usage::load_planes(&dirs);
     assert!(planes.warnings.is_empty(), "{:?}", planes.warnings);
@@ -103,9 +161,28 @@ fn lee_los_ejemplos_de_cada_agente_sin_tocar_la_carpeta_real() {
     assert_eq!(codex.reset_text.as_deref().map(str::len), Some(16));
 
     let opencode = agent(&report, "opencode");
-    assert_eq!(opencode.state, UsageState::Agotado);
+    assert_ne!(opencode.state, UsageState::Agotado, "{opencode:#?}");
+    assert_eq!(opencode.tokens.expect("tokens").total, 280);
+    assert_eq!(opencode.messages, Some(2));
     assert_eq!(opencode.plan.as_deref(), Some("OpenCode Go"));
-    assert!(opencode.sources.state.contains("OpenCode"), "{opencode:#?}");
+    assert!(
+        opencode
+            .models
+            .iter()
+            .any(|model| model.model.ends_with("hy4-flash-free")
+                && model.state == UsageState::Agotado)
+    );
+    assert!(
+        opencode
+            .models
+            .iter()
+            .any(|model| model.model.starts_with("opencode-go/")
+                && model.state != UsageState::Agotado)
+    );
+    assert!(opencode
+        .warnings
+        .iter()
+        .all(|warning| !warning.contains("no se actualiza")));
 
     let pi = agent(&report, "pi");
     assert_eq!(pi.tokens.expect("tokens").total, 180);

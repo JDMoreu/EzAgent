@@ -342,6 +342,7 @@ fn write_usage_agent(out: &mut dyn Write, agent: &ez_scan::usage::AgentUsage) {
         state_text(agent.state)
     );
     write_usage_facts(out, agent);
+    write_usage_models(out, &agent.models);
     write_usage_sources(out, agent);
     for warning in &agent.warnings {
         let _ = writeln!(out, "    aviso: {warning}");
@@ -397,6 +398,27 @@ fn write_usage_facts(out: &mut dyn Write, agent: &ez_scan::usage::AgentUsage) {
         ));
     }
     let _ = writeln!(out, "    {}", facts.join(" · "));
+}
+
+fn write_usage_models(out: &mut dyn Write, models: &[ez_scan::usage::ModelUsage]) {
+    if models.is_empty() {
+        return;
+    }
+    let _ = writeln!(out, "    modelos:");
+    for model in models {
+        let mut facts = Vec::new();
+        if let Some(tokens) = model.tokens {
+            facts.push(format!("{} tokens", format_tokens(tokens.total)));
+        }
+        if let Some(messages) = model.messages {
+            facts.push(format!("{messages} mensajes"));
+        }
+        if let Some(cost) = model.cost_usd {
+            facts.push(format!("{cost:.2} USD"));
+        }
+        facts.push(state_text(model.state).to_string());
+        let _ = writeln!(out, "      {}: {}", model.model, facts.join(" · "));
+    }
 }
 
 fn write_usage_sources(out: &mut dyn Write, agent: &ez_scan::usage::AgentUsage) {

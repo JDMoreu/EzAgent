@@ -27,7 +27,7 @@ fn home(root: &std::path::Path) {
     let inside = json!({
         "type": "assistant",
         "timestamp": "2026-01-02T11:30:00.000Z",
-        "message": {"usage": {
+        "message": {"model": "modelo-inventado", "usage": {
             "input_tokens": 100, "output_tokens": 50,
             "cache_read_input_tokens": 20, "cache_creation_input_tokens": 10,
             "fallback_credit": null
@@ -41,7 +41,7 @@ fn home(root: &std::path::Path) {
     let fallback = json!({
         "type": "assistant",
         "timestamp": "2026-01-02T11:40:00.000Z",
-        "message": {"usage": {
+        "message": {"model": "modelo-inventado", "usage": {
             "input_tokens": 0, "output_tokens": 0,
             "fallback_credit": {"used": true}
         }}
@@ -74,6 +74,12 @@ fn suma_solo_lo_de_la_ventana_y_detecta_el_respaldo() {
     assert_eq!(tokens.cache_write, 10);
     assert_eq!(tokens.total, 180);
     assert_eq!(reading.messages, Some(2));
+    assert_eq!(reading.models.len(), 1);
+    assert_eq!(reading.models[0].model, "modelo-inventado");
+    assert_eq!(
+        reading.models[0].tokens.expect("tokens del modelo").total,
+        180
+    );
     assert!(reading.depleted.is_some());
     assert_eq!(reading.plan.as_deref(), Some("claude_pro"));
     assert_eq!(reading.observed_ms, Some(1_767_354_000_000));

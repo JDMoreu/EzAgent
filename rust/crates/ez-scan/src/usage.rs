@@ -24,6 +24,7 @@ mod jsonl;
 mod mcode;
 mod opencode;
 mod pi;
+mod sqlite;
 
 pub use planes::Priority;
 
@@ -101,6 +102,17 @@ impl UsageLimit {
     }
 }
 
+/// El uso de un modelo concreto en la ventana.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ModelUsage {
+    /// `proveedor/modelo` cuando se conoce.
+    pub model: String,
+    pub tokens: Option<TokenUsage>,
+    pub messages: Option<u64>,
+    pub cost_usd: Option<f64>,
+    pub state: UsageState,
+}
+
 /// De dónde salió cada dato, para poder explicarlo.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Sources {
@@ -128,6 +140,8 @@ pub struct AgentUsage {
     pub tokens: Option<TokenUsage>,
     pub messages: Option<u64>,
     pub cost_usd: Option<f64>,
+    /// Desglose por modelo, cuando el agente guarda el modelo.
+    pub models: Vec<ModelUsage>,
     pub limit: Option<UsageLimit>,
     /// Reinicio de la ventana, en milisegundos desde la época.
     pub resets_ms: Option<u64>,
@@ -418,6 +432,7 @@ fn assemble(
         tokens: reading.tokens,
         messages: reading.messages,
         cost_usd: reading.cost_usd,
+        models: reading.models,
         limit,
         resets_ms: reading.resets_ms,
         reset_text: reading.resets_ms.map(jsonl::format_local),
@@ -539,6 +554,7 @@ pub(crate) struct Reading {
     pub(crate) tokens: Option<TokenUsage>,
     pub(crate) messages: Option<u64>,
     pub(crate) cost_usd: Option<f64>,
+    pub(crate) models: Vec<ModelUsage>,
     pub(crate) used_percent: Option<f64>,
     pub(crate) limit: Option<UsageLimit>,
     pub(crate) resets_ms: Option<u64>,

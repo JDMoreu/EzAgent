@@ -31,6 +31,7 @@ fn suma_tokens_y_costo_de_la_ventana() {
         "type": "message",
         "message": {
             "role": "assistant",
+            "model": "modelo-inventado",
             "timestamp": 1_767_353_400_000u64,
             "usage": {
                 "input": 100, "output": 50, "cacheRead": 20, "cacheWrite": 10,
@@ -52,6 +53,9 @@ fn suma_tokens_y_costo_de_la_ventana() {
     assert_eq!(tokens.total, 180);
     assert_eq!(reading.messages, Some(1));
     assert!((reading.cost_usd.expect("costo") - 0.3).abs() < 1e-9);
+    assert_eq!(reading.models.len(), 1);
+    assert_eq!(reading.models[0].model, "modelo-inventado");
+    assert!((reading.models[0].cost_usd.expect("costo del modelo") - 0.3).abs() < 1e-9);
     assert_eq!(reading.observed_ms, Some(1_767_353_400_000));
     let _ = std::fs::remove_dir_all(&root);
 }
