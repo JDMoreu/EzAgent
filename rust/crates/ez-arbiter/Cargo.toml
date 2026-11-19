@@ -1,0 +1,24 @@
+[package]
+name = "ez-arbiter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "ez_arbiter"
+path = "src/lib.rs"
+
+[dependencies]
+ez-core = { path = "../ez-core" }
+ez-team = { path = "../ez-team" }
+ez-herdr = { path = "../ez-herdr" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+sha2 = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+crossbeam-channel = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }

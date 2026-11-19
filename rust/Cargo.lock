@@ -553,6 +553,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "ez-arbiter"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "crossbeam-channel",
+ "ez-core",
+ "ez-herdr",
+ "ez-team",
+ "parking_lot 0.13.0",
+ "serde",
+ "serde_json",
+ "sha2",
+ "toml",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "ez-audio"
 version = "0.1.0"
 dependencies = [
@@ -608,6 +626,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ez-ctl"
+version = "0.1.0"
+dependencies = [
+ "crossbeam-channel",
+ "parking_lot 0.13.0",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tiny_http",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "ez-fakes"
 version = "0.1.0"
 dependencies = [
@@ -641,6 +673,16 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tracing",
+]
+
+[[package]]
+name = "ez-hub"
+version = "0.1.0"
+dependencies = [
+ "ez-core",
+ "serde",
+ "serde_json",
  "tracing",
 ]
 
@@ -716,6 +758,28 @@ dependencies = [
  "tiny_http",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "ez-team"
+version = "0.1.0"
+dependencies = [
+ "ez-core",
+ "serde",
+ "serde_json",
+ "toml",
+ "tracing",
+]
+
+[[package]]
+name = "ez-term"
+version = "0.1.0"
+dependencies = [
+ "crossbeam-channel",
+ "ez-core",
+ "serde",
+ "serde_json",
+ "tracing",
 ]
 
 [[package]]

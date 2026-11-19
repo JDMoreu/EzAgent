@@ -17,11 +17,11 @@ ID="$1"; DIR="$2"; PROMPT_FILE="$3"; MODE="${4:-new}"
 # worker dejó en su carpeta y OpenCode corre con prioridad baja.
 HERE="$(cd "$(dirname "$0")" && pwd)"
 MAX=8
-LOG_DIR=/c/Users/JDMoreu/AppData/Local/Temp/claude/40010d84cecbf54d/ffb0b8cb-44a7-4d4d-8f38-01a6793a649e/scratchpad
+LOG_DIR="${EZ_LOG_DIR:-/c/Users/JDMoreu/AppData/Local/Temp/claude/40010d84cecbf54d/ffb0b8cb-44a7-4d4d-8f38-01a6793a649e/scratchpad}"
 REPORT="$DIR/rust-migration/reports/$ID-r1.md"
 PROMPT="$(cat "$PROMPT_FILE")"
 CONT="Continúa exactamente donde lo dejaste: la ejecución se cortó. Revisa git status y git log de esta rama, ejecuta de nuevo lo que falte y termina la tarea de rust-migration/briefs/$ID.md (commit + informe rust-migration/reports/$ID-r1.md con la verificación real, sin «pendiente»)."
-MODEL="opencode-go/deepseek-v4.1-flash#max"
+MODEL="${EZ_MODEL:-opencode-go/deepseek-v4.1-flash#max}"
 
 session_id() {
   opencode session list 2>/dev/null | awk -v t="$ID-s1" '$2 == t { print $1; exit }'
