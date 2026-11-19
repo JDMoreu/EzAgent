@@ -14,6 +14,9 @@ if not defined ID exit /b 1
 >>".fake-argv.log" echo ENV=[%OPENCODE_CONFIG_CONTENT%]
 ping -n 4 127.0.0.1 >nul
 if /i "%MODE%"=="limit" goto limit
+if /i "%MODE%"=="limit-top" goto limittop
+if /i "%MODE%"=="limit-work" goto limitwork
+if /i "%MODE%"=="chatter" goto chatter
 if /i "%MODE%"=="slow" goto slow
 if /i "%MODE%"=="fail" exit /b 0
 if /i "%MODE%"=="retry" if not exist ".fake-attempt2" (
@@ -43,6 +46,25 @@ rem HD-0d (C0-6): la pantalla del trabajador muestra un aviso de límite de uso.
 echo Free limit reached. Try again later.
 ping -n 120 127.0.0.1 >nul
 exit /b 0
+:limittop
+rem HD-0e: el aviso de límite está ARRIBA de una pantalla larga: no cuenta,
+rem porque no está en las últimas 15 líneas.
+echo Free limit reached. Try again later.
+for /L %%i in (1,1,20) do echo linea de relleno %%i: el agente sigue trabajando
+ping -n 50 127.0.0.1 >nul
+goto escribir
+:chatter
+rem HD-0e: el trabajador MENciona límites de uso con palabras sueltas
+rem («quota», «rate limit», «usage limit») pero no está bloqueado.
+echo revisando el informe de IR-0: "quota", "rate limit" y "usage limit" salen en el texto
+ping -n 6 127.0.0.1 >nul
+goto escribir
+:limitwork
+rem HD-0e: la frase COMPLETA de límite está en pantalla, pero el agente está
+rem «working»: no está bloqueado y el supervisor no debe tocarlo.
+echo Free limit reached. Try again later.
+ping -n 40 127.0.0.1 >nul
+goto escribir
 :tui
 ping -n 2 127.0.0.1 >nul
 goto tui

@@ -318,8 +318,10 @@ printf '%s\n' "$LAST_OUT" | grep -q "informe completado en el intento 1" \
   && echo "OK caso 9: terminó en el primer intento" \
   || { echo "FALLO: caso 9 no terminó en el primer intento"; FAIL=1; }
 
-echo "[pruebas] caso 10: HD-0d C0-6 un aviso de límite de uso deja el intento «fallido» sin reintento"
-run_case HD0T10 "$WORK/limit" limit EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd"
+echo "[pruebas] caso 10: HD-0d/HD-0e C0-6 un aviso de límite de uso deja el intento «fallido» sin reintento"
+echo "[pruebas]   (HD-0e: solo cuenta con el agente parado y la pantalla quieta)"
+run_case HD0T10 "$WORK/limit" limit EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" \
+  PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=idle EZ_REAL_HC="$REAL_HC"
 code=$?
 [ "$code" -eq 2 ] || { echo "FALLO: caso 10 devolvió $code (esperado 2)"; FAIL=1; }
 printf '%s\n' "$LAST_OUT" | grep -q "límite de uso" \
@@ -343,6 +345,61 @@ code=$?
 [ "$code" -eq 0 ] || { echo "FALLO: caso 11 (modelo nuevo) devolvió $code (esperado 0)"; FAIL=1; }
 check "sesión nueva con el modelo nuevo" "$(grep -c -- '--session ses_hd0t11s2' "$WORK/model/.fake-argv.log")" "1"
 check "la sesión vieja no se repite" "$(grep -c -- '--session ses_hd0t11s1' "$WORK/model/.fake-argv.log")" "1"
+
+# HD-0e: la detección de límite de uso solo cuenta con el agente parado, la
+# pantalla quieta y una frase COMPLETA en las últimas 15 líneas.
+no_tocado() { # no_tocado <id> <carpeta> <log> — comprueba que no hubo límite
+  local id="$1" dir="$2" log="$3"
+  printf '%s\n' "$LAST_OUT" | grep -q "límite de uso" \
+    && { echo "FALLO caso $id: el supervisor tomó la pantalla por un límite de uso"; FAIL=1; return; }
+  if [ -f "$dir/rust-migration/reports/$id-r1.md" ]; then
+    echo "OK caso $id: el trabajador terminó su informe (no se lo tocó)"
+  else
+    echo "FALLO caso $id: el trabajador no dejó informe"; FAIL=1
+  fi
+  [ -f "$log" ] || { echo "FALLO caso $id: no hay log de pantalla"; FAIL=1; return; }
+}
+
+echo "[pruebas] caso 12: HD-0e palabras sueltas («quota», «rate limit») con el agente parado no son un límite"
+run_case HD0T12 "$WORK/chatter" chatter EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" \
+  PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=idle EZ_REAL_HC="$REAL_HC"
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 12 devolvió $code (esperado 0)"; FAIL=1; }
+no_tocado 12 "$WORK/chatter" "$WORK/log/HD0T12-hc1.log"
+grep -Fq "quota" "$WORK/log/HD0T12-hc1.log" \
+  && echo "OK caso 12: las palabras sueltas estaban en la pantalla" \
+  || { echo "FALLO caso 12: la pantalla no tenía las palabras sueltas"; FAIL=1; }
+check "registro caso 12" "$(reg_field HD0T12 "d['state']")" "terminado"
+
+echo "[pruebas] caso 13: HD-0e palabras sueltas con el agente «working» tampoco son un límite"
+run_case HD0T13 "$WORK/chatterwork" chatter EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" \
+  PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=working EZ_REAL_HC="$REAL_HC"
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 13 devolvió $code (esperado 0)"; FAIL=1; }
+no_tocado 13 "$WORK/chatterwork" "$WORK/log/HD0T13-hc1.log"
+check "registro caso 13" "$(reg_field HD0T13 "d['state']")" "terminado"
+
+echo "[pruebas] caso 14: HD-0e la frase de límite arriba de una pantalla larga no cuenta"
+run_case HD0T14 "$WORK/limittop" limit-top EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" \
+  PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=idle EZ_REAL_HC="$REAL_HC"
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 14 devolvió $code (esperado 0)"; FAIL=1; }
+no_tocado 14 "$WORK/limittop" "$WORK/log/HD0T14-hc1.log"
+grep -Fq "Free limit reached" "$WORK/log/HD0T14-hc1.log" \
+  && echo "OK caso 14: la frase estaba en la pantalla (pero no en las últimas 15 líneas)" \
+  || { echo "FALLO caso 14: la frase no llegó a la pantalla"; FAIL=1; }
+check "registro caso 14" "$(reg_field HD0T14 "d['state']")" "terminado"
+
+echo "[pruebas] caso 15: HD-0e la frase completa con el agente «working» no cuenta"
+run_case HD0T15 "$WORK/limitwork" limit-work EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" \
+  PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=working EZ_REAL_HC="$REAL_HC"
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 15 devolvió $code (esperado 0)"; FAIL=1; }
+no_tocado 15 "$WORK/limitwork" "$WORK/log/HD0T15-hc1.log"
+grep -Fq "Free limit reached" "$WORK/log/HD0T15-hc1.log" \
+  && echo "OK caso 15: la frase estaba en la pantalla (pero el agente estaba trabajando)" \
+  || { echo "FALLO caso 15: la frase no llegó a la pantalla"; FAIL=1; }
+check "registro caso 15" "$(reg_field HD0T15 "d['state']")" "terminado"
 
 [ "${EZ_HUMO_REAL:-0}" = "1" ] && humo_real
 

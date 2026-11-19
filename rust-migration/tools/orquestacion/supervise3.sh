@@ -23,6 +23,15 @@
 #     se reintenta con el mismo modelo. Si EZ_MODEL cambió respecto de la sesión
 #     guardada, se abre una sesión nueva (no se continúa la vieja).
 #
+# v5 (2026-11-19, HD-0e): C0-6 ya no da falsos positivos. El aviso de límite de
+#   uso solo cuenta si el agente NO está «working», la pantalla no cambió entre
+#   dos lecturas seguidas (≥ 15 s) y la frase COMPLETA está en sus últimas 15
+#   líneas («Free limit reached», «5 hour usage limit reached», «You've hit your
+#   usage limit», «Usage limit reached», «rate limit reached», «quota exceeded»).
+#   Palabras sueltas («quota», «rate limit», «usage limit») ya no cuentan: un
+#   agente que lee o escribe sobre límites de uso no está bloqueado
+#   (§3 de docs/designs/novedades-subagentes.md).
+#
 # - Padre: la terminal que hereda este script (HC_TERMINAL_ID). Sin ella el
 #   worker queda sin padre (y oculto): se avisa y se sigue.
 # - Sin notas al padre (--no-notify): el seguimiento lo hace este script.
@@ -79,6 +88,16 @@ ENV_EXE="${EZ_ENV_EXE:-C:/Program Files/Git/usr/bin/env.exe}"
 OPENCODE_MODE="${EZ_OPENCODE_MODE:-interactive}"
 UNKNOWN_GRACE="${EZ_UNKNOWN_GRACE:-120}"
 UNKNOWN_EVERY="${EZ_UNKNOWN_EVERY:-300}"
+# HD-0e (C0-6): cómo se decide que hay un límite de uso. §3 del diseño.
+# DECISION: las 6 frases completas de §3 son el patrón; las palabras sueltas
+# («quota», «rate limit», «usage limit») quedan fuera a propósito.
+LIMIT_TAIL_LINES="${EZ_LIMIT_TAIL_LINES:-15}"
+LIMIT_STABLE_SECS="${EZ_LIMIT_STABLE_SECS:-15}"
+LIMIT_PATTERNS="free limit reached|5 hour usage limit reached|you've hit your usage limit|usage limit reached|rate limit reached|quota exceeded"
+# Pantalla de la lectura anterior: para saber si lleva quieta (HD-0e).
+PREV_ADDR=""
+PREV_TAIL=""
+PREV_TAIL_AT=0
 SUBAGENTS_ROOT="${EZ_SUBAGENTS_DIR:-${LOCALAPPDATA:-$USERPROFILE/AppData/Local}/EzAgent/subagents}"
 # C0-5: OpenCode solo acepta ids de sesión que empiezan por «ses».
 # DECISION: id estable por trabajador para que los reintentos continúen la sesión.
@@ -291,9 +310,35 @@ live_addr() { # dirección de una terminal VIVA con este nombre (vacío si no ha
   done <<< "$(named_terminals)"
   return 1
 }
-usage_limit_line() { # primera línea de la pantalla con un aviso de límite de uso
+agent_state() { # agent_state <address> — estado que reporta el agente (idle|working|…)
+  field "$1" "str((t.get('status') or {}).get('state','') if isinstance(t.get('status'),dict) else (t.get('status') or ''))"
+}
+screen_tail() { # screen_tail <address> — las últimas 15 líneas con texto de la pantalla
   hc read "$1" --lines 200 2>/dev/null | strip_cr \
-    | grep -iE -m 1 'free limit reached|usage limit|rate limit|quota' || true
+    | awk -v max="$LIMIT_TAIL_LINES" 'NF { b[n % max] = $0; n++ }
+        END { s = (n > max ? n - max : 0); for (i = s; i < n; i++) print b[i % max] }'
+}
+# HD-0e (C0-6): un límite de uso solo cuenta si el agente NO está «working», la
+# pantalla no cambió entre dos lecturas seguidas (≥ LIMIT_STABLE_SECS) y la frase
+# COMPLETA está en las últimas LIMIT_TAIL_LINES líneas. Palabras sueltas
+# («quota», «rate limit», «usage limit») no cuentan: quien escribe o lee sobre
+# límites de uso no está bloqueado (§3 del diseño).
+limit_hit() { # limit_hit <address> → la frase detectada (vacío si no hay límite)
+  local addr="$1" cur now
+  if [ "$(agent_state "$addr")" = "working" ]; then
+    # El agente está trabajando: no está bloqueado y no se busca nada.
+    PREV_ADDR="$addr"; PREV_TAIL=""; PREV_TAIL_AT=0
+    return 0
+  fi
+  cur="$(screen_tail "$addr")"
+  now="$(date +%s)"
+  if [ "$PREV_ADDR" != "$addr" ] || [ "$PREV_TAIL" != "$cur" ]; then
+    # La pantalla cambió (o es otra terminal): la ventana de quieta empieza aquí.
+    PREV_ADDR="$addr"; PREV_TAIL="$cur"; PREV_TAIL_AT="$now"
+    return 0
+  fi
+  [ $((now - PREV_TAIL_AT)) -ge "$LIMIT_STABLE_SECS" ] || return 0
+  printf '%s\n' "$cur" | grep -iE -m 1 "$LIMIT_PATTERNS" || true
 }
 succeed() { # <address> <attempt> — informe completo: confirma, registra, guarda y cierra
   wait_for_commit
@@ -366,17 +411,17 @@ for attempt in $(seq 1 $MAX); do
     st="$(terminal_state "$ADDR")"
     # El informe completo gana: si está, se cierra el intento con éxito.
     done_report && succeed "$ADDR" "$attempt"
-    # C0-6: la pantalla puede avisar de un límite de uso. El intento se da por
-    # fallido con ese motivo, se avisa al padre y no se reintenta (mismo modelo).
-    lim="$(usage_limit_line "$ADDR")"
+    # C0-6 (HD-0e): la pantalla puede avisar de un límite de uso. El intento se
+    # da por fallido con ese motivo, se avisa al padre y no se reintenta (mismo
+    # modelo). Solo cuenta con el agente parado y la pantalla quieta (§3).
+    lim="$(limit_hit "$ADDR")"
     if [ -n "$lim" ]; then
       lim="$(printf '%s' "$lim" | tr -s '[:space:]' ' ' | sed -e 's/^ //' -e 's/ $//')"
       echo "[$ID] límite de uso en $ADDR: $lim"
       save_log "$ADDR"
       record fallido "límite de uso: $lim" "" "" 1
-      # DECISION: el worker del aviso está atascado en el límite; se cierra su
-      # terminal para no dejar un nombre ocupado que ataría el siguiente intento.
-      hc kill "$ADDR" >/dev/null 2>&1
+      # DECISION (HD-0e): la terminal del trabajador NO se cierra. El padre
+      # decide («esperar» o «ez retry»); el aviso le dice que lea la pantalla.
       finish 2
     fi
     case "$st" in
