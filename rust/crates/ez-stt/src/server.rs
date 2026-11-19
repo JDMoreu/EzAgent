@@ -302,6 +302,11 @@ fn resolve_model(model: Option<&Path>, home: Option<&Path>) -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
+/// Idioma e hilos que `start-whisper.ps1` usa por omisión (`-Language es`,
+/// `-Threads 6`). `voice.json` no los define; el servidor de hoy corre así.
+const WHISPER_LANGUAGE: &str = "es";
+const WHISPER_THREADS: u32 = 6;
+
 /// Argumentos que recibía `whisper-server` del script `start-whisper.ps1`.
 fn server_args(port: u16, engine: &str, server: &Path, model: &Path) -> Vec<String> {
     let mut args = vec![
@@ -312,9 +317,9 @@ fn server_args(port: u16, engine: &str, server: &Path, model: &Path) -> Vec<Stri
         "--port".to_string(),
         port.to_string(),
         "-l".to_string(),
-        "es".to_string(),
+        WHISPER_LANGUAGE.to_string(),
         "-t".to_string(),
-        "6".to_string(),
+        WHISPER_THREADS.to_string(),
     ];
     let cpu = engine.eq_ignore_ascii_case("cpu")
         || server
@@ -334,6 +339,51 @@ fn server_args(port: u16, engine: &str, server: &Path, model: &Path) -> Vec<Stri
         args.push(vad.to_string_lossy().into_owned());
     }
     args
+}
+
+/// `stt_engine`, con el valor por omisión del script.
+fn engine_name(config: &VoiceConfig) -> String {
+    let configured = config_text(config, "stt_engine");
+    if configured.is_empty() {
+        "auto".to_string()
+    } else {
+        configured
+    }
+}
+
+/// Ejecutable y argumentos que lanzaría [`ensure_whisper`], sin lanzarlos.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchPlan {
+    /// Ruta del `whisper-server.exe` elegido.
+    pub executable: PathBuf,
+    /// Argumentos en lista (sin shell); el puerto lo pone quien llama.
+    pub args: Vec<String>,
+}
+
+/// Plan de arranque con la instalación y la configuración actuales.
+///
+/// No lanza nada ni toca la red: resuelve la carpeta de whisper, el modelo y el
+/// VAD con las mismas reglas que [`ensure_whisper`]. `port` se recibe porque en
+/// producción lo elige [`free_local_port`].
+pub fn launch_plan(config: &VoiceConfig, port: u16) -> Option<LaunchPlan> {
+    let home = whisper_home();
+    let model = whisper_model_path(&config_text(config, "stt_model"));
+    plan_for(config, home.as_deref(), model.as_deref(), port)
+}
+
+fn plan_for(
+    config: &VoiceConfig,
+    home: Option<&Path>,
+    model: Option<&Path>,
+    port: u16,
+) -> Option<LaunchPlan> {
+    let engine = engine_name(config);
+    let executable = resolve_server(home, &engine)?;
+    let model = resolve_model(model, home)?;
+    Some(LaunchPlan {
+        args: server_args(port, &engine, &executable, &model),
+        executable,
+    })
 }
 
 #[cfg(windows)]
@@ -413,34 +463,25 @@ fn ensure_whisper_in(
     if !is_local_host(host.as_deref()) {
         return None;
     }
-    let engine = {
-        let configured = config_text(config, "stt_engine");
-        if configured.is_empty() {
-            "auto".to_string()
-        } else {
-            configured
-        }
-    };
-    let Some(server) = resolve_server(home, &engine) else {
-        // DECISION: app.py usa log() propio (sin niveles); el aviso hablado lo
-        // emite la capa que trata el estado "error" del HUD.
-        info!("{}", missing_whisper_hint(packaged()));
-        return None;
-    };
-    let Some(model) = resolve_model(model, home) else {
-        info!("No encuentro el modelo de whisper; arranca whisper-server a mano.");
-        return None;
-    };
     let Some(port) = free_local_port() else {
         warn!("No se pudo arrancar whisper-server: no hay puerto local libre");
+        return None;
+    };
+    let Some(plan) = plan_for(config, home, model, port) else {
+        if resolve_server(home, &engine_name(config)).is_none() {
+            // DECISION: app.py usa log() propio (sin niveles); el aviso hablado
+            // lo emite la capa que trata el estado "error" del HUD.
+            info!("{}", missing_whisper_hint(packaged()));
+        } else {
+            info!("No encuentro el modelo de whisper; arranca whisper-server a mano.");
+        }
         return None;
     };
     config.set("whisper_url", Value::String(url_for_local_port(&url, port)));
     let updated = config_text(config, "whisper_url");
     info!("whisper-server: puerto local libre {port}.");
     info!("whisper-server no responde; arrancándolo…");
-    let args = server_args(port, &engine, &server, &model);
-    let process = match spawn_server(&server, &args, root) {
+    let process = match spawn_server(&plan.executable, &plan.args, root) {
         Ok(process) => process,
         Err(error) => {
             warn!("No se pudo arrancar whisper-server: {error}");

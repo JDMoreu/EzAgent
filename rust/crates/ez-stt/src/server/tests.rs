@@ -185,6 +185,32 @@ fn the_local_url_keeps_the_path_and_query() {
 }
 
 #[test]
+fn the_plan_matches_the_installed_layout() {
+    let home = temp_dir("plan");
+    let executable = home.join(SERVER_EXE);
+    std::fs::write(&executable, b"x").expect("ejecutable");
+    let models = home.join("models");
+    std::fs::create_dir_all(&models).expect("carpeta models");
+    let model = models.join(DEFAULT_MODELS[0]);
+    std::fs::write(&model, b"x").expect("modelo");
+    let vad = models.join(VAD_MODEL);
+    std::fs::write(&vad, b"x").expect("vad");
+    let mut config = VoiceConfig::new();
+    config.set("stt_engine", json!("auto"));
+    let plan = plan_for(&config, Some(&home), None, 53584).expect("plan");
+    assert_eq!(plan.executable, executable);
+    assert_eq!(
+        plan.args.join(" "),
+        format!(
+            "-m {} --host 127.0.0.1 --port 53584 -l es -t 6 --vad --vad-model {}",
+            model.display(),
+            vad.display()
+        )
+    );
+    cleanup(&home);
+}
+
+#[test]
 fn the_health_url_is_the_server_root() {
     assert_eq!(
         health_url("http://127.0.0.1:8088/inference?x=1"),
