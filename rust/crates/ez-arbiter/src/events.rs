@@ -131,75 +131,100 @@ pub enum EventKind {
 }
 
 impl EventKind {
-    /// Construye el payload tipado a partir del tipo y los datos que emitía la
-    /// traza anterior. Centraliza la conversión para no repetirla en cada
-    /// productor de eventos; ningún dato contiene tokens.
+    /// Construye el payload tipado a partir del tipo y los datos de la traza.
+    /// Ningún dato contiene tokens; la conversión se reparte en tres grupos.
     pub(crate) fn from_parts(kind: &str, data: &Value) -> Self {
-        let text = |key: &str| {
-            data.get(key)
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string()
-        };
-        let number = |key: &str| data.get(key).and_then(Value::as_u64).unwrap_or(0) as u32;
-        let records = |key: &str| -> Vec<CheckRecord> {
-            serde_json::from_value(data.get(key).cloned().unwrap_or(Value::Null))
-                .unwrap_or_default()
-        };
+        match kind {
+            "task_proposed" | "task_approved" | "task_rejected" | "team_proposed"
+            | "team_approved" | "team_rejected" => Self::approval_event(kind, data),
+            "round_started" | "fish_launched" | "fish_reported" | "fish_blocked"
+            | "fish_exited" | "fish_failed" | "fish_corrected" => Self::fish_event(kind, data),
+            _ => Self::round_event(kind, data),
+        }
+    }
+
+    fn text(data: &Value, key: &str) -> String {
+        data.get(key)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    }
+
+    fn number(data: &Value, key: &str) -> u32 {
+        data.get(key).and_then(Value::as_u64).unwrap_or(0) as u32
+    }
+
+    fn boolean(data: &Value, key: &str) -> bool {
+        data.get(key).and_then(Value::as_bool).unwrap_or(false)
+    }
+
+    fn approval_event(kind: &str, data: &Value) -> Self {
         match kind {
             "task_proposed" => Self::TaskProposed {
-                title: text("title"),
-                card: text("card"),
+                title: Self::text(data, "title"),
+                card: Self::text(data, "card"),
             },
-            "task_approved" => Self::TaskApproved {},
             "task_rejected" => Self::TaskRejected {
-                comment: text("comment"),
+                comment: Self::text(data, "comment"),
             },
             "team_proposed" => Self::TeamProposed {
-                card: text("card"),
+                card: Self::text(data, "card"),
                 seats: serde_json::from_value(data.get("seats").cloned().unwrap_or(Value::Null))
                     .unwrap_or_default(),
             },
-            "team_approved" => Self::TeamApproved {},
             "team_rejected" => Self::TeamRejected {
-                comment: text("comment"),
+                comment: Self::text(data, "comment"),
             },
+            "team_approved" => Self::TeamApproved {},
+            _ => Self::TaskApproved {},
+        }
+    }
+
+    fn fish_event(kind: &str, data: &Value) -> Self {
+        let fish = Self::text(data, "fish");
+        let attempt = Self::number(data, "attempt");
+        match kind {
             "round_started" => Self::RoundStarted {
-                round: number("round"),
+                round: Self::number(data, "round"),
             },
             "fish_launched" => Self::FishLaunched {
-                fish: text("fish"),
-                role: text("role"),
-                terminal: text("terminal"),
-                attempt: number("attempt"),
+                fish,
+                role: Self::text(data, "role"),
+                terminal: Self::text(data, "terminal"),
+                attempt,
             },
             "fish_reported" => Self::FishReported {
-                fish: text("fish"),
-                attempt: number("attempt"),
-                verdict: text("verdict"),
-                file: PathBuf::from(text("file")),
+                fish,
+                attempt,
+                verdict: Self::text(data, "verdict"),
+                file: PathBuf::from(Self::text(data, "file")),
             },
             "fish_blocked" => Self::FishBlocked {
-                fish: text("fish"),
-                attempt: number("attempt"),
+                fish,
+                attempt,
                 kind: data.get("kind").and_then(Value::as_str).map(str::to_string),
             },
-            "fish_exited" => Self::FishExited {
-                fish: text("fish"),
-                attempt: number("attempt"),
-            },
             "fish_failed" => Self::FishFailed {
-                fish: text("fish"),
-                attempt: number("attempt"),
-                reason: text("reason"),
+                fish,
+                attempt,
+                reason: Self::text(data, "reason"),
             },
             "fish_corrected" => Self::FishCorrected {
-                fish: text("fish"),
-                file: PathBuf::from(text("file")),
-                report: PathBuf::from(text("report")),
+                fish,
+                file: PathBuf::from(Self::text(data, "file")),
+                report: PathBuf::from(Self::text(data, "report")),
+            },
+            _ => Self::FishExited { fish, attempt },
+        }
+    }
+
+    fn round_event(kind: &str, data: &Value) -> Self {
+        match kind {
+            "round_started" => Self::RoundStarted {
+                round: Self::number(data, "round"),
             },
             "verification" => Self::Verification {
-                ok: data.get("ok").and_then(Value::as_bool).unwrap_or(false),
+                ok: Self::boolean(data, "ok"),
                 failed: data
                     .get("failed")
                     .and_then(Value::as_u64)
@@ -208,27 +233,30 @@ impl EventKind {
                     .get("total")
                     .and_then(Value::as_u64)
                     .map(|value| value as usize),
-                criterios: records("criterios"),
+                criterios: serde_json::from_value(
+                    data.get("criterios").cloned().unwrap_or(Value::Null),
+                )
+                .unwrap_or_default(),
             },
             "round_closed" => Self::RoundClosed {
-                round: number("round"),
-                clean: data.get("clean").and_then(Value::as_bool).unwrap_or(false),
+                round: Self::number(data, "round"),
+                clean: Self::boolean(data, "clean"),
                 reasons: serde_json::from_value(
                     data.get("reasons").cloned().unwrap_or(Value::Null),
                 )
                 .unwrap_or_default(),
             },
             "paused" => Self::Paused {
-                reason: text("reason"),
-                message: text("message"),
+                reason: Self::text(data, "reason"),
+                message: Self::text(data, "message"),
+            },
+            "rejected" => Self::Rejected {
+                rule: Self::text(data, "rule"),
+                message: Self::text(data, "message"),
             },
             "resumed" => Self::Resumed {},
             "task_closed" => Self::TaskClosed {},
             "stopped" | "task_stopped" => Self::TaskStopped {},
-            "rejected" => Self::Rejected {
-                rule: text("rule"),
-                message: text("message"),
-            },
             other => Self::Rejected {
                 rule: "R12".to_string(),
                 message: format!("evento de traza desconocido: {other}"),

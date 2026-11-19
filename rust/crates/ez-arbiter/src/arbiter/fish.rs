@@ -127,31 +127,7 @@ impl ArbiterShared {
     ) -> Result<Outcome, Rejection> {
         let token = plan.request.token.clone();
         let launched = self.launcher.launch(&plan.request);
-        let (terminal, mut message) = match launched {
-            Ok(Launched {
-                terminal,
-                delivery: Delivery::Delivered,
-            }) => (
-                terminal.clone(),
-                texts::fish_launched(&plan.fish, &terminal),
-            ),
-            Ok(Launched {
-                terminal,
-                delivery: Delivery::Unconfirmed,
-            }) => (
-                terminal.clone(),
-                format!(
-                    "{}{}",
-                    texts::fish_launched(&plan.fish, &terminal),
-                    texts::delivery_unconfirmed(&plan.fish)
-                ),
-            ),
-            Ok(Launched {
-                delivery: Delivery::Failed(detail),
-                ..
-            }) => return Err(self.fail_launch(task, &plan, &detail)),
-            Err(detail) => return Err(self.fail_launch(task, &plan, &detail)),
-        };
+        let (terminal, mut message) = self.delivery_result(task, &plan, launched)?;
         self.remember_token(&plan.key, &token);
         task.last_fp = Some(plan.start.clone());
         task.fish.push(FishRecord {
@@ -191,6 +167,40 @@ impl ArbiterShared {
                 "fish": plan.fish, "terminal": terminal, "attempt": plan.key.attempt,
             }),
         })
+    }
+
+    /// Interpreta la entrega del lanzador: terminal y mensaje, o fallo del trabajo.
+    fn delivery_result(
+        &self,
+        task: &mut crate::state::Task,
+        plan: &LaunchPlan,
+        launched: Result<Launched, String>,
+    ) -> Result<(String, String), Rejection> {
+        match launched {
+            Ok(Launched {
+                terminal,
+                delivery: Delivery::Delivered,
+            }) => Ok((
+                terminal.clone(),
+                texts::fish_launched(&plan.fish, &terminal),
+            )),
+            Ok(Launched {
+                terminal,
+                delivery: Delivery::Unconfirmed,
+            }) => Ok((
+                terminal.clone(),
+                format!(
+                    "{}{}",
+                    texts::fish_launched(&plan.fish, &terminal),
+                    texts::delivery_unconfirmed(&plan.fish)
+                ),
+            )),
+            Ok(Launched {
+                delivery: Delivery::Failed(detail),
+                ..
+            }) => Err(self.fail_launch(task, plan, &detail)),
+            Err(detail) => Err(self.fail_launch(task, plan, &detail)),
+        }
     }
 
     /// Copia el encargo del pez y toma la foto de git antes de lanzarlo.

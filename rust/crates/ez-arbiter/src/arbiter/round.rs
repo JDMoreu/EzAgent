@@ -369,6 +369,12 @@ fn evaluate(
     if !touched.is_empty() {
         reasons.push(texts::protected_touched(&touched));
     }
+    other_violations(task, round, &mut reasons);
+    (reasons.is_empty(), reasons)
+}
+
+/// Informes sucios y papeles que no debían tocar el proyecto (§14.3, §14.4).
+fn other_violations(task: &Task, round: u32, reasons: &mut Vec<String>) {
     let bad: Vec<String> = task
         .fish_in_round(round)
         .filter_map(|fish| fish.report.as_ref().map(|report| (fish, report)))
@@ -391,5 +397,4 @@ fn evaluate(
             reasons.push(texts::role_changed_files(role.id(), &changed));
         }
     }
-    (reasons.is_empty(), reasons)
 }

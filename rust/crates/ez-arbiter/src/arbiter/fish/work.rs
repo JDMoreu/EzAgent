@@ -179,15 +179,7 @@ impl ArbiterShared {
         report_file: PathBuf,
         kind_tag: String,
     ) -> Result<Outcome, Rejection> {
-        let private = crate::paths::data_task_dir(&self.data_dir, &task.id).join("informes");
-        let copy = private.join(format!(
-            "{}-a{}{}.informe.md",
-            key.fish, key.attempt, kind_tag
-        ));
-        paths::copy_file(&report_file, &copy).map_err(|error| {
-            Rejection::new("R7", format!("No se pudo guardar el informe: {error}."))
-        })?;
-        let sha = paths::sha256_file(&copy).map_err(|message| Rejection::new("R7", message))?;
+        let sha = self.save_report_copy(task, key, &report_file, &kind_tag)?;
         let after =
             git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R7", message))?;
         task.last_fp = Some(after.clone());
@@ -234,5 +226,24 @@ impl ArbiterShared {
         );
         self.commit(task, effects);
         Ok(Outcome::new(message))
+    }
+
+    /// Guarda la copia privada del informe y devuelve su sha256.
+    fn save_report_copy(
+        &self,
+        task: &crate::state::Task,
+        key: &FishKey,
+        report_file: &std::path::Path,
+        kind_tag: &str,
+    ) -> Result<String, Rejection> {
+        let private = crate::paths::data_task_dir(&self.data_dir, &task.id).join("informes");
+        let copy = private.join(format!(
+            "{}-a{}{}.informe.md",
+            key.fish, key.attempt, kind_tag
+        ));
+        paths::copy_file(report_file, &copy).map_err(|error| {
+            Rejection::new("R7", format!("No se pudo guardar el informe: {error}."))
+        })?;
+        paths::sha256_file(&copy).map_err(|message| Rejection::new("R7", message))
     }
 }
