@@ -391,7 +391,12 @@ impl Arbiter {
             .lock()
             .tasks
             .values()
-            .find(|task| task.is_active() && task.work_for_key(key).is_some())
+            .find(|task| {
+                task.is_active()
+                    && task
+                        .work_for_key(key)
+                        .is_some_and(|item| item.state != WorkState::Failed)
+            })
             .cloned()
             .ok_or_else(|| Rejection::new("R1", texts::FISH_NOT_ACTIVE))
     }

@@ -120,3 +120,38 @@ pub fn inside(root: &Path, path: &Path) -> Result<PathBuf, String> {
 pub fn data_task_dir(data_dir: &Path, task: &str) -> PathBuf {
     data_dir.join("tareas").join(task)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::inside;
+
+    fn sandbox(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let root = std::env::temp_dir().join(format!("ez-arbiter-paths-{name}"));
+        let project = root.join("proyecto");
+        let sibling = root.join("proyecto-otro");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(project.join("sub")).expect("crear proyecto");
+        std::fs::create_dir_all(&sibling).expect("crear hermano");
+        (project, root)
+    }
+
+    #[test]
+    fn inside_accepts_dots_and_missing_files() {
+        let (project, _root) = sandbox("puntos");
+        std::fs::write(project.join("archivo.md"), "x").expect("escribir archivo");
+        assert!(inside(&project, std::path::Path::new("sub/../archivo.md")).is_ok());
+        let missing = inside(&project, std::path::Path::new("sub/nuevo.md"))
+            .expect("archivo que todavía no existe");
+        assert!(missing.ends_with("sub/nuevo.md"));
+        let _ = std::fs::remove_dir_all(project.parent().expect("raíz"));
+    }
+
+    #[test]
+    fn inside_rejects_parent_and_shared_prefix() {
+        let (project, root) = sandbox("prefijo");
+        assert!(inside(&project, std::path::Path::new("../proyecto-otro/x.md")).is_err());
+        assert!(inside(&project, &root.join("proyecto-otro").join("x.md")).is_err());
+        assert!(inside(&project, std::path::Path::new("../../fuera.md")).is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

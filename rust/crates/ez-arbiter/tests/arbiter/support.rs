@@ -62,6 +62,11 @@ impl FakeLauncher {
         *self.fail.lock().expect("fijar el fallo") = Some(detail.to_string());
     }
 
+    /// Permite volver a lanzar peces con normalidad.
+    pub fn clear_fail(&self) {
+        *self.fail.lock().expect("quitar el fallo") = None;
+    }
+
     /// Fija el resultado de entrega del siguiente `launch`.
     pub fn deliver(&self, delivery: Delivery) {
         *self.delivery.lock().expect("fijar la entrega") = delivery;
@@ -394,9 +399,6 @@ impl Fixture {
         caught: Option<u32>,
     ) -> Result<Outcome, Rejection> {
         let (key, path) = self.fish_info(fish);
-        if std::env::var_os("EZ_DEBUG_PATHS").is_some() {
-            eprintln!("DEBUG fish={fish} key={key:?} path={}", path.display());
-        }
         fs::write(&path, "Informe del pez.\n").expect("escribir el informe");
         self.arbiter.execute(
             &Caller::Fish(key),

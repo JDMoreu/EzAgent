@@ -2,6 +2,8 @@
 
 #[path = "arbiter/events.rs"]
 mod events;
+#[path = "arbiter/fixes.rs"]
+mod fixes;
 #[path = "arbiter/fish.rs"]
 mod fish;
 #[path = "arbiter/round.rs"]
