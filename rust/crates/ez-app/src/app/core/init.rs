@@ -53,9 +53,7 @@ impl VoiceApp {
         let tasks = Arc::new(TaskRegistry::new(
             tasks_path.unwrap_or_else(|| config_path().with_file_name("tasks.json")),
         ));
-        let latency_path = config_path()
-            .parent()
-            .map(|parent| parent.join("logs").join("latency.jsonl"));
+        let latency_path = Some(ez_core::dirs::latency_path());
         let mic_info = {
             let mic = parts.mic.lock();
             (
@@ -420,6 +418,11 @@ fn speech_state(speaker: Arc<dyn SpeakerApi>) -> SpeechState {
         busy_stop: Mutex::new(None),
         busy_barged: std::sync::atomic::AtomicBool::new(false),
         speaking_kind: RwLock::new(None),
+        // Inicialización mecánica de los campos nuevos de `SpeechState` (DX-2b).
+        last_outbound_kind: RwLock::new(None),
+        last_outbound_done_at: RwLock::new(0.0),
+        last_outbound_question: RwLock::new(false),
+        ack_index: std::sync::atomic::AtomicUsize::new(0),
     }
 }
 

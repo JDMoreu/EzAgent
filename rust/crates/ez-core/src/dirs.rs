@@ -33,6 +33,11 @@ pub fn tasks_path() -> PathBuf {
 }
 
 pub fn logs_dir() -> PathBuf {
+    // DECISION: las pruebas fijan esta variable a un temporal para no escribir
+    // en los registros reales de la persona; en producción nunca se define.
+    if let Some(base) = std::env::var_os("EZAGENT_LOGS_DIR") {
+        return PathBuf::from(base);
+    }
     app_data_dir().join("logs")
 }
 

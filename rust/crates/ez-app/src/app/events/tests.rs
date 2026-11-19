@@ -9,7 +9,10 @@ use serde_json::json;
 use super::support::Fixture;
 use super::{in_call, turn_gen};
 use crate::app::core::{AppEvent, MenuEvent, VoiceApp, LISTENING, SPEAKING, THINKING};
-use crate::app::states::tests::support::{install_client, ScriptedClient};
+use crate::app::states::tests::support::{
+    install_client, wait_event, Fixture as SpeakingFixture, ScriptedClient,
+};
+use crate::fast::ACK_REPLIES;
 
 fn set_state(app: &VoiceApp, state: &str) {
     *app.inner.session.state.write() = state.to_string();
@@ -413,4 +416,122 @@ fn speech_start_event_is_ignored_without_a_call() {
     set_state(app, LISTENING);
     app.handle_event(AppEvent::AudioSpeechStart(0.2));
     assert!(!app.inner.session.user_speaking.load(Ordering::SeqCst));
+}
+
+/// Líneas `ack_fast` ya registradas en el registro temporal de las pruebas.
+fn ack_fast_records() -> usize {
+    let text = std::fs::read_to_string(ez_core::dirs::latency_path()).unwrap_or_default();
+    text.lines()
+        .filter(|line| line.contains("ack_fast"))
+        .count()
+}
+
+/// Tamaño y fecha de la ruta real, sin la variable `EZAGENT_LOGS_DIR`.
+fn real_latency_stamp() -> Option<(u64, Option<std::time::SystemTime>)> {
+    let real = ez_core::dirs::app_data_dir()
+        .join("logs")
+        .join("latency.jsonl");
+    std::fs::metadata(&real)
+        .ok()
+        .map(|meta| (meta.len(), meta.modified().ok()))
+}
+
+/// Prepara una salida hablada reciente para probar el camino rápido del acuse.
+fn arm_outbound(fixture: &SpeakingFixture, kind: &str, question: bool) {
+    let speech = &fixture.app.inner.speech;
+    *speech.last_outbound_kind.write() = Some(kind.to_string());
+    *speech.last_outbound_done_at.write() = monotonic();
+    *speech.last_outbound_question.write() = question;
+}
+
+#[test]
+fn ack_after_a_statement_speaks_one_short_phrase_without_the_llm() {
+    let fixture = SpeakingFixture::new();
+    let app = &fixture.app;
+    install_client(app, ScriptedClient::new(Vec::new()));
+    app.start_call();
+    let generation = turn_gen(app);
+    let before = app.inner.chat.chat.snapshot().1.len();
+    let ack_records = ack_fast_records();
+    arm_outbound(&fixture, "announce", false);
+
+    app.handle_event(AppEvent::Transcribed("ok".to_string(), generation));
+
+    assert!(
+        ack_fast_records() > ack_records,
+        "el acuse debe registrarse como ack_fast"
+    );
+    // El camino rápido no abre un turno del LLM: no se añade mensaje de usuario.
+    assert_eq!(app.inner.chat.chat.snapshot().1.len(), before);
+    wait_event(app, |event| matches!(event, AppEvent::SpeakDone(_)));
+    // El hilo de TTS solo encola el evento: se procesa aquí como en `_tick`.
+    app.handle_event(AppEvent::SpeakDone(turn_gen(app)));
+    let spoken = fixture.speaker.spoken.lock();
+    assert_eq!(spoken.len(), 1, "{spoken:?}");
+    assert!(ACK_REPLIES.contains(&spoken[0].as_str()), "{spoken:?}");
+    drop(spoken);
+    // La respuesta se dice con kind `ack`: no rearma el atajo.
+    assert_eq!(
+        app.inner.speech.last_outbound_kind.read().as_deref(),
+        Some("ack")
+    );
+}
+
+#[test]
+fn the_ack_fast_path_writes_to_the_test_logs_not_the_real_one() {
+    let before = real_latency_stamp();
+    let fixture = SpeakingFixture::new();
+    let app = &fixture.app;
+    install_client(app, ScriptedClient::new(Vec::new()));
+    app.start_call();
+    let generation = turn_gen(app);
+    let ack_records = ack_fast_records();
+    arm_outbound(&fixture, "announce", false);
+
+    app.handle_event(AppEvent::Transcribed("ok".to_string(), generation));
+
+    // La ruta real no cambia: ni tamaño ni fecha.
+    assert_eq!(before, real_latency_stamp());
+    // El registro temporal sí recibe la línea del acuse.
+    assert!(
+        ack_fast_records() > ack_records,
+        "el acuse debe registrarse en el registro temporal"
+    );
+}
+
+#[test]
+fn ack_after_a_question_goes_to_the_llm_as_today() {
+    let fixture = SpeakingFixture::new();
+    let app = &fixture.app;
+    install_client(app, ScriptedClient::new(Vec::new()));
+    app.start_call();
+    let generation = turn_gen(app);
+    arm_outbound(&fixture, "announce", true);
+
+    app.handle_event(AppEvent::Transcribed("ok".to_string(), generation));
+
+    // No hay respuesta rápida: se consultó el contexto y se consumió el tipo.
+    assert!(fixture.speaker.spoken.lock().is_empty());
+    assert!(app.inner.speech.last_outbound_kind.read().is_none());
+}
+
+#[test]
+fn a_second_ack_without_a_new_outbound_goes_to_the_llm() {
+    let fixture = SpeakingFixture::new();
+    let app = &fixture.app;
+    install_client(app, ScriptedClient::new(Vec::new()));
+    app.start_call();
+    arm_outbound(&fixture, "announce", false);
+    app.handle_event(AppEvent::Transcribed("ok".to_string(), turn_gen(app)));
+    wait_event(app, |event| matches!(event, AppEvent::SpeakDone(_)));
+    app.handle_event(AppEvent::SpeakDone(turn_gen(app)));
+    assert_eq!(fixture.speaker.spoken.lock().len(), 1);
+    assert_eq!(
+        app.inner.speech.last_outbound_kind.read().as_deref(),
+        Some("ack")
+    );
+
+    // Sin nueva salida hablada, el segundo «ok» ya no activa el atajo.
+    app.handle_event(AppEvent::Transcribed("ok".to_string(), turn_gen(app)));
+    assert_eq!(fixture.speaker.spoken.lock().len(), 1);
 }

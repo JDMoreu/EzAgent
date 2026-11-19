@@ -499,6 +499,8 @@ fn paint_content(
             canvas,
             raw,
             stride,
+            columns,
+            rows,
             patch.as_raw(),
             patch.width() as usize,
             patch.height() as usize,

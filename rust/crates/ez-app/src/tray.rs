@@ -387,6 +387,15 @@ fn show_menu() {
 }
 
 extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    // DX-1d: un pánico no puede cruzar la frontera FFI.
+    let handled = ez_core::panics::catch_panic(|| tray_message(hwnd, msg, wparam, lparam));
+    handled.unwrap_or_else(|| {
+        // SAFETY: comportamiento por omisión para los mensajes que no atendemos.
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+    })
+}
+
+fn tray_message(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
         TRAY_CALLBACK => {
             match lparam.0 as u32 {

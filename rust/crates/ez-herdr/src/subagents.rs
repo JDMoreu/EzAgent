@@ -6,6 +6,8 @@
 //! el historial de cambios. Los textos que lee una persona están en español
 //! neutro y los escribe el código, nunca un agente.
 
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 mod registry;
@@ -20,12 +22,14 @@ pub use watch::{
     DEFAULT_IDLE_MS, DEFAULT_INTERVAL_MS,
 };
 
-/// Estado de una tarea delegada (§13). Serializa como `"en_proceso"`,
-/// `"terminado"`, `"fallido"`, `"validado"`.
+/// Estado de una tarea delegada (§13 y `novedades-subagentes.md` §2).
+/// Serializa como `"en_proceso"`, `"bloqueado"`, `"terminado"`, `"fallido"`,
+/// `"validado"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub enum TaskState {
     InProgress,
+    Blocked,
     Done,
     Failed,
     Validated,
@@ -36,6 +40,7 @@ impl TaskState {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::InProgress => "en_proceso",
+            Self::Blocked => "bloqueado",
             Self::Done => "terminado",
             Self::Failed => "fallido",
             Self::Validated => "validado",
@@ -46,6 +51,7 @@ impl TaskState {
     pub fn parse(text: &str) -> Option<Self> {
         match text {
             "en_proceso" => Some(Self::InProgress),
+            "bloqueado" => Some(Self::Blocked),
             "terminado" => Some(Self::Done),
             "fallido" => Some(Self::Failed),
             "validado" => Some(Self::Validated),
@@ -116,9 +122,50 @@ pub struct Record {
     pub history: Vec<Change>,
     pub summary: Option<String>,
     pub report: Option<String>,
+    /// `null` o un objeto con todos sus campos en `null` es «sin validar».
+    #[serde(default, deserialize_with = "validation_from_json")]
     pub validation: Option<Validation>,
     /// Último estado del que se avisó al padre.
     pub notified: Option<TaskState>,
+}
+
+/// Un archivo del registro que no se pudo leer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct InvalidRecord {
+    /// La ruta del archivo.
+    pub path: PathBuf,
+    /// El motivo, sin la ruta (que ya está aparte).
+    pub error: String,
+}
+
+/// Lo que se pudo leer de la carpeta de un padre: los válidos y los ilegibles,
+/// para que un archivo dañado no oculte a los demás (§13).
+#[derive(Debug, Clone, Default)]
+pub struct ListOutcome {
+    /// Los registros legibles.
+    pub records: Vec<Record>,
+    /// Los archivos que no se pudieron leer.
+    pub invalid: Vec<InvalidRecord>,
+}
+
+/// Acepta el objeto `validation` que escribe el supervisor con todos sus
+/// campos en `null` como si no hubiera validación.
+fn validation_from_json<'de, D>(deserializer: D) -> Result<Option<Validation>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    match value {
+        None => Ok(None),
+        Some(serde_json::Value::Object(fields))
+            if fields.values().all(serde_json::Value::is_null) =>
+        {
+            Ok(None)
+        }
+        Some(value) => serde_json::from_value(value)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
 }
 
 /// Fallo al leer, escribir o validar el registro de subagentes.
@@ -197,7 +244,11 @@ fn looks_like_address(name: &str) -> bool {
 pub(crate) fn transition_allowed(from: TaskState, to: TaskState) -> bool {
     matches!(
         (from, to),
-        (TaskState::InProgress, TaskState::Done)
+        (TaskState::InProgress, TaskState::Blocked)
+            | (TaskState::Blocked, TaskState::InProgress)
+            | (TaskState::Blocked, TaskState::Done)
+            | (TaskState::Blocked, TaskState::Failed)
+            | (TaskState::InProgress, TaskState::Done)
             | (TaskState::InProgress, TaskState::Failed)
             | (TaskState::Done, TaskState::Validated)
             | (TaskState::Done, TaskState::Failed)
@@ -242,6 +293,23 @@ pub fn notice_text(record: &Record) -> String {
                 record.name, label, reason, record.terminal
             )
         }
+        TaskState::Blocked => {
+            let detail = record
+                .history
+                .last()
+                .map(|change| one_line(&change.detail, 300))
+                .unwrap_or_default();
+            let detail = detail.trim_end_matches('.');
+            let detail = if detail.is_empty() {
+                "necesita que alguien haga algo"
+            } else {
+                detail
+            };
+            format!(
+                "[EzAgent · aviso] {} ({}) está bloqueado: {}. Opciones: ez retry {} --auto | ez retry {} --agent … | esperar.",
+                record.name, label, detail, record.name, record.name
+            )
+        }
         TaskState::Validated => {
             let Some(validation) = &record.validation else {
                 // DECISION: un registro validado sin validación es dato incompleto;
@@ -263,14 +331,30 @@ pub fn notice_text(record: &Record) -> String {
         }
         // DECISION: §13 no define aviso para `en_proceso`; se usa este texto corto
         // para que el vigilante pueda avisar del alta sin inventar un formato nuevo.
-        TaskState::InProgress => format!(
-            "[EzAgent · aviso] {} ({}) está en proceso.",
-            record.name, label
-        ),
+        // Si vuelve de `bloqueado`, el aviso dice «siguió trabajando» (§3).
+        TaskState::InProgress => {
+            let resumed = record
+                .history
+                .len()
+                .checked_sub(2)
+                .and_then(|index| record.history.get(index))
+                .is_some_and(|change| change.state == TaskState::Blocked);
+            if resumed {
+                format!(
+                    "[EzAgent · aviso] {} ({}) siguió trabajando.",
+                    record.name, label
+                )
+            } else {
+                format!(
+                    "[EzAgent · aviso] {} ({}) está en proceso.",
+                    record.name, label
+                )
+            }
+        }
     }
 }
 
-fn agent_label(record: &Record) -> String {
+pub(crate) fn agent_label(record: &Record) -> String {
     match record.model.as_deref() {
         Some(model) if !model.is_empty() => format!("{} · {}", record.label, model),
         _ => record.label.clone(),

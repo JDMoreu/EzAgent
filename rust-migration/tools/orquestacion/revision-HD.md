@@ -250,3 +250,162 @@
   hilo de pintura, no congela la app): con 33 mensajes el contenido tarda ~2,4 s en aparecer.
   La virtualización lo resuelve.
 - La app de la persona no cambia hasta recompilar: se le pregunta antes.
+
+### HD-0d (supervisor) — revisión 1: \r corregido; devuelto (HD-0e) por falsos positivos
+- Bien: `strip_cr` en todo dato, no mata terminales vivas por «desconocido», se engancha a
+  una terminal viva con su nombre, sesión nueva al cambiar de modelo; `probar.sh` 11 casos en
+  verde fuera de hc (el entorno donde falló).
+- Mal: C0-6 detecta límites con palabras sueltas y con el agente trabajando, y cierra la
+  terminal: IR-2 (que leerá IR-0) quedaría `fallido`. HD-0e: mismo criterio que NV-1b.
+  El supervisor sigue fuera de uso hasta HD-0e.
+
+### Decisiones de la persona (19-nov, tarde): «sí a todo»
+- DX-2 integrado en `eco/main` (avisos de «terminó» sin pregunta + acuse local + regla de voz).
+- `latency.jsonl` real: copia en `latency.jsonl.bak-2026-11-19` (470 líneas) y retiradas las 9
+  líneas `ack_fast` que escribieron las pruebas antes de DX-2c (quedan 461).
+- Recompilar la app de voz (release) con DX-1b + DX-2 y reiniciarla.
+
+### Incidente: DX-1b hace caer la app al abrir el chat (19-nov 13:52) — revertido
+- Tras recompilar con DX-1b + DX-2, la persona abrió el chat y la app se cerró: Windows
+  `Application Error` 1000, `0xc0000409`, desplazamiento `0xbe3f2e` (pánico en un callback de
+  Windows → aborto). Las pruebas de DX-1b (y la validación del elefante) nunca abrieron el
+  chat en la app real: **fallo de validación del elefante**.
+- Medidas: `git revert` de la fusión de DX-1b en `eco/main` (82b25b2); app recompilada con DX-2
+  y sin DX-1b, reabierta (PID 22384) y viva. DX-1c en pausa (está sobre DX-1b). DX-1d (mcode)
+  reproduce, corrige, añade `panic hook` y una prueba de humo de la app real.
+- Regla nueva: todo cambio de interfaz necesita una prueba de humo de la app real antes de
+  validarlo.
+
+### Incidente de memoria 2 (19-nov ~14:00): whisper-server huérfanos
+- Memoria virtual libre 3,8 GB. Causa: 7 `whisper-server` (12,5 GB), uno por cada arranque
+  de la app de hoy; los de instancias muertas quedaron vivos. El elefante cerró 5 (+ sus
+  envolturas de PowerShell); el de las 07:55 da «Acceso denegado» (probablemente elevado).
+  Virtual libre → 15,4 GB. Bug del producto → DX-3 (Job Object, reutilizar el sano).
+
+### Cambio de proveedor (19-nov ~14:10): créditos de mcode agotados
+- `hd-0e` mostró «Code: 50110 … switch provider». DX-1d y HD-0e pasan a OpenCode + DeepSeek
+  V4.1 Flash con notas de relevo (`DX-1d-relevo.md`, `prompt-HD-0e-relevo.txt`). DX-1c
+  sigue en pausa. Desde aquí, todos los subagentes con OpenCode + DeepSeek.
+
+### NV-1b — revisión 1: devuelto (NV-1c)
+- Bien: frases completas de §3, `working` excluido, el recorte vale también para reanudar,
+  pruebas de palabras sueltas, frase alta y frase al final con pantalla estable (300/300).
+- Mal 1: `last_lines` cuenta líneas en blanco. Captura real de OpenCode (`hc read --lines 0`,
+  121 líneas): las 15 últimas son 7 vacías + la caja de entrada + `[hc] incomplete…`; ni una
+  línea de la conversación. El caso real de IR-1 nunca se habría detectado. Las pantallas
+  falsas de las pruebas no tienen ese relleno.
+- Mal 2: «la primera lectura cuenta como estable» contradice §3: al reiniciar el vigilante,
+  un hijo `idle` que cite una frase queda `bloqueado` en la primera vuelta.
+- NV-1c: líneas con texto (alfanuméricas), dos vueltas iguales, fixture desde la captura
+  real (`briefs/NV-1c-pantalla-opencode.txt`).
+
+### IR-1 — parado sin motivo (19-nov ~14:40)
+- Dejó `cargo` en segundo plano y cerró su turno («en cuanto termine sigo…»): OpenCode
+  interactivo no vuelve solo. La compilación ya había acabado; se le escribió que siga y que
+  compile en primer plano. Es el caso «sin avance» de §3 (NV-1).
+
+### NV-1c — validado y fusionado (6c5bd30)
+- Líneas «con texto» (al menos un alfanumérico), primera lectura no estable, fixture con
+  la captura real. Corrida del elefante: fmt, clippy, 304 + paridades en verde.
+- Mutaciones (todas detectadas): contar líneas vacías → 2 fallos (incl. la captura real);
+  primera lectura estable → 5; ignorar `working` → 1; pantalla entera → 4.
+- Tras fusionar en `eco/main`: `cargo test -p ez-herdr -p ez-ctl` en verde. Worktree NV-1
+  retirado; terminal `nv-1b` cerrada.
+- Riesgo anotado: un agente `idle` cuyo último mensaje cite una frase completa de límite
+  queda `bloqueado` tras dos vueltas (inherente a §3; se resuelve al cambiar la pantalla).
+
+### IR-1 — revisión 1: devuelto (IR-1b)
+- Bien: crate `ez-scan` con `Probe`, `entorno.json` atómico, inventario real sin abrir
+  agentes (lista Claude Code, OpenCode, mcode, Codex, Pi; Qwen no instalado), GPU por
+  `sysinfo` sin `unsafe`, `ez init`/`resources`/`inventory`.
+- Mal 1 (medido a la vez): `ez resources` → commit libre 27 179 MB; Windows
+  `FreeVirtualMemory` → 14 162 MB. RAM libre + swap libre ≠ commit libre: en el incidente
+  de memoria la guarda habría dejado lanzar. IR-1b: `GetPerformanceInfo` /
+  `GlobalMemoryStatusEx` con un único `unsafe` autorizado (excepción a `_COMMON-ECO`).
+- Mal 2: cuenta como «pesados» a todos los hijos vivos (§4 dice compilando o midiendo):
+  el agente principal no podría delegar con 4 hijos vivos aunque estén parados. IR-1b:
+  pesado = árbol con `cargo`/`rustc`/`link`… o ≥ `heavy_mb`.
+
+### Registro de estados: un archivo dañado deja ciego al vigilante → HD-10
+- `ez tasks` falla entero con `registro inválido …ir-1.json` (escrito por el supervisor
+  viejo: `validation` con campos `null`). Peor: `Watcher` usa `list(..).unwrap_or_default()`
+  → con un archivo dañado no ve a **ningún** hijo y deja de avisar sin decir nada.
+- HD-10 (OpenCode + DeepSeek, `hd-10` t1nb): lista tolerante, `validation` toda en `null` =
+  `None`, `ez tasks` nombra los ilegibles, el vigilante avisa una vez por archivo.
+- Además, el supervisor de HD-0d/0e escribe en `…\EzAgent\subagents` (inglés) y el producto
+  lee `…\EzAgent\subagentes`: los registros del supervisor no se verían. Va a HD-0f.
+
+### IR-1b — validado y fusionado (c25aa5d)
+- `GetPerformanceInfo` en `ez-scan/src/real/commit.rs` (único `unsafe`, con `// SAFETY:`);
+  pesado = árbol con `cargo`/`rustc`/`link`/`lld-link`/`cl` (editable) o ≥ 1500 MB.
+- Corrida del elefante: fmt, clippy y pruebas de `ez-scan` + `ez-ctl` en verde; commit libre
+  medido 3 veces contra `Win32_OperatingSystem.FreeVirtualMemory`: 0,72 %, 0,08 %, 1,62 %.
+- Mutaciones: contar a todos como pesados → 2 fallos; quitar la regla de memoria → 2.
+- Tras fusionar: clippy y 20 suites de `ez-scan`, `ez-ctl`, `ez-herdr` en verde. Worktree
+  IR-1 retirado; terminal `ir-1` cerrada. IR-2 lanzado (`ir-2` t1p2, OpenCode + DeepSeek).
+
+### HD-10 + HD-10b — validado y fusionado (9b183a2)
+- HD-10: `list_lenient`, `validation` toda en `null` = `None`, aviso único por ilegible,
+  también `refresh_activity` tolerante. Devuelto una vez (HD-10b): `ez tasks --json` cambiaba
+  de array a objeto cuando había ilegibles (fallo de mi brief); ahora siempre array y los
+  ilegibles a stderr.
+- Corrida del elefante: fmt, clippy, 16 suites de `ez-herdr` + `ez-ctl` en verde; mutación de
+  compatibilidad (`if false`) → falla `a_validation_object_with_every_field_null_is_no_validation`;
+  `ez tasks --parent t6h` real (solo lectura) lista `ir-1` y `nv-1` con código 0.
+- Tras fusionar: clippy y 20 suites de `ez-herdr`, `ez-ctl`, `ez-scan` en verde. Worktree
+  retirado; terminal `hd-10` cerrada.
+
+### HD-0e (supervisor) — revisión 1: devuelto (HD-0f)
+- Corrida del elefante sobre una copia (3d22f61): `probar.sh` 15 casos en verde.
+  Mutaciones: ignorar `working` → caso 15 falla; pantalla entera → caso 14; volver a contar
+  «quota» → caso 12; **quitar la ventana de pantalla quieta → nada falla** (falta prueba).
+- Fallos nuevos: escribe en `…\EzAgent\subagents` (el producto lee `subagentes`);
+  `validation` con campos `null` (forma no canónica); Python en cp1252 por tubería (un
+  resumen con «→» sale vacío, comprobado); «línea con texto» distinta de NV-1c.
+- HD-0f: carpeta y forma canónicas, UTF-8, mismo criterio de líneas, casos 16 (pantalla que
+  cambia), 17 (captura real), 18 (acentos) y `ez tasks` del producto leyendo los registros
+  del supervisor. Sin compilar Rust (usa el `ez.exe` ya compilado).
+
+### DX-3 lanzado (`dx-3` t1pw, OpenCode + DeepSeek)
+- Adenda antes de lanzar: archivos (`ez-stt`, `scripts/stop-voice.ps1`), excepción de
+  `unsafe` solo en `server/job.rs` para el Job Object, humo con `fake-whisper` y procesos de
+  prueba por PID (el `whisper-server` de la persona no se toca).
+
+### DX-1d — validado y fusionado (con DX-1b de nuevo)
+- Del mcode al relevo de OpenCode + DeepSeek. Entrega: hook de pánicos síncrono al registro,
+  `catch_panic` en WndProc de las ventanas layered, gancho de rueda, bandeja y DirectSound;
+  la vista del chat se recupera de un pánico de maquetación; `place_caret` ya no indexa una
+  lista vacía (clic en el campo antes del primer cuadro: candidato fuerte al disparador);
+  `composite_caret` recorta contra la capa de contenido.
+- Símbolos del exe caído (recompilado de 7ce0bbb): `0xbe3f2e` = `panic_with_hook` → pánico
+  que cruzó un `extern "system"`. **El disparador exacto no se reprodujo** (35 mensajes
+  sintéticos, tema y tamaño de la persona, secuencia panel → chat con llamada).
+- Corrida del elefante (release): 29 suites de `ez-core` + `ez-hud` en verde;
+  `panic_boundary` → «VIVO»; humo `chat` y `real` → `chat_open=true alive_secs=10`.
+  Mutaciones: quitar la guarda de `place_caret` → falla su prueba; quitar `catch_unwind` en
+  `paint_content` → falla `a_panicking_layout_keeps_the_view…`; quitar `catch_panic` en
+  WndProc → `panic in a function that cannot unwind … aborting`.
+- Integración: `git revert 82b25b2` (vuelve DX-1b) + fusión de `work/DX-1d`.
+- El humo usa la `VoiceApp` real con ventanas nativas y micrófono silencioso (no el exe con
+  micrófono, para no tocar el audio de la persona ni arrancar otro whisper-server). Falta la
+  prueba en la app de la persona: recompilar y reiniciar **solo con su permiso**.
+
+### App de la persona recompilada (19-nov 17:26) — con su permiso
+- La app de las 13:54 ya no corría: la cerró la persona (lo confirmó); sin eventos de caída
+  después de las 13:52. Su `whisper-server` 18960 quedó huérfano: cerrado (+ su powershell).
+- `eco/main` e15eb05 (DX-1b + DX-1d + DX-2 + NV-1 + IR-1 + HD-10): `cargo build --release`
+  3 min 14 s; abierta con `Start-Process` (PID 19576), viva a los 12 s, whisper nuevo 1556.
+- Verificación de `eco/main` fusionado: 47 suites de `ez-core`, `ez-hud`, `ez-app`, `ez-chat`
+  en verde (saltando la inestable conocida `a_dirty_round…`, que pasó 3/3 aislada); clippy
+  sin avisos propios (solo `vendor/freetype-sys`, ya existentes).
+- Pendiente: que la persona abra el chat (panel → chat) y confirme.
+
+### DX-3 — revisión 1: devuelto (DX-3b)
+- Bien: Job Object con `KILL_ON_JOB_CLOSE`, `unsafe` solo en `server/job.rs`, estado propio
+  con nombre de imagen comprobado antes de matar, reutiliza/reemplaza, humo release con
+  `fake-whisper` y los procesos de la persona intactos.
+- Falta: el guion del humo no se comprometió (no es repetible) y el lanzamiento directo
+  duplica `start-whisper.ps1` sin comprobar que da el mismo servidor que hoy (exe, modelo
+  large-v3-turbo-q8_0, `-l es -t 6 --vad --vad-model silero`). DX-3b: guion en
+  `scripts/tests/humo-whisper.ps1`, ejemplo `whisper_plan` de solo lectura y prueba de
+  correspondencia.

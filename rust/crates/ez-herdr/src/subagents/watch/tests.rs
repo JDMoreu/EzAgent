@@ -24,6 +24,8 @@ struct FakeState {
     send_fails: bool,
     /// Los mensajes enviados al padre.
     sent: Vec<String>,
+    /// La pantalla de cada terminal.
+    screens: std::collections::HashMap<String, String>,
 }
 
 /// El doble de `hc` y del reloj.
@@ -57,6 +59,27 @@ impl Fake {
     fn send_fails(self: &Arc<Self>, fails: bool) -> Arc<Fake> {
         self.state.lock().expect("estado").send_fails = fails;
         Arc::clone(self)
+    }
+
+    /// La pantalla que devuelve `hc read` para esa terminal.
+    fn with_screen(self: &Arc<Self>, address: &str, text: &str) -> Arc<Fake> {
+        self.state
+            .lock()
+            .expect("estado")
+            .screens
+            .insert(address.to_string(), text.to_string());
+        Arc::clone(self)
+    }
+
+    /// Arranca el reloj falso en un momento realista.
+    fn at(self: &Arc<Self>, now: u64) -> Arc<Fake> {
+        self.state.lock().expect("estado").now = now;
+        Arc::clone(self)
+    }
+
+    /// Adelanta el reloj falso.
+    fn advance(&self, ms: u64) {
+        self.state.lock().expect("estado").now += ms;
     }
 
     fn sent(&self) -> Vec<String> {
@@ -112,6 +135,15 @@ impl WatchRuntime for Fake {
                     stderr: String::new(),
                 })
             }
+            "read" => {
+                let address = args.get(1).cloned().unwrap_or_default();
+                let screen = state.screens.get(&address).cloned().unwrap_or_default();
+                Ok(HcOutput {
+                    code: 0,
+                    stdout: format!("{screen}\n"),
+                    stderr: String::new(),
+                })
+            }
             other => Err(format!("comando desconocido: {other}")),
         }
     }
@@ -136,6 +168,19 @@ fn temp_root(tag: &str) -> std::path::PathBuf {
     let _ = std::fs::remove_dir_all(&folder);
     std::fs::create_dir_all(&folder).expect("carpeta temporal");
     folder
+}
+
+/// `uso.json` del registro, como JSON.
+fn usage(root: &std::path::Path) -> serde_json::Value {
+    let text = std::fs::read_to_string(root.join("uso.json")).expect("uso.json");
+    serde_json::from_str(&text).expect("uso.json válido")
+}
+
+/// Los hijos vivos del padre, con el estado del agente pedido.
+fn live_children(agent_state: &str) -> String {
+    format!(
+        r#"{{"terminals":[{{"address":"t12","state":"live","status":{{"state":"{agent_state}","app":"opencode"}}}}]}}"#
+    )
 }
 
 /// Un registro en proceso del padre `t6h`.
@@ -169,7 +214,9 @@ fn make_watcher(fake: &Arc<Fake>, registry: Registry) -> Watcher {
         idle_ms: DEFAULT_IDLE_MS,
         grace_ms: 0,
     };
+    let novelty_file = registry.root().join("novedades.toml");
     Watcher::new(config, registry, Arc::clone(fake) as Arc<dyn WatchRuntime>)
+        .with_novelty_file(novelty_file)
 }
 
 #[test]
@@ -331,6 +378,47 @@ fn el_vigilante_usa_la_etiqueta_del_padre_para_preguntar_a_hc() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+#[test]
+fn un_registro_ilegible_no_tapa_a_los_demas_y_se_avisa_una_vez() {
+    let root = temp_root("ilegible");
+    let registry = Registry::at(&root);
+    registry
+        .create(&record("dev1-opencode", "t12"))
+        .expect("registro");
+    registry
+        .transition(
+            "t6h",
+            "dev1-opencode",
+            TaskState::Done,
+            "t12",
+            "el subagente terminó",
+            |_| {},
+        )
+        .expect("cambio");
+    let broken = root.join("t6h").join("ir-1.json");
+    std::fs::write(&broken, r#"{"validation": null, "roto": "#).expect("archivo roto");
+    let fake = Fake::new()
+        .with_ls(r#"{"terminals":[{"address":"t12","state":"live"}]}"#)
+        .with_get(r#"{"address":"t6h","state":"live"}"#);
+    let mut watcher = make_watcher(&fake, Registry::at(&root));
+
+    let tick = watcher.tick();
+    assert_eq!(tick.notified, vec!["dev1-opencode".to_string()]);
+    let sent = fake.sent();
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    assert!(sent.iter().any(|text| text.contains("terminó")), "{sent:?}");
+    assert!(
+        sent.iter()
+            .any(|text| text.contains("Registro ilegible:") && text.contains("ir-1.json")),
+        "{sent:?}"
+    );
+
+    watcher.tick();
+    assert_eq!(fake.sent().len(), 2, "el ilegible no se avisa dos veces");
+    assert!(broken.exists(), "el archivo ilegible no se borra");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 // ------------------------------------------------------------- arranque del vigilante
 
 /// La preparación del vigilante de un padre.
@@ -382,3 +470,6 @@ fn un_vigilante_nuevo_arranca() {
     let fake = Fake::new().with_run(0, r#"{"address":"t12"}"#, "");
     assert_eq!(ensure_watcher(&*fake, &setup()), WatcherState::Started);
 }
+
+mod novelties;
+mod pantalla;

@@ -427,16 +427,34 @@ impl ChatPanel {
     ///
     /// The content layer is the expensive one (it repaints the history), so it
     /// is drawn without the lock: while it paints, the app keeps answering.
+    ///
+    /// DECISION: si la maquetación entra en pánico, la vista **vuelve** al
+    /// estado (DX-1d). Sin esto la vista se perdía al desenrollar y el panel se
+    /// quedaba en 1×1 para siempre: un pánico de un mensaje dejaba el chat
+    /// muerto aunque la app siguiera viva. Se deja una capa vacía con la firma
+    /// para no repetir el mismo pánico en cada cuadro.
     fn paint_content(&self, now: f64, sig: compose::ContentSig) {
         let mut state = self.state.lock();
         let Some(mut view) = state.view.take() else {
             return;
         };
         drop(state);
-        let layer = view.render_content(now, false);
+        let layer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            view.render_content(now, false)
+        }))
+        .ok();
         let mut state = self.state.lock();
-        state.content.store(sig, layer);
-        state.view = Some(view);
+        // Si el panel se cerró mientras pintábamos, la vista ya no es suya.
+        if state.view.is_none() && state.anim.state != AnimState::Closed {
+            state.view = Some(view);
+        }
+        match layer {
+            Some(layer) => state.content.store(sig, layer),
+            None => {
+                tracing::error!("el contenido del chat falló; se conserva el último cuadro");
+                state.content.store(sig, ez_gfx::sdf::Layer::new(1, 1));
+            }
+        }
     }
 }
 

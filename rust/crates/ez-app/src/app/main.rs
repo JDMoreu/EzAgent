@@ -122,6 +122,10 @@ fn init_logging() {
 /// Devuelve `false` si la carpeta no se pudo crear (entonces el registro se
 /// queda solo en stderr).
 pub fn init_logging_in(dir: &std::path::Path) -> bool {
+    // DX-1d: el hook va antes que nada. Un pánico que cruza un callback de
+    // Windows aborta el proceso, y el registro del `tracing` es asíncrono: la
+    // línea del pánico tiene que escribirla el hook, síncrona, en el archivo.
+    ez_core::panics::install_hook_in(dir);
     if std::fs::create_dir_all(dir).is_err() {
         let _ = tracing_subscriber::fmt()
             .with_writer(std::io::stderr)

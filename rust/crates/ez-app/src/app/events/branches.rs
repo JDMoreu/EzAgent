@@ -67,13 +67,19 @@ impl VoiceApp {
         self.log_turn_timing();
         log(format!("Tú: {text}"));
         let fast_t0 = monotonic();
-        if self.fast_command(&text) {
+        let outcome = self.fast_command_outcome(&text);
+        if outcome.handled {
             let handled_ms = (monotonic() - fast_t0) * 1000.0;
+            let label = if outcome.ack {
+                "ack_fast"
+            } else {
+                "fast_command"
+            };
             self.inner
                 .runtime
                 .latency
                 .lock()
-                .record_command("fast_command", handled_ms);
+                .record_command(label, handled_ms);
             log(format!("Comando local: {handled_ms:.0} ms"));
             return;
         }
@@ -117,6 +123,14 @@ impl VoiceApp {
             timing.mark("turn_end", None);
             self.record_latency(&timing, outcome);
         }
+        if outcome == "ok" {
+            // DECISION: solo una respuesta completa deja contexto de acuse; un
+            // error o una cancelación no deben abrir el atajo (DX-2b A2).
+            let speech = &self.inner.speech;
+            *speech.last_outbound_kind.write() = Some("answer".to_string());
+            *speech.last_outbound_done_at.write() = monotonic();
+            *speech.last_outbound_question.write() = self.last_summary().trim_end().ends_with('?');
+        }
         *self.inner.speech.speaking_kind.write() = None;
         self.clear_echo_guards();
         self.inner.audio.reset_capture.set();
@@ -146,6 +160,11 @@ impl VoiceApp {
                 agent.arm_confirmation();
             }
         }
+        if let Some(kind) = kind_before {
+            let speech = &self.inner.speech;
+            *speech.last_outbound_kind.write() = Some(kind);
+            *speech.last_outbound_done_at.write() = monotonic();
+        }
         self.clear_echo_guards();
         self.inner.audio.reset_capture.set();
         if self
@@ -166,6 +185,8 @@ impl VoiceApp {
     /// `("swarm_notice", text, asks)`.
     pub(super) fn event_swarm_notice(&self, text: &str, asks: bool) {
         log(format!("Enjambre: {text}"));
+        // Tras una pregunta del enjambre, «ok» significa «sí»: va al LLM (A2).
+        *self.inner.speech.last_outbound_question.write() = asks || text.trim_end().ends_with('?');
         // Una pregunta no se silencia: el enjambre espera la respuesta.
         if asks {
             self.news_arrived("swarm:ask", "enjambre", text, "blocked");
@@ -194,12 +215,12 @@ impl VoiceApp {
         let lower = message.to_lowercase();
         if lower.starts_with("no puedo usar el micrófono") || lower.starts_with("micrófono") {
             self.hang_up();
-            self.speak(message, "answer");
+            self.speak(message, "error");
         } else if in_call(self) {
-            self.speak(message, "answer");
+            self.speak(message, "error");
         } else {
             self.set_idle();
-            self.speak(message, "answer");
+            self.speak(message, "error");
         }
     }
 

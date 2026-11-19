@@ -249,13 +249,11 @@ fn done_question_names_the_tab_and_keeps_flow_names() {
     let app = &fixture.app;
     assert_eq!(
         app.done_question("t1", "claude", "done", ""),
-        "Oye, Claude Code terminó. ¿Quieres que te resuma qué hizo, \
-         que te lea la salida o que te la muestre?"
+        "Oye, Claude Code terminó. Cuando quieras te cuento qué hizo."
     );
     assert_eq!(
         app.done_question("t1", "claude", "done", "todo el flujo: A → B"),
-        "Oye, terminó todo el flujo: A → B. ¿Quieres que te lo resuma, \
-         que te muestre el resultado o que haga algo más con él?"
+        "Oye, terminó todo el flujo: A → B. Cuando quieras te cuento el resultado."
     );
     assert_eq!(
         app.done_question("t1", "claude", "lost", ""),
@@ -318,9 +316,22 @@ fn done_prompt_queues_the_question() {
     let queue = fixture.app.inner.agents.announce_queue.lock();
     assert_eq!(
         queue[0].0,
-        "Oye, terminó todo el flujo: A → B. ¿Quieres que te lo resuma, \
-         que te muestre el resultado o que haga algo más con él?"
+        "Oye, terminó todo el flujo: A → B. Cuando quieras te cuento el resultado."
     );
+    // Declaración: un «ok» posterior es un acuse (DX-2b A1/A2).
+    assert!(!*fixture.app.inner.speech.last_outbound_question.read());
+}
+
+#[test]
+fn a_question_announcement_marks_the_outbound_as_a_question() {
+    let fixture = setup();
+    *fixture.app.inner.session.state.write() = THINKING.to_string();
+    fixture
+        .app
+        .handle_done_prompt("t1", "claude", "lost", "", "");
+    assert!(*fixture.app.inner.speech.last_outbound_question.read());
+    let queue = fixture.app.inner.agents.announce_queue.lock();
+    assert!(queue[0].0.ends_with('?'));
 }
 
 #[test]

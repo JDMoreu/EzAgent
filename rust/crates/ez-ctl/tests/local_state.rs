@@ -348,6 +348,40 @@ fn el_tasks_con_json_muestra_los_registros() {
 }
 
 #[test]
+fn el_tasks_sigue_listando_con_un_registro_ilegible() {
+    let dir = TempDir::new();
+    let root = dir.path().join("subagentes");
+    let registry = Registry::at(&root);
+    registry
+        .create(&record("dev1-opencode", "t12", "t6h"))
+        .expect("registro");
+    let broken = root.join("t6h").join("ir-1.json");
+    std::fs::write(&broken, r#"{"validation": "#).expect("archivo roto");
+
+    let (code, out, err) = run_local(&["tasks"], dir.path(), Some("t6h"), &root);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("dev1-opencode"), "{out}");
+    assert!(
+        !out.contains("registro ilegible"),
+        "stdout solo trae la tabla: {out}"
+    );
+    assert!(
+        err.contains(&format!("registro ilegible: {}:", broken.display())),
+        "{err}"
+    );
+
+    let (code, out, err) = run_local(&["tasks", "--json"], dir.path(), Some("t6h"), &root);
+    assert_eq!(code, 0, "{err}");
+    let rows: Vec<serde_json::Value> =
+        serde_json::from_str(out.trim()).expect("stdout es el array de registros");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["name"], "dev1-opencode");
+    assert!(!out.contains("ir-1"), "{out}");
+    assert!(err.contains("registro ilegible"), "{err}");
+    assert!(err.contains("ir-1.json"), "{err}");
+}
+
+#[test]
 fn en_una_tarea_del_arbitro_el_report_local_es_un_uso_incorrecto() {
     let mut harness = Harness::new();
     let (code, out, err) = harness.run(&["report", "--state", "terminado"]);
