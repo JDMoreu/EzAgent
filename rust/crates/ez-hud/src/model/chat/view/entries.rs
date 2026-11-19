@@ -256,9 +256,9 @@ impl ChatView {
     ///
     /// DECISION: the height is measured, not painted (DX-1c). The total
     /// height of the conversation needs the height of every message, but the
-    /// tile is only needed for the ones on screen; measuring is about a
-    /// thousand times cheaper than painting (the height of the message is
-    /// cached apart from the tile since DX-1, paso 3).
+    /// tile is only needed for the ones on screen; measuring is about ten
+    /// times cheaper than painting (the height of the message is cached apart
+    /// from the tile since DX-1, paso 3).
     pub(crate) fn height_of(&mut self, msg: &ChatMessage, now: f64) -> f64 {
         let key = self.cache_key(msg);
         if let Some(cached) = self.cache.height(msg.id) {

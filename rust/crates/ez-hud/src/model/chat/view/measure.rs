@@ -179,7 +179,11 @@ mod tests {
             ChatMessage::new(3, Role::System, text),
             ChatMessage::new(4, Role::User, "hola"),
             ChatMessage::new(5, Role::Assistant, ""),
-            ChatMessage::new(6, Role::Assistant, "una respuesta que ocupa más de una línea"),
+            ChatMessage::new(
+                6,
+                Role::Assistant,
+                "una respuesta que ocupa más de una línea",
+            ),
         ];
         let mut view = rich_view(messages.clone());
         for msg in &messages {
@@ -214,4 +218,3 @@ mod tests {
         view
     }
 }
-

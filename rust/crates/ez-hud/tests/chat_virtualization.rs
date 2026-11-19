@@ -215,10 +215,7 @@ fn the_first_frame_lays_out_only_what_is_on_screen() {
 
     let small_layouts = small.layouts();
     let big_layouts = big.layouts();
-    assert!(
-        small_layouts > 0,
-        "the first frame laid out nothing at all"
-    );
+    assert!(small_layouts > 0, "the first frame laid out nothing at all");
     assert!(
         big_layouts < 100,
         "the first frame laid out {big_layouts} messages of 1 000"
@@ -233,7 +230,7 @@ fn the_first_frame_lays_out_only_what_is_on_screen() {
 /// The first frame does not pay for the whole history.
 ///
 /// The height of every message is still measured (the conversation needs the
-/// total to scroll), but measuring is about a thousand times cheaper than
+/// total to scroll), but measuring is about ten times cheaper than
 /// painting: the frame with 1 000 messages costs the same order of
 /// magnitude as the frame with 10.
 #[test]
@@ -269,6 +266,7 @@ fn scrolling_to_the_top_lays_out_what_comes_in() {
     );
     assert!(
         after - before < 100,
-        "scrolling laid out {} messages", after - before
+        "scrolling laid out {} messages",
+        after - before
     );
 }
