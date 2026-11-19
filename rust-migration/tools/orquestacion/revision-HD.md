@@ -125,3 +125,10 @@
 - Nota menor: las horas de las lecturas en vivo del informe no cuadran entre sí (CPU 511 s
   «a las 09:56»); no cambia las conclusiones, que salen del código y de la medición.
 - DX-1b (mcode): pasos 1, 3, 4, 5, 6, 7 y 8; la virtualización (paso 2) queda para después.
+
+### DX-2b (acuses cortos) — revisión 1: devuelto (DX-2c, en cola por el límite de 3)
+- Bien: avisos de «terminó» como afirmación, sin atajo tras pregunta, respuestas A3,
+  `is_pure_acknowledgement`, kind `ack` para no rearmar, regla de voz. 678 pruebas en
+  verde según el informe.
+- Mal: las pruebas escriben en el `latency.jsonl` real de la persona (9 líneas
+  `ack_fast` comprobadas). DX-2c: carpeta de registros temporal para las pruebas.
