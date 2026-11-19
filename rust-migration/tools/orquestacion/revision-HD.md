@@ -132,3 +132,12 @@
   verde según el informe.
 - Mal: las pruebas escriben en el `latency.jsonl` real de la persona (9 líneas
   `ack_fast` comprobadas). DX-2c: carpeta de registros temporal para las pruebas.
+
+### HD-0b (supervisor) — revisión 1: bien con falsos; devuelto (HD-0c) por fallos reales
+- Probado por el elefante con el OpenCode real **sin encargo** (sin llamadas a modelos):
+  `env.exe opencode` ejecuta el guion de bash de npm → 127; con la ruta nativa
+  (`node_modules/@opencode/cli/bin/opencode.exe`) arranca; `--session hd-probe-s1` → «Expected
+  a string starting with "ses"» (código 1); `--session ses_hdprobe01` y sin sesión → abre la
+  interfaz y **reporta `idle` a hc** (OpenCode interactivo sí informa estado a Herdr).
+- HD-0c: C0-3, C0-4 (resolver el ejecutable nativo), C0-5 (ids `ses_…`) y un humo real opt-in
+  sin encargo.
