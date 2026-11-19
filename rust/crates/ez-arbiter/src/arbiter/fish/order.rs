@@ -7,9 +7,9 @@ use crate::state::WorkState;
 use crate::texts;
 use crate::types::Rejection;
 
-use super::Arbiter;
+use super::ArbiterShared;
 
-impl Arbiter {
+impl ArbiterShared {
     /// Fases de la ronda y límite de peces vivos (§14.3).
     pub(crate) fn check_order(
         &self,
@@ -142,8 +142,7 @@ impl Arbiter {
             }
             return Ok(());
         }
-        // DECISION: hasta ECO-2c se compara la foto de git; el brief prevé
-        // cambiarla por la huella de contenido en esa entrega.
+        // La ronda solo de verificación exige la huella del cierre limpio anterior.
         let previous = task
             .rounds
             .iter()

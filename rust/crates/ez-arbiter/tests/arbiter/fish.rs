@@ -159,10 +159,12 @@ fn r5_launch_request_has_identity_labels_and_instructions() {
     let events = f.bitacora(&task);
     let launched = events
         .iter()
-        .find(|event| event["kind"] == "fish_launched" && event["data"]["fish"] == fish)
+        .find(|event| {
+            super::support::kind(event) == "fish_launched" && event["kind"]["fish"] == fish
+        })
         .expect("evento de lanzamiento");
-    assert_eq!(launched["data"]["fish"], fish);
-    assert!(launched["data"].get("token").is_none());
+    assert_eq!(launched["kind"]["fish"], fish);
+    assert!(launched.get("token").is_none() && launched["kind"].get("token").is_none());
     assert!(
         !fs::read_to_string(f.data_dir.join("tareas").join(&task).join("estado.json"))
             .expect("estado")

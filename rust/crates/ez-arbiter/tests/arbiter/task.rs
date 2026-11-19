@@ -136,7 +136,9 @@ fn r2_task_card_has_title_excerpt_and_criteria() {
         .message
         .contains("- C1: Git responde → git --version"));
     let events = f.bitacora(outcome.data["task"].as_str().expect("id"));
-    assert!(events.iter().any(|event| event["kind"] == "task_proposed"));
+    assert!(events
+        .iter()
+        .any(|event| super::support::kind(event) == "task_proposed"));
 }
 
 #[test]

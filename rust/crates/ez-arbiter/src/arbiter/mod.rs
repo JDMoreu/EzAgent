@@ -2,17 +2,25 @@
 //!
 //! Regla de concurrencia: el `Mutex` interno solo se toma para leer o cambiar
 //! el estado en memoria. Git, los comandos de verificación, el lanzamiento de
-//! peces, los tokens y el disco ocurren fuera del candado.
+//! peces, los tokens y el disco ocurren fuera del candado. Cada espacio tiene
+//! un ejecutor secuencial (hilo `ez-arbiter-<espacio>`): los comandos se
+//! encolan y el llamador espera su resultado (diseño §14.5).
 
+mod api;
+mod artifacts;
 mod emit;
 mod fish;
+mod lifecycle;
 mod load;
 mod round;
 mod task_cmds;
 mod team;
 
+pub use api::Arbiter;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -21,12 +29,21 @@ use parking_lot::Mutex;
 
 use ez_team::Role;
 
-use crate::events::{ArbiterEvent, ElephantEvent};
+use crate::events::{ArbiterEvent, Card, ElephantEvent};
 use crate::state::{Task, WorkState};
 use crate::texts;
 use crate::types::{
     Caller, Clock, Command, FishKey, FishLauncher, InstructionWriter, Outcome, Rejection, Space,
 };
+
+/// Trabajo que el ejecutor de un espacio procesa por completo antes del siguiente.
+type JobRun = Box<dyn FnOnce(&ArbiterShared) -> Result<Outcome, Rejection> + Send>;
+
+/// Petición encolada y canal por el que se devuelve el resultado al llamador.
+struct Job {
+    run: JobRun,
+    done: Sender<Result<Outcome, Rejection>>,
+}
 
 /// Cola de novedades de un espacio para `ez wait`.
 #[derive(Clone)]
@@ -43,6 +60,10 @@ pub(crate) struct Inner {
     pub elephants: HashMap<String, ElephantQueue>,
     /// Tokens vivos por clave de pez. Nunca se serializan (§14.1).
     pub tokens: HashMap<String, String>,
+    /// Ejecutor secuencial de cada espacio (§14.5).
+    queues: HashMap<String, Sender<Job>>,
+    /// Tarjetas abiertas esperando una decisión (§14.8).
+    pub cards: HashMap<String, Card>,
 }
 
 /// Cola nueva y vacía.
@@ -51,23 +72,25 @@ fn elephant_queue() -> ElephantQueue {
     ElephantQueue { tx, rx }
 }
 
-/// El árbitro de un proceso: una tarea activa por espacio.
-pub struct Arbiter {
+/// Núcleo del árbitro, compartido por la API pública y los hilos ejecutores.
+pub(crate) struct ArbiterShared {
     pub(crate) data_dir: PathBuf,
     pub(crate) launcher: Arc<dyn FishLauncher>,
     pub(crate) writer: Arc<dyn InstructionWriter>,
     pub(crate) clock: Arc<dyn Clock>,
     pub(crate) inner: Mutex<Inner>,
+    /// Orden monotónico de los eventos de traza en el proceso.
+    pub(crate) seq: AtomicU64,
 }
 
-impl Arbiter {
-    /// Abre el árbitro, crea su carpeta de datos y recarga las tareas no finales.
-    pub fn new(
+impl ArbiterShared {
+    /// Construye el núcleo y recarga las tareas no finales.
+    fn new(
         data_dir: PathBuf,
         launcher: Arc<dyn FishLauncher>,
         writer: Arc<dyn InstructionWriter>,
         clock: Arc<dyn Clock>,
-    ) -> Result<Arbiter, String> {
+    ) -> Result<ArbiterShared, String> {
         std::fs::create_dir_all(&data_dir)
             .map_err(|error| format!("No se pudo crear {}: {error}.", data_dir.display()))?;
         let loaded = load::load_tasks(&data_dir);
@@ -83,7 +106,7 @@ impl Arbiter {
                 .or_insert_with(elephant_queue);
             tasks.insert(task.id.clone(), task);
         }
-        Ok(Arbiter {
+        let shared = ArbiterShared {
             data_dir,
             launcher,
             writer,
@@ -94,12 +117,43 @@ impl Arbiter {
                 subscribers: Vec::new(),
                 elephants,
                 tokens: HashMap::new(),
+                queues: HashMap::new(),
+                cards: HashMap::new(),
             }),
-        })
+            seq: AtomicU64::new(0),
+        };
+        shared.restart();
+        Ok(shared)
+    }
+
+    /// Devuelve (y crea, si hace falta) el canal del ejecutor de un espacio.
+    /// El `Mutex` solo se toma para consultar e insertar, nunca durante E/S.
+    fn queue_sender(self: &Arc<Self>, space: &str) -> Sender<Job> {
+        let (sender, receiver) = {
+            let mut inner = self.inner.lock();
+            if let Some(sender) = inner.queues.get(space) {
+                return sender.clone();
+            }
+            let (sender, receiver) = crossbeam_channel::unbounded();
+            inner.queues.insert(space.to_string(), sender.clone());
+            (sender, receiver)
+        };
+        let shared = self.clone();
+        let name = format!("ez-arbiter-{space}");
+        std::thread::Builder::new()
+            .name(name)
+            .spawn(move || {
+                for job in receiver {
+                    let result = (job.run)(&shared);
+                    let _ = job.done.send(result);
+                }
+            })
+            .expect("crear el hilo ejecutor del árbitro");
+        sender
     }
 
     /// Registra o actualiza un espacio (lo llama la ventana al abrirlo).
-    pub fn register_space(&self, space: Space) {
+    pub(crate) fn register_space(&self, space: Space) {
         let mut inner = self.inner.lock();
         inner
             .elephants
@@ -109,15 +163,10 @@ impl Arbiter {
     }
 
     /// Ejecuta un comando del elefante o de un pez.
-    pub fn execute(&self, caller: &Caller, command: Command) -> Result<Outcome, Rejection> {
-        let result = self.dispatch(caller, command);
-        if let Err(rejection) = &result {
-            self.log_rejection(caller, rejection);
+    pub(crate) fn dispatch(&self, caller: &Caller, command: Command) -> Result<Outcome, Rejection> {
+        if let Caller::Elephant { space } = caller {
+            self.check_elephant_changes(space)?;
         }
-        result
-    }
-
-    fn dispatch(&self, caller: &Caller, command: Command) -> Result<Outcome, Rejection> {
         match command {
             Command::Status => self.status(caller),
             Command::Report {
@@ -173,55 +222,81 @@ impl Arbiter {
     // -------------------------------------------------------------- personas
 
     /// La persona aprueba la tarea propuesta.
-    pub fn approve_task(&self, space: &str) -> Result<Outcome, Rejection> {
-        let result = self.approve_task_inner(space);
-        if let Err(rejection) = &result {
-            self.log_person_rejection(space, rejection);
-        }
-        result
+    pub(crate) fn approve_task_inner(&self, space: &str) -> Result<Outcome, Rejection> {
+        self.approve_task_impl(space)
     }
 
     /// La persona rechaza la tarea con un comentario para el elefante.
-    pub fn reject_task(&self, space: &str, comment: &str) -> Result<Outcome, Rejection> {
-        let result = self.reject_task_inner(space, comment);
-        if let Err(rejection) = &result {
-            self.log_person_rejection(space, rejection);
-        }
-        result
+    pub(crate) fn reject_task_inner(
+        &self,
+        space: &str,
+        comment: &str,
+    ) -> Result<Outcome, Rejection> {
+        self.reject_task_impl(space, comment)
     }
 
     /// La persona aprueba el equipo propuesto.
-    pub fn approve_team(&self, space: &str) -> Result<Outcome, Rejection> {
-        let result = self.approve_team_inner(space);
-        if let Err(rejection) = &result {
-            self.log_person_rejection(space, rejection);
-        }
-        result
+    pub(crate) fn approve_team_inner(&self, space: &str) -> Result<Outcome, Rejection> {
+        self.approve_team_impl(space)
     }
 
     /// La persona rechaza el equipo con un comentario para el elefante.
-    pub fn reject_team(&self, space: &str, comment: &str) -> Result<Outcome, Rejection> {
-        let result = self.reject_team_inner(space, comment);
-        if let Err(rejection) = &result {
-            self.log_person_rejection(space, rejection);
-        }
-        result
+    pub(crate) fn reject_team_inner(
+        &self,
+        space: &str,
+        comment: &str,
+    ) -> Result<Outcome, Rejection> {
+        self.reject_team_impl(space, comment)
     }
 
     /// La persona reanuda una tarea en pausa.
-    pub fn resume(&self, space: &str) -> Result<Outcome, Rejection> {
-        let result = self.resume_inner(space);
-        if let Err(rejection) = &result {
-            self.log_person_rejection(space, rejection);
-        }
-        result
+    pub(crate) fn resume_inner(&self, space: &str) -> Result<Outcome, Rejection> {
+        self.resume_impl(space)
     }
 
     /// La persona detiene la tarea.
-    pub fn stop(&self, space: &str) -> Result<Outcome, Rejection> {
-        let result = self.stop_inner(space);
-        if let Err(rejection) = &result {
-            self.log_person_rejection(space, rejection);
+    pub(crate) fn stop_inner(&self, space: &str) -> Result<Outcome, Rejection> {
+        self.stop_impl(space)
+    }
+
+    /// Despacha una acción de tarjeta al método correcto (diseño §14.8).
+    pub(crate) fn card_action_inner(
+        &self,
+        id: &str,
+        action: &str,
+        comment: Option<&str>,
+    ) -> Result<Outcome, Rejection> {
+        let card = self
+            .inner
+            .lock()
+            .cards
+            .get(id)
+            .cloned()
+            .ok_or_else(|| Rejection::new("R12", "No hay una tarjeta abierta con ese id."))?;
+        let result = match (card.kind, action) {
+            (crate::events::CardKind::Task, "approve") => self.approve_task_impl(&card.space),
+            (crate::events::CardKind::Task, "reject") => {
+                self.reject_task_impl(&card.space, comment.unwrap_or(""))
+            }
+            (crate::events::CardKind::Team, "approve") => self.approve_team_impl(&card.space),
+            (crate::events::CardKind::Team, "reject") => {
+                self.reject_team_impl(&card.space, comment.unwrap_or(""))
+            }
+            (crate::events::CardKind::Pause, "resume") => self.resume_impl(&card.space),
+            (crate::events::CardKind::Pause, "more_time") => self.more_time_impl(&card.space),
+            (crate::events::CardKind::Pause, "stop") => self.stop_impl(&card.space),
+            (kind, other) => {
+                return Err(Rejection::new(
+                    "R12",
+                    format!(
+                        "La acción {other} no corresponde a una tarjeta de tipo {}.",
+                        kind.id()
+                    ),
+                ));
+            }
+        };
+        if result.is_ok() {
+            self.close_card(id);
         }
         result
     }
@@ -229,7 +304,7 @@ impl Arbiter {
     // --------------------------------------------------------------- señales
 
     /// La ventana vio que un pez quedó bloqueado en hc.
-    pub fn fish_blocked(&self, key: &FishKey, kind: Option<&str>) {
+    pub(crate) fn fish_blocked(&self, key: &FishKey, kind: Option<&str>) {
         let Some(task) = self.task_for_fish_key(key).ok() else {
             return;
         };
@@ -243,12 +318,12 @@ impl Arbiter {
     }
 
     /// La ventana vio que la terminal de un pez terminó antes de informar.
-    pub fn fish_exited(&self, key: &FishKey) {
+    pub(crate) fn fish_exited(&self, key: &FishKey) {
         self.fish_gone(key, "la terminal del pez terminó");
     }
 
     /// La ventana vio que un pez falló antes de informar (§14.5).
-    pub fn fish_failed(&self, key: &FishKey, motive: &str) {
+    pub(crate) fn fish_failed(&self, key: &FishKey, motive: &str) {
         self.fish_gone(key, motive);
     }
 
@@ -308,7 +383,11 @@ impl Arbiter {
     }
 
     /// Espera una novedad del elefante; `None` si vence el tope.
-    pub fn wait_for_elephant(&self, space: &str, timeout: Duration) -> Option<ElephantEvent> {
+    pub(crate) fn wait_for_elephant(
+        &self,
+        space: &str,
+        timeout: Duration,
+    ) -> Option<ElephantEvent> {
         let receiver = {
             let inner = self.inner.lock();
             inner.elephants.get(space).map(|queue| queue.rx.clone())
@@ -317,20 +396,27 @@ impl Arbiter {
     }
 
     /// Suscribe la vista a la traza.
-    pub fn subscribe(&self) -> Receiver<ArbiterEvent> {
+    pub(crate) fn subscribe(&self) -> Receiver<ArbiterEvent> {
         let (sender, receiver) = crossbeam_channel::unbounded();
         self.inner.lock().subscribers.push(sender);
         receiver
     }
 
-    /// Estado de la tarea del espacio para la vista.
-    pub fn snapshot(&self, space: &str) -> Option<serde_json::Value> {
+    /// Estado de la tarea del espacio para la vista, con `last_seq` (§14.8).
+    pub(crate) fn snapshot(&self, space: &str) -> Option<serde_json::Value> {
         let inner = self.inner.lock();
-        inner
+        let task = inner
             .tasks
             .values()
-            .find(|task| task.is_active() && task.space.id == space)
-            .map(Task::snapshot)
+            .find(|task| task.is_active() && task.space.id == space)?;
+        let mut snapshot = task.snapshot();
+        if let Some(object) = snapshot.as_object_mut() {
+            object.insert(
+                "last_seq".to_string(),
+                serde_json::json!(self.seq.load(Ordering::Relaxed)),
+            );
+        }
+        Some(snapshot)
     }
 
     // --------------------------------------------------------------- ayudas
@@ -410,11 +496,14 @@ impl Arbiter {
     fn log_person_rejection(&self, space: &str, rejection: &Rejection) {
         let task = self.task_for_elephant(space).ok();
         let event = ArbiterEvent {
-            kind: "rejected".to_string(),
+            seq: self.next_seq(),
+            kind: crate::events::EventKind::Rejected {
+                rule: rejection.rule.to_string(),
+                message: rejection.message.clone(),
+            },
             space: space.to_string(),
             task: task.as_ref().map(|task| task.id.clone()),
             ts: self.now(),
-            data: serde_json::json!({ "rule": rejection.rule, "message": rejection.message }),
         };
         let (subscribers, sender) = {
             let inner = self.inner.lock();
@@ -432,7 +521,7 @@ impl Arbiter {
                 space,
                 event.ts,
                 rejection.message.clone(),
-                event.data.clone(),
+                serde_json::json!({ "rule": rejection.rule, "message": rejection.message }),
             );
             message.task = task.as_ref().map(|task| task.id.clone());
             let _ = sender.tx.send(message);

@@ -1,5 +1,7 @@
 //! Pruebas de las reglas R1–R12 con git real y dobles para los peces.
 
+#[path = "arbiter/eco2c.rs"]
+mod eco2c;
 #[path = "arbiter/events.rs"]
 mod events;
 #[path = "arbiter/fish.rs"]

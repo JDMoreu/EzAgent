@@ -2,18 +2,19 @@
 
 use std::path::{Path, PathBuf};
 
-use ez_team::Seat;
-
 use crate::criteria;
+use crate::events::CardKind;
+use crate::git;
 use crate::paths;
-use crate::state::{Status, Task, TeamStatus};
+use crate::state::{Status, Task, TeamStatus, WorkState};
 use crate::texts;
 use crate::types::{Caller, FishKey, Outcome, Rejection};
+use crate::verify;
 
 use super::emit::Effects;
-use super::{new_task_id, Arbiter};
+use super::{new_task_id, ArbiterShared};
 
-impl Arbiter {
+impl ArbiterShared {
     /// R2: crea la tarea, copia los artefactos y emite la tarjeta.
     pub(crate) fn task_new(
         &self,
@@ -38,8 +39,16 @@ impl Arbiter {
         effects.event(self.event(
             &task,
             "task_proposed",
-            serde_json::json!({ "title": task.title, "card": card }),
+            serde_json::json!({ "title": task.title, "card": card.clone() }),
         ));
+        let opened = self.open_card(
+            space_id,
+            Some(&task.id),
+            CardKind::Task,
+            format!("Tarea propuesta: {}", task.title),
+            card.clone(),
+        );
+        effects.event(self.card_opened_event(&opened));
         let id = task.id.clone();
         self.commit(&task, effects);
         Ok(Outcome {
@@ -104,9 +113,21 @@ impl Arbiter {
         let sha = paths::sha256_file(&frozen).map_err(|message| Rejection::new("R2", message))?;
         let brief_text = paths::read_text(&brief_abs).unwrap_or_default();
         let card = texts::task_card(&title, &brief_text, &parsed.card_lines());
-        let task = Task {
-            id: id.clone(),
-            title: title.clone(),
+        let task = self.new_task_state(space, title, id, sha);
+        Ok((task, card))
+    }
+
+    /// Estado inicial de una tarea recién propuesta.
+    fn new_task_state(
+        &self,
+        space: &crate::types::Space,
+        title: String,
+        id: String,
+        sha: String,
+    ) -> Task {
+        Task {
+            id,
+            title,
             space: space.clone(),
             status: Status::PendingApproval,
             paused_from: None,
@@ -123,11 +144,16 @@ impl Arbiter {
             encargo_sha: String::new(),
             team_sha: None,
             last_close: None,
+            last_clean_close: None,
+            last_fp: None,
+            extra_rounds: 0,
+            extra_hours: 0.0,
+            paused_total: 0.0,
+            paused_at: None,
             rounds: Vec::new(),
             fish: Vec::new(),
             work: Vec::new(),
-        };
-        Ok((task, card))
+        }
     }
 
     /// Estado resumido para el elefante o para un pez.
@@ -176,7 +202,7 @@ impl Arbiter {
     }
 
     /// La persona aprueba: se congelan los criterios y el encargo.
-    pub(crate) fn approve_task_inner(&self, space: &str) -> Result<Outcome, Rejection> {
+    pub(crate) fn approve_task_impl(&self, space: &str) -> Result<Outcome, Rejection> {
         let mut task = self.task_for_elephant(space)?;
         if task.status != Status::PendingApproval {
             return Err(Rejection::new("R2", texts::NOT_PENDING));
@@ -192,6 +218,9 @@ impl Arbiter {
         task.encargo_sha = encargo_sha;
         task.status = Status::Approved;
         task.approved_at = Some(self.now());
+        task.last_fp = Some(
+            git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R2", message))?,
+        );
         let mut effects = Effects::default();
         effects.both(
             self.event(&task, "task_approved", serde_json::json!({})),
@@ -202,12 +231,15 @@ impl Arbiter {
                 serde_json::json!({ "task": task.id }),
             ),
         );
+        if let Some(card) = self.take_card(space, CardKind::Task) {
+            effects.event(self.card_closed_event(space, Some(&task.id), &card.id));
+        }
         self.commit(&task, effects);
         Ok(Outcome::new(texts::TASK_APPROVED))
     }
 
     /// La persona rechaza la tarea.
-    pub(crate) fn reject_task_inner(
+    pub(crate) fn reject_task_impl(
         &self,
         space: &str,
         comment: &str,
@@ -233,6 +265,9 @@ impl Arbiter {
                 serde_json::json!({ "comment": comment }),
             ),
         );
+        if let Some(card) = self.take_card(space, CardKind::Task) {
+            effects.event(self.card_closed_event(space, Some(&task.id), &card.id));
+        }
         self.commit(&task, effects);
         Ok(Outcome::new(message))
     }
@@ -249,9 +284,34 @@ impl Arbiter {
                 texts::paused(&self.pause_text(&task)),
             ));
         }
+        if task.status != Status::BetweenRounds {
+            return Err(Rejection::new("R10", texts::close_between_rounds()));
+        }
+        if let Err(rejection) = self.check_frozen(&task) {
+            return Err(self.pause_task(task, "R3", "criterios_modificados", rejection.message));
+        }
         if let Err(rejection) = self.check_artifacts(&task) {
             return Err(self.pause_task(task, "R3", "artefactos_modificados", rejection.message));
         }
+        let criteria = self.load_criteria(&task)?;
+        let checks = verify::run_all(&task.space.folder, &criteria);
+        let failed = checks.iter().filter(|check| !check.ok).count();
+        if failed > 0 {
+            return Err(Rejection::new(
+                "R10",
+                texts::verify_failed(failed, checks.len()),
+            ));
+        }
+        let current =
+            git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R10", message))?;
+        if task
+            .last_clean_close
+            .as_ref()
+            .is_some_and(|fingerprint| fingerprint != &current)
+        {
+            return Err(Rejection::new("R10", texts::project_changed_since_clean()));
+        }
+        task.last_fp = Some(current);
         if task.clean_streak < 2 {
             return Err(Rejection::new(
                 "R10",
@@ -281,7 +341,7 @@ impl Arbiter {
         } else {
             reason.trim().to_string()
         };
-        task.pause("manual", reason.clone());
+        task.pause("manual", reason.clone(), self.now());
         let mut effects = Effects::default();
         effects.both(
             self.event(
@@ -296,12 +356,20 @@ impl Arbiter {
                 serde_json::json!({ "reason": "manual", "message": reason }),
             ),
         );
+        let opened = self.open_card(
+            space,
+            Some(&task.id),
+            CardKind::Pause,
+            "Tarea en pausa".to_string(),
+            reason.clone(),
+        );
+        effects.event(self.card_opened_event(&opened));
         self.commit(&task, effects);
         Ok(Outcome::new(texts::paused(&reason)))
     }
 
     /// La persona reanuda la tarea; si la pausa fue de artefactos, los restaura.
-    pub(crate) fn resume_inner(&self, space: &str) -> Result<Outcome, Rejection> {
+    pub(crate) fn resume_impl(&self, space: &str) -> Result<Outcome, Rejection> {
         let mut task = self.task_for_elephant(space)?;
         if task.status != Status::Paused {
             return Err(Rejection::new("R4", texts::NOT_PAUSED));
@@ -311,10 +379,13 @@ impl Arbiter {
             self.restore_artifacts(&mut task)?;
             message = texts::ARTIFACTS_RESTORED.to_string();
         }
-        task.status = task.paused_from.unwrap_or(Status::Approved);
-        task.paused_from = None;
-        task.pause_reason = None;
-        task.pause_message = None;
+        if task.pause_reason.as_deref() == Some("cambios_fuera_de_ronda") {
+            task.clean_streak = 0;
+            task.last_fp = Some(
+                git::snapshot(&task.space.folder).map_err(|reason| Rejection::new("R4", reason))?,
+            );
+        }
+        task.resume(self.now());
         let mut effects = Effects::default();
         effects.both(
             self.event(&task, "resumed", serde_json::json!({})),
@@ -325,17 +396,49 @@ impl Arbiter {
                 serde_json::json!({ "task": task.id }),
             ),
         );
+        if let Some(card) = self.take_card(space, CardKind::Pause) {
+            effects.event(self.card_closed_event(space, Some(&task.id), &card.id));
+        }
+        self.commit(&task, effects);
+        Ok(Outcome::new(message))
+    }
+
+    /// La persona da más margen (+2 rondas, +1 h) y reanuda (§14.5).
+    pub(crate) fn more_time_impl(&self, space: &str) -> Result<Outcome, Rejection> {
+        let mut task = self.task_for_elephant(space)?;
+        if task.status != Status::Paused {
+            return Err(Rejection::new("R4", texts::NOT_PAUSED));
+        }
+        task.extra_rounds = task.extra_rounds.saturating_add(2);
+        task.extra_hours += 1.0;
+        task.resume(self.now());
+        let message = texts::more_time(task.extra_rounds, task.extra_hours);
+        let mut effects = Effects::default();
+        effects.both(
+            self.event(
+                &task,
+                "resumed",
+                serde_json::json!({ "extra_rounds": 2, "extra_hours": 1.0 }),
+            ),
+            self.elephant_event(&task, "resumed", message.clone(), serde_json::json!({})),
+        );
+        if let Some(card) = self.take_card(space, CardKind::Pause) {
+            effects.event(self.card_closed_event(space, Some(&task.id), &card.id));
+        }
         self.commit(&task, effects);
         Ok(Outcome::new(message))
     }
 
     /// La persona detiene la tarea.
-    pub(crate) fn stop_inner(&self, space: &str) -> Result<Outcome, Rejection> {
+    pub(crate) fn stop_impl(&self, space: &str) -> Result<Outcome, Rejection> {
         let mut task = self.task_for_elephant(space)?;
         task.status = Status::Stopped;
         self.revoke_task_tokens(&task);
         let mut effects = Effects::default();
         effects.event(self.event(&task, "stopped", serde_json::json!({})));
+        if let Some(card) = self.take_card(space, CardKind::Pause) {
+            effects.event(self.card_closed_event(space, Some(&task.id), &card.id));
+        }
         self.commit(&task, effects);
         Ok(Outcome::new(texts::STOPPED))
     }
@@ -347,98 +450,31 @@ impl Arbiter {
             .unwrap_or_else(|| texts::PAUSED_NO_REASON.to_string())
     }
 
-    /// Verificación de R3: los criterios no cambiaron desde la aprobación.
-    pub(crate) fn check_frozen(&self, task: &Task) -> Result<(), Rejection> {
-        let live = paths::task_dir(&task.space.folder, &task.id).join("criterios.toml");
-        let sha = paths::sha256_file(&live).map_err(|message| Rejection::new("R3", message))?;
-        if sha == task.criteria_sha {
-            Ok(())
-        } else {
-            Err(Rejection::new("R3", texts::CRITERIA_CHANGED))
+    /// Detecta cambios del elefante cuando no hay trabajo pendiente (§14.4).
+    /// Se llama antes de cada comando del elefante; nunca retiene el candado
+    /// mientras calcula la huella.
+    pub(crate) fn check_elephant_changes(&self, space: &str) -> Result<(), Rejection> {
+        let Some(task) = self.task_for_elephant(space).ok() else {
+            return Ok(());
+        };
+        if task
+            .work
+            .iter()
+            .any(|item| item.state == WorkState::Pending)
+        {
+            return Ok(());
         }
-    }
-
-    /// Congela encargo, criterios y equipo en la carpeta privada (§14.6).
-    pub(crate) fn freeze_artifacts(&self, task: &Task) -> Result<(String, String), Rejection> {
-        let private = self.frozen_dir(task);
-        let live = paths::task_dir(&task.space.folder, &task.id);
-        for name in ["criterios.toml", "encargo.md"] {
-            paths::copy_file(&live.join(name), &private.join(name)).map_err(|error| {
-                Rejection::new("R3", format!("No se pudo congelar {name}: {error}."))
-            })?;
+        let Some(expected) = task.last_fp.clone() else {
+            return Ok(());
+        };
+        let current =
+            git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R11", message))?;
+        if current == expected {
+            return Ok(());
         }
-        let criteria_sha = paths::sha256_file(&private.join("criterios.toml"))
-            .map_err(|message| Rejection::new("R3", message))?;
-        let encargo_sha = paths::sha256_file(&private.join("encargo.md"))
-            .map_err(|message| Rejection::new("R3", message))?;
-        Ok((criteria_sha, encargo_sha))
-    }
-
-    /// Congela el equipo aprobado (§14.6).
-    pub(crate) fn freeze_team(&self, task: &Task) -> Result<String, Rejection> {
-        let bytes = serde_json::to_vec_pretty(&(&task.team, &task.team_card)).map_err(|error| {
-            Rejection::new("R5", format!("No se pudo congelar el equipo: {error}."))
-        })?;
-        let path = self.frozen_dir(task).join("equipo.json");
-        paths::write_atomic(&path, &bytes).map_err(|error| {
-            Rejection::new("R5", format!("No se pudo congelar el equipo: {error}."))
-        })?;
-        paths::sha256_file(&path).map_err(|message| Rejection::new("R5", message))
-    }
-
-    /// Comprueba que los tres artefactos sigan iguales a la copia congelada.
-    pub(crate) fn check_artifacts(&self, task: &Task) -> Result<(), Rejection> {
-        let live = paths::task_dir(&task.space.folder, &task.id);
-        for (name, expected) in [
-            ("criterios.toml", &task.criteria_sha),
-            ("encargo.md", &task.encargo_sha),
-        ] {
-            if expected.is_empty() {
-                continue;
-            }
-            let sha = paths::sha256_file(&live.join(name))
-                .map_err(|message| Rejection::new("R3", message))?;
-            if &sha != expected {
-                return Err(Rejection::new("R3", texts::ARTIFACTS_MODIFIED));
-            }
-        }
-        if let Some(expected) = &task.team_sha {
-            let bytes = serde_json::to_vec_pretty(&(&task.team, &task.team_card))
-                .map_err(|error| Rejection::new("R5", format!("{error}")))?;
-            if paths::sha256_hex(&bytes) != *expected {
-                return Err(Rejection::new("R3", texts::ARTIFACTS_MODIFIED));
-            }
-        }
-        Ok(())
-    }
-
-    /// Restaura los artefactos desde la copia privada al reanudar.
-    fn restore_artifacts(&self, task: &mut Task) -> Result<(), Rejection> {
-        let private = self.frozen_dir(task);
-        let live = paths::task_dir(&task.space.folder, &task.id);
-        for name in ["criterios.toml", "encargo.md"] {
-            paths::copy_file(&private.join(name), &live.join(name)).map_err(|error| {
-                Rejection::new("R4", format!("No se pudo restaurar {name}: {error}."))
-            })?;
-        }
-        if task.team_sha.is_some() {
-            let path = private.join("equipo.json");
-            let bytes = std::fs::read(&path).map_err(|error| {
-                Rejection::new("R4", format!("No se pudo leer el equipo: {error}."))
-            })?;
-            let (team, card): (Vec<Seat>, String) =
-                serde_json::from_slice(&bytes).map_err(|error| {
-                    Rejection::new("R4", format!("Equipo congelado ilegible: {error}."))
-                })?;
-            task.team = team;
-            task.team_card = card;
-        }
-        Ok(())
-    }
-
-    /// Carpeta privada de artefactos congelados de una tarea.
-    pub(crate) fn frozen_dir(&self, task: &Task) -> PathBuf {
-        crate::paths::data_task_dir(&self.data_dir, &task.id).join("congelados")
+        let changed = git::changed(&expected, &current);
+        let message = texts::elephant_changed_outside_round(&changed);
+        Err(self.pause_task(task, "R11", "cambios_fuera_de_ronda", message))
     }
 
     /// Deja la tarea en pausa por un motivo y devuelve el rechazo.
@@ -449,7 +485,7 @@ impl Arbiter {
         code: &str,
         message: String,
     ) -> Rejection {
-        task.pause(code, message.clone());
+        task.pause(code, message.clone(), self.now());
         let mut effects = Effects::default();
         effects.both(
             self.event(
@@ -464,6 +500,14 @@ impl Arbiter {
                 serde_json::json!({ "reason": code, "message": message }),
             ),
         );
+        let opened = self.open_card(
+            &task.space.id,
+            Some(&task.id),
+            CardKind::Pause,
+            "Tarea en pausa".to_string(),
+            message.clone(),
+        );
+        effects.event(self.card_opened_event(&opened));
         self.commit(&task, effects);
         Rejection::new(rule, message)
     }

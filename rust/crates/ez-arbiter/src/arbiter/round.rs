@@ -11,9 +11,9 @@ use crate::types::{Outcome, Rejection, Verdict};
 use crate::verify::{self, CheckRecord};
 
 use super::emit::Effects;
-use super::Arbiter;
+use super::ArbiterShared;
 
-impl Arbiter {
+impl ArbiterShared {
     /// R4: empieza una ronda y toma la foto inicial de git.
     pub(crate) fn round_start(&self, space: &str) -> Result<Outcome, Rejection> {
         let mut task = self.task_for_elephant(space)?;
@@ -35,19 +35,10 @@ impl Arbiter {
         if let Err(rejection) = self.check_artifacts(&task) {
             return Err(self.pause_task(task, "R3", "artefactos_modificados", rejection.message));
         }
-        // R11: el elefante no cambió archivos del proyecto fuera de ronda.
-        if let Some(previous) = &task.last_close {
-            let current = git::snapshot(&task.space.folder)
-                .map_err(|message| Rejection::new("R11", message))?;
-            let changed = git::changed(&task.space.folder, previous, &current);
-            if !changed.is_empty() {
-                let message = texts::elephant_changed_outside_round(&changed);
-                return Err(self.pause_task(task, "R11", "cambios_fuera_de_ronda", message));
-            }
-        }
         let round = task.round + 1;
         let start =
             git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R4", message))?;
+        task.last_fp = Some(start.clone());
         task.round = round;
         task.rounds.push(RoundRecord {
             number: round,
@@ -190,7 +181,7 @@ impl Arbiter {
         clean: bool,
         reasons: &[String],
         checks: &[CheckRecord],
-        close: git::GitSnapshot,
+        close: git::Fingerprint,
     ) {
         if let Some(record) = task.open_round_mut() {
             record.closed = Some(self.now());
@@ -199,7 +190,11 @@ impl Arbiter {
             record.reasons = reasons.to_vec();
             record.close = Some(close.clone());
         }
-        task.last_close = Some(close);
+        task.last_close = Some(close.clone());
+        task.last_fp = Some(close.clone());
+        if clean {
+            task.last_clean_close = Some(close);
+        }
         task.clean_streak = if clean {
             task.clean_streak.saturating_add(1)
         } else {
@@ -281,26 +276,28 @@ impl Arbiter {
         criteria: &Criteria,
         checks: &[CheckRecord],
     ) -> Option<(&'static str, String)> {
-        let stop = if task.round >= criteria.validacion.rondas_maximas {
-            Some((
-                "tope_rondas",
-                texts::max_rounds(criteria.validacion.rondas_maximas),
-            ))
+        let max_rounds = criteria.validacion.rondas_maximas + task.extra_rounds;
+        let max_hours = criteria.validacion.horas_maximas + task.extra_hours;
+        let stop = if task.round >= max_rounds {
+            Some(("tope_rondas", texts::max_rounds(max_rounds)))
         } else if same_error(task, checks) {
             Some(("mismo_error", texts::SAME_ERROR.to_string()))
         } else {
-            let since = task.approved_at.unwrap_or_else(|| self.now());
-            if self.now() - since > criteria.validacion.horas_maximas * 3600.0 {
-                Some((
-                    "tope_tiempo",
-                    texts::max_hours(criteria.validacion.horas_maximas),
-                ))
+            let now = self.now();
+            let since = task.approved_at.unwrap_or(now);
+            let paused_now = task
+                .paused_at
+                .map(|started| (now - started).max(0.0))
+                .unwrap_or(0.0);
+            let active = (now - since - task.paused_total - paused_now).max(0.0);
+            if active > max_hours * 3600.0 {
+                Some(("tope_tiempo", texts::max_hours(max_hours)))
             } else {
                 None
             }
         };
         if let Some((code, message)) = &stop {
-            task.pause(code, message.clone());
+            task.pause(code, message.clone(), self.now());
         }
         stop
     }
@@ -372,6 +369,12 @@ fn evaluate(
     if !touched.is_empty() {
         reasons.push(texts::protected_touched(&touched));
     }
+    other_violations(task, round, &mut reasons);
+    (reasons.is_empty(), reasons)
+}
+
+/// Informes sucios y papeles que no debían tocar el proyecto (§14.3, §14.4).
+fn other_violations(task: &Task, round: u32, reasons: &mut Vec<String>) {
     let bad: Vec<String> = task
         .fish_in_round(round)
         .filter_map(|fish| fish.report.as_ref().map(|report| (fish, report)))
@@ -394,5 +397,4 @@ fn evaluate(
             reasons.push(texts::role_changed_files(role.id(), &changed));
         }
     }
-    (reasons.is_empty(), reasons)
 }

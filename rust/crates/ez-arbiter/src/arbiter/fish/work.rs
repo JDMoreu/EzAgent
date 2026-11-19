@@ -10,10 +10,10 @@ use crate::state::{FishRecord, ReportRecord, Status, WorkItem, WorkKind, WorkSta
 use crate::texts;
 use crate::types::{FishKey, Outcome, Rejection, Verdict};
 
-use super::{attempt_suffix, Arbiter, ReportInput};
+use super::{attempt_suffix, ArbiterShared, ReportInput};
 use crate::arbiter::emit::Effects;
 
-impl Arbiter {
+impl ArbiterShared {
     /// R6: corrección a planificador o desarrollador vivo, antes del QA.
     pub(crate) fn fish_send(
         &self,
@@ -79,6 +79,7 @@ impl Arbiter {
             })?;
         let start =
             git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R6", message))?;
+        task.last_fp = Some(start.clone());
         if let Some(record) = task.fish_by_key_mut(&record.key) {
             record.corrections = number;
             record.start = Some(start);
@@ -178,17 +179,10 @@ impl Arbiter {
         report_file: PathBuf,
         kind_tag: String,
     ) -> Result<Outcome, Rejection> {
-        let private = crate::paths::data_task_dir(&self.data_dir, &task.id).join("informes");
-        let copy = private.join(format!(
-            "{}-a{}{}.informe.md",
-            key.fish, key.attempt, kind_tag
-        ));
-        paths::copy_file(&report_file, &copy).map_err(|error| {
-            Rejection::new("R7", format!("No se pudo guardar el informe: {error}."))
-        })?;
-        let sha = paths::sha256_file(&copy).map_err(|message| Rejection::new("R7", message))?;
+        let sha = self.save_report_copy(task, key, &report_file, &kind_tag)?;
         let after =
             git::snapshot(&task.space.folder).map_err(|message| Rejection::new("R7", message))?;
+        task.last_fp = Some(after.clone());
         let record = task
             .fish_by_key(key)
             .cloned()
@@ -196,7 +190,7 @@ impl Arbiter {
         let changed = record
             .start
             .as_ref()
-            .map(|start| git::changed(&task.space.folder, start, &after))
+            .map(|start| git::changed(start, &after))
             .unwrap_or_default();
         let report = ReportRecord {
             verdict: input.verdict,
@@ -232,5 +226,24 @@ impl Arbiter {
         );
         self.commit(task, effects);
         Ok(Outcome::new(message))
+    }
+
+    /// Guarda la copia privada del informe y devuelve su sha256.
+    fn save_report_copy(
+        &self,
+        task: &crate::state::Task,
+        key: &FishKey,
+        report_file: &std::path::Path,
+        kind_tag: &str,
+    ) -> Result<String, Rejection> {
+        let private = crate::paths::data_task_dir(&self.data_dir, &task.id).join("informes");
+        let copy = private.join(format!(
+            "{}-a{}{}.informe.md",
+            key.fish, key.attempt, kind_tag
+        ));
+        paths::copy_file(report_file, &copy).map_err(|error| {
+            Rejection::new("R7", format!("No se pudo guardar el informe: {error}."))
+        })?;
+        paths::sha256_file(&copy).map_err(|message| Rejection::new("R7", message))
     }
 }

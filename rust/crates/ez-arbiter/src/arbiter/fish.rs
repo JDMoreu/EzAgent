@@ -14,7 +14,7 @@ use crate::texts;
 use crate::types::{Delivery, FishKey, Launched, Outcome, Rejection, Verdict};
 
 use super::emit::Effects;
-use super::{fish_id, hc_name, new_token, Arbiter};
+use super::{fish_id, hc_name, new_token, ArbiterShared};
 
 /// Datos de un informe, agrupados para no pasar ocho argumentos.
 #[derive(Debug, Clone)]
@@ -43,11 +43,11 @@ struct LaunchPlan {
     fish: String,
     role: Role,
     report_path: PathBuf,
-    start: git::GitSnapshot,
+    start: git::Fingerprint,
     request: crate::types::LaunchRequest,
 }
 
-impl Arbiter {
+impl ArbiterShared {
     /// R5: valida la fase, escribe instrucciones y entrega el encargo al pez.
     pub(crate) fn fish_new(
         &self,
@@ -127,32 +127,9 @@ impl Arbiter {
     ) -> Result<Outcome, Rejection> {
         let token = plan.request.token.clone();
         let launched = self.launcher.launch(&plan.request);
-        let (terminal, mut message) = match launched {
-            Ok(Launched {
-                terminal,
-                delivery: Delivery::Delivered,
-            }) => (
-                terminal.clone(),
-                texts::fish_launched(&plan.fish, &terminal),
-            ),
-            Ok(Launched {
-                terminal,
-                delivery: Delivery::Unconfirmed,
-            }) => (
-                terminal.clone(),
-                format!(
-                    "{}{}",
-                    texts::fish_launched(&plan.fish, &terminal),
-                    texts::delivery_unconfirmed(&plan.fish)
-                ),
-            ),
-            Ok(Launched {
-                delivery: Delivery::Failed(detail),
-                ..
-            }) => return Err(self.fail_launch(task, &plan, &detail)),
-            Err(detail) => return Err(self.fail_launch(task, &plan, &detail)),
-        };
+        let (terminal, mut message) = self.delivery_result(task, &plan, launched)?;
         self.remember_token(&plan.key, &token);
+        task.last_fp = Some(plan.start.clone());
         task.fish.push(FishRecord {
             key: plan.key.clone(),
             role: plan.role,
@@ -192,13 +169,47 @@ impl Arbiter {
         })
     }
 
+    /// Interpreta la entrega del lanzador: terminal y mensaje, o fallo del trabajo.
+    fn delivery_result(
+        &self,
+        task: &mut crate::state::Task,
+        plan: &LaunchPlan,
+        launched: Result<Launched, String>,
+    ) -> Result<(String, String), Rejection> {
+        match launched {
+            Ok(Launched {
+                terminal,
+                delivery: Delivery::Delivered,
+            }) => Ok((
+                terminal.clone(),
+                texts::fish_launched(&plan.fish, &terminal),
+            )),
+            Ok(Launched {
+                terminal,
+                delivery: Delivery::Unconfirmed,
+            }) => Ok((
+                terminal.clone(),
+                format!(
+                    "{}{}",
+                    texts::fish_launched(&plan.fish, &terminal),
+                    texts::delivery_unconfirmed(&plan.fish)
+                ),
+            )),
+            Ok(Launched {
+                delivery: Delivery::Failed(detail),
+                ..
+            }) => Err(self.fail_launch(task, plan, &detail)),
+            Err(detail) => Err(self.fail_launch(task, plan, &detail)),
+        }
+    }
+
     /// Copia el encargo del pez y toma la foto de git antes de lanzarlo.
     fn copy_fish_brief(
         &self,
         task: &crate::state::Task,
         brief: &Path,
         fish_brief: &Path,
-    ) -> Result<git::GitSnapshot, Rejection> {
+    ) -> Result<git::Fingerprint, Rejection> {
         let brief_abs = paths::inside(&task.space.folder, brief)
             .map_err(|_| Rejection::new("R5", texts::outside_folder(brief)))?;
         if !brief_abs.is_file() {

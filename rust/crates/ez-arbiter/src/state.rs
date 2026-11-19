@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use ez_team::{Role, Seat};
 use serde::{Deserialize, Serialize};
 
-use crate::git::GitSnapshot;
+use crate::git::Fingerprint;
 use crate::types::{FishKey, Space, Verdict};
 use crate::verify::CheckRecord;
 
@@ -119,8 +119,8 @@ pub struct FishRecord {
     pub role: Role,
     pub terminal: String,
     pub round: u32,
-    /// Foto de git al empezar su trabajo (para atribuir archivos).
-    pub start: Option<GitSnapshot>,
+    /// Huella del proyecto al empezar su trabajo (para atribuir archivos).
+    pub start: Option<Fingerprint>,
     /// Último informe aceptado.
     pub report: Option<ReportRecord>,
     pub corrections: u32,
@@ -140,8 +140,8 @@ pub struct RoundRecord {
     pub opened: f64,
     pub closed: Option<f64>,
     pub clean: bool,
-    pub start: GitSnapshot,
-    pub close: Option<GitSnapshot>,
+    pub start: Fingerprint,
+    pub close: Option<Fingerprint>,
     pub verification: Vec<CheckRecord>,
     pub reasons: Vec<String>,
     /// `role.id()` → rutas que cambiaron mientras ese papel trabajaba.
@@ -189,8 +189,25 @@ pub struct Task {
     /// sha256 del equipo congelado al aprobarlo.
     #[serde(default)]
     pub team_sha: Option<String>,
-    /// Foto de git al cerrar la última ronda (para R11).
-    pub last_close: Option<GitSnapshot>,
+    /// Huella al cerrar la última ronda (para R11).
+    #[serde(default)]
+    pub last_close: Option<Fingerprint>,
+    /// Huella al cerrar la última ronda limpia (ronda de verificación y cierre).
+    #[serde(default)]
+    pub last_clean_close: Option<Fingerprint>,
+    /// Última huella registrada (detección de cambios del elefante).
+    #[serde(default)]
+    pub last_fp: Option<Fingerprint>,
+    /// Margen extra de rondas y horas concedido con `more_time` (§14.5).
+    #[serde(default)]
+    pub extra_rounds: u32,
+    #[serde(default)]
+    pub extra_hours: f64,
+    /// Segundos acumulados en pausas y momento en que empezó la actual.
+    #[serde(default)]
+    pub paused_total: f64,
+    #[serde(default)]
+    pub paused_at: Option<f64>,
     pub rounds: Vec<RoundRecord>,
     pub fish: Vec<FishRecord>,
     /// Trabajos pendientes, informados o fallidos de la tarea.
@@ -264,14 +281,25 @@ impl Task {
             .find(|record| record.closed.is_none())
     }
 
-    /// Pone la tarea en pausa recordando de dónde venía.
-    pub fn pause(&mut self, code: &str, message: String) {
+    /// Pone la tarea en pausa recordando de dónde venía y cuándo empezó (§14.5).
+    pub fn pause(&mut self, code: &str, message: String, now: f64) {
         if self.status != Status::Paused {
             self.paused_from = Some(self.status);
+            self.paused_at = Some(now);
         }
         self.status = Status::Paused;
         self.pause_reason = Some(code.to_string());
         self.pause_message = Some(message);
+    }
+
+    /// Reanuda contando solo el tiempo fuera de pausa (§14.5).
+    pub fn resume(&mut self, now: f64) {
+        if let Some(started) = self.paused_at.take() {
+            self.paused_total += (now - started).max(0.0);
+        }
+        self.status = self.paused_from.take().unwrap_or(Status::Approved);
+        self.pause_reason = None;
+        self.pause_message = None;
     }
 
     /// Archivos atribuidos al QA en rondas anteriores a `round`.
