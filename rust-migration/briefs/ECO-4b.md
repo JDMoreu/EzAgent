@@ -30,8 +30,17 @@ informe del verificador `rust-migration/reports/ECO-4V-r1.md` si existe.**
    «{Agente} no puede aplicar el esfuerzo «{esfuerzo}»: quita `esfuerzo` o configura
    `esfuerzo_args` en agentes.toml.».
 5. **Familias (m03).** Pruebas con los tres ejemplos de §6 y `hy4-flash-free` → `hy`.
-6. Resuelve los hallazgos Bloqueantes y Mayores del informe `ECO-4V-r1.md` que estén
-   dentro de este alcance; los que no, explícalos en tu informe.
+6. **Hallazgos del verificador** (`rust-migration/reports/ECO-4V-r1.md`, veredicto del
+   elefante): corrige todos los Mayores y Menores, con estas precisiones:
+   - Prueba del archivo por omisión: compara el contenido exacto con el bloque de §6 ya
+     modificado por el punto 2 de este encargo.
+   - Suscripción con `agentes = []`: cuenta como suscripción declarada (no habilita nada).
+   - `RealSystem::run`: salida por canal con vencimiento; nunca `join()` sin límite.
+   - Caché por `(profile.id, comando)`.
+   - `card` **no** incluye errores: con errores la propuesta se rechaza al elefante y no
+     hay tarjeta. `card` solo lleva las líneas de papel y los avisos (formato de §6).
+   - Marca con `// DECISION:` cada decisión que tu informe o el de ECO-4 declaran.
+   - Cada mutación que el verificador dejó sin detectar debe quedar detectada por una prueba.
 
 ## Pruebas
 Las existentes adaptadas, más: carga de `env` y `previo` (y `previo` desconocido → error);
