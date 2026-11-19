@@ -475,3 +475,143 @@ Si la foto no se puede leer: `Missed { snapshot: None }` y el consumidor resincr
 - m03: ejemplos de familia: los tres de §6 más `hy4-flash-free` → `hy`.
 - m05: la copia del validador va en `%TEMP%\ez-valqa-<uuid>`, sin `.git`, `target`,
   `node_modules` ni `.ez`, y se borra al final.
+
+## 15. Revisión 2 (2026-11-18): árbol de agentes y papeles abiertos
+
+Pedido de la persona: «algo como Herdr, con espacios y agentes, y de esos agentes se
+despliegan los demás como subcarpetas; se puede abrir cada terminal; no hay una cantidad
+específica de agentes ni solo desarrollo y QA: pueden ser infinidad de combinaciones de
+peces dorados». Decisiones de la persona: **varios agentes principales por espacio**;
+**un pez puede delegar si su papel lo permite**; **papeles libres: biblioteca + propuestas
+del elefante**. **Donde difiera, manda esta sección** (sobre §2, §6, §8, §10 y §14).
+
+### 15.1 Árbol y aislamiento
+- Espacio (carpeta, repositorio git) → **agentes principales** (elefantes; cada uno con su
+  tarea y su equipo) → peces → subpeces. Profundidad máxima bajo el elefante:
+  `profundidad_maxima` (1–5, por omisión 3) en `[validacion]` de los criterios.
+- Identidad: `ElephantKey { space, elephant }` (id `e` + 8 hex). `Caller::Elephant(ElephantKey)`.
+  **Una tarea activa por elefante.** `FishKey` gana `elephant` y `parent: Option<String>`
+  (id del pez que lo delegó; `None` si lo delegó el elefante).
+- **Cada agente principal trabaja en su propio worktree** (rama `ez/<elefante>`, carpeta
+  `<carpeta>.ez-wt\<elefante>`), creado al crear el agente principal. Sus peces y subpeces
+  trabajan en ese worktree. Así las huellas (§14.4) de un elefante no ven los cambios de
+  otro. Al cerrar su tarea, la tarjeta final ofrece «Integrar en {rama base}» (merge sin
+  fast-forward, hecho por el código; si hay conflicto, se avisa y no se toca nada) o
+  «Dejar en su rama».
+- Etiquetas hc nuevas: `ez_elephant`, `ez_parent`. El árbol de la vista sale de esas
+  etiquetas (y de `parent` de hc para terminales abiertas a mano).
+
+### 15.2 Papeles abiertos
+- Un papel es un archivo Markdown con cabecera TOML entre líneas `+++`:
+  ```
+  +++
+  nombre = "Auditor de seguridad"
+  tipo = "verificador"          # "ejecutor" o "verificador"
+  descripcion = "Busca vulnerabilidades en el código cambiado"
+  puede_delegar = false         # solo ejecutores
+  escribe_pruebas = false       # sus archivos quedan protegidos frente a los ejecutores
+  mutaciones = false            # exige --mutations-tried/--mutations-caught
+  solo_primera_ronda = false
+  +++
+  (instrucciones del papel, con los marcadores de §6)
+  ```
+- Id = nombre del archivo sin `.md`: `[a-z][a-z0-9_]{1,23}`.
+- Orígenes, de mayor a menor prioridad: **de la tarea** (`.ez/tareas/<tarea>/papeles/`,
+  propuestos por el elefante, congelados al aprobar el equipo), **biblioteca de la persona**
+  (`%APPDATA%\EzAgent\hub\papeles\`) e **incluidos** (los cinco de hoy, en
+  `rust/crates/ez-team/src/roles/`, con su cabecera).
+- Incluidos: `planner` (ejecutor, `solo_primera_ronda`), `plan_reviewer` (verificador,
+  `solo_primera_ronda`), `developer` (ejecutor), `qa` (verificador, `escribe_pruebas`),
+  `qa_validator` (verificador, `mutaciones`).
+- Comando nuevo `ez roles`: lista id, nombre, tipo, descripción y origen.
+- La plantilla común `_comun.md` se antepone siempre; si el papel `puede_delegar`, se le
+  añade además `_delegar.md` (cómo usar `ez fish`, `ez send` y `ez wait` con sus hijos).
+
+### 15.3 Equipo
+```toml
+[[papel]]
+papel = "developer"       # id de un papel disponible
+agente = "opencode"
+modelo = "opencode-go/deepseek-v4.1-flash"
+esfuerzo = "max"          # opcional
+cantidad = 3              # peces simultáneos de este papel (≥ 1)
+etapa = 2                 # orden dentro de la ronda (≥ 1)
+delega_en = []            # papeles que puede lanzar (solo si el papel puede delegar)
+```
+- `etapa` por omisión: 1 para ejecutores, 2 para verificadores.
+- Validación: al menos un ejecutor y un verificador; cada papel existe; un verificador no
+  puede usar el modelo de ningún ejecutor (error) y se avisa si comparte familia habiendo
+  otra disponible; `delega_en` solo en papeles que pueden delegar y con papeles del equipo.
+- La tarjeta del equipo muestra, además, los **papeles nuevos de la tarea** con su tipo y
+  descripción, para que la persona los apruebe junto con el equipo.
+
+### 15.4 Rondas (sustituye el orden fijo de §14.3)
+- Un trabajo de etapa *k* solo empieza cuando todos los trabajos de etapas menores de esa
+  ronda informaron. Los papeles `solo_primera_ronda` solo corren en la ronda 1.
+- Correcciones (`ez send`) solo a ejecutores, y solo si aún no empezó una etapa posterior
+  a la suya en esa ronda.
+- **Ronda solo de verificación** (sin trabajos de ejecutores): permitida si la huella es
+  igual a la del cierre de la última ronda limpia.
+- **Ronda limpia:** criterios pasan ∧ todos los informes de la ronda `pass` con 0
+  bloqueantes y 0 mayores ∧ al menos un verificador informó ∧ cada papel con `mutaciones`
+  cumple el mínimo con todas detectadas ∧ sin violaciones ∧ congelado intacto.
+- **Violaciones:** un verificador sin `escribe_pruebas` cambió archivos del proyecto; un
+  ejecutor cambió archivos atribuidos a un papel con `escribe_pruebas`.
+
+### 15.5 Delegación
+- Un pez cuyo papel `puede_delegar` usa `ez fish <papel> --brief`, `ez send` y `ez wait`
+  sobre **sus propios hijos**, solo con papeles de su `delega_en`, dentro de la `cantidad`
+  del equipo y sin pasar `profundidad_maxima`. Sus hijos pertenecen a su misma ronda y etapa.
+- Un pez que tiene hijos solo puede informar cuando todos ellos informaron.
+- Los verificadores no delegan. `ez wait` de un pez devuelve las novedades de sus hijos.
+
+### 15.6 Ventana (sustituye §10)
+```
+┌ Espacios ──────────────┐┌ [elefante A] [dev-r1-1] [qa-r1] ─────────┐┌ Traza │ Tarjetas ┐
+│▾ whisper-app           ││ terminal de la pestaña activa (hc attach) ││ Ronda 1           │
+│  ▾ ● Elefante A · Opus ││                                           ││ dev-r1-1 en marcha│
+│      ● investigador-r1 ││                                           ││ …                 │
+│    ▾ ● arquitecto-r1   ││                                           ││ [Equipo propuesto]│
+│        ● dev-api       │├───────────────────────────────────────────┤│                   │
+│      ○ qa-r1           ││ [Escribe o dicta…]  [nota] [llamar] [Enviar]│                   │
+│  ▸ ● Elefante B · Codex│└───────────────────────────────────────────┘└───────────────────┘
+│ + Agente principal     │
+│ + Espacio              │
+└────────────────────────┘
+```
+- **Izquierda:** árbol plegable. Punto de estado por nodo (`working`, `idle`, `done`,
+  `blocked`, `error`, falló). «+ Agente principal» pide agente, modelo y esfuerzo.
+- **Centro:** pestañas de terminales; clic en un nodo abre o enfoca su terminal
+  (`hc attach`); se puede dividir en dos.
+- **Barra:** escribe al agente de la pestaña activa (principal o pez); nota de voz igual.
+- **Derecha (plegable):** traza y tarjetas de la tarea del agente principal seleccionado.
+
+### 15.7 Contrato nuevo de `ez-team` (lo aplica ECO-R1)
+```rust
+pub struct RoleId(pub String);                 // validado: [a-z][a-z0-9_]{1,23}
+pub enum RoleKind { Executor, Verifier }
+pub enum RoleOrigin { Task, Library, Builtin }
+pub struct RoleDef {
+    pub id: RoleId, pub name: String, pub kind: RoleKind, pub description: String,
+    pub can_delegate: bool, pub writes_tests: bool, pub mutations: bool,
+    pub first_round_only: bool, pub body: String, pub origin: RoleOrigin,
+}
+pub struct Seat {
+    pub role: RoleId, pub agent: String, pub model: String, pub effort: Option<String>,
+    pub count: u32, pub stage: u32, pub delegates_to: Vec<RoleId>,
+}
+// InstructionContext: `role: RoleId` y `role_name: String` en lugar de `role: Role`;
+// gana `parent: Option<String>` y `children_roles: Vec<RoleId>`.
+```
+El enum `Role` desaparece; los cinco papeles incluidos quedan como constantes de id.
+
+### 15.8 Plan
+1. Termina lo que corre (ECO-2c, ECO-6a), sin cambios.
+2. **ECO-R1:** migración mecánica al contrato 15.7 en `ez-team`, `ez-arbiter` y `ez-hub`
+   (mismo comportamiento: los cinco incluidos, sus etapas por omisión).
+3. En paralelo: **ECO-4c** (papeles abiertos en `ez-team`: cabeceras, orígenes,
+   validación 15.3, `_delegar.md`, texto de `ez roles`) y **ECO-2d** (árbitro: elefantes por
+   espacio, worktrees, etapas 15.4, delegación 15.5, tarjeta de integración).
+4. **ECO-6c:** runtime de la ventana con varios elefantes, worktrees, `ez roles` y
+   delegación; **ECO-6b** (rehecho): la ventana de 15.6.
+5. **ECO-8:** punta a punta con agentes falsos y hc real.
