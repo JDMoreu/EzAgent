@@ -94,12 +94,12 @@ pub fn inside(root: &Path, path: &Path) -> Result<PathBuf, String> {
     let resolved = match joined.canonicalize() {
         Ok(path) => path,
         Err(_) => {
-            let parent = joined.parent().ok_or_else(|| {
-                format!("La ruta {} no tiene carpeta padre.", joined.display())
-            })?;
-            let parent = parent.canonicalize().map_err(|error| {
-                format!("No se pudo resolver {}: {error}.", parent.display())
-            })?;
+            let parent = joined
+                .parent()
+                .ok_or_else(|| format!("La ruta {} no tiene carpeta padre.", joined.display()))?;
+            let parent = parent
+                .canonicalize()
+                .map_err(|error| format!("No se pudo resolver {}: {error}.", parent.display()))?;
             match joined.file_name() {
                 Some(name) => parent.join(name),
                 None => parent,

@@ -387,4 +387,3 @@ pub fn reports_not_clean(fish: &[String]) -> String {
 pub fn role_changed_files(role: &str, paths: &[String]) -> String {
     format!("{role} cambió archivos del proyecto: {}", paths.join(", "))
 }
-

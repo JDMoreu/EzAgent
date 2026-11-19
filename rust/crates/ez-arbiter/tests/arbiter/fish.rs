@@ -136,10 +136,7 @@ fn r5_launch_request_has_identity_labels_and_instructions() {
         .iter()
         .find(|item| item.fish == fish)
         .expect("lanzamiento del desarrollador");
-    assert_eq!(
-        request.hc_name,
-        format!("ez-{}-dev-r1-1", &task[1..9])
-    );
+    assert_eq!(request.hc_name, format!("ez-{}-dev-r1-1", &task[1..9]));
     assert_eq!(request.labels["ez_attempt"], "1");
     assert_eq!(request.env["EZ_ROLE"], "fish");
     assert_eq!(request.env["EZ_FISH"], fish);
@@ -166,10 +163,15 @@ fn r5_launch_request_has_identity_labels_and_instructions() {
         .expect("evento de lanzamiento");
     assert_eq!(launched["data"]["fish"], fish);
     assert!(launched["data"].get("token").is_none());
-    assert!(!fs::read_to_string(f.data_dir.join("tareas").join(&task).join("estado.json"))
-        .expect("estado")
-        .contains(&request.token));
-    assert!(!f.bitacora(&task).iter().any(|event| event.to_string().contains(&request.token)));
+    assert!(
+        !fs::read_to_string(f.data_dir.join("tareas").join(&task).join("estado.json"))
+            .expect("estado")
+            .contains(&request.token)
+    );
+    assert!(!f
+        .bitacora(&task)
+        .iter()
+        .any(|event| event.to_string().contains(&request.token)));
 }
 
 #[test]
@@ -229,7 +231,9 @@ fn r6_live_developer_gets_the_exact_correction_line() {
     let sent = f.launcher.sent();
     assert_eq!(sent.len(), 1);
     assert!(sent[0].1.starts_with("Corrección 1 de la ronda 1: lee "));
-    assert!(sent[0].1.contains("y al terminar informa con ez report usando --file \""));
+    assert!(sent[0]
+        .1
+        .contains("y al terminar informa con ez report usando --file \""));
     let error = f
         .arbiter
         .execute(

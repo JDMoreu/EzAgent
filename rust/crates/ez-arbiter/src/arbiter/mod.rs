@@ -257,10 +257,7 @@ impl Arbiter {
         let Some(mut task) = self.task_for_fish_key(key).ok() else {
             return;
         };
-        let pending = task
-            .pending_work(key)
-            .map(|item| item.started_ts)
-            .is_some();
+        let pending = task.pending_work(key).map(|item| item.started_ts).is_some();
         if !pending {
             let message = texts::elephant_exited(&key.fish);
             let data = serde_json::json!({ "fish": key.fish, "attempt": key.attempt });

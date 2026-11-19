@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use ez_arbiter::{
     Arbiter, Caller, Clock, Command, Delivery, FishKey, FishLauncher, InstructionWriter,
-    Launched, LaunchRequest, Outcome, Rejection, Space, Verdict,
+    LaunchRequest, Launched, Outcome, Rejection, Space, Verdict,
 };
 use ez_team::{InstructionContext, Role, Seat};
 
@@ -249,7 +249,10 @@ impl Fixture {
             let Some(records) = state["fish"].as_array() else {
                 continue;
             };
-            let Some(record) = records.iter().rev().find(|item| item["key"]["fish"] == fish)
+            let Some(record) = records
+                .iter()
+                .rev()
+                .find(|item| item["key"]["fish"] == fish)
             else {
                 continue;
             };
@@ -265,10 +268,10 @@ impl Fixture {
             let works = state["work"].as_array();
             let find_work = |state_filter: Option<&str>| -> Option<PathBuf> {
                 works?.iter().rev().find_map(|item| {
-                    let matches_key = item["key"]["fish"] == fish
-                        && item["key"]["attempt"] == key.attempt;
-                    let matches_state = state_filter.is_none()
-                        || item["state"].as_str() == state_filter;
+                    let matches_key =
+                        item["key"]["fish"] == fish && item["key"]["attempt"] == key.attempt;
+                    let matches_state =
+                        state_filter.is_none() || item["state"].as_str() == state_filter;
                     if matches_key && matches_state {
                         item["report_path"].as_str().map(PathBuf::from)
                     } else {

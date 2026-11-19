@@ -27,7 +27,6 @@ impl ArbiterEvent {
             data: serde_json::Value::Null,
         }
     }
-
 }
 
 /// Novedad que espera el elefante (`ez wait`). El mensaje va en español.

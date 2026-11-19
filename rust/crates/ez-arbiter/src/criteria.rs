@@ -247,7 +247,9 @@ mod tests {
         let folder = std::env::temp_dir();
         let empty = sample("[[criterio]]\nid = \"C1\"\ncomando = [\"git\"]\n");
         assert!(validate(&empty, &folder).is_err());
-        let seconds = sample("[[criterio]]\nid = \"C1\"\ndescripcion = \"x\"\ncomando = [\"git\"]\nsegundos = 0\n");
+        let seconds = sample(
+            "[[criterio]]\nid = \"C1\"\ndescripcion = \"x\"\ncomando = [\"git\"]\nsegundos = 0\n",
+        );
         assert!(validate(&seconds, &folder).is_err());
     }
 }

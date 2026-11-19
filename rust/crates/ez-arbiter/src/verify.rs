@@ -101,25 +101,7 @@ pub fn run_one(folder: &Path, criterion: &Criterion) -> CheckRecord {
     spawn_reader(child.stdout.take(), "stdout", tx.clone());
     spawn_reader(child.stderr.take(), "stderr", tx);
     let deadline = started + Duration::from_secs(criterion.segundos);
-    let mut timed_out = false;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) if Instant::now() >= deadline => {
-                kill_tree(&mut child);
-                let status = child.wait().ok();
-                timed_out = true;
-                break status;
-            }
-            Ok(None) => std::thread::sleep(POLL),
-            Err(error) => {
-                record.motivo = Some(texts::command_failed(&error.to_string()));
-                kill_tree(&mut child);
-                let _ = child.wait();
-                break None;
-            }
-        }
-    };
+    let (status, timed_out) = wait_for_child(&mut child, deadline, &mut record);
     let (stdout, stderr) = collect_output(rx);
     record.segundos = started.elapsed().as_secs_f64();
     record.codigo = status.and_then(|status| status.code());
@@ -128,6 +110,34 @@ pub fn run_one(folder: &Path, criterion: &Criterion) -> CheckRecord {
     record.motivo = judge(criterion, &record.codigo, &full, timed_out);
     record.ok = record.motivo.is_none();
     record
+}
+
+/// Espera al hijo con sondeo y tope; devuelve `(estado, venció_el_tope)`.
+fn wait_for_child(
+    child: &mut std::process::Child,
+    deadline: Instant,
+    record: &mut CheckRecord,
+) -> (Option<std::process::ExitStatus>, bool) {
+    let mut timed_out = false;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) if Instant::now() >= deadline => {
+                kill_tree(child);
+                let status = child.wait().ok();
+                timed_out = true;
+                break status;
+            }
+            Ok(None) => std::thread::sleep(POLL),
+            Err(error) => {
+                record.motivo = Some(texts::command_failed(&error.to_string()));
+                kill_tree(child);
+                let _ = child.wait();
+                break None;
+            }
+        }
+    };
+    (status, timed_out)
 }
 
 /// Mata el proceso y sus hijos al vencer el tope (diseño §14.7).
@@ -166,10 +176,7 @@ fn collect_output(rx: mpsc::Receiver<(&'static str, Vec<u8>)>) -> (String, Strin
     let mut stdout = String::new();
     let mut stderr = String::new();
     let deadline = Instant::now() + READER_GRACE;
-    loop {
-        let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
-            break;
-        };
+    while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
         let Ok((label, bytes)) = rx.recv_timeout(remaining) else {
             break;
         };

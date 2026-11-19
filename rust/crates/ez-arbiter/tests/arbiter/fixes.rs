@@ -95,7 +95,11 @@ fn old_fish_key_is_rejected_after_relaunch() {
     };
     let error = report_with(&f, old, Verdict::Pass, 0, 0).expect_err("clave vieja");
     assert_eq!(error.rule, "R1");
-    assert!(error.message.contains("ya no está activo"), "{}", error.message);
+    assert!(
+        error.message.contains("ya no está activo"),
+        "{}",
+        error.message
+    );
 }
 
 #[test]
@@ -110,20 +114,10 @@ fn token_is_absent_from_disk_and_live_events() {
         .map(|event| serde_json::to_string(&event).expect("evento"))
         .collect();
     let task = f.fish_key("dev-r1-1").task;
-    let log = fs::read_to_string(
-        f.data_dir
-            .join("tareas")
-            .join(&task)
-            .join("bitacora.jsonl"),
-    )
-    .expect("bitácora");
-    let state = fs::read_to_string(
-        f.data_dir
-            .join("tareas")
-            .join(&task)
-            .join("estado.json"),
-    )
-    .expect("estado");
+    let log = fs::read_to_string(f.data_dir.join("tareas").join(&task).join("bitacora.jsonl"))
+        .expect("bitácora");
+    let state = fs::read_to_string(f.data_dir.join("tareas").join(&task).join("estado.json"))
+        .expect("estado");
     assert!(!live.contains(&token));
     assert!(!log.contains(&token));
     assert!(!state.contains(&token));
@@ -144,8 +138,7 @@ fn tokens_are_revoked_on_report_exit_and_stop() {
 
     f.launch(Role::QaValidator);
     let dev_token = token_of(&f, "valqa-r1");
-    f.arbiter
-        .fish_failed(&f.fish_key("valqa-r1"), "se cayó");
+    f.arbiter.fish_failed(&f.fish_key("valqa-r1"), "se cayó");
     assert!(f.launcher.revoked().contains(&dev_token));
 
     let other = Fixture::new("revocacion-stop");
@@ -172,7 +165,9 @@ fn launcher_error_and_failed_delivery_fail_the_work() {
         )
         .expect_err("error del lanzador");
     assert_eq!(rejection.rule, "R5");
-    assert!(rejection.message.contains("No pude entregar el encargo a plan-r1: no hay hc"));
+    assert!(rejection
+        .message
+        .contains("No pude entregar el encargo a plan-r1: no hay hc"));
     assert_eq!(error.snapshot()["fish"][0]["id"], "plan-r1");
 
     let failed = Fixture::new("delivery-fallida");
@@ -247,7 +242,7 @@ fn report_requires_the_exact_path_and_clean_pass() {
 }
 
 #[test]
-fn phases_are_enforced_in_round_one() {
+fn developer_waits_for_the_plan() {
     let f = Fixture::new("fases");
     let _ = manual_round(&f);
     let error = f
@@ -262,7 +257,10 @@ fn phases_are_enforced_in_round_one() {
         .expect_err("desarrollador antes del plan");
     assert_eq!(error.rule, "R5");
     assert!(error.message.contains("plan-r1"));
+}
 
+#[test]
+fn reviewer_phase_is_enforced() {
     let reviewer = Fixture::new("fases-revisor");
     let mut seats = Fixture::tasks();
     seats.push(Fixture::seat(Role::PlanReviewer, 1));
@@ -299,7 +297,10 @@ fn phases_are_enforced_in_round_one() {
         .report("revplan-r1", Verdict::Pass, None, None)
         .expect("informe del revisor");
     reviewer.launch(Role::Developer);
+}
 
+#[test]
+fn planner_is_rejected_in_later_rounds() {
     let late = Fixture::new("plan-fuera-ronda1");
     let _ = late.setup();
     super::task::clean_round(&late, 1);
@@ -464,7 +465,10 @@ fn modified_artifact_pauses_and_resume_restores_it() {
     assert_eq!(state["status"], "paused");
     assert_eq!(state["pause_reason"], "artefactos_modificados");
     f.arbiter.resume("s1").expect("reanudar");
-    assert_eq!(fs::read_to_string(&live).expect("encargo restaurado"), original);
+    assert_eq!(
+        fs::read_to_string(&live).expect("encargo restaurado"),
+        original
+    );
     f.launch(Role::Developer);
 }
 
@@ -520,17 +524,14 @@ fn hc_name_uses_eight_hex_digits_and_attempt_suffix() {
     assert_eq!(request.hc_name, format!("ez-{}-plan-r1", &task[1..9]));
     assert_eq!(request.labels["ez_attempt"], "1");
 
-    f.arbiter
-        .fish_failed(&f.fish_key("plan-r1"), "se fue");
+    f.arbiter.fish_failed(&f.fish_key("plan-r1"), "se fue");
     f.launch(Role::Planner);
     let second = f
         .launcher
         .requests()
         .into_iter()
-        .filter(|item| item.fish == "plan-r1")
-        .last()
+        .rfind(|item| item.fish == "plan-r1")
         .expect("relanzamiento");
     assert_eq!(second.hc_name, format!("ez-{}-plan-r1-a2", &task[1..9]));
     assert_eq!(second.labels["ez_attempt"], "2");
 }
-

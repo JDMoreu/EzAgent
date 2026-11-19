@@ -376,11 +376,13 @@ impl Arbiter {
 
     /// Congela el equipo aprobado (§14.6).
     pub(crate) fn freeze_team(&self, task: &Task) -> Result<String, Rejection> {
-        let bytes = serde_json::to_vec_pretty(&(&task.team, &task.team_card))
-            .map_err(|error| Rejection::new("R5", format!("No se pudo congelar el equipo: {error}.")))?;
+        let bytes = serde_json::to_vec_pretty(&(&task.team, &task.team_card)).map_err(|error| {
+            Rejection::new("R5", format!("No se pudo congelar el equipo: {error}."))
+        })?;
         let path = self.frozen_dir(task).join("equipo.json");
-        paths::write_atomic(&path, &bytes)
-            .map_err(|error| Rejection::new("R5", format!("No se pudo congelar el equipo: {error}.")))?;
+        paths::write_atomic(&path, &bytes).map_err(|error| {
+            Rejection::new("R5", format!("No se pudo congelar el equipo: {error}."))
+        })?;
         paths::sha256_file(&path).map_err(|message| Rejection::new("R5", message))
     }
 
@@ -421,10 +423,13 @@ impl Arbiter {
         }
         if task.team_sha.is_some() {
             let path = private.join("equipo.json");
-            let bytes = std::fs::read(&path)
-                .map_err(|error| Rejection::new("R4", format!("No se pudo leer el equipo: {error}.")))?;
-            let (team, card): (Vec<Seat>, String) = serde_json::from_slice(&bytes)
-                .map_err(|error| Rejection::new("R4", format!("Equipo congelado ilegible: {error}.")))?;
+            let bytes = std::fs::read(&path).map_err(|error| {
+                Rejection::new("R4", format!("No se pudo leer el equipo: {error}."))
+            })?;
+            let (team, card): (Vec<Seat>, String) =
+                serde_json::from_slice(&bytes).map_err(|error| {
+                    Rejection::new("R4", format!("Equipo congelado ilegible: {error}."))
+                })?;
             task.team = team;
             task.team_card = card;
         }
