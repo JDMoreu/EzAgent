@@ -311,8 +311,20 @@ mensaje) y el gasto de CPU de los hilos de ventana.
 **No hay rastro en archivo**: `ez-app/src/app/main.rs:106` (`init_logging`) escribe
 **solo por stderr**; en `%APPDATA%\EzAgent\logs\` solo hay `latency.jsonl` (451
 líneas) y `audit.jsonl`, que no registran tiempos de cuadro. Por eso no se puede
-ver el congelamiento en los logs: hay que añadir el registro a archivo (paso 6 del
+ver el congelamiento en los logs: hay que añadir el registro a archivo (paso 7 del
 arreglo).
+
+**Nota sobre la instancia observada.** El proceso `22432` **ya no está en marcha**
+(comprobado al cerrar el informe). **No lo cerré yo**: todo lo que se hizo con él fue
+de lectura (`Get-Process`, `GetGuiResources`, `EnumWindows`, `GetThreadDescription`,
+`GetProcessMemoryInfo` sobre el proceso de la prueba, nunca sobre el suyo); no se le
+mandó ningún mensaje, no se le inyectó nada y no se le adjuntó un depurador. En el
+registro de aplicaciones **no hay ninguna entrada de fallo** de `ezagent-voice.exe`
+(solo un aviso `RADAR_PRE_LEAK_64` de detección de agotamiento de memoria a las
+10:23, en plena presión de memoria de la primera medición). Lo más probable es que se
+cerrara durante ese episodio de presión de memoria. Por eso las cifras de §3.3 son
+una foto de un momento concreto y no una serie: si hace falta otra lectura en vivo,
+habrá que repetirla con la app abierta y **sin** mediciones largas en paralelo.
 
 
 ---
