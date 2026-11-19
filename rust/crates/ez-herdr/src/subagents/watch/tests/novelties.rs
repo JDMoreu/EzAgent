@@ -305,6 +305,8 @@ fn cada_episodio_de_bloqueo_se_avisa_una_vez() {
     watcher.tick();
     fake.with_screen("t12", "Free limit reached. Resets at 8:00 p.m.")
         .with_ls(&live_children("idle"));
+    // §3: la pantalla tiene que quedarse quieta una vuelta antes de contar.
+    watcher.tick();
     watcher.tick();
     let blocked = fake
         .sent()
@@ -312,6 +314,141 @@ fn cada_episodio_de_bloqueo_se_avisa_una_vez() {
         .filter(|text| text.contains("está bloqueado"))
         .count();
     assert_eq!(blocked, 2, "un aviso por episodio");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn un_limite_mientras_trabaja_no_bloquea_ni_anota() {
+    let root = temp_root("working-limite");
+    let registry = Registry::at(&root);
+    registry
+        .create(&record("dev1-opencode", "t12"))
+        .expect("registro");
+    let screen = "Escribo el detector del encargo IR-2:\n\
+                  buscar «Free limit reached», «quota exceeded» y «rate limit reached»\n\
+                  en las últimas líneas de la pantalla.\n\
+                  if screen.contains(\"quota\") { anotar }\n\
+                  Free limit reached";
+    let fake = Fake::new()
+        .at(NOW)
+        .with_ls(&live_children("working"))
+        .with_get(r#"{"address":"t6h","state":"live"}"#)
+        .with_screen("t12", screen);
+    let mut watcher = make_watcher(&fake, Registry::at(&root));
+    watcher.tick();
+    watcher.tick();
+
+    let saved = registry
+        .get("t6h", "dev1-opencode")
+        .expect("leer")
+        .expect("registro");
+    assert_eq!(
+        saved.state,
+        TaskState::InProgress,
+        "un agente que trabaja no está bloqueado"
+    );
+    assert!(!root.join("uso.json").exists(), "no se anota uso.json");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn las_palabras_sueltas_no_bloquean() {
+    let root = temp_root("palabras-sueltas");
+    let registry = Registry::at(&root);
+    registry
+        .create(&record("dev1-opencode", "t12"))
+        .expect("registro");
+    let fake = Fake::new()
+        .at(NOW)
+        .with_ls(&live_children("idle"))
+        .with_get(r#"{"address":"t6h","state":"live"}"#)
+        .with_screen("t12", "quota\nrate limit\nusage limit\nresets at 7:00 p.m.");
+    let mut watcher = make_watcher(&fake, Registry::at(&root));
+    watcher.tick();
+    watcher.tick();
+
+    let saved = registry
+        .get("t6h", "dev1-opencode")
+        .expect("leer")
+        .expect("registro");
+    assert_eq!(saved.state, TaskState::InProgress);
+    assert!(!root.join("uso.json").exists());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn el_limite_fuera_de_las_ultimas_lineas_no_cuenta() {
+    let root = temp_root("limite-arriba");
+    let registry = Registry::at(&root);
+    registry
+        .create(&record("dev1-opencode", "t12"))
+        .expect("registro");
+    let screen = format!(
+        "Free limit reached. Resets at 7:00 p.m.\n{}",
+        "procesando archivo\n".repeat(20)
+    );
+    let fake = Fake::new()
+        .at(NOW)
+        .with_ls(&live_children("idle"))
+        .with_get(r#"{"address":"t6h","state":"live"}"#)
+        .with_screen("t12", &screen);
+    let mut watcher = make_watcher(&fake, Registry::at(&root));
+    watcher.tick();
+    watcher.tick();
+
+    let saved = registry
+        .get("t6h", "dev1-opencode")
+        .expect("leer")
+        .expect("registro");
+    assert_eq!(saved.state, TaskState::InProgress);
+    assert!(!root.join("uso.json").exists());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn el_limite_al_final_con_pantalla_estable_si_bloquea() {
+    let root = temp_root("limite-abajo");
+    let registry = Registry::at(&root);
+    registry
+        .create(&record("dev1-opencode", "t12"))
+        .expect("registro");
+    let fake = Fake::new()
+        .at(NOW)
+        .with_ls(&live_children("idle"))
+        .with_get(r#"{"address":"t6h","state":"live"}"#)
+        .with_screen("t12", "❯ trabajando");
+    let mut watcher = make_watcher(&fake, Registry::at(&root));
+    watcher.tick();
+
+    fake.advance(3_000);
+    fake.with_screen(
+        "t12",
+        "❯ trabajando\nFree limit reached. Resets at 7:00 p.m.",
+    );
+    let tick = watcher.tick();
+    assert!(
+        tick.blocked.is_empty(),
+        "la pantalla cambió: hace falta una vuelta más"
+    );
+    assert_eq!(
+        registry
+            .get("t6h", "dev1-opencode")
+            .expect("leer")
+            .expect("registro")
+            .state,
+        TaskState::InProgress
+    );
+
+    fake.advance(3_000);
+    let tick = watcher.tick();
+    assert_eq!(tick.blocked, vec!["dev1-opencode".to_string()]);
+    let usage = usage(&root);
+    let until = usage[0]["hasta"].as_u64().expect("hora de reinicio");
+    let local = chrono::Local
+        .timestamp_millis_opt(i64::try_from(until).expect("milisegundos"))
+        .single()
+        .expect("fecha local");
+    assert_eq!(local.format("%H:%M").to_string(), "19:00");
     let _ = std::fs::remove_dir_all(&root);
 }
 

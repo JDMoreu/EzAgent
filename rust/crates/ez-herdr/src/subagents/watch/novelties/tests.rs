@@ -54,6 +54,51 @@ fn factory_patterns_match_without_case() {
 }
 
 #[test]
+fn single_words_are_not_a_limit() {
+    let novelties = Novelties::default();
+    for text in ["quota", "rate limit", "usage limit", "resets at 7:00 p.m."] {
+        assert!(
+            novelties.limit_hit("opencode", text, NOW).is_none(),
+            "«{text}» no es un límite completo"
+        );
+    }
+    assert!(novelties
+        .limit_hit("opencode", "quota exceeded", NOW)
+        .is_some());
+    assert!(novelties
+        .limit_hit("opencode", "Usage limit reached", NOW)
+        .is_some());
+}
+
+#[test]
+fn limit_patterns_only_look_at_the_last_fifteen_lines() {
+    let novelties = Novelties::default();
+    let folded = "trabajando\n".repeat(20);
+    let top = format!("Free limit reached. Resets at 7:00 p.m.\n{folded}");
+    assert!(
+        novelties.limit_hit("opencode", &top, NOW).is_none(),
+        "la frase en la parte alta no cuenta"
+    );
+
+    let bottom = format!("{folded}Free limit reached. Resets at 7:00 p.m.");
+    let hit = novelties
+        .limit_hit("opencode", &bottom, NOW)
+        .expect("límite al final");
+    assert!(hit.until_ms.is_some());
+}
+
+#[test]
+fn last_lines_keeps_the_tail() {
+    assert_eq!(last_lines("a\nb\nc", 2), "b\nc");
+    assert_eq!(last_lines("a", 0), "");
+    let long: String = (0..20).map(|index| format!("l{index}\n")).collect();
+    let tail = last_lines(&long, LIMIT_TAIL_LINES);
+    assert_eq!(tail.lines().count(), LIMIT_TAIL_LINES);
+    assert!(!tail.contains("l0"));
+    assert!(tail.contains("l19"));
+}
+
+#[test]
 fn file_overrides_patterns_and_stall() {
     let root = TempRoot::new();
     let file = root.path().join("novedades.toml");

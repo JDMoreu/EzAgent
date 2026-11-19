@@ -8,9 +8,13 @@
 //! ```text
 //! # agente = patrón; «*» vale para todos
 //! opencode = Free limit reached
-//! * = rate limit
+//! * = quota exceeded
 //! stall_min = 10
 //! ```
+//!
+//! Un límite solo se busca en las últimas [`LIMIT_TAIL_LINES`] líneas de la
+//! pantalla y solo cuenta con el agente parado: quien escribe o lee sobre
+//! límites de uso no está bloqueado.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -31,15 +35,17 @@ pub(super) const SCREEN_LIMIT: usize = 4_000;
 /// Minutos sin cambio de pantalla para avisar «sin avance».
 pub(super) const DEFAULT_STALL_MIN: u64 = 10;
 
-/// Patrones de fábrica de §3, con el agente `None` (todos).
-const FACTORY_PATTERNS: [&str; 7] = [
+/// Líneas del final de la pantalla que se miran para un límite de uso (§3).
+pub(super) const LIMIT_TAIL_LINES: usize = 15;
+
+/// Patrones de fábrica de §3: frases completas, nunca palabras sueltas.
+const FACTORY_PATTERNS: [&str; 6] = [
     "Free limit reached",
-    "usage limit",
-    "rate limit",
-    "quota",
-    "5 hour usage limit",
+    "5 hour usage limit reached",
     "You've hit your usage limit",
-    "resets at",
+    "Usage limit reached",
+    "rate limit reached",
+    "quota exceeded",
 ];
 
 static USAGE_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -131,9 +137,10 @@ impl Novelties {
         Self { rules, stall_min }
     }
 
-    /// La primera regla que aparece en la pantalla.
+    /// La primera regla que aparece en el final de la pantalla (§3).
     pub(super) fn limit_hit(&self, agent: &str, screen: &str, now_ms: u64) -> Option<LimitHit> {
-        let screen = screen.to_lowercase();
+        let tail = last_lines(screen, LIMIT_TAIL_LINES);
+        let screen = tail.to_lowercase();
         let agent = agent.to_lowercase();
         let matched = self.rules.iter().find(|rule| {
             rule.agent.as_deref().is_none_or(|only| only == agent)
@@ -141,7 +148,7 @@ impl Novelties {
         })?;
         Some(LimitHit {
             pattern: matched.text.to_lowercase(),
-            until_ms: reset_time_ms(screen.as_str(), now_ms),
+            until_ms: reset_time_ms(&tail, now_ms),
         })
     }
 }
@@ -188,6 +195,12 @@ pub(super) fn screen_tail(text: &str, max: usize) -> String {
         return text.to_string();
     }
     text.chars().skip(count - max).collect()
+}
+
+/// Las últimas `count` líneas de la pantalla, unidas con `\n`.
+pub(super) fn last_lines(text: &str, count: usize) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    lines[lines.len().saturating_sub(count)..].join("\n")
 }
 
 /// La hora de reinicio que mencione la pantalla, en milisegundos desde epoch.
@@ -319,21 +332,25 @@ impl Watcher {
         tick: &mut Tick,
     ) {
         let changed = self.observe_screen(&record.name, screen, now);
-        if let Some(hit) = novelties.limit_hit(&record.agent, screen, now) {
-            let detail = hit.detail();
-            if self.block(record, &detail) {
-                tick.blocked.push(record.name.clone());
-                if let Err(error) = record_usage(
-                    self.registry.root(),
-                    &record.agent,
-                    record.model.as_deref(),
-                    hit.until_ms,
-                    now,
-                ) {
-                    tracing::warn!("EzAgent: no pude anotar uso.json: {error}");
+        // §3: un límite solo cuenta con el agente parado y la pantalla quieta
+        // desde la vuelta anterior; si está trabajando, la pantalla es dato.
+        if child.agent_state != "working" && !changed {
+            if let Some(hit) = novelties.limit_hit(&record.agent, screen, now) {
+                let detail = hit.detail();
+                if self.block(record, &detail) {
+                    tick.blocked.push(record.name.clone());
+                    if let Err(error) = record_usage(
+                        self.registry.root(),
+                        &record.agent,
+                        record.model.as_deref(),
+                        hit.until_ms,
+                        now,
+                    ) {
+                        tracing::warn!("EzAgent: no pude anotar uso.json: {error}");
+                    }
                 }
+                return;
             }
-            return;
         }
         if child.agent_state == "blocked" || is_dialog(child, screen) {
             if self.block(record, "diálogo o permiso pendiente") {
