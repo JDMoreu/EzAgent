@@ -98,6 +98,10 @@ pub struct RunSpec {
     pub no_parent: bool,
     /// No escribir notas en la terminal padre (`no_notify`), por omisión `true`.
     pub no_notify: bool,
+    /// Terminal padre; con `Some`, el hijo cuelga de ella aunque `no_parent` sea `true`.
+    pub parent: Option<String>,
+    /// Que el hijo no muera con el padre (`outlive_parent`), por omisión `false`.
+    pub outlive_parent: bool,
 }
 
 impl Default for RunSpec {
@@ -111,6 +115,8 @@ impl Default for RunSpec {
             size: None,
             no_parent: true,
             no_notify: true,
+            parent: None,
+            outlive_parent: false,
         }
     }
 }
@@ -122,8 +128,14 @@ impl RunSpec {
         params.insert("argv".into(), json!(self.argv));
         params.insert("labels".into(), json!(self.labels));
         params.insert("env".into(), json!(self.env));
-        params.insert("no_parent".into(), json!(self.no_parent));
+        // DECISION: con `parent`, `hc` exige `no_parent: false` para colgar el hijo.
+        let no_parent = self.parent.is_none() && self.no_parent;
+        params.insert("no_parent".into(), json!(no_parent));
         params.insert("no_notify".into(), json!(self.no_notify));
+        params.insert("outlive_parent".into(), json!(self.outlive_parent));
+        if let Some(parent) = &self.parent {
+            params.insert("parent".into(), json!(parent));
+        }
         if let Some(cwd) = &self.cwd {
             params.insert("cwd".into(), json!(cwd.to_string_lossy()));
         }

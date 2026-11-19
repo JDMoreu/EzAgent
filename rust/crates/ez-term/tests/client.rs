@@ -48,6 +48,15 @@ fn finished_terminal() -> serde_json::Value {
     })
 }
 
+/// Una terminal con padre opcional, para probar `children`.
+fn child(address: &str, parent: Option<&str>) -> serde_json::Value {
+    let mut value = support::terminal(address, address);
+    if let Some(parent) = parent {
+        value["parent"] = json!(parent);
+    }
+    value
+}
+
 #[test]
 fn hello_sets_core_version() {
     let (client, script) = support::client_scripted(|fake| fake.hello());
@@ -399,4 +408,85 @@ fn wait_adds_its_margin_to_the_caller_timeout() {
 fn client_is_clone_send_and_sync() {
     fn assert_traits<T: Clone + Send + Sync>() {}
     assert_traits::<HcClient>();
+}
+
+#[test]
+fn run_without_parent_sends_default_parent_params() {
+    let (client, script) = support::client_scripted(|fake| {
+        fake.hello();
+        let request = fake.request();
+        assert_eq!(request["method"], "terminal.run");
+        assert_eq!(request["params"]["no_parent"], true);
+        assert_eq!(request["params"]["outlive_parent"], false);
+        assert!(request["params"].get("parent").is_none());
+        fake.respond(&request, live_terminal());
+    });
+    let spec = RunSpec {
+        argv: vec!["hostname".to_string()],
+        ..RunSpec::default()
+    };
+    client.run(&spec).expect("terminal.run");
+    script.join().expect("guion");
+}
+
+#[test]
+fn run_with_parent_sends_parent_and_forces_no_parent_false() {
+    let (client, script) = support::client_scripted(|fake| {
+        fake.hello();
+        let request = fake.request();
+        assert_eq!(request["method"], "terminal.run");
+        assert_eq!(request["params"]["parent"], "t6h");
+        assert_eq!(request["params"]["no_parent"], false);
+        assert_eq!(request["params"]["outlive_parent"], true);
+        fake.respond(&request, live_terminal());
+    });
+    let spec = RunSpec {
+        argv: vec!["hostname".to_string()],
+        parent: Some("t6h".to_string()),
+        outlive_parent: true,
+        ..RunSpec::default()
+    };
+    client.run(&spec).expect("terminal.run");
+    script.join().expect("guion");
+}
+
+#[test]
+fn children_filters_by_parent_without_labels() {
+    let (client, script) = support::client_scripted(|fake| {
+        fake.hello();
+        let request = fake.request();
+        assert_eq!(request["method"], "terminal.list");
+        assert!(request["params"].get("labels").is_none());
+        fake.respond(
+            &request,
+            json!({
+                "terminals": [
+                    child("t1", Some("t6h")),
+                    child("t2", Some("t9")),
+                    child("t3", None),
+                    child("t4", Some("t6h")),
+                ],
+                "hidden_finished": 0,
+                "machines": [],
+            }),
+        );
+    });
+    let children = client.children("t6h").expect("children");
+    assert_eq!(children.len(), 2);
+    assert_eq!(children[0].address, "t1");
+    assert_eq!(children[1].address, "t4");
+    script.join().expect("guion");
+}
+
+#[test]
+fn children_propagates_errors() {
+    let (client, script) = support::client_scripted(|fake| {
+        fake.hello();
+        let request = fake.request();
+        assert_eq!(request["method"], "terminal.list");
+        fake.respond_error(&request, -32000, "not_found", "falló");
+    });
+    let error = client.children("t6h").expect_err("error JSON-RPC");
+    assert!(matches!(error, TermError::Rpc { .. }));
+    script.join().expect("guion");
 }
