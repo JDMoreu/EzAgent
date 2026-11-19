@@ -535,7 +535,7 @@ mod tests {
         let state = AppState::with_selfcheck(true, Some(path.clone()));
         assert!(state.selfcheck_path().is_some());
         let report = SelfcheckReport {
-            cabecera: "Elefante · PowerShell".to_string(),
+            cabecera: "Agente principal · PowerShell".to_string(),
             terminales: 3,
             peces: 2,
             eventos: 5,

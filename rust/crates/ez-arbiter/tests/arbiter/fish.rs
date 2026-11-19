@@ -2,8 +2,9 @@
 
 use std::fs;
 
+use crate::support::role;
 use ez_arbiter::{Caller, Command, FishKey, Verdict};
-use ez_team::Role;
+use ez_team::builtin;
 
 use super::support::Fixture;
 
@@ -37,7 +38,7 @@ fn r5_role_must_be_in_team() {
     f.arbiter.approve_task("s1").expect("aprobar tarea");
     let seats: Vec<_> = Fixture::tasks()
         .into_iter()
-        .filter(|seat| seat.role != Role::Planner)
+        .filter(|seat| seat.role != role(builtin::PLANNER))
         .collect();
     f.team(seats);
     f.arbiter.approve_team("s1").expect("aprobar equipo");
@@ -49,7 +50,7 @@ fn r5_role_must_be_in_team() {
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Planner,
+                role: role(builtin::PLANNER),
                 brief: f.brief(),
             },
         )
@@ -67,7 +68,7 @@ fn r5_qa_waits_for_developers_and_validator_for_qa() {
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Qa,
+                role: role(builtin::QA),
                 brief: f.brief(),
             },
         )
@@ -79,7 +80,7 @@ fn r5_qa_waits_for_developers_and_validator_for_qa() {
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::QaValidator,
+                role: role(builtin::QA_VALIDATOR),
                 brief: f.brief(),
             },
         )
@@ -92,17 +93,17 @@ fn r5_qa_waits_for_developers_and_validator_for_qa() {
 fn r5_one_verifier_per_round_and_developer_limit() {
     let f = Fixture::new("r5-limites");
     let _ = f.setup();
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.report("dev-r1-1", Verdict::Pass, None, None)
         .expect("informe del desarrollador");
-    let qa = f.launch(Role::Qa);
+    let qa = f.launch(role(builtin::QA));
     assert_eq!(qa, "qa-r1");
     let error = f
         .arbiter
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Qa,
+                role: role(builtin::QA),
                 brief: f.brief(),
             },
         )
@@ -110,13 +111,13 @@ fn r5_one_verifier_per_round_and_developer_limit() {
     assert_eq!(error.rule, "R5");
     let other = Fixture::new("r5-cantidad");
     let _ = other.setup();
-    other.launch(Role::Developer);
+    other.launch(role(builtin::DEVELOPER));
     let error = other
         .arbiter
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Developer,
+                role: role(builtin::DEVELOPER),
                 brief: other.brief(),
             },
         )
@@ -129,7 +130,7 @@ fn r5_one_verifier_per_round_and_developer_limit() {
 fn r5_launch_request_has_identity_labels_and_instructions() {
     let f = Fixture::new("r5-lanzamiento");
     let task = f.setup();
-    let fish = f.launch(Role::Developer);
+    let fish = f.launch(role(builtin::DEVELOPER));
     assert_eq!(fish, "dev-r1-1");
     let requests = f.launcher.requests();
     let request = requests
@@ -138,7 +139,7 @@ fn r5_launch_request_has_identity_labels_and_instructions() {
         .expect("lanzamiento del desarrollador");
     assert_eq!(request.hc_name, format!("ez-{}-dev-r1-1", &task[1..9]));
     assert_eq!(request.labels["ez_attempt"], "1");
-    assert_eq!(request.env["EZ_ROLE"], "fish");
+    assert_eq!(request.env["EZ_ROLE"], "sub");
     assert_eq!(request.env["EZ_FISH"], fish);
     assert!(request.env["EZ_TOKEN"].len() == 32);
     assert_eq!(request.labels["ez"], "1");
@@ -180,10 +181,10 @@ fn r5_launch_request_has_identity_labels_and_instructions() {
 fn r6_cannot_correct_a_verifier_or_a_dead_terminal() {
     let f = Fixture::new("r6-correccion");
     let _ = f.setup();
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.report("dev-r1-1", Verdict::Pass, None, None)
         .expect("informe del desarrollador");
-    f.launch(Role::Qa);
+    f.launch(role(builtin::QA));
     let error = f
         .arbiter
         .execute(
@@ -198,7 +199,7 @@ fn r6_cannot_correct_a_verifier_or_a_dead_terminal() {
 
     let dead = Fixture::new("r6-muerto");
     let _ = dead.setup();
-    dead.launch(Role::Developer);
+    dead.launch(role(builtin::DEVELOPER));
     dead.launcher.kill(&dead.launcher.terminal("dev-r1-1"));
     let error = dead
         .arbiter
@@ -217,7 +218,7 @@ fn r6_cannot_correct_a_verifier_or_a_dead_terminal() {
 fn r6_live_developer_gets_the_exact_correction_line() {
     let f = Fixture::new("r6-vivo");
     let _ = f.setup();
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     let file = f.write("correccion.md", "Cambia esto.\n");
     let outcome = f
         .arbiter
@@ -241,7 +242,7 @@ fn r6_live_developer_gets_the_exact_correction_line() {
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Qa,
+                role: role(builtin::QA),
                 brief: f.brief(),
             },
         )
@@ -253,10 +254,10 @@ fn r6_live_developer_gets_the_exact_correction_line() {
 fn r7_verifier_reports_once_and_validator_needs_mutations() {
     let f = Fixture::new("r7-informes");
     let _ = f.setup();
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.report("dev-r1-1", Verdict::Pass, None, None)
         .expect("informe del desarrollador");
-    f.launch(Role::Qa);
+    f.launch(role(builtin::QA));
     f.report("qa-r1", Verdict::Pass, None, None)
         .expect("primer informe del QA");
     let error = f
@@ -267,7 +268,7 @@ fn r7_verifier_reports_once_and_validator_needs_mutations() {
         .report("dev-r1-1", Verdict::Pass, None, None)
         .expect_err("desarrollador sin trabajo pendiente");
     assert_eq!(error.rule, "R7");
-    f.launch(Role::QaValidator);
+    f.launch(role(builtin::QA_VALIDATOR));
     let error = f
         .report("valqa-r1", Verdict::Pass, None, None)
         .expect_err("validador sin mutaciones");

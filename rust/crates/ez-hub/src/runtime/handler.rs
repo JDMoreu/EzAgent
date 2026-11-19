@@ -9,7 +9,8 @@ use ez_arbiter::{
 };
 use ez_ctl::{Caller, Handler, Reply, Request};
 use ez_team::{
-    inventory::Inventory, profiles::AgentProfile, subscriptions::Subscription, RealSystem, Role,
+    builtin_roles, inventory::Inventory, profiles::AgentProfile, subscriptions::Subscription,
+    RealSystem, RoleId, RoleKind,
 };
 use parking_lot::Mutex;
 use serde_json::{json, Value};
@@ -97,9 +98,10 @@ impl ArbiterHandler {
         let file = inside(&folder, &file)?;
         let text = std::fs::read_to_string(&file)
             .map_err(|error| format!("No pude leer {}: {error}.", file.display()))?;
-        let seats = ez_team::team::parse(&text).map_err(|error| error.to_string())?;
+        let roles = builtin_roles();
+        let seats = ez_team::team::parse(&text, &roles).map_err(|error| error.to_string())?;
         let found = self.inventory();
-        let check = ez_team::team::validate(&seats, &found);
+        let check = ez_team::team::validate(&seats, &found, &roles);
         if !check.errors.is_empty() {
             return Err(check.errors.join("\n"));
         }
@@ -113,8 +115,8 @@ impl ArbiterHandler {
                     .map(str::to_owned)
             })
             .unwrap_or_else(|| "Tarea".to_string());
-        let card = ez_team::team::card(&title, &seats, &check, &found);
-        Ok(Command::TeamPropose { seats, card })
+        let card = ez_team::team::card(&title, &seats, &check, &found, &roles);
+        Ok(Command::TeamPropose { seats, roles, card })
     }
 
     fn folder(&self, space: &str) -> Result<PathBuf, String> {
@@ -164,6 +166,7 @@ impl ArbiterHandler {
                 let found = self.inventory();
                 Ok(Reply::ok(found.text(), found.json()))
             }
+            "roles" => Ok(Reply::ok(roles_text(), json!({}))),
             "wait" => Ok(self.wait(&space, args)),
             "task.new" => Ok(self.execute(
                 &arbiter_caller,
@@ -175,9 +178,8 @@ impl ArbiterHandler {
             )),
             "team.propose" => Ok(self.execute(&arbiter_caller, self.team_propose(&space, args)?)),
             "round.start" => Ok(self.execute(&arbiter_caller, Command::RoundStart)),
-            "fish.new" => {
-                let role = Role::parse(&require_text(args, "role")?)
-                    .ok_or_else(|| "Ese papel no existe.".to_string())?;
+            "agent.delegate" => {
+                let role = RoleId::parse(&require_text(args, "role")?)?;
                 Ok(self.execute(
                     &arbiter_caller,
                     Command::FishNew {
@@ -287,6 +289,21 @@ fn inside(root: &Path, file: &Path) -> Result<PathBuf, String> {
     } else {
         Err("El archivo está fuera de la carpeta del espacio.".to_string())
     }
+}
+
+/// Una línea por papel incluido: id, nombre, tipo y descripción.
+fn roles_text() -> String {
+    builtin_roles()
+        .iter()
+        .map(|def| {
+            let kind = match def.kind {
+                RoleKind::Executor => "ejecutor",
+                RoleKind::Verifier => "verificador",
+            };
+            format!("{} · {} · {} · {}", def.id, def.name, kind, def.description)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]

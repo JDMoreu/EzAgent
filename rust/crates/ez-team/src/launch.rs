@@ -1,56 +1,48 @@
-//! Launch helpers: command line for a seat, the full instructions of a fish and the
-//! one-line first message (design §6).
+//! Ayudas de lanzamiento: línea de mando, instrucciones y primer mensaje (§14.2, §15.9).
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::contract::{InstructionContext, Seat};
+use crate::contract::InstructionContext;
 use crate::error::TeamError;
 use crate::profiles::AgentProfile;
-use crate::roles::Role;
+use crate::roles::RoleDef;
 
 const COMMON: &str = include_str!("roles/_comun.md");
+const DELEGATE: &str = include_str!("roles/_delegar.md");
 
-fn template(role: Role) -> &'static str {
-    match role {
-        Role::Planner => include_str!("roles/planner.md"),
-        Role::PlanReviewer => include_str!("roles/plan_reviewer.md"),
-        Role::Developer => include_str!("roles/developer.md"),
-        Role::Qa => include_str!("roles/qa.md"),
-        Role::QaValidator => include_str!("roles/qa_validator.md"),
-    }
-}
-
-/// Markers the templates may use (design §6). Braces of code blocks are not markers.
-const MARKERS: [&str; 11] = [
+/// Marcadores que pueden usar las plantillas (§15.7). Las llaves de los bloques
+/// de código no son marcadores.
+const MARKERS: [&str; 13] = [
     "{papel_nombre}",
-    "{pez}",
+    "{id}",
     "{ronda}",
     "{carpeta}",
     "{encargo}",
     "{criterios}",
     "{plan}",
-    "{encargo_pez}",
+    "{mi_encargo}",
     "{informe}",
     "{informe_qa}",
     "{mutaciones_minimas}",
+    "{papeles_delegables}",
+    "{borradores}",
 ];
 
-/// Everything the launcher needs to start an agent (design §14.2).
+/// Todo lo que necesita el lanzador para abrir un agente (diseño §14.2).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchCommand {
-    /// Argument list; `argv[0]` is the program.
+    /// Lista de argumentos; `argv[0]` es el programa.
     pub argv: Vec<String>,
-    /// Environment variables with the markers already substituted.
+    /// Variables de entorno con los marcadores ya sustituidos.
     pub env: BTreeMap<String, String>,
-    /// Pre-launch work requested by the profile, if any.
+    /// Trabajo previo que pide el perfil, si lo hay.
     pub prelaunch: Option<String>,
 }
 
-/// Builds the launch data for `seat`, substituting `{modelo}`, `{esfuerzo}` and
-/// `{variante}` (`#<esfuerzo>`, or empty when there is no effort) in `argv`,
-/// `esfuerzo_args` (only present with an effort) and the values of `env`.
-pub fn command(profile: &AgentProfile, seat: &Seat) -> LaunchCommand {
+/// Construye los datos de lanzamiento de `seat`, sustituyendo `{modelo}`,
+/// `{esfuerzo}` y `{variante}` en `argv`, `esfuerzo_args` y los valores de `env`.
+pub fn command(profile: &AgentProfile, seat: &crate::contract::Seat) -> LaunchCommand {
     let effort = seat.effort.as_deref().filter(|effort| !effort.is_empty());
     let variant = effort
         .map(|effort| format!("#{effort}"))
@@ -87,21 +79,24 @@ fn fill(argument: &str, model: &str, effort: Option<&str>, variant: &str) -> Str
         .replace("{variante}", variant)
 }
 
-/// First message sent to the elephant when a space is created (design §14.2).
-pub fn elephant_first_line() -> String {
-    "Eres el elefante de este espacio de EzAgent. Ejecuta `ez --skill` y sigue ese manual; luego espera el pedido de la persona.".to_string()
+/// Primer mensaje del agente principal al abrir un espacio (§14.2, §15.9).
+pub fn main_first_line() -> String {
+    "Eres el agente principal de este espacio de EzAgent. Ejecuta ez --skill y sigue ese manual; luego espera el pedido de la persona.".to_string()
 }
 
-/// Full instructions of a fish: `roles/_comun.md`, a blank line and `roles/<role>.md`
-/// with the context markers substituted.
+/// Instrucciones completas de un subagente: común, cuerpo del papel y, si puede
+/// delegar, la sección de delegación, con los marcadores sustituidos (§15.7).
 ///
-/// Fails when the validator has no QA report or when a marker from [`MARKERS`] is left.
-pub fn render_instructions(context: &InstructionContext) -> Result<String, TeamError> {
-    let qa_report = match (context.role, &context.qa_report) {
-        (Role::QaValidator, None) => {
+/// Falla si un papel con `mutations` no tiene informe previo o si queda un marcador.
+pub fn render_instructions(
+    def: &RoleDef,
+    context: &InstructionContext,
+) -> Result<String, TeamError> {
+    let qa_report = match (def.mutations, &context.qa_report) {
+        (true, None) => {
             return Err(TeamError::Invalid(format!(
-                "El {} necesita el informe del QA de esta ronda (`qa_report`).",
-                Role::QaValidator.label()
+                "El papel «{}» necesita el informe del verificador que escribe pruebas de esta ronda (`qa_report`).",
+                def.name
             )))
         }
         (_, Some(path)) => path.display().to_string(),
@@ -110,39 +105,51 @@ pub fn render_instructions(context: &InstructionContext) -> Result<String, TeamE
     let mut text = String::new();
     text.push_str(COMMON.trim_end());
     text.push_str("\n\n");
-    text.push_str(template(context.role).trim_start());
+    text.push_str(def.body.trim_start());
+    if def.can_delegate {
+        text.push_str("\n\n");
+        text.push_str(DELEGATE.trim_start());
+    }
     let values = [
-        ("{papel_nombre}", context.role.label().to_string()),
-        ("{pez}", context.fish.clone()),
+        ("{papel_nombre}", def.name.clone()),
+        ("{id}", context.fish.clone()),
         ("{ronda}", context.round.to_string()),
         ("{carpeta}", context.folder.display().to_string()),
         ("{encargo}", context.brief.display().to_string()),
         ("{criterios}", context.criteria.display().to_string()),
         ("{plan}", context.plan.display().to_string()),
-        ("{encargo_pez}", context.fish_brief.display().to_string()),
+        ("{mi_encargo}", context.fish_brief.display().to_string()),
         ("{informe_qa}", qa_report),
         ("{informe}", context.report.display().to_string()),
         ("{mutaciones_minimas}", context.min_mutations.to_string()),
+        (
+            "{papeles_delegables}",
+            context
+                .delegable_roles
+                .iter()
+                .map(|role| role.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
+        ("{borradores}", context.drafts.display().to_string()),
     ];
     for (marker, value) in values {
         text = text.replace(marker, &value);
     }
     if let Some(marker) = MARKERS.iter().find(|marker| text.contains(**marker)) {
         return Err(TeamError::Invalid(format!(
-            "La plantilla de {} dejó el marcador {marker} sin sustituir.",
-            context.role.label()
+            "La plantilla de «{}» dejó el marcador {marker} sin sustituir.",
+            def.name
         )));
     }
     Ok(text)
 }
 
-/// First message sent to a new agent: one line, pointing at the instructions file.
-// DECISION: the role name here is `Role::label()` (the human name); the protocol keeps
-// using `Role::id()`. The first line is for the fish, not for `ez fish <papel>`.
-pub fn first_line(role: Role, instructions: &Path) -> String {
+/// Primer mensaje de un subagente: una sola línea con el nombre del papel y la
+/// ruta de sus instrucciones (§15.9).
+pub fn first_line(role_name: &str, instructions: &Path) -> String {
     format!(
-        "Eres un pez dorado de EzAgent con el papel {}. Lee {} y síguelo al pie de la letra.",
-        role.label(),
+        "Eres un subagente de EzAgent con el papel {role_name}. Lee {} y síguelo al pie de la letra.",
         instructions.display()
     )
 }
@@ -151,11 +158,11 @@ pub fn first_line(role: Role, instructions: &Path) -> String {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{command, elephant_first_line, first_line, render_instructions};
+    use super::{command, first_line, main_first_line, render_instructions};
     use crate::contract::{InstructionContext, Seat};
     use crate::error::TeamError;
     use crate::profiles::AgentProfile;
-    use crate::roles::Role;
+    use crate::roles::{builtin, RoleId};
 
     fn profile(id: &str, argv: &[&str], effort_args: &[&str]) -> AgentProfile {
         AgentProfile {
@@ -176,18 +183,22 @@ mod tests {
 
     fn seat(effort: Option<&str>) -> Seat {
         Seat {
-            role: Role::Developer,
+            role: RoleId::parse(builtin::DEVELOPER).expect("id"),
             agent: "codex".to_string(),
             model: "openai/gpt-6-luna".to_string(),
             effort: effort.map(str::to_string),
             count: 1,
+            stage: 3,
+            delegates_to: Vec::new(),
         }
     }
 
-    fn context(role: Role) -> InstructionContext {
+    fn context(id: &str, qa: bool) -> InstructionContext {
         InstructionContext {
-            role,
-            fish: format!("{}-r2", role.short()),
+            role: RoleId::parse(id).expect("id"),
+            role_name: id.to_string(),
+            fish: format!("{id}-r2"),
+            parent: None,
             round: 2,
             folder: PathBuf::from(r"C:\proj"),
             brief: PathBuf::from(r"C:\proj\.ez\tareas\t1\encargo.md"),
@@ -195,9 +206,10 @@ mod tests {
             plan: PathBuf::from(r"C:\proj\.ez\tareas\t1\plan.md"),
             fish_brief: PathBuf::from(r"C:\proj\.ez\tareas\t1\ronda-2\pez.encargo.md"),
             report: PathBuf::from(r"C:\proj\.ez\tareas\t1\ronda-2\pez.informe.md"),
-            qa_report: (role == Role::QaValidator)
-                .then(|| PathBuf::from(r"C:\proj\.ez\tareas\t1\ronda-2\qa-r2.informe.md")),
+            qa_report: qa.then(|| PathBuf::from(r"C:\proj\.ez\tareas\t1\ronda-2\qa-r2.informe.md")),
             min_mutations: 3,
+            delegable_roles: Vec::new(),
+            drafts: PathBuf::from(r"C:\proj\.ez\borrador\pez"),
         }
     }
 
@@ -287,53 +299,73 @@ mod tests {
     }
 
     #[test]
-    fn elephant_first_line_is_exact() {
+    fn main_first_line_is_exact() {
         assert_eq!(
-            elephant_first_line(),
-            "Eres el elefante de este espacio de EzAgent. Ejecuta `ez --skill` y sigue ese manual; luego espera el pedido de la persona."
+            main_first_line(),
+            "Eres el agente principal de este espacio de EzAgent. Ejecuta ez --skill y sigue ese manual; luego espera el pedido de la persona."
         );
     }
 
     #[test]
-    fn instructions_are_rendered_for_every_role() {
-        for role in Role::ALL {
-            let text = render_instructions(&context(role)).expect("rendered");
-            assert!(text.contains(role.label()), "{role:?}: {text}");
-            assert!(text.contains(&format!("{}-r2", role.short())), "{role:?}");
-            assert!(
-                text.contains(r"C:\proj\.ez\tareas\t1\encargo.md"),
-                "{role:?}"
-            );
-            assert!(text.contains("Criterios de aceptación"), "{role:?}");
-            assert!(!text.contains("{pez}"), "{role:?}: {text}");
-            assert!(!text.contains("{ronda}"), "{role:?}: {text}");
+    fn instructions_are_rendered_for_every_builtin_role() {
+        for def in crate::role_text::builtin_roles() {
+            let text = render_instructions(&def, &context(def.id.as_str(), def.mutations))
+                .expect("rendered");
+            assert!(text.contains(&def.name), "{text}");
+            assert!(text.contains(r"C:\proj\.ez\tareas\t1\encargo.md"), "{text}");
+            assert!(text.contains("Criterios de aceptación"), "{text}");
+            assert!(!text.contains("{id}"), "{text}");
+            assert!(!text.contains("{ronda}"), "{text}");
         }
     }
 
     #[test]
     fn validator_receives_the_qa_report_and_the_minimum() {
-        let text = render_instructions(&context(Role::QaValidator)).expect("rendered");
+        let def = crate::role_text::builtin_roles()
+            .into_iter()
+            .find(|role| role.id.as_str() == builtin::QA_VALIDATOR)
+            .expect("validador");
+        let text =
+            render_instructions(&def, &context(builtin::QA_VALIDATOR, true)).expect("rendered");
         assert!(text.contains(r"ronda-2\qa-r2.informe.md"), "{text}");
         assert!(text.contains("al menos 3 fallas"), "{text}");
     }
 
     #[test]
     fn validator_without_qa_report_is_an_error() {
-        let mut context = context(Role::QaValidator);
-        context.qa_report = None;
-        let error = render_instructions(&context).expect_err("missing report");
+        let def = crate::role_text::builtin_roles()
+            .into_iter()
+            .find(|role| role.id.as_str() == builtin::QA_VALIDATOR)
+            .expect("validador");
+        let error = render_instructions(&def, &context(builtin::QA_VALIDATOR, false))
+            .expect_err("missing report");
         assert!(matches!(error, TeamError::Invalid(_)), "{error}");
-        assert!(error.to_string().contains("informe del QA"), "{error}");
+        assert!(error.to_string().contains("informe"), "{error}");
     }
 
     #[test]
     fn first_line_is_one_line_and_points_at_the_instructions() {
         assert_eq!(
-            first_line(
-                Role::Qa,
-                &PathBuf::from(r"C:\proj\.ez\qa-r1.instrucciones.md")
-            ),
-            r"Eres un pez dorado de EzAgent con el papel QA. Lee C:\proj\.ez\qa-r1.instrucciones.md y síguelo al pie de la letra."
+            first_line("QA", &PathBuf::from(r"C:\proj\.ez\qa-r1.instrucciones.md")),
+            r"Eres un subagente de EzAgent con el papel QA. Lee C:\proj\.ez\qa-r1.instrucciones.md y síguelo al pie de la letra."
         );
+    }
+
+    #[test]
+    fn delegating_role_includes_the_section_and_the_delegable_roles() {
+        let mut def = crate::role_text::builtin_roles()
+            .into_iter()
+            .find(|role| role.id.as_str() == builtin::DEVELOPER)
+            .expect("desarrollador");
+        def.can_delegate = true;
+        let mut ctx = context(builtin::DEVELOPER, false);
+        ctx.delegable_roles = vec![
+            RoleId::parse(builtin::QA).expect("id"),
+            RoleId::parse(builtin::QA_VALIDATOR).expect("id"),
+        ];
+        let text = render_instructions(&def, &ctx).expect("rendered");
+        assert!(text.contains("Puedes delegar"), "{text}");
+        assert!(text.contains("qa, qa_validator"), "{text}");
+        assert!(text.contains(r"C:\proj\.ez\borrador\pez"), "{text}");
     }
 }

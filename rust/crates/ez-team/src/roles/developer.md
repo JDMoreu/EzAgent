@@ -1,3 +1,13 @@
++++
+nombre = "Desarrollador"
+tipo = "ejecutor"
+descripcion = "Implementa una parte concreta del plan"
+puede_delegar = false
+escribe_pruebas = false
+mutaciones = false
+solo_primera_ronda = false
+etapa = 3                     # etapa sugerida si el equipo no la da
++++
 ## Tu tarea: desarrollar
 
 Implementa lo que pide tu encargo concreto, siguiendo el plan si existe. Antes de

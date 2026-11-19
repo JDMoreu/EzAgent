@@ -245,8 +245,9 @@ impl WaitWorker {
     fn run(&self) {
         while let Ok(job) = self.rx.recv() {
             let reply = self.handler.handle(&job.caller, &job.command);
-            release_wait(&self.active);
+            // answer() first: a slot is not free until its response has been sent.
             answer(job.http, 200, reply);
+            release_wait(&self.active);
         }
     }
 }

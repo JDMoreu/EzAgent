@@ -136,6 +136,7 @@ impl ArbiterShared {
             created: self.now(),
             approved_at: None,
             team: Vec::new(),
+            roles: Vec::new(),
             team_status: TeamStatus::None,
             team_card: String::new(),
             round: 0,
@@ -186,13 +187,12 @@ impl ArbiterShared {
                     return Ok(Outcome::new(texts::STATUS_UNKNOWN_FISH));
                 };
                 let pending = task.pending_work(key).is_some();
-                let message = texts::status_fish(
-                    &key.fish,
-                    record.role.label(),
-                    &task.id,
-                    record.round,
-                    pending,
-                );
+                let role_name = task
+                    .role_def(&record.role)
+                    .map(|def| def.name.clone())
+                    .unwrap_or_else(|| record.role.as_str().to_string());
+                let message =
+                    texts::status_fish(&key.fish, &role_name, &task.id, record.round, pending);
                 Ok(Outcome {
                     message,
                     data: task.snapshot(),
@@ -519,7 +519,7 @@ impl ArbiterShared {
         }
         let verifier = task
             .fish_by_key(key)
-            .is_some_and(|record| record.role.is_verifier());
+            .is_some_and(|record| task.is_verifier(&record.role));
         if verifier && task.work_for_key(key).is_some() {
             return Err(Rejection::new("R7", texts::already_reported(&key.fish)));
         }

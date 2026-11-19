@@ -80,7 +80,11 @@ fn start(handler: &Arc<HoldingHandler>) -> CtlServer {
 }
 
 fn post(url: &str, body: &str) -> (u16, String) {
-    let response = reqwest::blocking::Client::new()
+    // One client for all concurrent posts: a fresh blocking client builds its own
+    // runtime and pool, and 32 of them delayed some requests past the 8 s limit.
+    static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
+    let client = CLIENT.get_or_init(reqwest::blocking::Client::new);
+    let response = client
         .post(format!("{url}/v1/command"))
         .bearer_auth(TOKEN)
         .body(body.to_string())

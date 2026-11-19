@@ -2,8 +2,6 @@
 
 use std::path::PathBuf;
 
-use ez_team::Role;
-
 use crate::git;
 use crate::paths;
 use crate::state::{FishRecord, ReportRecord, Status, WorkItem, WorkKind, WorkState};
@@ -29,16 +27,16 @@ impl ArbiterShared {
             .fish(fish)
             .cloned()
             .ok_or_else(|| Rejection::new("R1", texts::UNKNOWN_FISH))?;
-        if !matches!(record.role, Role::Planner | Role::Developer) {
+        if task.is_verifier(&record.role) {
             return Err(Rejection::new("R6", texts::cannot_correct(fish)));
         }
         if !self.launcher.alive(&record.terminal) {
             return Err(Rejection::new("R6", texts::terminal_dead(fish)));
         }
-        if task
-            .fish_in_round(record.round)
-            .any(|other| other.role == Role::Qa)
-        {
+        let stage = task.stage_of(&record.role);
+        if task.fish_in_round(record.round).any(|other| {
+            task.stage_of(&other.role) > stage && task.work_for_key(&other.key).is_some()
+        }) {
             return Err(Rejection::new("R6", texts::QA_STARTED));
         }
         if let Err(rejection) = self.check_artifacts(&task) {
@@ -159,7 +157,7 @@ impl ArbiterShared {
         let record = task
             .fish_by_key(key)
             .ok_or_else(|| Rejection::new("R1", texts::FISH_NOT_ACTIVE))?;
-        if record.role == Role::QaValidator
+        if task.has_mutations(&record.role)
             && (input.mutations_tried.is_none() || input.mutations_caught.is_none())
         {
             return Err(Rejection::new("R7", texts::MUTATIONS_REQUIRED));
@@ -203,7 +201,7 @@ impl ArbiterShared {
             mutations_caught: input.mutations_caught,
         };
         if let Some(round) = task.open_round_mut() {
-            round.attribute(record.role, &changed);
+            round.attribute(&record.role, &changed);
         }
         if let Some(item) = task.work.iter_mut().find(|item| item.key == *key) {
             item.state = WorkState::Reported;
@@ -211,7 +209,7 @@ impl ArbiterShared {
         if let Some(record) = task.fish_by_key_mut(key) {
             record.report = Some(report);
         }
-        if record.role.is_verifier() {
+        if task.is_verifier(&record.role) {
             self.revoke_token(key);
         }
         let message = texts::report_received(&key.fish, input.verdict);

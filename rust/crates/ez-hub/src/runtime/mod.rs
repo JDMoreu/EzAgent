@@ -190,7 +190,7 @@ impl HubRuntime {
             .into_iter()
             .filter(|terminal| {
                 terminal.labels.get("ez_space").map(String::as_str) == Some(space)
-                    && terminal.labels.get("ez_role").map(String::as_str) == Some("fish")
+                    && terminal.labels.get("ez_role").map(String::as_str) == Some("sub")
             })
             .map(|terminal| FishInfo {
                 status: terminal

@@ -1,3 +1,13 @@
++++
+nombre = "QA"
+tipo = "verificador"
+descripcion = "Escribe y corre pruebas que demuestran cada criterio"
+puede_delegar = false
+escribe_pruebas = true
+mutaciones = false
+solo_primera_ronda = false
+etapa = 4                     # etapa sugerida si el equipo no la da
++++
 ## Tu tarea: QA
 
 No viste el desarrollo. Escribe pruebas automáticas que demuestren cada criterio de

@@ -1,6 +1,6 @@
 //! Equipo propuesto y su aprobación de la persona.
 
-use ez_team::Seat;
+use ez_team::{RoleDef, Seat};
 
 use crate::events::CardKind;
 use crate::state::{Status, TeamStatus};
@@ -16,6 +16,7 @@ impl ArbiterShared {
         &self,
         space: &str,
         seats: Vec<Seat>,
+        roles: Vec<RoleDef>,
         card: String,
     ) -> Result<Outcome, Rejection> {
         let mut task = self.task_for_elephant(space)?;
@@ -26,6 +27,7 @@ impl ArbiterShared {
             return Err(Rejection::new("R2", texts::TASK_FINISHED));
         }
         task.team = seats;
+        task.roles = roles;
         task.team_status = TeamStatus::Proposed;
         task.team_card = card.clone();
         let mut effects = Effects::default();

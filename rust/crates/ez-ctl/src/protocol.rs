@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Quién hace una petición: el elefante del espacio o uno de sus peces.
+/// Quién hace una petición: el agente principal del espacio o un subagente.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Caller {
     Elephant {
@@ -131,12 +131,12 @@ mod tests {
     fn revoke_all_for_removes_only_matching_fish() {
         let tokens = Tokens::new();
         tokens.register(
-            "elefante",
+            "principal",
             Caller::Elephant {
                 space: "espacio".to_string(),
             },
         );
-        for (token, task) in [("pez-viejo", "t-vieja"), ("pez-nuevo", "t-nueva")] {
+        for (token, task) in [("sub-viejo", "t-vieja"), ("sub-nuevo", "t-nueva")] {
             tokens.register(
                 token,
                 Caller::Fish {
@@ -151,9 +151,9 @@ mod tests {
             |caller| matches!(caller, Caller::Fish { task, .. } if task == "t-vieja"),
         );
         assert_eq!(removed, 1);
-        assert_eq!(tokens.lookup("pez-viejo"), None);
-        assert!(tokens.lookup("pez-nuevo").is_some());
-        assert!(tokens.lookup("elefante").is_some());
+        assert_eq!(tokens.lookup("sub-viejo"), None);
+        assert!(tokens.lookup("sub-nuevo").is_some());
+        assert!(tokens.lookup("principal").is_some());
     }
 
     #[test]

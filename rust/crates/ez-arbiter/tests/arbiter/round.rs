@@ -2,8 +2,9 @@
 
 use std::fs;
 
+use crate::support::role;
 use ez_arbiter::{Caller, Command, Verdict};
-use ez_team::Role;
+use ez_team::builtin;
 
 use super::support::{git, Fixture};
 use super::task::{clean_round, new_task};
@@ -17,7 +18,7 @@ fn setup_with(f: &Fixture, body: &str) -> String {
     f.arbiter
         .execute(&Fixture::elephant(), Command::RoundStart)
         .expect("abrir ronda");
-    f.launch(Role::Planner);
+    f.launch(role(builtin::PLANNER));
     f.report("plan-r1", Verdict::Pass, None, None)
         .expect("informe del planificador");
     task
@@ -112,10 +113,10 @@ fn r9_clean_round_accumulates_streak() {
 
 /// Informes necesarios para cerrar una ronda sucia por una causa elegida.
 fn dirty_reports(f: &Fixture, qa_fails: bool, tried: Option<u32>) {
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.report("dev-r1-1", Verdict::Pass, None, None)
         .expect("informe del desarrollador");
-    f.launch(Role::Qa);
+    f.launch(role(builtin::QA));
     if qa_fails {
         let (key, report) = f.fish_info("qa-r1");
         fs::write(&report, "falló").expect("informe del QA");
@@ -137,7 +138,7 @@ fn dirty_reports(f: &Fixture, qa_fails: bool, tried: Option<u32>) {
         f.report("qa-r1", Verdict::Pass, None, None)
             .expect("informe del QA");
     }
-    f.launch(Role::QaValidator);
+    f.launch(role(builtin::QA_VALIDATOR));
     f.report("valqa-r1", Verdict::Pass, tried, tried)
         .expect("informe del validador");
 }
@@ -187,30 +188,30 @@ fn r9_dirty_round_by_validator() {
 fn r9_protected_file_touched_by_developer_dirties_the_round() {
     let f = Fixture::new("r9-protegido");
     let task = f.setup();
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.report("dev-r1-1", Verdict::Pass, None, None)
         .expect("informe del desarrollador");
-    f.launch(Role::Qa);
+    f.launch(role(builtin::QA));
     f.write("protegido.txt", "lo escribió QA\n");
     git(&f.folder, &["add", "protegido.txt"]);
     git(&f.folder, &["commit", "-q", "-m", "archivo del QA"]);
     f.report("qa-r1", Verdict::Pass, None, None)
         .expect("informe del QA");
-    f.launch(Role::QaValidator);
+    f.launch(role(builtin::QA_VALIDATOR));
     f.report("valqa-r1", Verdict::Pass, Some(3), Some(3))
         .expect("informe del validador");
     f.close_round().expect("ronda 1 limpia");
     f.arbiter
         .execute(&Fixture::elephant(), Command::RoundStart)
         .expect("ronda 2");
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.write("protegido.txt", "lo sobrescribió el desarrollador\n");
     f.report("dev-r2-1", Verdict::Pass, None, None)
         .expect("informe del desarrollador");
-    f.launch(Role::Qa);
+    f.launch(role(builtin::QA));
     f.report("qa-r2", Verdict::Pass, None, None)
         .expect("informe del QA");
-    f.launch(Role::QaValidator);
+    f.launch(role(builtin::QA_VALIDATOR));
     f.report("valqa-r2", Verdict::Pass, Some(3), Some(3))
         .expect("informe del validador");
     let outcome = f.close_round().expect("cerrar ronda 2");
@@ -250,13 +251,13 @@ fn r9_pauses_on_repeated_error() {
     f.arbiter
         .execute(&Fixture::elephant(), Command::RoundStart)
         .expect("ronda 2");
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.report("dev-r2-1", Verdict::Pass, None, None)
         .expect("informe del desarrollador");
-    f.launch(Role::Qa);
+    f.launch(role(builtin::QA));
     f.report("qa-r2", Verdict::Pass, None, None)
         .expect("informe del QA");
-    f.launch(Role::QaValidator);
+    f.launch(role(builtin::QA_VALIDATOR));
     f.report("valqa-r2", Verdict::Pass, Some(3), Some(3))
         .expect("informe del validador");
     f.close_round().expect("cerrar ronda 2");

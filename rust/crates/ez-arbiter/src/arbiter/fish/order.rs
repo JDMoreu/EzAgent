@@ -1,160 +1,192 @@
-//! Fases de la ronda y orden de los papeles (diseño §14.3).
+//! Orden por etapas de la ronda (diseño §15.4).
 
-use ez_team::Role;
+use ez_team::{builtin, RoleId};
 
 use crate::git;
 use crate::state::WorkState;
 use crate::texts;
-use crate::types::Rejection;
+use crate::types::{Rejection, Verdict};
 
 use super::ArbiterShared;
 
 impl ArbiterShared {
-    /// Fases de la ronda y límite de peces vivos (§14.3).
+    /// Un trabajo de etapa *k* empieza cuando informaron todos los de etapas
+    /// menores en la ronda; además se respetan los límites de papel y puestos.
     pub(crate) fn check_order(
         &self,
         task: &crate::state::Task,
-        role: Role,
+        role: &RoleId,
         round: u32,
         count: u32,
     ) -> Result<(), Rejection> {
-        if round > 1 && matches!(role, Role::Planner | Role::PlanReviewer) {
+        let Some(def) = task.role_def(role) else {
+            return Err(Rejection::new("R5", texts::role_not_in_team(role.as_str())));
+        };
+        if round > 1 && def.first_round_only {
             return Err(Rejection::new("R5", texts::PLAN_ONLY_ROUND1));
         }
-        if role == Role::Developer
-            && task
-                .fish_in_round(round)
-                .any(|fish| fish.role == Role::Qa && task.work_for_key(&fish.key).is_some())
+        let single = def.is_verifier() || def.first_round_only;
+        if single
+            && task.fish_in_round(round).any(|fish| {
+                fish.role == *role
+                    && task
+                        .work_for_key(&fish.key)
+                        .is_some_and(|item| item.state != WorkState::Failed)
+            })
+        {
+            return Err(Rejection::new("R5", texts::already_in_round(role.as_str())));
+        }
+        let stage = task.stage_of(role);
+        let waiting = self.lower_stage_waiting(task, round, stage);
+        if !waiting.is_empty() {
+            return Err(Rejection::new("R5", texts::waiting_for(&waiting)));
+        }
+        let first_verifier_stage = task
+            .team
+            .iter()
+            .filter(|seat| task.is_verifier(&seat.role))
+            .filter(|seat| {
+                task.role_def(&seat.role)
+                    .is_some_and(|def| !def.first_round_only)
+            })
+            .map(|seat| seat.stage)
+            .min()
+            .unwrap_or(stage);
+        if stage < first_verifier_stage
+            && task.fish_in_round(round).any(|fish| {
+                task.is_verifier(&fish.role)
+                    && task
+                        .role_def(&fish.role)
+                        .is_some_and(|def| !def.first_round_only)
+            })
         {
             return Err(Rejection::new("R5", texts::QA_STARTED));
         }
-        let live = (role.is_verifier() || role == Role::Planner)
-            && task
-                .fish_in_round(round)
-                .filter(|fish| fish.role == role)
-                .any(|fish| {
-                    task.work_for_key(&fish.key)
-                        .is_some_and(|item| item.state != WorkState::Failed)
-                });
-        if live {
-            return Err(Rejection::new("R5", texts::already_in_round(role.id())));
+        if def.is_verifier() {
+            self.check_verifier_entry(task, round, stage, first_verifier_stage)?;
         }
-        match role {
-            Role::PlanReviewer => {
-                if !self.role_passed(task, Role::Planner, round) {
-                    return Err(Rejection::new(
-                        "R5",
-                        texts::waiting_for(&[format!("plan-r{round}")]),
-                    ));
-                }
+        if count > 1 || role.as_str() == builtin::DEVELOPER {
+            let alive = task
+                .fish_in_round(round)
+                .filter(|fish| fish.role == *role && self.launcher.alive(&fish.terminal))
+                .count() as u32;
+            if alive >= count.max(1) {
+                return Err(Rejection::new(
+                    "R5",
+                    texts::too_many_fish(alive, count.max(1)),
+                ));
             }
-            Role::Developer => self.check_developer_order(task, round, count)?,
-            Role::Qa => self.check_qa_order(task, round)?,
-            Role::QaValidator => {
-                let reported = task
-                    .fish_in_round(round)
-                    .filter(|fish| fish.role == Role::Qa)
-                    .any(|fish| fish.report.is_some());
-                if !reported {
-                    return Err(Rejection::new(
-                        "R5",
-                        texts::waiting_for(&[format!("qa-r{round}")]),
-                    ));
-                }
-            }
-            Role::Planner => {}
         }
         Ok(())
     }
 
-    /// El desarrollador necesita el plan aprobado en la ronda 1.
-    fn check_developer_order(
+    /// Trabajos de etapas menores que aún no informaron (o que deben pasar en la ronda 1).
+    fn lower_stage_waiting(
         &self,
         task: &crate::state::Task,
         round: u32,
-        count: u32,
-    ) -> Result<(), Rejection> {
-        if round == 1 && !self.role_passed(task, Role::Planner, round) {
-            return Err(Rejection::new(
-                "R5",
-                texts::waiting_for(&[format!("plan-r{round}")]),
-            ));
-        }
-        if round == 1
-            && task.seat(Role::PlanReviewer).is_some()
-            && !self.role_passed(task, Role::PlanReviewer, round)
-        {
-            return Err(Rejection::new(
-                "R5",
-                texts::waiting_for(&[format!("revplan-r{round}")]),
-            ));
-        }
-        let alive = task
-            .fish_in_round(round)
-            .filter(|fish| fish.role == Role::Developer && self.launcher.alive(&fish.terminal))
-            .count() as u32;
-        if alive >= count.max(1) {
-            return Err(Rejection::new(
-                "R5",
-                texts::too_many_developers(alive, count.max(1)),
-            ));
-        }
-        Ok(())
-    }
-
-    /// ¿Informó `pass` ese papel en esta ronda?
-    fn role_passed(&self, task: &crate::state::Task, role: Role, round: u32) -> bool {
-        task.fish_in_round(round)
-            .filter(|fish| fish.role == role)
-            .any(|fish| {
-                fish.report
-                    .as_ref()
-                    .is_some_and(|report| report.verdict == crate::types::Verdict::Pass)
+        stage: u32,
+    ) -> Vec<String> {
+        let mut waiting: Vec<String> = task
+            .work
+            .iter()
+            .filter(|item| item.round == round && item.state == WorkState::Pending)
+            .filter(|item| {
+                task.fish_by_key(&item.key)
+                    .is_some_and(|fish| task.stage_of(&fish.role) < stage)
             })
+            .map(|item| item.key.fish.clone())
+            .collect();
+        for seat in task
+            .team
+            .iter()
+            .filter(|seat| seat.stage < stage && task.is_verifier(&seat.role))
+        {
+            let reported = task
+                .fish_in_round(round)
+                .any(|fish| fish.role == seat.role && fish.report.is_some());
+            if !reported {
+                waiting.push(format!("{}-r{round}", seat.role.short()));
+            }
+        }
+        if round == 1 {
+            for seat in task
+                .team
+                .iter()
+                .filter(|seat| seat.stage < stage)
+                .filter(|seat| {
+                    task.role_def(&seat.role)
+                        .is_some_and(|def| def.first_round_only)
+                })
+            {
+                let passed = task.fish_in_round(round).any(|fish| {
+                    fish.role == seat.role
+                        && fish
+                            .report
+                            .as_ref()
+                            .is_some_and(|report| report.verdict == Verdict::Pass)
+                });
+                if !passed && !waiting.contains(&seat.role.as_str().to_string()) {
+                    let id = format!("{}-r{round}", seat.role.short());
+                    waiting.push(id);
+                }
+            }
+        }
+        waiting
     }
 
-    /// El QA espera a los desarrolladores, salvo en una ronda solo de verificación.
-    fn check_qa_order(&self, task: &crate::state::Task, round: u32) -> Result<(), Rejection> {
-        let developers: Vec<_> = task
-            .fish_in_round(round)
-            .filter(|fish| fish.role == Role::Developer)
-            .collect();
-        if developers.is_empty() && round == 1 {
-            return Err(Rejection::new(
-                "R5",
-                texts::waiting_for(&[format!("dev-r{round}-1")]),
-            ));
-        }
-        if !developers.is_empty() {
-            let waiting: Vec<String> = developers
-                .iter()
-                .filter(|fish| task.pending_work(&fish.key).is_some())
-                .map(|fish| fish.id().to_string())
-                .collect();
-            if !waiting.is_empty() {
-                return Err(Rejection::new("R5", texts::waiting_for(&waiting)));
-            }
-            if !developers.iter().any(|fish| fish.report.is_some()) {
-                return Err(Rejection::new(
-                    "R5",
-                    texts::waiting_for(&[format!("dev-r{round}-1")]),
-                ));
-            }
+    /// El primer verificador espera a los ejecutores; en rondas sin ejecutores
+    /// solo se permite una ronda de verificación tras una ronda limpia.
+    fn check_verifier_entry(
+        &self,
+        task: &crate::state::Task,
+        round: u32,
+        stage: u32,
+        first_verifier_stage: u32,
+    ) -> Result<(), Rejection> {
+        if stage != first_verifier_stage {
             return Ok(());
         }
-        // La ronda solo de verificación exige la huella del cierre limpio anterior.
-        let previous = task
-            .rounds
+        let executors: Vec<&ez_team::Seat> = task
+            .team
             .iter()
-            .find(|record| record.number + 1 == round && record.closed.is_some());
-        let verification_only = previous.is_some_and(|record| {
-            record.clean
-                && git::snapshot(&task.space.folder)
-                    .map(|now| now == record.close.clone().unwrap_or_default())
-                    .unwrap_or(false)
-        });
-        if !verification_only {
-            return Err(Rejection::new("R5", texts::no_verification_round()));
+            .filter(|seat| !task.is_verifier(&seat.role))
+            .collect();
+        let has_executor_work = task
+            .fish_in_round(round)
+            .any(|fish| !task.is_verifier(&fish.role));
+        if round > 1 && !has_executor_work {
+            let previous = task
+                .rounds
+                .iter()
+                .find(|record| record.number + 1 == round && record.closed.is_some());
+            let verification_only = previous.is_some_and(|record| {
+                record.clean
+                    && git::snapshot(&task.space.folder)
+                        .map(|now| now == record.close.clone().unwrap_or_default())
+                        .unwrap_or(false)
+            });
+            return if verification_only {
+                Ok(())
+            } else {
+                Err(Rejection::new("R5", texts::no_verification_round()))
+            };
+        }
+        if round > 1 {
+            return Ok(());
+        }
+        let main_stage = executors.iter().map(|seat| seat.stage).max().unwrap_or(0);
+        for seat in executors.iter().filter(|seat| seat.stage == main_stage) {
+            let launched = task.fish_in_round(round).any(|fish| fish.role == seat.role);
+            if !launched {
+                let index = if seat.count > 1 || seat.role.as_str() == builtin::DEVELOPER {
+                    "-1"
+                } else {
+                    ""
+                };
+                let expected = format!("{}-r{round}{index}", seat.role.short());
+                return Err(Rejection::new("R5", texts::waiting_for(&[expected])));
+            }
         }
         Ok(())
     }

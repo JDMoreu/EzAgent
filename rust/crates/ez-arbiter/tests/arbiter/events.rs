@@ -3,8 +3,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::support::role;
 use ez_arbiter::{Arbiter, Command, Verdict};
-use ez_team::Role;
+use ez_team::builtin;
 
 use super::support::{kind, live_kind, FakeWriter, Fixture};
 
@@ -60,7 +61,7 @@ fn r12_elephant_events_arrive_in_order_and_timeout() {
     assert_eq!(next(&f), "task_approved");
     assert_eq!(next(&f), "team_approved");
     assert_eq!(next(&f), "fish_reported");
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.report("dev-r1-1", Verdict::Pass, None, None)
         .expect("informe del desarrollador");
     let event = f
@@ -90,7 +91,7 @@ fn r12_subscribers_see_fish_launch_and_signals() {
     let f = Fixture::new("r12-suscriptores");
     let receiver = f.arbiter.subscribe();
     let task = f.setup();
-    let fish = f.launch(Role::Developer);
+    let fish = f.launch(role(builtin::DEVELOPER));
     f.report(&fish, Verdict::Pass, None, None)
         .expect("informe del desarrollador");
     let key = f.fish_key(&fish);
@@ -111,7 +112,7 @@ fn r12_subscribers_see_fish_launch_and_signals() {
 fn r12_reload_keeps_unfinished_task_and_trace() {
     let f = Fixture::new("r12-recarga");
     let task = f.setup();
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.report("dev-r1-1", Verdict::Pass, None, None)
         .expect("informe del desarrollador");
     let reopened = Arbiter::new(

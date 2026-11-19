@@ -104,7 +104,7 @@ pub(crate) fn translate(
             let key = keys.remove(terminal)?;
             Some(FishSignal::Failed(
                 key,
-                "La terminal del pez se perdió.".to_string(),
+                "La terminal del subagente se perdió.".to_string(),
             ))
         }
         TermEvent::Missed {

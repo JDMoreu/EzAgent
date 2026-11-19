@@ -3,8 +3,9 @@
 use std::sync::{Arc, Barrier};
 use std::thread;
 
+use crate::support::role;
 use ez_arbiter::{Arbiter, Command, Outcome, Rejection, Verdict};
-use ez_team::{Role, Seat};
+use ez_team::{builtin, Seat};
 
 use super::support::{kind, FakeWriter, Fixture};
 
@@ -23,13 +24,13 @@ fn card_id(f: &Fixture, task: &str, type_name: &str, nth: usize) -> String {
 
 /// Informes de una ronda sin cerrarla.
 fn all_reports(f: &Fixture, round: u32) {
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.report(&format!("dev-r{round}-1"), Verdict::Pass, None, None)
         .expect("informe del desarrollador");
-    f.launch(Role::Qa);
+    f.launch(role(builtin::QA));
     f.report(&format!("qa-r{round}"), Verdict::Pass, None, None)
         .expect("informe del QA");
-    f.launch(Role::QaValidator);
+    f.launch(role(builtin::QA_VALIDATOR));
     f.report(&format!("valqa-r{round}"), Verdict::Pass, Some(3), Some(3))
         .expect("informe del validador");
 }
@@ -52,7 +53,7 @@ fn setup_with_criteria(f: &Fixture, body: &str) {
     f.arbiter
         .execute(&Fixture::elephant(), Command::RoundStart)
         .expect("abrir ronda");
-    f.launch(Role::Planner);
+    f.launch(role(builtin::PLANNER));
     f.report("plan-r1", Verdict::Pass, None, None)
         .expect("plan");
 }
@@ -107,31 +108,31 @@ fn files_are_attributed_to_the_developer_role_with_parallel_developers() {
     let task = f.propose();
     f.arbiter.approve_task("s1").expect("aprobar");
     let seats: Vec<Seat> = vec![
-        Fixture::seat(Role::Planner, 1),
-        Fixture::seat(Role::Developer, 2),
-        Fixture::seat(Role::Qa, 1),
-        Fixture::seat(Role::QaValidator, 1),
+        Fixture::seat(role(builtin::PLANNER), 1),
+        Fixture::seat(role(builtin::DEVELOPER), 2),
+        Fixture::seat(role(builtin::QA), 1),
+        Fixture::seat(role(builtin::QA_VALIDATOR), 1),
     ];
     f.team(seats);
     f.arbiter.approve_team("s1").expect("aprobar equipo");
     f.arbiter
         .execute(&Fixture::elephant(), Command::RoundStart)
         .expect("ronda");
-    f.launch(Role::Planner);
+    f.launch(role(builtin::PLANNER));
     f.report("plan-r1", Verdict::Pass, None, None)
         .expect("plan");
 
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.write("dev-uno.txt", "uno\n");
     f.report("dev-r1-1", Verdict::Pass, None, None)
         .expect("dev uno");
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.write("dev-dos.txt", "dos\n");
     f.report("dev-r1-2", Verdict::Pass, None, None)
         .expect("dev dos");
-    f.launch(Role::Qa);
+    f.launch(role(builtin::QA));
     f.report("qa-r1", Verdict::Pass, None, None).expect("qa");
-    f.launch(Role::QaValidator);
+    f.launch(role(builtin::QA_VALIDATOR));
     f.report("valqa-r1", Verdict::Pass, Some(3), Some(3))
         .expect("validador");
     f.close_round().expect("cerrar ronda");
@@ -179,9 +180,9 @@ fn task_close_rejects_a_project_changed_since_the_last_clean_round() {
     f.arbiter
         .execute(&Fixture::elephant(), Command::RoundStart)
         .expect("ronda 2");
-    f.launch(Role::Qa);
+    f.launch(role(builtin::QA));
     f.report("qa-r2", Verdict::Pass, None, None).expect("qa");
-    f.launch(Role::QaValidator);
+    f.launch(role(builtin::QA_VALIDATOR));
     // El validador cambia el proyecto: la ronda queda sucia y la huella de la
     // última ronda limpia sigue siendo la de la ronda 1.
     f.write("extra.txt", "cambio mientras trabajaba el validador\n");
@@ -241,11 +242,11 @@ fn two_round_starts_only_open_one_round() {
 fn two_qa_launches_only_launch_one_fish() {
     let f = Fixture::new("conc-qa");
     let _ = f.setup();
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.report("dev-r1-1", Verdict::Pass, None, None)
         .expect("dev");
     let command = Command::FishNew {
-        role: Role::Qa,
+        role: role(builtin::QA),
         brief: f.brief(),
     };
     only_one_wins(twice(f.arbiter.clone(), command), "R5");
@@ -263,7 +264,7 @@ fn two_round_closes_only_close_one_round() {
 fn restart_pauses_the_task_and_fails_pending_work() {
     let f = Fixture::new("reinicio-trabajo");
     let _ = f.setup();
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     let task = f.fish_key("dev-r1-1").task;
     let reopened = Arbiter::new(
         f.data_dir.clone(),

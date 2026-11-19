@@ -1,6 +1,6 @@
 //! R3, R4, R8, R9 y R11: rondas, verificación, cierre y paradas.
 
-use ez_team::Role;
+use ez_team::builtin;
 
 use crate::criteria::{self, Criteria};
 use crate::git;
@@ -157,13 +157,13 @@ impl ArbiterShared {
         let mut missing = Vec::new();
         if !task
             .fish_in_round(round)
-            .any(|fish| fish.role == Role::Qa && fish.report.is_some())
+            .any(|fish| fish.role.as_str() == builtin::QA && fish.report.is_some())
         {
             missing.push(format!("qa-r{round}"));
         }
         if !task
             .fish_in_round(round)
-            .any(|fish| fish.role == Role::QaValidator && fish.report.is_some())
+            .any(|fish| fish.role.as_str() == builtin::QA_VALIDATOR && fish.report.is_some())
         {
             missing.push(format!("valqa-r{round}"));
         }
@@ -334,34 +334,48 @@ fn evaluate(
         let reason = check.motivo.clone().unwrap_or_default();
         reasons.push(texts::criterion_failed(&check.id, &reason));
     }
-    let qa_ok = task
+    let verifiers: Vec<&ez_team::RoleDef> =
+        task.roles.iter().filter(|def| def.is_verifier()).collect();
+    let any_reported = task
         .fish_in_round(round)
-        .find(|fish| fish.role == Role::Qa)
-        .and_then(|fish| fish.report.as_ref())
-        .is_some_and(|report| {
+        .any(|fish| verifiers.iter().any(|def| def.id == fish.role) && fish.report.is_some());
+    if !any_reported {
+        reasons.push(texts::no_verifier_reported());
+    }
+    for def in verifiers {
+        let report = task
+            .fish_in_round(round)
+            .find(|fish| fish.role == def.id)
+            .and_then(|fish| fish.report.as_ref());
+        let clean = report.is_some_and(|report| {
             report.verdict == Verdict::Pass && report.blocking == 0 && report.major == 0
         });
-    if !qa_ok {
-        reasons.push(texts::qa_not_clean());
-    }
-    let validator_ok = task
-        .fish_in_round(round)
-        .find(|fish| fish.role == Role::QaValidator)
-        .and_then(|fish| fish.report.as_ref())
-        .is_some_and(|report| {
-            report.verdict == Verdict::Pass
-                && report.mutations_tried.unwrap_or(0) >= criteria.validacion.mutaciones_minimas
-                && report.mutations_caught == report.mutations_tried
-        });
-    if !validator_ok {
-        reasons.push(texts::validator_not_clean());
+        if def.writes_tests && !clean {
+            reasons.push(texts::qa_not_clean());
+        }
+        if def.mutations {
+            let mutations_ok = report.is_some_and(|report| {
+                clean
+                    && report.mutations_tried.unwrap_or(0) >= criteria.validacion.mutaciones_minimas
+                    && report.mutations_caught == report.mutations_tried
+            });
+            if !mutations_ok {
+                reasons.push(texts::validator_not_clean());
+            }
+        }
     }
     let protected = task.protected_files(round);
     let touched: Vec<String> = task
         .rounds
         .iter()
         .find(|record| record.number == round)
-        .map(|record| record.files_of(Role::Developer))
+        .map(|record| {
+            task.roles
+                .iter()
+                .filter(|def| !def.is_verifier())
+                .flat_map(|def| record.files_of(&def.id).into_iter())
+                .collect::<std::collections::BTreeSet<String>>()
+        })
         .unwrap_or_default()
         .intersection(&protected)
         .cloned()
@@ -386,15 +400,19 @@ fn other_violations(task: &Task, round: u32, reasons: &mut Vec<String>) {
     if !bad.is_empty() {
         reasons.push(texts::reports_not_clean(&bad));
     }
-    for role in [Role::Planner, Role::PlanReviewer, Role::QaValidator] {
+    for def in task
+        .roles
+        .iter()
+        .filter(|def| def.is_verifier() && !def.writes_tests)
+    {
         let changed: Vec<String> = task
             .rounds
             .iter()
             .find(|record| record.number == round)
-            .map(|record| record.files_of(role).into_iter().collect())
+            .map(|record| record.files_of(&def.id).into_iter().collect())
             .unwrap_or_default();
         if !changed.is_empty() {
-            reasons.push(texts::role_changed_files(role.id(), &changed));
+            reasons.push(texts::role_changed_files(def.id.as_str(), &changed));
         }
     }
 }

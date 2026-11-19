@@ -9,7 +9,9 @@ use ez_arbiter::{
     Delivery as ArbiterDelivery, FishLauncher, InstructionWriter, LaunchRequest, Launched,
 };
 use ez_ctl::{Caller, Tokens};
-use ez_team::{AgentProfile, InstructionContext, LaunchCommand, Role, Seat};
+use ez_team::{
+    builtin, builtin_roles, AgentProfile, InstructionContext, LaunchCommand, RoleId, Seat,
+};
 use ez_term::{Delivery as TermDelivery, HcClient, RunSpec, Terminal};
 use parking_lot::RwLock;
 
@@ -17,7 +19,7 @@ use crate::runtime::spaces::SpaceConfig;
 
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
 const HC_MISSING_MODEL: &str =
-    "El espacio necesita configurar el modelo del elefante en agentes.toml.";
+    "El espacio necesita configurar el modelo del agente principal en agentes.toml.";
 
 /// Operaciones sobre terminales que necesita el motor. `HcClient` las cumple;
 /// las pruebas usan un doble que no abre procesos.
@@ -98,11 +100,13 @@ impl RuntimeLauncher {
         }
         let profile = self.profile(&space.agent)?;
         let seat = Seat {
-            role: Role::Developer,
+            role: RoleId::parse(builtin::DEVELOPER).expect("id del papel"),
             agent: space.agent.clone(),
             model: space.model.clone(),
             effort: space.effort.clone(),
             count: 1,
+            stage: 1,
+            delegates_to: Vec::new(),
         };
         let command = ez_team::launch::command(profile, &seat);
         let mut extra = BTreeMap::new();
@@ -117,10 +121,10 @@ impl RuntimeLauncher {
         let mut labels = BTreeMap::new();
         labels.insert("ez".to_string(), "1".to_string());
         labels.insert("ez_space".to_string(), space.id.clone());
-        labels.insert("ez_role".to_string(), "elephant".to_string());
+        labels.insert("ez_role".to_string(), "main".to_string());
         labels.insert("ez_agent".to_string(), space.agent.clone());
         labels.insert("ez_model".to_string(), space.model.clone());
-        let env = self.environment(&extra, &command, token, "elephant");
+        let env = self.environment(&extra, &command, token, "main");
         let spec = RunSpec {
             argv: command.argv,
             cwd: Some(space.folder.clone()),
@@ -133,7 +137,7 @@ impl RuntimeLauncher {
         };
         let (terminal, delivery) = self.terminals.launch_and_deliver(
             &spec,
-            &ez_team::launch::elephant_first_line(),
+            &ez_team::launch::main_first_line(),
             READY_TIMEOUT,
         )?;
         check_delivery(delivery)?;
@@ -214,13 +218,16 @@ impl FishLauncher for RuntimeLauncher {
         let mut labels = request.labels.clone();
         labels.insert("ez_agent".to_string(), request.seat.agent.clone());
         labels.insert("ez_model".to_string(), request.seat.model.clone());
-        labels.insert("ez_role_fish".to_string(), request.role.id().to_string());
+        labels.insert(
+            "ez_role_fish".to_string(),
+            request.role.as_str().to_string(),
+        );
         let mut env = request.env.clone();
         env.extend(extra);
         for (name, value) in &command.env {
             env.insert(name.clone(), value.clone());
         }
-        let env = self.environment(&env, &command, &request.token, "fish");
+        let env = self.environment(&env, &command, &request.token, "sub");
         let spec = RunSpec {
             argv: command.argv,
             cwd: Some(request.cwd.clone()),
@@ -261,11 +268,15 @@ pub struct TeamInstructionWriter;
 
 impl InstructionWriter for TeamInstructionWriter {
     fn render(&self, context: &InstructionContext) -> Result<String, String> {
-        ez_team::launch::render_instructions(context).map_err(|error| error.to_string())
+        let def = builtin_roles()
+            .into_iter()
+            .find(|def| def.id == context.role)
+            .ok_or_else(|| format!("No hay una definición para el papel «{}».", context.role))?;
+        ez_team::launch::render_instructions(&def, context).map_err(|error| error.to_string())
     }
 
-    fn first_line(&self, role: Role, instructions: &Path) -> String {
-        ez_team::launch::first_line(role, instructions)
+    fn first_line(&self, role_name: &str, instructions: &Path) -> String {
+        ez_team::launch::first_line(role_name, instructions)
     }
 }
 

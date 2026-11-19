@@ -114,7 +114,7 @@ fn handler_translates_fish_commands_and_the_fish_caller() {
         call(
             &h,
             &elephant_call(),
-            "fish.new",
+            "agent.delegate",
             json!({ "role": "developer", "brief": file })
         )
         .ok
@@ -139,13 +139,10 @@ fn handler_translates_fish_commands_and_the_fish_caller() {
     );
     let calls = api.calls.lock();
     assert_eq!(calls.len(), 3);
-    assert!(matches!(
-        calls[0].1,
-        Command::FishNew {
-            role: Role::Developer,
-            ..
-        }
-    ));
+    let Command::FishNew { role, .. } = &calls[0].1 else {
+        panic!("el primer comando debe ser FishNew");
+    };
+    assert_eq!(role.as_str(), builtin::DEVELOPER);
     assert_eq!(
         calls[2].0,
         ArbiterCaller::Fish(FishKey {
@@ -304,6 +301,20 @@ modelo = "qwen4-max"
     );
     assert!(reply.ok, "{reply:?}");
     assert!(matches!(api.calls.lock()[0].1, Command::TeamPropose { .. }));
+}
+
+#[test]
+fn handler_lists_the_builtin_roles() {
+    let api = Arc::new(FakeArbiter::default());
+    let (h, _dir) = handler(api);
+    let reply = call(&h, &elephant_call(), "roles", json!({}));
+    assert!(reply.ok, "{reply:?}");
+    let lines: Vec<&str> = reply.message.lines().collect();
+    assert_eq!(lines.len(), 5, "{}", reply.message);
+    assert!(lines[0].starts_with("planner · Planificador · ejecutor · "));
+    assert!(lines[2].starts_with("developer · Desarrollador · ejecutor · "));
+    assert!(lines[3].starts_with("qa · QA · verificador · "));
+    assert!(lines[4].starts_with("qa_validator · Validador de QA · verificador · "));
 }
 
 fn real_arbiter(dir: &crate::testutil::TempDir) -> Arc<ez_arbiter::Arbiter> {

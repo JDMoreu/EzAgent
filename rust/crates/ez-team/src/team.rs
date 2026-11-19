@@ -1,5 +1,4 @@
-//! `equipo.toml`: parse, validate against the inventory and build the approval card
-//! (design §6).
+//! `equipo.toml`: lectura, validación y tarjeta de aprobación (diseño §15.3).
 
 use serde::Deserialize;
 
@@ -7,9 +6,9 @@ use crate::contract::Seat;
 use crate::error::TeamError;
 use crate::family::family;
 use crate::inventory::Inventory;
-use crate::roles::Role;
+use crate::roles::{builtin, RoleDef, RoleId};
 
-/// Problems found in a proposed team. Errors block the approval; warnings only show.
+/// Problemas de un equipo propuesto: los errores bloquean, los avisos solo se muestran.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TeamCheck {
     pub errors: Vec<String>,
@@ -31,26 +30,34 @@ struct RawSeat {
     esfuerzo: Option<String>,
     #[serde(default = "default_count")]
     cantidad: u32,
+    etapa: Option<u32>,
+    #[serde(default)]
+    delega_en: Vec<String>,
 }
 
 fn default_count() -> u32 {
     1
 }
 
-/// Parses `equipo.toml`. Unknown or repeated roles, `cantidad` out of range and empty
-/// fields are errors that name the offending row.
-pub fn parse(text: &str) -> Result<Vec<Seat>, TeamError> {
+/// Lee `equipo.toml` y comprueba los papeles contra `roles` (los incluidos hoy).
+/// Los errores nombran la fila responsable.
+pub fn parse(text: &str, roles: &[RoleDef]) -> Result<Vec<Seat>, TeamError> {
     let raw: RawTeam = toml::from_str(text)
         .map_err(|error| TeamError::Invalid(format!("equipo.toml no es válido: {error}.")))?;
     let mut seats: Vec<Seat> = Vec::with_capacity(raw.seats.len());
     for (index, row) in raw.seats.iter().enumerate() {
         let number = index + 1;
-        let role = Role::parse(&row.papel).ok_or_else(|| {
-            let known: Vec<&str> = Role::ALL.iter().map(|role| role.id()).collect();
+        let role = RoleId::parse(&row.papel).map_err(|_| {
+            let known: Vec<&str> = roles.iter().map(|def| def.id.as_str()).collect();
             TeamError::Invalid(format!(
                 "fila {number}: papel desconocido «{}». Usa uno de: {}.",
                 row.papel,
                 known.join(", ")
+            ))
+        })?;
+        let def = definition(roles, &role).ok_or_else(|| {
+            TeamError::Invalid(format!(
+                "fila {number}: el papel «{role}» no está disponible en esta tarea."
             ))
         })?;
         if row.cantidad == 0 {
@@ -58,16 +65,16 @@ pub fn parse(text: &str) -> Result<Vec<Seat>, TeamError> {
                 "fila {number}: cantidad debe ser al menos 1."
             )));
         }
-        if row.cantidad > 1 && role != Role::Developer {
+        if row.cantidad > 1 && def.is_verifier() {
+            // DECISION: los verificadores informan una sola vez (§15.2), así que
+            // `cantidad > 1` solo tiene sentido en papeles ejecutores.
             return Err(TeamError::Invalid(format!(
-                "fila {number}: solo {} admite cantidad mayor que 1.",
-                Role::Developer.label()
+                "fila {number}: solo los papeles ejecutores admiten cantidad mayor que 1."
             )));
         }
         if seats.iter().any(|seat| seat.role == role) {
             return Err(TeamError::Invalid(format!(
-                "fila {number}: el papel {} está repetido.",
-                role.label()
+                "fila {number}: el papel {role} está repetido."
             )));
         }
         if row.agente.trim().is_empty() || row.modelo.trim().is_empty() {
@@ -81,6 +88,31 @@ pub fn parse(text: &str) -> Result<Vec<Seat>, TeamError> {
                 "fila {number}: esfuerzo no puede estar vacío."
             )));
         }
+        let stage = row.etapa.unwrap_or(def.default_stage);
+        if stage == 0 {
+            return Err(TeamError::Invalid(format!(
+                "fila {number}: etapa debe ser al menos 1."
+            )));
+        }
+        let mut delegates_to = Vec::with_capacity(row.delega_en.len());
+        for name in &row.delega_en {
+            let target = RoleId::parse(name).map_err(|_| {
+                TeamError::Invalid(format!(
+                    "fila {number}: «{name}» no es un id de papel válido en delega_en."
+                ))
+            })?;
+            if !roles.iter().any(|def| def.id == target) {
+                return Err(TeamError::Invalid(format!(
+                    "fila {number}: el papel «{target}» de delega_en no está disponible."
+                )));
+            }
+            delegates_to.push(target);
+        }
+        if !delegates_to.is_empty() && !def.can_delegate {
+            return Err(TeamError::Invalid(format!(
+                "fila {number}: el papel {role} no puede delegar (puede_delegar = false)."
+            )));
+        }
         seats.push(Seat {
             role,
             agent: row.agente.trim().to_string(),
@@ -92,62 +124,81 @@ pub fn parse(text: &str) -> Result<Vec<Seat>, TeamError> {
                 .filter(|effort| !effort.is_empty())
                 .map(str::to_string),
             count: row.cantidad,
+            stage,
+            delegates_to,
         });
+    }
+    for seat in &seats {
+        for target in &seat.delegates_to {
+            if !seats.iter().any(|other| other.role == *target) {
+                return Err(TeamError::Invalid(format!(
+                    "delega_en del papel {} nombra a «{target}», que no está en el equipo.",
+                    seat.role
+                )));
+            }
+        }
     }
     Ok(seats)
 }
 
-/// Applies the rules of design §6: missing required roles, unavailable agents, models
-/// outside the agent's list, QA sharing the developer's model, and the family warnings.
-pub fn validate(seats: &[Seat], inventory: &Inventory) -> TeamCheck {
+fn definition<'a>(roles: &'a [RoleDef], id: &RoleId) -> Option<&'a RoleDef> {
+    roles.iter().find(|def| def.id == *id)
+}
+
+/// Aplica las reglas de §15.3 y las comprobaciones de inventario de §6.
+pub fn validate(seats: &[Seat], inventory: &Inventory, roles: &[RoleDef]) -> TeamCheck {
     let mut check = TeamCheck::default();
-    for role in Role::ALL.into_iter().filter(|role| role.is_required()) {
-        if !seats.iter().any(|seat| seat.role == role) {
-            check
-                .errors
-                .push(format!("Falta el papel obligatorio: {}.", role.label()));
-        }
+    let has_executor = seats
+        .iter()
+        .any(|seat| definition(roles, &seat.role).is_some_and(|def| !def.is_verifier()));
+    let has_verifier = seats
+        .iter()
+        .any(|seat| definition(roles, &seat.role).is_some_and(RoleDef::is_verifier));
+    if !has_executor {
+        check
+            .errors
+            .push("Falta al menos un papel ejecutor en el equipo.".to_string());
+    }
+    if !has_verifier {
+        check
+            .errors
+            .push("Falta al menos un papel verificador en el equipo.".to_string());
     }
     for seat in seats {
-        let Some(agent) = inventory.find(&seat.agent) else {
+        let Some(def) = definition(roles, &seat.role) else {
             check.errors.push(format!(
-                "El agente «{}» del papel {} no está disponible.",
-                seat.agent,
-                seat.role.label()
+                "El papel «{}» no está disponible en esta tarea.",
+                seat.role
             ));
             continue;
         };
-        if !agent.models.is_empty() && !agent.models.contains(&seat.model) {
-            check.errors.push(format!(
-                "El modelo «{}» no está en la lista del agente {}.",
-                seat.model, agent.profile.name
-            ));
-        }
-        check_effort(seat, inventory, &mut check);
+        check_agent(seat, def, inventory, &mut check);
     }
-    for role in [Role::Qa, Role::QaValidator] {
-        let (Some(other), Some(developer)) = (find(seats, role), find(seats, Role::Developer))
-        else {
+    let executors: Vec<&Seat> = seats
+        .iter()
+        .filter(|seat| definition(roles, &seat.role).is_some_and(|def| !def.is_verifier()))
+        .collect();
+    for seat in seats {
+        let Some(def) = definition(roles, &seat.role) else {
             continue;
         };
-        if other.model == developer.model {
+        if !def.is_verifier() {
+            continue;
+        }
+        if executors.iter().any(|other| other.model == seat.model) {
             check.errors.push(format!(
-                "{} y {} usan el mismo modelo «{}»; elige modelos distintos.",
-                role.label(),
-                Role::Developer.label(),
-                other.model
+                "{} y un papel ejecutor usan el mismo modelo «{}»; elige modelos distintos.",
+                def.name, seat.model
             ));
         }
+        warn_same_family(def, seat, &executors, inventory, &mut check);
     }
-    for role in [Role::Qa, Role::QaValidator] {
-        warn_same_family(role, seats, inventory, &mut check);
-    }
-    if let (Some(qa), Some(validator)) = (find(seats, Role::Qa), find(seats, Role::QaValidator)) {
+    if let (Some(qa), Some(validator)) =
+        (find(seats, builtin::QA), find(seats, builtin::QA_VALIDATOR))
+    {
         if qa.model == validator.model {
             check.warnings.push(format!(
-                "{} y {} usan el mismo modelo «{}»; conviene que el validador use otro.",
-                Role::QaValidator.label(),
-                Role::Qa.label(),
+                "Validador de QA y QA usan el mismo modelo «{}»; conviene que el validador use otro.",
                 qa.model
             ));
         }
@@ -155,17 +206,25 @@ pub fn validate(seats: &[Seat], inventory: &Inventory) -> TeamCheck {
     check
 }
 
-fn find(seats: &[Seat], role: Role) -> Option<&Seat> {
-    seats.iter().find(|seat| seat.role == role)
+fn find<'a>(seats: &'a [Seat], role: &str) -> Option<&'a Seat> {
+    seats.iter().find(|seat| seat.role.as_str() == role)
 }
 
-/// A seat with an effort needs a profile that can apply it (design §14.2).
-fn check_effort(seat: &Seat, inventory: &Inventory, check: &mut TeamCheck) {
-    let Some(effort) = seat.effort.as_deref().filter(|effort| !effort.is_empty()) else {
+fn check_agent(seat: &Seat, def: &RoleDef, inventory: &Inventory, check: &mut TeamCheck) {
+    let Some(agent) = inventory.find(&seat.agent) else {
+        check.errors.push(format!(
+            "El agente «{}» del papel {} no está disponible.",
+            seat.agent, def.name
+        ));
         return;
     };
-    // An unavailable agent already has its own error; do not pile a second one on it.
-    let Some(agent) = inventory.find(&seat.agent) else {
+    if !agent.models.is_empty() && !agent.models.contains(&seat.model) {
+        check.errors.push(format!(
+            "El modelo «{}» no está en la lista del agente {}.",
+            seat.model, agent.profile.name
+        ));
+    }
+    let Some(effort) = seat.effort.as_deref().filter(|effort| !effort.is_empty()) else {
         return;
     };
     let can_apply = !agent.profile.effort_args.is_empty()
@@ -175,8 +234,8 @@ fn check_effort(seat: &Seat, inventory: &Inventory, check: &mut TeamCheck) {
             .values()
             .any(|value| value.contains("{esfuerzo}") || value.contains("{variante}"));
     if !can_apply {
-        // DECISION: the name in the message is the profile's human name when the agent
-        // is known; the id would be ambiguous for the person reading the card.
+        // DECISION: el mensaje usa el nombre humano del perfil: el id sería ambiguo
+        // para la persona que lee la tarjeta.
         check.errors.push(format!(
             "{} no puede aplicar el esfuerzo «{effort}»: quita `esfuerzo` o configura `esfuerzo_args` en agentes.toml.",
             agent.profile.name
@@ -184,55 +243,76 @@ fn check_effort(seat: &Seat, inventory: &Inventory, check: &mut TeamCheck) {
     }
 }
 
-fn warn_same_family(role: Role, seats: &[Seat], inventory: &Inventory, check: &mut TeamCheck) {
-    let (Some(seat), Some(developer)) = (find(seats, role), find(seats, Role::Developer)) else {
-        return;
-    };
-    // DECISION: the same model is already an error; the warning is for different models
-    // of one family only, so the person does not see the same problem twice.
-    if seat.model == developer.model {
+fn warn_same_family(
+    def: &RoleDef,
+    seat: &Seat,
+    executors: &[&Seat],
+    inventory: &Inventory,
+    check: &mut TeamCheck,
+) {
+    // DECISION: el mismo modelo ya es un error; el aviso compara solo modelos
+    // distintos de una misma familia para no repetir el problema.
+    if executors.iter().any(|other| other.model == seat.model) {
         return;
     }
-    let (Some(agent), Some(developer_agent)) = (
-        inventory.find(&seat.agent),
-        inventory.find(&developer.agent),
-    ) else {
+    let Some(agent) = inventory.find(&seat.agent) else {
         return;
     };
-    let developer_family = family(&developer_agent.profile, &developer.model);
-    let another_family = inventory.agents.iter().any(|available| {
-        available
-            .families
-            .iter()
-            .any(|name| *name != developer_family)
-    });
-    if another_family && family(&agent.profile, &seat.model) == developer_family {
-        check.warnings.push(format!(
-            "{} y {} son de la misma familia («{developer_family}»); hay otra familia disponible.",
-            role.label(),
-            Role::Developer.label()
-        ));
+    for executor in executors {
+        let Some(executor_agent) = inventory.find(&executor.agent) else {
+            continue;
+        };
+        let executor_family = family(&executor_agent.profile, &executor.model);
+        let another_family = inventory.agents.iter().any(|available| {
+            available
+                .families
+                .iter()
+                .any(|name| *name != executor_family)
+        });
+        if another_family && family(&agent.profile, &seat.model) == executor_family {
+            check.warnings.push(format!(
+                "{} y {} son de la misma familia («{executor_family}»); hay otra familia disponible.",
+                def.name,
+                executor.model
+            ));
+        }
     }
 }
 
-/// Approval card, with the exact format of design §6: the seat lines and then the
-/// warnings. Errors are not part of the card: a proposal with errors is rejected to the
-/// elephant instead of shown for approval.
-pub fn card(task_title: &str, seats: &[Seat], check: &TeamCheck, inventory: &Inventory) -> String {
+/// Tarjeta de aprobación: una línea por puesto con ` · etapa {n}` y los avisos.
+pub fn card(
+    task_title: &str,
+    seats: &[Seat],
+    check: &TeamCheck,
+    inventory: &Inventory,
+    roles: &[RoleDef],
+) -> String {
     let mut text = format!("Equipo propuesto para «{task_title}»:");
     for seat in seats {
-        let name = inventory
+        let name = definition(roles, &seat.role)
+            .map(|def| def.name.as_str())
+            .unwrap_or(seat.role.as_str());
+        let agent_name = inventory
             .find(&seat.agent)
             .map(|agent| agent.profile.name.as_str())
             .unwrap_or(&seat.agent);
-        let mut line = format!("- {}: {name} · {}", seat.role.label(), seat.model);
+        let mut line = format!(
+            "- {name} ({role}): {agent_name} · {model} · etapa {stage}",
+            role = seat.role,
+            model = seat.model,
+            stage = seat.stage
+        );
         if let Some(effort) = seat.effort.as_deref().filter(|effort| !effort.is_empty()) {
             line.push_str(&format!(" · esfuerzo {effort}"));
         }
-        // DECISION: `×{cantidad}` appears only when `cantidad > 1`; §6 marks it optional
-        // and printing `×1` on every line is noise.
+        // DECISION: `×{cantidad}` solo aparece cuando es mayor que 1; imprimir
+        // `×1` en todas las líneas es ruido.
         if seat.count > 1 {
             line.push_str(&format!(" · ×{}", seat.count));
+        }
+        if !seat.delegates_to.is_empty() {
+            let names: Vec<&str> = seat.delegates_to.iter().map(|id| id.as_str()).collect();
+            line.push_str(&format!(" · delega en {}", names.join(", ")));
         }
         text.push('\n');
         text.push_str(&line);

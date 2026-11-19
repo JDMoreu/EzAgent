@@ -17,7 +17,7 @@ fn skill_help_and_version_work_without_a_server() {
     let (code, out, _) = run_without_env(&["--skill"], dir.path());
     assert_eq!(code, 0);
     assert!(
-        out.contains("# Manual del elefante"),
+        out.contains("# Manual del agente principal"),
         "{}",
         &out[..80.min(out.len())]
     );
@@ -100,8 +100,8 @@ fn misuse_is_exit_2_with_usage() {
     let cases: [&[&str]; 9] = [
         &["bailar"],
         &["task", "new", "--title", "T", "--brief", &brief],
-        &["fish", "", "--brief", &brief],
-        &["fish", "developer"],
+        &["delegate", "", "--brief", &brief],
+        &["delegate", "developer"],
         &["report", "--verdict", "quizás", "--file", &brief],
         &["report", "--verdict", "pass", "--file", &brief],
         &[
