@@ -146,14 +146,14 @@ pub fn choose(
 
     let mut candidates = Vec::new();
     let mut same_family = Vec::new();
+    // DECISION: no se filtra por el catálogo del perfil: `modelos.toml` manda y
+    // el lanzamiento valida el modelo; así valen los modelos descubiertos que
+    // la persona declare (por ejemplo, los `*-free` de OpenCode).
     for (index, entry) in catalog.entries.iter().enumerate() {
         let Some(usage) = agent_usage(report, &entry.agent) else {
             continue;
         };
         if !usage.installed || usage.state == UsageState::Agotado {
-            continue;
-        }
-        if !model_in_profile(cfg, &entry.agent, &entry.model) {
             continue;
         }
         if !matches_filter(request.agent, &entry.agent)
@@ -185,6 +185,8 @@ pub fn choose(
     }
 
     if candidates.is_empty() && !same_family.is_empty() {
+        // DECISION: si no hay otra familia instalada, se relaja la regla con
+        // aviso en vez de dejar al padre sin qa_validator.
         let family = developer_family.as_deref().unwrap_or("la del developer");
         warnings.push(format!(
             "No hay un modelo de familia distinta a {family}; uso uno de la misma familia."
@@ -361,15 +363,6 @@ fn display_model(cfg: &VoiceConfig, agent: &str, model: &str) -> String {
     format!("{prefix}{model}")
 }
 
-/// ¿El modelo está en el catálogo del perfil? Un perfil sin modelos lista
-/// (`mcode`, `codex`, `pi`) se descubre al lanzar y se deja pasar.
-fn model_in_profile(cfg: &VoiceConfig, agent: &str, model: &str) -> bool {
-    let known = profile(cfg, agent)
-        .map(|profile| text_list(profile.get("models")))
-        .unwrap_or_default();
-    known.is_empty() || known.iter().any(|item| same_model(item, model))
-}
-
 /// Los esfuerzos válidos para un modelo (los suyos o los del perfil).
 fn effort_levels(cfg: &VoiceConfig, agent: &str, model: &str) -> Vec<String> {
     let Some(profile) = profile(cfg, agent) else {
@@ -418,6 +411,10 @@ fn resolve_effort(
 }
 
 /// El nivel más cercano al pedido; a igual distancia, el más alto.
+///
+/// DECISION: `medium` no existe en algunos modelos de OpenCode (solo `low`,
+/// `high` y `max`); se elige el nivel válido más cercano y, en empate, el más
+/// alto para no bajar la calidad sin decirlo.
 fn nearest_effort(available: &[String], desired: &str) -> Option<String> {
     let wanted = effort_rank(desired)?;
     available

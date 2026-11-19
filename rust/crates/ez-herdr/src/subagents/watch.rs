@@ -174,7 +174,7 @@ pub struct Tick {
     pub parent_alive: Option<bool>,
 }
 
-/// Una terminal que cuelga del padre, según `hc ls`.
+// Una terminal que cuelga del padre, según `hc ls`.
 use children::{parse_children, state_of, Child};
 
 /// Lo último que se vio de la pantalla de un hijo.

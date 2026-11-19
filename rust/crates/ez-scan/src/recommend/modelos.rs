@@ -182,6 +182,9 @@ impl Catalog {
     }
 
     /// Lee el archivo; sin archivo o sin entradas válidas, los de fábrica.
+    ///
+    /// DECISION: un archivo con entradas válidas reemplaza por completo la tabla
+    /// de fábrica (la persona manda); no se mezclan las dos.
     pub fn load(path: &Path) -> Self {
         match std::fs::read_to_string(path) {
             Ok(text) => {
@@ -251,6 +254,8 @@ impl Catalog {
             let family = field(fields, "familia")
                 .map(str::to_string)
                 .unwrap_or_else(|| {
+                    // DECISION: sin familia no se descarta el modelo; queda como
+                    // «desconocida» y no cuenta para la regla de familia distinta.
                     catalog.warnings.push(format!(
                         "modelos.toml: «{name}» no dice su familia; uso «desconocida»."
                     ));

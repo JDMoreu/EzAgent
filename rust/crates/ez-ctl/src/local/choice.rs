@@ -148,14 +148,16 @@ pub(crate) fn resource_guard(
     force: bool,
     check: impl FnOnce() -> Result<(), String>,
 ) -> Result<Option<String>, LocalError> {
+    // DECISION: si la medición falla (no hay `hc`), no se bloquea: la falta de
+    // dato no es «recursos justos»; se avisa y el lanzamiento sigue.
     match check() {
         Ok(()) => Ok(None),
         Err(text) if !text.starts_with("Recursos justos:") => Ok(Some(format!(
             "No pude medir los recursos: {text}. Sigo adelante."
         ))),
-        Err(_) if force => Ok(Some(
-            "--force: me salté la guarda de recursos baja.".to_string(),
-        )),
+        Err(text) if force => Ok(Some(format!(
+            "--force: me salté la guarda de recursos. {text}"
+        ))),
         Err(text) => Err(LocalError::Resources(text)),
     }
 }
@@ -197,6 +199,9 @@ pub(crate) fn pressure(env: &dyn Fn(&str) -> Option<String>, parent: &str, cwd: 
 }
 
 /// El modelo del `developer` más reciente del padre (registro de subagentes).
+///
+/// DECISION: «más reciente» es el de `since_ms` mayor (el último cambio de
+/// estado); el registro no guarda una fecha de creación aparte.
 fn last_developer(env: &dyn Fn(&str) -> Option<String>, parent: &str) -> Option<String> {
     if parent.trim().is_empty() {
         return None;
