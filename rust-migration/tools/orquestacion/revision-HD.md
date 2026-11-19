@@ -409,3 +409,26 @@
   large-v3-turbo-q8_0, `-l es -t 6 --vad --vad-model silero`). DX-3b: guion en
   `scripts/tests/humo-whisper.ps1`, ejemplo `whisper_plan` de solo lectura y prueba de
   correspondencia.
+
+### IR-2b — validado y fusionado (1064c92)
+- OpenCode v2.3.0 guarda en `session_message` (la tabla `message` es del 24-oct): ahora lee
+  la más reciente en solo lectura viendo el WAL (`mode=ro` por URI), con `json_extract` de
+  campos numéricos y de modelo (nunca el texto). Avisos por plan (Free → `*-free`; Go →
+  `opencode-go/*`); el agente solo `agotado` si todos sus modelos usables lo están.
+- Corrida del elefante: 14 suites de `ez-scan` + `ez-ctl`; `ez usage --json` real →
+  OpenCode Go `opencode-go/deepseek-v4.1-flash` 202 M tokens hoy, no agotado. Mutación: el
+  filtro Free que cubre todos los modelos → falla `un_aviso_free_no_agota_el_plan_go`.
+- Pendiente detectado: mcode sale `desconocido` aunque sus créditos se agotaron (no deja
+  porcentaje en disco). IR-3 añade la frase «Check /usage or switch provider» al vigilante.
+- IR-3 lanzado (`ir-3` t1sk): recomendación, `ez delegate` sin `--agent`, guarda de
+  recursos y avisos de memoria.
+
+### DX-3b — pruebas y plan validados; humo pendiente hasta que la persona termine su prueba
+- `whisper_plan -- 53584` coincide **exactamente** con la línea de comandos del servidor
+  real de la persona (PID 1556). 12 suites de `ez-stt` + `ez-fakes` en verde.
+- Incumplimiento anotado: el subagente hizo `grep -nE "WHISPER_(URL|ENGINE)" .env` (regla:
+  nunca leer `.env`). Comprobado: en su worktree **no existe** `.env` (ignorado por git), así
+  que no leyó nada. Se le recordó la regla.
+- Falta: correr `scripts/tests/humo-whisper.ps1` y la mutación sin `KILL_ON_JOB_CLOSE`. Se
+  aplaza porque abre otra instancia de la app de voz con micrófono y la persona está
+  haciendo una prueba con EzAgent. Terminal `dx-3` cerrada; el worktree se conserva.
