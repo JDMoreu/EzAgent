@@ -141,3 +141,13 @@
   interfaz y **reporta `idle` a hc** (OpenCode interactivo sí informa estado a Herdr).
 - HD-0c: C0-3, C0-4 (resolver el ejecutable nativo), C0-5 (ids `ses_…`) y un humo real opt-in
   sin encargo.
+
+### HD-8 (estado y avisos, mcode) — validado y fusionado
+- `ez delegate` crea el registro (`en_proceso`/`fallido`) y arranca el vigilante oculto;
+  `ez report --state`, `ez validate` (padre o hermano), `ez tasks`, `ez watch`; R4-1 hecha.
+  ez-herdr 262, ez-ctl y ez-fakes 69 en verde.
+- Mutaciones: el vigilante nunca marca `fallido` → falla
+  `una_terminal_terminada_sin_informe_queda_fallida_y_se_avisa`; cualquiera puede validar →
+  falla `el_validate_desde_un_desconocido_es_codigo_1`. Bien.
+- Aceptado: el alta lleva `by = "ez delegate"` para que el padre reciba también el aviso
+  «en proceso» (la persona pidió los cuatro estados).
