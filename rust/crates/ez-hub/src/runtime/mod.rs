@@ -57,34 +57,13 @@ impl HubRuntime {
         let Some((client, hc_path)) = connect_hc()? else {
             return Ok(Self::degraded(spaces, data_dir, HC_MISSING));
         };
-        let ez_exe = exe_dir.join(exe_name());
-        let ez_ok = ez_exe.is_file();
+        let ez_ok = exe_dir.join(exe_name()).is_file();
         let tokens = Arc::new(Tokens::new());
         let url = Arc::new(RwLock::new(None::<String>));
-        let launcher = Arc::new(RuntimeLauncher {
-            terminals: Arc::new(HcTerminals::new(client)),
-            tokens: Arc::clone(&tokens),
-            profiles,
-            url: Arc::clone(&url),
-            exe_dir,
-        });
-        let arbiter = Arc::new(Arbiter::new(
-            data_dir.to_path_buf(),
-            Arc::clone(&launcher) as Arc<dyn ez_arbiter::FishLauncher>,
-            Arc::new(TeamInstructionWriter),
-            Arc::new(SystemClock),
-        )?);
-        for space in &spaces {
-            arbiter.register_space(Space {
-                id: space.id.clone(),
-                name: space.name.clone(),
-                folder: space.folder.clone(),
-            });
-        }
+        let (launcher, arbiter) =
+            build_engine(data_dir, &spaces, profiles, client, &tokens, &url, exe_dir)?;
         let elephant_tokens = ElephantTokens::load(data_dir.join("elefantes.json"));
-        for (space, token) in elephant_tokens.all() {
-            tokens.register(&token, Caller::Elephant { space });
-        }
+        register_elephant_tokens(&elephant_tokens, &tokens);
         let handler = Arc::new(ArbiterHandler::new(
             Arc::clone(&arbiter) as Arc<dyn handler::ArbiterApi>,
             launcher.profiles.clone(),
@@ -95,12 +74,7 @@ impl HubRuntime {
         let service_url = start_server(handler, &tokens, &need_relaunch)?;
         *url.write() = Some(service_url.clone());
         let changed = unbounded();
-        events::spawn(
-            &hc_path,
-            Arc::clone(&arbiter),
-            Arc::clone(&launcher),
-            changed.0.clone(),
-        )?;
+        events::spawn(&hc_path, arbiter, Arc::clone(&launcher), changed.0.clone())?;
         let status = if ez_ok {
             RuntimeStatus::normal(service_url)
         } else {
@@ -261,6 +235,44 @@ impl HubRuntime {
             relaunched: Mutex::new(BTreeSet::new()),
             changed: unbounded(),
         }
+    }
+}
+
+fn build_engine(
+    data_dir: &Path,
+    spaces: &[SpaceConfig],
+    profiles: Vec<ez_team::AgentProfile>,
+    client: HcClient,
+    tokens: &Arc<Tokens>,
+    url: &Arc<RwLock<Option<String>>>,
+    exe_dir: PathBuf,
+) -> Result<(Arc<RuntimeLauncher>, Arc<Arbiter>), String> {
+    let launcher = Arc::new(RuntimeLauncher {
+        terminals: Arc::new(HcTerminals::new(client)),
+        tokens: Arc::clone(tokens),
+        profiles,
+        url: Arc::clone(url),
+        exe_dir,
+    });
+    let arbiter = Arc::new(Arbiter::new(
+        data_dir.to_path_buf(),
+        Arc::clone(&launcher) as Arc<dyn ez_arbiter::FishLauncher>,
+        Arc::new(TeamInstructionWriter),
+        Arc::new(SystemClock),
+    )?);
+    for space in spaces {
+        arbiter.register_space(Space {
+            id: space.id.clone(),
+            name: space.name.clone(),
+            folder: space.folder.clone(),
+        });
+    }
+    Ok((launcher, arbiter))
+}
+
+fn register_elephant_tokens(tokens_file: &ElephantTokens, tokens: &Tokens) {
+    for (space, token) in tokens_file.all() {
+        tokens.register(&token, Caller::Elephant { space });
     }
 }
 
