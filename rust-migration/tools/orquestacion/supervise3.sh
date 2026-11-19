@@ -17,6 +17,8 @@
 # - EZ_OPENCODE_MODE=interactive|run: opencode interactivo (por omisión) con su
 #   interfaz y OPENCODE_CONFIG_CONTENT; `run` conserva el modo de un solo disparo.
 # - EZ_AGENT_BIN: ruta del programa en lugar de opencode/mcode (solo para pruebas).
+# - EZ_OPENCODE_BIN: ejecutable nativo de OpenCode; si no está se resuelve desde
+#   `where.exe opencode.cmd` (C0-4: env.exe resolvería el shim bash de npm).
 # - EZ_WORKER_CMD: comando de prueba en lugar del agente (palabras separadas por
 #   espacios). Sin informe completado cuenta como intento fallido.
 # - EZ_MAX: número máximo de intentos (por omisión 8).
@@ -47,19 +49,49 @@ BIN="${EZ_AGENT_BIN:-$AGENT}"
 NAME="$(echo "$ID" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_.\n-' '-' | cut -c1-32)"
 ENV_EXE="${EZ_ENV_EXE:-C:/Program Files/Git/usr/bin/env.exe}"
 OPENCODE_MODE="${EZ_OPENCODE_MODE:-interactive}"
-# `opencode --help`: --session acepta un id propio y lo crea si no existe.
+# C0-5: OpenCode solo acepta ids de sesión que empiezan por «ses».
 # DECISION: id estable por trabajador para que los reintentos continúen la sesión.
-SID="$ID-s1"
+SID="ses_$(printf '%s' "$ID" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')s1"
 case "$AGENT" in
   opencode) LABEL=OpenCode ;;
   mcode) LABEL=mcode ;;
   *) LABEL="$AGENT" ;;
 esac
 
+resolve_opencode_bin() { # imprime el ejecutable real de OpenCode (C0-4)
+  local shim dir bin
+  if [ -n "${EZ_OPENCODE_BIN:-}" ]; then
+    printf '%s\n' "$EZ_OPENCODE_BIN"; return
+  fi
+  shim="$(where.exe opencode.cmd 2>/dev/null | tr -d '\r' | head -1)"
+  shim="${shim//\\//}"
+  dir="$(dirname "$shim")"
+  bin=opencode.cmd
+  if [ -n "$shim" ] && [ -f "$dir/node_modules/@opencode/cli/bin/opencode.exe" ]; then
+    bin="$dir/node_modules/@opencode/cli/bin/opencode.exe"
+  fi
+  printf '%s\n' "$bin"
+}
+# C0-4: env.exe resuelve `opencode` al shim bash de npm (falla: sed no encontrado).
+# Resuelve el ejecutable nativo antes de lanzar; en pruebas manda EZ_AGENT_BIN.
+if [ "$AGENT" = "opencode" ] && [ -z "${EZ_AGENT_BIN:-}" ] && [ -z "${EZ_WORKER_CMD:-}" ]; then
+  BIN="$(resolve_opencode_bin)"
+  if ! "$BIN" --version >/dev/null 2>&1; then
+    echo "[$ID] aviso: «$BIN» no responde a --version; uso el modo run"
+    OPENCODE_MODE=run
+  fi
+fi
+# DECISION: EZ_RESOLVE_OPENCODE=1 solo informa de la resolución y sale, para que
+# las pruebas verifiquen C0-4 sin lanzar un agente real.
+if [ "${EZ_RESOLVE_OPENCODE:-0}" = "1" ]; then
+  printf 'BIN=%s\nMODE=%s\nSID=%s\n' "$BIN" "$OPENCODE_MODE" "$SID"
+  exit 0
+fi
+
 [ -z "$HC_TERMINAL_ID" ] && echo "[$ID] aviso: sin HC_TERMINAL_ID; el worker no tendrá padre en Herdr ni registro o avisos"
 
 session_id() {
-  opencode session list 2>/dev/null | awk -v t="$ID-s1" '$2 == t { print $1; exit }'
+  "$BIN" session list 2>/dev/null | awk -v t="$SID" '$2 == t { print $1; exit }'
 }
 field() { # field <address> <python-expr sobre t>
   hc get "$1" --json 2>/dev/null | $PYTHON -c "import json,sys
@@ -172,6 +204,36 @@ finish() {
 low_priority() {
   powershell -NoProfile -Command "Get-Process opencode,opencode-pty -ErrorAction SilentlyContinue | ForEach-Object { try { \$_.PriorityClass = 'BelowNormal' } catch {} }" >/dev/null 2>&1
 }
+terminal_state() { # live|finished|unknown — C0-3: un get vacío/fallido no es «finished»
+  local s
+  s="$(field "$1" "str(t.get('state','') or '')")"
+  case "$s" in
+    live|finished) printf '%s\n' "$s" ;;
+    *) printf '%s\n' unknown ;;
+  esac
+}
+free_name() { # C0-3: ninguna terminal con este nombre queda viva antes de lanzar
+  local st a rows
+  rows="$(hc ls --all --json 2>/dev/null | $PYTHON -c "
+import json,sys
+try: ts=json.load(sys.stdin).get('terminals',[])
+except Exception: ts=[]
+for t in ts:
+    if t.get('name')=='$NAME': print((t.get('state') or ''), t.get('address',''))" 2>/dev/null)"
+  while read -r st a; do
+    [ -n "$a" ] || continue
+    if [ "$st" = "live" ]; then hc kill "$a" >/dev/null 2>&1; fi
+    hc rm "$a" >/dev/null 2>&1
+  done <<< "$rows"
+}
+succeed() { # <address> <attempt> — informe completo: confirma, registra, guarda y cierra
+  wait_for_commit
+  record terminado "" "$(report_summary)" "$REPORT" 1
+  save_log "$1"
+  hc kill "$1" >/dev/null 2>&1
+  echo "[$ID] informe completado en el intento $2"
+  finish 0
+}
 
 cd "$DIR" || exit 1
 if [ "$MODE" = "resume" ] && [ -f "$REPORT" ]; then
@@ -180,14 +242,10 @@ fi
 for attempt in $(seq 1 $MAX); do
   LOG="$LOG_DIR/$ID-hc$attempt.log"
   SESSION=""
-  if [ "$AGENT" = "opencode" ] && [ "$OPENCODE_MODE" = "run" ] && [ "$BIN" = "opencode" ] && [ -z "$EZ_WORKER_CMD" ]; then
+  if [ "$AGENT" = "opencode" ] && [ "$OPENCODE_MODE" = "run" ] && [ -z "${EZ_AGENT_BIN:-}" ] && [ -z "$EZ_WORKER_CMD" ]; then
     SESSION="$(session_id)"
   fi
-  # Una terminal terminada con el mismo nombre se retira para reutilizarlo.
-  OLD="$(hc ls --all --json 2>/dev/null | $PYTHON -c "import json,sys
-for t in json.load(sys.stdin).get('terminals',[]):
-    if t.get('name')=='$NAME' and t.get('state')=='finished': print(t['address'])")"
-  for a in $OLD; do hc rm "$a" >/dev/null 2>&1; done
+  free_name
   if [ -n "$EZ_WORKER_CMD" ]; then
     # shellcheck disable=SC2086
     ADDR="$(launch $EZ_WORKER_CMD)"
@@ -220,29 +278,40 @@ for t in json.load(sys.stdin).get('terminals',[]):
   [ "$attempt" -eq 1 ] && record en_proceso "" "" "" 1
   show "$ADDR"
   START=$(date +%s)
+  UNKNOWN_SINCE=""
   [ -z "$EZ_AGENT_BIN" ] && [ -z "$EZ_WORKER_CMD" ] && low_priority
-  while [ "$(field "$ADDR" "t['state']")" = "live" ]; do
-    sleep 15
-    if done_report; then
-      # Los TUI (mcode, opencode interactivo) no salen solos: se espera a que
-      # confirmen el worktree (hasta 15 min), se guarda la pantalla y se cierra.
-      wait_for_commit
-      record terminado "" "$(report_summary)" "$REPORT" 1
-      save_log "$ADDR"; hc kill "$ADDR" >/dev/null 2>&1
-      echo "[$ID] informe completado en el intento $attempt"; finish 0
-    fi
-    NOW=$(date +%s)
-    if [ $((NOW-START)) -gt 180 ] && [ -z "$(hc read "$ADDR" --lines 5 2>/dev/null | tr -d '[:space:]')" ]; then
-      echo "[$ID] intento $attempt colgado al arrancar; lo reinicio"
-      hc kill "$ADDR" >/dev/null 2>&1; break
-    fi
+  while :; do
+    st="$(terminal_state "$ADDR")"
+    case "$st" in
+      live)
+        UNKNOWN_SINCE=""
+        sleep 15
+        done_report && succeed "$ADDR" "$attempt"
+        NOW=$(date +%s)
+        if [ $((NOW-START)) -gt 180 ] && [ -z "$(hc read "$ADDR" --lines 5 2>/dev/null | tr -d '[:space:]')" ]; then
+          echo "[$ID] intento $attempt colgado al arrancar; lo reinicio"
+          hc kill "$ADDR" >/dev/null 2>&1; break
+        fi
+        ;;
+      finished) break ;;
+      *)
+        # C0-3: un hc get fallido o vacío es «desconocido», no «terminado».
+        if [ -z "$UNKNOWN_SINCE" ]; then
+          UNKNOWN_SINCE=$(date +%s)
+          echo "[$ID] aviso: estado desconocido de $ADDR; reintento leyendo hasta 2 min"
+        fi
+        done_report && succeed "$ADDR" "$attempt"
+        NOW=$(date +%s)
+        if [ $((NOW-UNKNOWN_SINCE)) -gt 120 ]; then
+          echo "[$ID] estado desconocido de $ADDR tras 2 min; sigo con el siguiente intento"
+          break
+        fi
+        sleep 5
+        ;;
+    esac
   done
   save_log "$ADDR"
-  if done_report; then
-    wait_for_commit
-    record terminado "" "$(report_summary)" "$REPORT" 1
-    echo "[$ID] terminó con informe completado en el intento $attempt"; finish 0
-  fi
+  done_report && succeed "$ADDR" "$attempt"
   [ -f "$REPORT" ] && mv "$REPORT" "${REPORT%.md}.parcial.md"
   MODE=resume
   echo "[$ID] intento $attempt terminó sin informe; reintento"
