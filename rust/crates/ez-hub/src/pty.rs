@@ -112,7 +112,8 @@ pub fn open(
     let program = argv
         .first()
         .ok_or_else(|| PtyError::Failed("argv vacío".to_string()))?;
-    let resolved = resolve_program(program).ok_or_else(|| PtyError::ProgramNotFound(program.clone()))?;
+    let resolved =
+        resolve_program(program).ok_or_else(|| PtyError::ProgramNotFound(program.clone()))?;
 
     let mut full: Vec<OsString> = Vec::with_capacity(argv.len());
     full.push(resolved.into_os_string());
@@ -156,7 +157,11 @@ pub fn open(
     })
 }
 
-fn spawn_reader(id: &str, mut reader: Box<dyn Read + Send>, sink: EventSink) -> Result<(), PtyError> {
+fn spawn_reader(
+    id: &str,
+    mut reader: Box<dyn Read + Send>,
+    sink: EventSink,
+) -> Result<(), PtyError> {
     let (tx, rx) = unbounded::<Vec<u8>>();
     thread::Builder::new()
         .name(format!("ez-hub-pty-{id}"))
@@ -204,7 +209,11 @@ fn spawn_writer(id: &str, mut writer: Box<dyn Write + Send>) -> Result<Sender<Ve
         .name(format!("ez-hub-pty-{id}-write"))
         .spawn(move || {
             while let Ok(data) = rx.recv() {
-                if writer.write_all(&data).and_then(|()| writer.flush()).is_err() {
+                if writer
+                    .write_all(&data)
+                    .and_then(|()| writer.flush())
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -310,9 +319,16 @@ mod tests {
     fn reports_a_missing_program() {
         assert!(resolve_program("ez-agent-no-existe-xyz").is_none());
         let (sink, _rx) = sink_channel();
-        let error = open("t-missing", &["ez-agent-no-existe-xyz".to_string()], None, &[], Size { cols: 80, rows: 24 }, sink)
-            .err()
-            .expect("debe fallar");
+        let error = open(
+            "t-missing",
+            &["ez-agent-no-existe-xyz".to_string()],
+            None,
+            &[],
+            Size { cols: 80, rows: 24 },
+            sink,
+        )
+        .err()
+        .expect("debe fallar");
         assert!(matches!(error, PtyError::ProgramNotFound(_)));
         assert!(error.to_string().contains("No encontré"));
     }
@@ -344,7 +360,12 @@ mod tests {
             }
         }
         session.close();
-        assert_eq!(exit, Some(0), "salida: {:?}", String::from_utf8_lossy(&output));
+        assert_eq!(
+            exit,
+            Some(0),
+            "salida: {:?}",
+            String::from_utf8_lossy(&output)
+        );
         let expected = std::env::var("COMPUTERNAME").unwrap_or_default();
         if !expected.is_empty() {
             let text = String::from_utf8_lossy(&output).to_lowercase();
@@ -357,10 +378,17 @@ mod tests {
         let (sink, rx) = sink_channel();
         let session = open(
             "t-write",
-            &["powershell.exe".to_string(), "-NoLogo".to_string(), "-NoProfile".to_string()],
+            &[
+                "powershell.exe".to_string(),
+                "-NoLogo".to_string(),
+                "-NoProfile".to_string(),
+            ],
             None,
             &[],
-            Size { cols: 100, rows: 30 },
+            Size {
+                cols: 100,
+                rows: 30,
+            },
             sink,
         )
         .expect("abrir powershell");
@@ -371,7 +399,9 @@ mod tests {
             if let Ok(PtyEvent::Data(bytes)) = rx.recv_timeout(Duration::from_millis(500)) {
                 answer_dsr(&session, &bytes);
                 if !sent {
-                    session.write(b"Write-Output ez-hub-ok\r\n").expect("escribir");
+                    session
+                        .write(b"Write-Output ez-hub-ok\r\n")
+                        .expect("escribir");
                     sent = true;
                 }
                 text.push_str(&String::from_utf8_lossy(&bytes));

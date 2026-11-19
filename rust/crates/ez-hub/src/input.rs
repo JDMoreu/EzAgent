@@ -37,18 +37,12 @@ mod tests {
 
     #[test]
     fn multiline_is_bracketed_then_submitted() {
-        assert_eq!(
-            encode_input("uno\ndos"),
-            b"\x1b[200~uno\ndos\x1b[201~\r"
-        );
+        assert_eq!(encode_input("uno\ndos"), b"\x1b[200~uno\ndos\x1b[201~\r");
     }
 
     #[test]
     fn windows_newlines_are_normalized_inside_the_paste() {
-        assert_eq!(
-            encode_input("uno\r\ndos"),
-            b"\x1b[200~uno\ndos\x1b[201~\r"
-        );
+        assert_eq!(encode_input("uno\r\ndos"), b"\x1b[200~uno\ndos\x1b[201~\r");
     }
 
     #[test]

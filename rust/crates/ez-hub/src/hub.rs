@@ -128,14 +128,22 @@ pub fn demo_state(folder: &str) -> HubState {
         },
     ];
     let timeline = vec![
-        event("09:41", "task_approved", "La persona aprobó el encargo y los criterios."),
+        event(
+            "09:41",
+            "task_approved",
+            "La persona aprobó el encargo y los criterios.",
+        ),
         event(
             "09:42",
             "team_approved",
             "Equipo aprobado: planificador, desarrollador, QA y validador de QA.",
         ),
         event("09:43", "round_started", "Ronda 1 abierta."),
-        event("09:44", "fish_started", "dev-r1-1 empezó a trabajar en la ronda 1."),
+        event(
+            "09:44",
+            "fish_started",
+            "dev-r1-1 empezó a trabajar en la ronda 1.",
+        ),
         event(
             "10:02",
             "fish_reported",
@@ -220,10 +228,17 @@ mod tests {
         let state = demo_state("C:\\proyecto");
         assert_eq!(state.timeline.len(), 5);
         assert_eq!(state.cards.len(), 1);
-        assert_eq!(state.cards[0].title, "Equipo propuesto para «Transcriptor con whisper.cpp»");
-        assert!(state.cards[0].body.contains("- Desarrollador: OpenCode · opencode-go/deepseek-v4.1-flash · esfuerzo max"));
+        assert_eq!(
+            state.cards[0].title,
+            "Equipo propuesto para «Transcriptor con whisper.cpp»"
+        );
+        assert!(state.cards[0].body.contains(
+            "- Desarrollador: OpenCode · opencode-go/deepseek-v4.1-flash · esfuerzo max"
+        ));
         assert!(state.cards[0].body.contains("- QA: Codex · gpt-6-sol"));
-        assert!(state.cards[0].body.contains("- Validador de QA: Claude Code · opus"));
+        assert!(state.cards[0]
+            .body
+            .contains("- Validador de QA: Claude Code · opus"));
     }
 
     #[test]

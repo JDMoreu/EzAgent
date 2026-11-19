@@ -33,10 +33,7 @@ impl AppState {
             let folder = std::env::current_dir()
                 .map(|path| path.display().to_string())
                 .unwrap_or_else(|_| ".".to_string());
-            (
-                vec![hub::demo_space(&folder)],
-                hub::demo_state(&folder),
-            )
+            (vec![hub::demo_space(&folder)], hub::demo_state(&folder))
         } else {
             let spaces = match store.load() {
                 Ok(spaces) => spaces,
@@ -63,12 +60,7 @@ impl AppState {
     }
 
     /// Crea un espacio y lo guarda; en demostración solo vive en memoria.
-    pub fn create_space(
-        &self,
-        nombre: &str,
-        carpeta: &str,
-        agente: &str,
-    ) -> Result<Space, String> {
+    pub fn create_space(&self, nombre: &str, carpeta: &str, agente: &str) -> Result<Space, String> {
         let space = space::create_space(nombre, carpeta, agente)?;
         let mut next = self.spaces.lock().clone();
         next.push(space.clone());
@@ -192,7 +184,12 @@ impl AppState {
             return Err(texts::unknown_card(card));
         }
         drop(hub);
-        tracing::info!(card, action, comment = comment.unwrap_or_default(), "tarjeta resuelta");
+        tracing::info!(
+            card,
+            action,
+            comment = comment.unwrap_or_default(),
+            "tarjeta resuelta"
+        );
         Ok(())
     }
 }
@@ -320,7 +317,9 @@ mod tests {
         let state = AppState::new(true);
         assert!(state.card_action("equipo", "reject", Some("  ")).is_err());
         assert!(state.card_action("equipo", "otra", None).is_err());
-        state.card_action("equipo", "approve", None).expect("aprobar");
+        state
+            .card_action("equipo", "approve", None)
+            .expect("aprobar");
         assert!(state.hub_state(hub::DEMO_SPACE_ID).cards.is_empty());
         assert!(state.card_action("equipo", "approve", None).is_err());
     }
@@ -335,7 +334,9 @@ mod tests {
     #[test]
     fn writing_to_an_unknown_view_is_an_error_with_a_message() {
         let state = AppState::new(true);
-        let error = state.write_view("no-existe", b"x").expect_err("debe fallar");
+        let error = state
+            .write_view("no-existe", b"x")
+            .expect_err("debe fallar");
         assert!(error.contains("no-existe"));
     }
 

@@ -153,9 +153,7 @@ impl SpaceStore {
             espacios: spaces.to_vec(),
         };
         let text = serde_json::to_string_pretty(&file)?;
-        let tmp = self
-            .path
-            .with_extension(format!("{}.tmp", Uuid::new_v4()));
+        let tmp = self.path.with_extension(format!("{}.tmp", Uuid::new_v4()));
         fs::write(&tmp, text)?;
         match fs::rename(&tmp, &self.path) {
             Ok(()) => Ok(()),
@@ -197,7 +195,13 @@ mod tests {
         let space = create_space("Ez", &dir.path().display().to_string(), "claude").expect("alto");
         store.save(&[space]).expect("guardar");
         let text = fs::read_to_string(store.path()).expect("leer texto");
-        for key in ["\"espacios\"", "\"nombre\"", "\"carpeta\"", "\"elefante\"", "\"agente\""] {
+        for key in [
+            "\"espacios\"",
+            "\"nombre\"",
+            "\"carpeta\"",
+            "\"elefante\"",
+            "\"agente\"",
+        ] {
             assert!(text.contains(key), "falta {key} en {text}");
         }
     }
