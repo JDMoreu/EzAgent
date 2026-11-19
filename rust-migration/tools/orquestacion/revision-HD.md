@@ -106,3 +106,10 @@
   (puede ser un fallo real del lanzamiento de OpenCode como hijo).
 - Menor (R4-1, va en HD-8): `valid_name` de `delegate/names.rs` duplica `hc_valid_name` de
   `child.rs`; unificar.
+
+### HD-5 (enjambre) — revisión 1: devuelto (HD-5b)
+- Bien: `LaunchRequest` con padre/etiquetas/`show=tab`/`notify=false`/`outlive_parent`, paso
+  a `RunAgent`. ez-swarm 134 en verde; quitar el padre → fallan dos pruebas.
+- Mal: la raíz = «primer miembro con dirección que no sea el que se lanza» invierte el árbol
+  al reabrir la raíz (la cuelga del segundo). Mutación «la raíz puede ser el propio miembro»
+  no la detecta nadie. HD-5b: raíz = primer miembro siempre.
