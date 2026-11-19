@@ -17,6 +17,7 @@ mod test_support;
 pub use contract::{InstructionContext, Seat};
 pub use error::TeamError;
 pub use inventory::{AvailableAgent, Inventory, RealSystem, System};
+pub use launch::LaunchCommand;
 pub use profiles::AgentProfile;
 pub use roles::Role;
 pub use subscriptions::Subscription;

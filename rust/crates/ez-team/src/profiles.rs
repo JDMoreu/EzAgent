@@ -1,5 +1,6 @@
 //! Agent profiles (`agentes.toml`, design §6).
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -12,13 +13,18 @@ use crate::error::TeamError;
 const DEFAULT_PROFILES_TOML: &str = r#"[[agente]]
 id = "opencode"
 nombre = "OpenCode"
-argv = ["opencode", "--model", "{modelo}"]
+argv = ["opencode", "--standalone"]  # OpenCode no acepta --model: el modelo va en OPENCODE_CONFIG_CONTENT
 modelos_cmd = ["opencode", "models"]      # salida: un modelo por línea
+previo = "opencode_state"
+
+[agente.env]
+OPENCODE_CONFIG_CONTENT = '{"model":"{modelo}{variante}"}'
 
 [[agente]]
 id = "claude"
 nombre = "Claude Code"
 argv = ["claude", "--model", "{modelo}"]
+esfuerzo_args = ["--effort", "{esfuerzo}"]
 modelos = ["opus", "sonnet", "haiku"]
 familia = "anthropic"
 
@@ -53,6 +59,12 @@ pub struct AgentProfile {
     /// Arguments added only when the seat has an effort; `{esfuerzo}` is substituted.
     #[serde(rename = "esfuerzo_args", default)]
     pub effort_args: Vec<String>,
+    /// Environment variables of the launch; values accept the launch markers (§14.2).
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+    /// Work done before launching; only `opencode_state` is supported (§14.2).
+    #[serde(rename = "previo", default)]
+    pub prelaunch: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -77,6 +89,18 @@ pub fn load(dir: &Path) -> Result<Vec<AgentProfile>, TeamError> {
     let text = fs::read_to_string(&path).map_err(|error| TeamError::io(&path, error))?;
     let file: ProfilesFile =
         toml::from_str(&text).map_err(|error| TeamError::toml(&path, error))?;
+    for agent in &file.agents {
+        if let Some(prelaunch) = agent.prelaunch.as_deref() {
+            // DECISION: `opencode_state` is the only value the launcher can prepare today;
+            // rejecting the rest at load time avoids a silent no-op at launch.
+            if prelaunch != "opencode_state" {
+                return Err(TeamError::Invalid(format!(
+                    "El perfil «{}» tiene previo desconocido «{prelaunch}»; solo se admite «opencode_state».",
+                    agent.id
+                )));
+            }
+        }
+    }
     Ok(file.agents)
 }
 
@@ -85,6 +109,34 @@ mod tests {
     use super::{load_or_init, TeamError};
     use crate::test_support::TempDir;
 
+    // Independent copy of the §14.2 block, as changed by ECO-4b point 2.
+    const EXPECTED_DEFAULT: &str = r#"[[agente]]
+id = "opencode"
+nombre = "OpenCode"
+argv = ["opencode", "--standalone"]  # OpenCode no acepta --model: el modelo va en OPENCODE_CONFIG_CONTENT
+modelos_cmd = ["opencode", "models"]      # salida: un modelo por línea
+previo = "opencode_state"
+
+[agente.env]
+OPENCODE_CONFIG_CONTENT = '{"model":"{modelo}{variante}"}'
+
+[[agente]]
+id = "claude"
+nombre = "Claude Code"
+argv = ["claude", "--model", "{modelo}"]
+esfuerzo_args = ["--effort", "{esfuerzo}"]
+modelos = ["opus", "sonnet", "haiku"]
+familia = "anthropic"
+
+[[agente]]
+id = "codex"
+nombre = "Codex"
+argv = ["codex", "--model", "{modelo}"]
+esfuerzo_args = ["-c", "model_reasoning_effort={esfuerzo}"]
+modelos = []                              # la persona los completa
+familia = "openai"
+"#;
+
     #[test]
     fn creates_the_default_file_and_reads_it_back() {
         let dir = TempDir::new("profiles-default");
@@ -92,20 +144,59 @@ mod tests {
         assert_eq!(first.len(), 3);
         assert_eq!(first[0].id, "opencode");
         assert_eq!(first[0].name, "OpenCode");
-        assert_eq!(first[0].argv, ["opencode", "--model", "{modelo}"]);
+        assert_eq!(first[0].argv, ["opencode", "--standalone"]);
         assert_eq!(
             first[0].models_cmd.as_deref(),
             Some(["opencode".to_string(), "models".to_string()].as_slice())
         );
+        assert_eq!(first[0].prelaunch.as_deref(), Some("opencode_state"));
+        assert_eq!(
+            first[0]
+                .env
+                .get("OPENCODE_CONFIG_CONTENT")
+                .map(String::as_str),
+            Some(r#"{"model":"{modelo}{variante}"}"#)
+        );
         assert_eq!(first[1].family.as_deref(), Some("anthropic"));
+        assert_eq!(first[1].effort_args, ["--effort", "{esfuerzo}"]);
         assert!(first[2].effort_args.contains(&"-c".to_string()));
         assert!(first[2].models.is_empty());
 
         let written = std::fs::read_to_string(dir.path().join("agentes.toml")).expect("file");
-        assert!(written.contains("[[agente]]"));
+        assert_eq!(written, EXPECTED_DEFAULT);
 
         let second = load_or_init(dir.path()).expect("second read");
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn loads_env_and_prelaunch() {
+        let dir = TempDir::new("profiles-env");
+        std::fs::write(
+            dir.path().join("agentes.toml"),
+            "[[agente]]\nid = \"a\"\nnombre = \"A\"\nargv = [\"a\"]\nprevio = \"opencode_state\"\n\
+             [agente.env]\nCLAVE = \"valor-{modelo}\"\n",
+        )
+        .expect("write");
+        let agents = super::load(dir.path()).expect("load");
+        assert_eq!(agents[0].prelaunch.as_deref(), Some("opencode_state"));
+        assert_eq!(
+            agents[0].env.get("CLAVE").map(String::as_str),
+            Some("valor-{modelo}")
+        );
+    }
+
+    #[test]
+    fn unknown_prelaunch_is_an_error() {
+        let dir = TempDir::new("profiles-prelaunch");
+        std::fs::write(
+            dir.path().join("agentes.toml"),
+            "[[agente]]\nid = \"a\"\nnombre = \"A\"\nargv = [\"a\"]\nprevio = \"otro\"\n",
+        )
+        .expect("write");
+        let error = super::load(dir.path()).expect_err("unknown previo");
+        assert!(matches!(error, TeamError::Invalid(_)), "{error}");
+        assert!(error.to_string().contains("opencode_state"), "{error}");
     }
 
     #[test]

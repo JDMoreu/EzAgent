@@ -1,6 +1,7 @@
 //! Launch helpers: command line for a seat, the full instructions of a fish and the
 //! one-line first message (design §6).
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::contract::{InstructionContext, Seat};
@@ -35,31 +36,60 @@ const MARKERS: [&str; 11] = [
     "{mutaciones_minimas}",
 ];
 
-/// Command line of the agent for this seat: `{modelo}` and, when the seat has an effort,
-/// `{esfuerzo}` are substituted; `effort_args` is only appended with an effort.
-pub fn argv(profile: &AgentProfile, seat: &Seat) -> Vec<String> {
-    let mut command: Vec<String> = profile
+/// Everything the launcher needs to start an agent (design §14.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchCommand {
+    /// Argument list; `argv[0]` is the program.
+    pub argv: Vec<String>,
+    /// Environment variables with the markers already substituted.
+    pub env: BTreeMap<String, String>,
+    /// Pre-launch work requested by the profile, if any.
+    pub prelaunch: Option<String>,
+}
+
+/// Builds the launch data for `seat`, substituting `{modelo}`, `{esfuerzo}` and
+/// `{variante}` (`#<esfuerzo>`, or empty when there is no effort) in `argv`,
+/// `esfuerzo_args` (only present with an effort) and the values of `env`.
+pub fn command(profile: &AgentProfile, seat: &Seat) -> LaunchCommand {
+    let effort = seat.effort.as_deref().filter(|effort| !effort.is_empty());
+    let variant = effort
+        .map(|effort| format!("#{effort}"))
+        .unwrap_or_default();
+    let mut argv: Vec<String> = profile
         .argv
         .iter()
-        .map(|argument| fill(argument, &seat.model, seat.effort.as_deref()))
+        .map(|argument| fill(argument, &seat.model, effort, &variant))
         .collect();
-    if let Some(effort) = seat.effort.as_deref().filter(|effort| !effort.is_empty()) {
-        command.extend(
+    if effort.is_some() {
+        argv.extend(
             profile
                 .effort_args
                 .iter()
-                .map(|argument| argument.replace("{esfuerzo}", effort)),
+                .map(|argument| fill(argument, &seat.model, effort, &variant)),
         );
     }
-    command
+    let env = profile
+        .env
+        .iter()
+        .map(|(key, value)| (key.clone(), fill(value, &seat.model, effort, &variant)))
+        .collect();
+    LaunchCommand {
+        argv,
+        env,
+        prelaunch: profile.prelaunch.clone(),
+    }
 }
 
-fn fill(argument: &str, model: &str, effort: Option<&str>) -> String {
-    let mut text = argument.replace("{modelo}", model);
-    if let Some(effort) = effort.filter(|effort| !effort.is_empty()) {
-        text = text.replace("{esfuerzo}", effort);
-    }
-    text
+fn fill(argument: &str, model: &str, effort: Option<&str>, variant: &str) -> String {
+    argument
+        .replace("{modelo}", model)
+        .replace("{esfuerzo}", effort.unwrap_or(""))
+        .replace("{variante}", variant)
+}
+
+/// First message sent to the elephant when a space is created (design §14.2).
+pub fn elephant_first_line() -> String {
+    "Eres el elefante de este espacio de EzAgent. Ejecuta `ez --skill` y sigue ese manual; luego espera el pedido de la persona.".to_string()
 }
 
 /// Full instructions of a fish: `roles/_comun.md`, a blank line and `roles/<role>.md`
@@ -107,6 +137,8 @@ pub fn render_instructions(context: &InstructionContext) -> Result<String, TeamE
 }
 
 /// First message sent to a new agent: one line, pointing at the instructions file.
+// DECISION: the role name here is `Role::label()` (the human name); the protocol keeps
+// using `Role::id()`. The first line is for the fish, not for `ez fish <papel>`.
 pub fn first_line(role: Role, instructions: &Path) -> String {
     format!(
         "Eres un pez dorado de EzAgent con el papel {}. Lee {} y síguelo al pie de la letra.",
@@ -119,7 +151,7 @@ pub fn first_line(role: Role, instructions: &Path) -> String {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{argv, first_line, render_instructions};
+    use super::{command, elephant_first_line, first_line, render_instructions};
     use crate::contract::{InstructionContext, Seat};
     use crate::error::TeamError;
     use crate::profiles::AgentProfile;
@@ -137,6 +169,8 @@ mod tests {
                 .iter()
                 .map(|argument| argument.to_string())
                 .collect(),
+            env: std::collections::BTreeMap::new(),
+            prelaunch: None,
         }
     }
 
@@ -167,15 +201,26 @@ mod tests {
         }
     }
 
+    fn opencode_profile() -> AgentProfile {
+        let mut agent = profile("opencode", &["opencode", "--standalone"], &[]);
+        agent.env.insert(
+            "OPENCODE_CONFIG_CONTENT".to_string(),
+            r#"{"model":"{modelo}{variante}"}"#.to_string(),
+        );
+        agent.prelaunch = Some("opencode_state".to_string());
+        agent
+    }
+
     #[test]
-    fn argv_with_effort_appends_effort_args() {
+    fn command_with_effort_appends_effort_args() {
         let codex = profile(
             "codex",
             &["codex", "--model", "{modelo}"],
             &["-c", "model_reasoning_effort={esfuerzo}"],
         );
+        let launch = command(&codex, &seat(Some("max")));
         assert_eq!(
-            argv(&codex, &seat(Some("max"))),
+            launch.argv,
             [
                 "codex",
                 "--model",
@@ -184,18 +229,68 @@ mod tests {
                 "model_reasoning_effort=max"
             ]
         );
+        assert!(launch.env.is_empty());
+        assert_eq!(launch.prelaunch, None);
     }
 
     #[test]
-    fn argv_without_effort_omits_effort_args() {
+    fn command_without_effort_omits_effort_args() {
         let codex = profile(
             "codex",
             &["codex", "--model", "{modelo}"],
             &["-c", "model_reasoning_effort={esfuerzo}"],
         );
         assert_eq!(
-            argv(&codex, &seat(None)),
+            command(&codex, &seat(None)).argv,
             ["codex", "--model", "openai/gpt-6-luna"]
+        );
+    }
+
+    #[test]
+    fn command_for_opencode_with_effort_uses_the_variant() {
+        let launch = command(&opencode_profile(), &seat(Some("max")));
+        assert_eq!(launch.argv, ["opencode", "--standalone"]);
+        assert_eq!(
+            launch
+                .env
+                .get("OPENCODE_CONFIG_CONTENT")
+                .map(String::as_str),
+            Some(r#"{"model":"openai/gpt-6-luna#max"}"#)
+        );
+        assert_eq!(launch.prelaunch.as_deref(), Some("opencode_state"));
+    }
+
+    #[test]
+    fn command_for_opencode_without_effort_leaves_the_variant_empty() {
+        let launch = command(&opencode_profile(), &seat(None));
+        assert_eq!(
+            launch
+                .env
+                .get("OPENCODE_CONFIG_CONTENT")
+                .map(String::as_str),
+            Some(r#"{"model":"openai/gpt-6-luna"}"#)
+        );
+    }
+
+    #[test]
+    fn command_for_claude_appends_effort() {
+        let claude = profile(
+            "claude",
+            &["claude", "--model", "{modelo}"],
+            &["--effort", "{esfuerzo}"],
+        );
+        let launch = command(&claude, &seat(Some("high")));
+        assert_eq!(
+            launch.argv,
+            ["claude", "--model", "openai/gpt-6-luna", "--effort", "high"]
+        );
+    }
+
+    #[test]
+    fn elephant_first_line_is_exact() {
+        assert_eq!(
+            elephant_first_line(),
+            "Eres el elefante de este espacio de EzAgent. Ejecuta `ez --skill` y sigue ese manual; luego espera el pedido de la persona."
         );
     }
 

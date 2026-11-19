@@ -52,23 +52,23 @@ impl System for RealSystem {
         }
         let mut child = command.spawn().ok()?;
         let stdout = child.stdout.take()?;
-        let reader = std::thread::Builder::new()
+        let (sender, receiver) = std::sync::mpsc::channel();
+        // DECISION: the reader delivers its output through a channel so a descendant
+        // holding the pipe open cannot block the caller forever; no unbounded `join()`.
+        if std::thread::Builder::new()
             .name("ez-team-models".to_string())
             .spawn(move || {
                 let mut bytes = Vec::new();
                 let mut stdout = stdout;
                 let _ = stdout.read_to_end(&mut bytes);
-                String::from_utf8_lossy(&bytes).into_owned()
+                let _ = sender.send(String::from_utf8_lossy(&bytes).into_owned());
             })
-            .ok();
-        let reader = match reader {
-            Some(handle) => handle,
-            None => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-        };
+            .is_err()
+        {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
         let deadline = Instant::now() + timeout;
         let status = loop {
             match child.try_wait() {
@@ -76,21 +76,19 @@ impl System for RealSystem {
                 Ok(None) if Instant::now() < deadline => {
                     std::thread::sleep(Duration::from_millis(20));
                 }
-                Ok(None) => {
+                Ok(None) | Err(_) => {
                     let _ = child.kill();
                     let _ = child.wait();
-                    let _ = reader.join();
-                    return None;
-                }
-                Err(_) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    let _ = reader.join();
                     return None;
                 }
             }
         };
-        let text = reader.join().ok()?;
+        // DECISION: after the process exits, allow at most 1 s (and at least 50 ms) for
+        // the reader: enough for a normal pipe, bounded if a descendant keeps it open.
+        let grace = deadline
+            .saturating_duration_since(Instant::now())
+            .clamp(Duration::from_millis(50), Duration::from_secs(1));
+        let text = receiver.recv_timeout(grace).ok()?;
         status.success().then_some(text)
     }
 }
@@ -156,6 +154,8 @@ impl Inventory {
     }
 
     /// Same data as [`Inventory::text`], for `ez inventory --json`.
+    // DECISION: the protocol does not fix the JSON keys; they stay in Spanish like the
+    // rest of the data shown to the person.
     pub fn json(&self) -> serde_json::Value {
         serde_json::Value::Array(
             self.agents
@@ -174,9 +174,11 @@ impl Inventory {
     }
 }
 
-/// Process-wide cache of `modelos_cmd` output, keyed by the command line.
-fn models_cache() -> &'static Mutex<HashMap<String, Vec<String>>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, Vec<String>>>> = OnceLock::new();
+type ModelsCache = Mutex<HashMap<(String, String), Vec<String>>>;
+
+/// Process-wide cache of `modelos_cmd` output, keyed by profile id and command line.
+fn models_cache() -> &'static ModelsCache {
+    static CACHE: OnceLock<ModelsCache> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -195,8 +197,12 @@ pub fn detect(profiles: &[AgentProfile], subs: &[Subscription], system: &dyn Sys
         .collect();
     let agents = profiles
         .iter()
-        .filter(|profile| declared.is_empty() || declared.contains(&profile.id.as_str()))
+        // DECISION: a declared subscription with `agentes = []` enables nothing; only
+        // the absence of subscriptions makes every detected agent available.
+        .filter(|profile| subs.is_empty() || declared.contains(&profile.id.as_str()))
         .filter_map(|profile| {
+            // DECISION: a profile without `argv` is ignored (nothing to launch) instead
+            // of panicking.
             let program = profile.argv.first()?;
             let path = find_program(program, &search_path, &extensions, system)?;
             let models = models_for(profile, system);
@@ -245,15 +251,18 @@ fn find_program(
 }
 
 fn split_list(value: &str) -> impl Iterator<Item = &str> {
+    // DECISION: `;` in Windows and `:` elsewhere; the design targets Windows but the
+    // tests must not depend on a concrete path or separator.
     let separator = if cfg!(windows) { ';' } else { ':' };
     value.split(separator).filter(|part| !part.is_empty())
 }
 
 fn models_for(profile: &AgentProfile, system: &dyn System) -> Vec<String> {
     if let Some(command) = profile.models_cmd.as_ref().filter(|argv| !argv.is_empty()) {
-        let key = command.join("\u{1f}");
+        let key = (profile.id.clone(), command.join("\u{1f}"));
         // DECISION: only successful outputs are cached; a failure falls back to
-        // `modelos` and is retried on the next detection.
+        // `modelos` and is retried on the next detection. The profile id is part of the
+        // key so two agents sharing a command keep their own model lists.
         let cached = models_cache()
             .lock()
             .ok()
@@ -293,7 +302,7 @@ mod tests {
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use super::{detect, Inventory, System};
     use crate::profiles::AgentProfile;
@@ -305,6 +314,7 @@ mod tests {
         files: Vec<PathBuf>,
         outputs: HashMap<String, Option<String>>,
         calls: Mutex<Vec<String>>,
+        timeouts: Mutex<Vec<Duration>>,
     }
 
     impl FakeSystem {
@@ -338,9 +348,33 @@ mod tests {
             self.files.iter().any(|file| file == path)
         }
 
-        fn run(&self, argv: &[String], _timeout: Duration) -> Option<String> {
+        fn run(&self, argv: &[String], timeout: Duration) -> Option<String> {
             self.calls.lock().expect("calls").push(argv.join(" "));
+            self.timeouts.lock().expect("timeouts").push(timeout);
             self.outputs.get(&argv.join(" ")).cloned().flatten()
+        }
+    }
+
+    /// Two profiles share a command but return different model lists on successive runs.
+    struct AlternatingSystem {
+        calls: Mutex<usize>,
+    }
+
+    impl System for AlternatingSystem {
+        fn var(&self, name: &str) -> Option<String> {
+            (name == "PATH").then(|| r"C:\tools".to_string())
+        }
+
+        fn is_file(&self, path: &Path) -> bool {
+            path.file_name().is_some_and(|name| name == "agent.exe")
+        }
+
+        fn run(&self, _argv: &[String], _timeout: Duration) -> Option<String> {
+            let mut calls = self.calls.lock().expect("calls");
+            let index = *calls;
+            *calls += 1;
+            let models = if index == 0 { "a/one" } else { "b/two" };
+            Some(models.to_string())
         }
     }
 
@@ -353,6 +387,8 @@ mod tests {
             models: Vec::new(),
             family: None,
             effort_args: Vec::new(),
+            env: std::collections::BTreeMap::new(),
+            prelaunch: None,
         }
     }
 
@@ -419,6 +455,46 @@ mod tests {
     }
 
     #[test]
+    fn declared_subscription_with_no_agents_enables_nothing() {
+        let system = FakeSystem::with_path(r"C:\tools").add_file(r"C:\tools\opencode.exe");
+        let profiles = [profile("opencode", &["opencode"])];
+        let subs = [Subscription {
+            name: "Vacía".to_string(),
+            agents: Vec::new(),
+        }];
+        assert!(detect(&profiles, &subs, &system).agents.is_empty());
+    }
+
+    #[test]
+    fn models_cmd_uses_the_design_timeout() {
+        let system = FakeSystem::with_path(r"C:\tools")
+            .add_file(r"C:\tools\opencode.exe")
+            .add_output(&["models-timeout"], Some("a/one\n"));
+        let mut agent = profile("timeout-agent", &["opencode"]);
+        agent.models_cmd = Some(vec!["models-timeout".to_string()]);
+        let _ = detect(&[agent], &[], &system);
+        assert_eq!(
+            system.timeouts.lock().expect("timeouts").as_slice(),
+            &[Duration::from_secs(20)]
+        );
+    }
+
+    #[test]
+    fn models_cache_is_keyed_by_profile_and_command() {
+        let system = AlternatingSystem {
+            calls: Mutex::new(0),
+        };
+        let mut first = profile("first", &["agent"]);
+        first.models_cmd = Some(vec!["models-shared".to_string()]);
+        let mut second = profile("second", &["agent"]);
+        second.models_cmd = Some(vec!["models-shared".to_string()]);
+        let inventory = detect(&[first, second], &[], &system);
+        assert_eq!(inventory.agents[0].models, ["a/one"]);
+        assert_eq!(inventory.agents[1].models, ["b/two"]);
+        assert_eq!(*system.calls.lock().expect("calls"), 2);
+    }
+
+    #[test]
     fn models_cmd_output_is_parsed_and_cached() {
         let system = FakeSystem::with_path(r"C:\tools")
             .add_file(r"C:\tools\opencode.exe")
@@ -452,6 +528,27 @@ mod tests {
         assert!(system.is_file(&executable));
         assert!(!system.is_file(Path::new(r"C:\ez-team\no-existe.exe")));
         assert!(system.var("PATH").is_some());
+    }
+
+    #[test]
+    fn real_system_run_stops_a_slow_process() {
+        #[cfg(windows)]
+        let argv: Vec<String> = ["ping", "-n", "4", "127.0.0.1"]
+            .iter()
+            .map(|argument| argument.to_string())
+            .collect();
+        #[cfg(not(windows))]
+        let argv: Vec<String> = ["sleep", "2"]
+            .iter()
+            .map(|argument| argument.to_string())
+            .collect();
+        let started = Instant::now();
+        let output = super::RealSystem.run(&argv, Duration::from_millis(200));
+        assert!(output.is_none(), "{output:?}");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "tardó demasiado"
+        );
     }
 
     #[test]

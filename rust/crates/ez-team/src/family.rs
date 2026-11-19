@@ -16,6 +16,8 @@
 //!     models: Vec::new(),
 //!     family: None,
 //!     effort_args: Vec::new(),
+//!     env: std::collections::BTreeMap::new(),
+//!     prelaunch: None,
 //! };
 //! assert_eq!(family(&profile, "opencode-go/deepseek-v4.1-flash"), "deepseek");
 //! assert_eq!(family(&profile, "opencode-go/qwen4-max"), "qwen");
@@ -63,6 +65,8 @@ mod tests {
             models: Vec::new(),
             family: family.map(str::to_string),
             effort_args: Vec::new(),
+            env: std::collections::BTreeMap::new(),
+            prelaunch: None,
         }
     }
 
