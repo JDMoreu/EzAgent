@@ -12,7 +12,7 @@
 - `rust/crates/ez-ctl/examples/e2e_delegate.rs`: raíz del ejemplo; incluye los 10 módulos con `#[path = "e2e_delegate/…"]` y el `main` que arma el sandbox, el padre falso, las seis delegaciones, las comprobaciones, la limpieza y el JSON final.
 - `rust/crates/ez-ctl/examples/e2e_delegate/proc.rs`: ejecución de procesos sin `shell`, con tiempo límite y captura de salida; ningún lock se retiene durante la espera.
 - `rust/crates/ez-ctl/examples/e2e_delegate/setup.rs`: sandbox temporal (`appdata/EzAgent/voice.json`, `minimax/config.yaml`, `codex/models_cache.json`, `opencode-config/`, repo git con commit) y entorno temporal (`APPDATA`, `LOCALAPPDATA`, `MINIMAX_DATA_DIR`, `CODEX_HOME`, `OPENCODE_CONFIG_DIR`, `EZ_SUBAGENTS_DIR`, `EZ_HC_PATH`).
-- `rust/crates/ez-ctl/examples/e2e_delegate/checks.rs`: tabla PASS/FAIL y accumulator del JSON de resultado.
+- `rust/crates/ez-ctl/examples/e2e_delegate/checks.rs`: tabla PASS/FAIL y acumulador del JSON de resultado.
 - `rust/crates/ez-ctl/examples/e2e_delegate/proxy.rs`: modo lanzador: cuando el agente falso invoca `ez report`, el ejemplo corre el `ez.exe` real con el entorno temporal (el de `hc run` no lo propaga) y reintenta hasta que exista el registro.
 - `rust/crates/ez-ctl/examples/e2e_delegate/children.rs`: comprobaciones por hijo (`hc get`: padre, nombre, etiquetas §3; registro del agente falso: primer mensaje, terminal del padre, marca del brief; argv y entorno por tipo).
 - `rust/crates/ez-ctl/examples/e2e_delegate/placement.rs`: ubicación de los hijos (`tree`, `tab`, `right`) y comprobación de `herdr-app ls` (`sub_agents`, pestañas propias, pestaña del padre).
