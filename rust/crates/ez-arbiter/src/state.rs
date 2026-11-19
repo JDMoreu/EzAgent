@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use ez_team::{Role, Seat};
+use ez_team::{RoleDef, RoleId, Seat};
 use serde::{Deserialize, Serialize};
 
 use crate::git::Fingerprint;
@@ -116,7 +116,7 @@ pub enum WorkState {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FishRecord {
     pub key: FishKey,
-    pub role: Role,
+    pub role: RoleId,
     pub terminal: String,
     pub round: u32,
     /// Huella del proyecto al empezar su trabajo (para atribuir archivos).
@@ -150,16 +150,19 @@ pub struct RoundRecord {
 
 impl RoundRecord {
     /// Suma las rutas atribuidas a un papel.
-    pub fn attribute(&mut self, role: Role, paths: &[String]) {
+    pub fn attribute(&mut self, role: &RoleId, paths: &[String]) {
         self.attribution
-            .entry(role.id().to_string())
+            .entry(role.as_str().to_string())
             .or_default()
             .extend(paths.iter().cloned());
     }
 
     /// Rutas atribuidas a un papel.
-    pub fn files_of(&self, role: Role) -> BTreeSet<String> {
-        self.attribution.get(role.id()).cloned().unwrap_or_default()
+    pub fn files_of(&self, role: &RoleId) -> BTreeSet<String> {
+        self.attribution
+            .get(role.as_str())
+            .cloned()
+            .unwrap_or_default()
     }
 }
 
@@ -177,6 +180,9 @@ pub struct Task {
     pub created: f64,
     pub approved_at: Option<f64>,
     pub team: Vec<Seat>,
+    /// Definiciones de los papeles del equipo, congeladas con él.
+    #[serde(default)]
+    pub roles: Vec<RoleDef>,
     pub team_status: TeamStatus,
     pub team_card: String,
     pub round: u32,
@@ -221,6 +227,34 @@ impl Task {
         !self.status.is_terminal()
     }
 
+    /// Definición congelada de un papel del equipo.
+    pub fn role_def(&self, role: &RoleId) -> Option<&RoleDef> {
+        self.roles.iter().find(|def| def.id == *role)
+    }
+
+    /// Etapa de un papel: la del puesto o la sugerida por su definición.
+    pub fn stage_of(&self, role: &RoleId) -> u32 {
+        self.seat(role)
+            .map(|seat| seat.stage)
+            .or_else(|| self.role_def(role).map(|def| def.default_stage))
+            .unwrap_or(u32::MAX)
+    }
+
+    /// ¿Es verificador este papel?
+    pub fn is_verifier(&self, role: &RoleId) -> bool {
+        self.role_def(role).is_some_and(RoleDef::is_verifier)
+    }
+
+    /// ¿Escribe pruebas este papel (sus archivos quedan protegidos)?
+    pub fn is_writes_tests(&self, role: &RoleId) -> bool {
+        self.role_def(role).is_some_and(|def| def.writes_tests)
+    }
+
+    /// ¿Pide mutaciones este papel?
+    pub fn has_mutations(&self, role: &RoleId) -> bool {
+        self.role_def(role).is_some_and(|def| def.mutations)
+    }
+
     /// Ficha de un pez por su id (se queda con el último intento).
     pub fn fish(&self, id: &str) -> Option<&FishRecord> {
         self.fish.iter().rev().find(|fish| fish.id() == id)
@@ -257,16 +291,16 @@ impl Task {
     }
 
     /// Intentos de un papel en una ronda (peces lanzados).
-    pub fn attempts(&self, role: Role, round: u32) -> u32 {
+    pub fn attempts(&self, role: &RoleId, round: u32) -> u32 {
         self.fish
             .iter()
-            .filter(|fish| fish.role == role && fish.round == round)
+            .filter(|fish| fish.role == *role && fish.round == round)
             .count() as u32
     }
 
     /// Puesto del equipo de un papel.
-    pub fn seat(&self, role: Role) -> Option<&Seat> {
-        self.team.iter().find(|seat| seat.role == role)
+    pub fn seat(&self, role: &RoleId) -> Option<&Seat> {
+        self.team.iter().find(|seat| seat.role == *role)
     }
 
     /// Peces lanzados en una ronda.
@@ -309,7 +343,9 @@ impl Task {
         let mut files = BTreeSet::new();
         for record in &self.rounds {
             if record.number < round {
-                files.extend(record.files_of(Role::Qa));
+                for role in self.roles.iter().filter(|def| def.writes_tests) {
+                    files.extend(record.files_of(&role.id));
+                }
             }
         }
         files
@@ -323,7 +359,7 @@ impl Task {
             .map(|fish| {
                 serde_json::json!({
                     "id": fish.id(),
-                    "role": fish.role.id(),
+                    "role": fish.role.as_str(),
                     "terminal": fish.terminal,
                     "round": fish.round,
                     "attempt": fish.key.attempt,

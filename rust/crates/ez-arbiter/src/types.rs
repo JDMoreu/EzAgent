@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use ez_team::{InstructionContext, Role, Seat};
+use ez_team::{InstructionContext, RoleDef, RoleId, Seat};
 use serde::{Deserialize, Serialize};
 
 /// Reloj del árbitro, en segundos desde 1970. Las pruebas usan uno falso.
@@ -80,8 +80,8 @@ pub trait FishLauncher: Send + Sync {
 pub trait InstructionWriter: Send + Sync {
     /// Texto completo de `<pez>.instrucciones.md`.
     fn render(&self, context: &InstructionContext) -> Result<String, String>;
-    /// Primer mensaje de una sola línea que abre la sesión del pez.
-    fn first_line(&self, role: Role, instructions: &Path) -> String;
+    /// Primer mensaje de una sola línea que abre la sesión del subagente.
+    fn first_line(&self, role_name: &str, instructions: &Path) -> String;
 }
 
 /// Datos para lanzar un pez.
@@ -89,7 +89,7 @@ pub trait InstructionWriter: Send + Sync {
 pub struct LaunchRequest {
     pub fish: String,
     pub hc_name: String,
-    pub role: Role,
+    pub role: RoleId,
     pub seat: Seat,
     pub cwd: PathBuf,
     pub env: BTreeMap<String, String>,
@@ -123,14 +123,15 @@ pub enum Command {
         brief: PathBuf,
         criteria: PathBuf,
     },
-    /// El equipo ya viene validado por `ez-team`.
+    /// El equipo y sus definiciones de papel ya vienen validados por `ez-team`.
     TeamPropose {
         seats: Vec<Seat>,
+        roles: Vec<RoleDef>,
         card: String,
     },
     RoundStart,
     FishNew {
-        role: Role,
+        role: RoleId,
         brief: PathBuf,
     },
     FishSend {

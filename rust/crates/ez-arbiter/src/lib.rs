@@ -20,7 +20,7 @@
 //! # struct Writer;
 //! # impl InstructionWriter for Writer {
 //! #     fn render(&self, _: &ez_team::InstructionContext) -> Result<String, String> { Ok(String::new()) }
-//! #     fn first_line(&self, _: ez_team::Role, _: &std::path::Path) -> String { String::new() }
+//! #     fn first_line(&self, _: &str, _: &std::path::Path) -> String { String::new() }
 //! # }
 //! let arbiter = Arbiter::new(
 //!     PathBuf::from("datos"),

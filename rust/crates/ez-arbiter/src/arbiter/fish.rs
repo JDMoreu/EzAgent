@@ -5,7 +5,7 @@ mod work;
 
 use std::path::{Path, PathBuf};
 
-use ez_team::{InstructionContext, Role};
+use ez_team::{InstructionContext, RoleId};
 
 use crate::git;
 use crate::paths;
@@ -14,7 +14,7 @@ use crate::texts;
 use crate::types::{Delivery, FishKey, Launched, Outcome, Rejection, Verdict};
 
 use super::emit::Effects;
-use super::{fish_id, hc_name, new_token, ArbiterShared};
+use super::{fish_id, hc_name, is_indexed, new_token, ArbiterShared};
 
 /// Datos de un informe, agrupados para no pasar ocho argumentos.
 #[derive(Debug, Clone)]
@@ -41,7 +41,7 @@ pub(crate) fn attempt_suffix(attempt: u32) -> String {
 struct LaunchPlan {
     key: FishKey,
     fish: String,
-    role: Role,
+    role: RoleId,
     report_path: PathBuf,
     start: git::Fingerprint,
     request: crate::types::LaunchRequest,
@@ -52,7 +52,7 @@ impl ArbiterShared {
     pub(crate) fn fish_new(
         &self,
         space: &str,
-        role: Role,
+        role: RoleId,
         brief: PathBuf,
     ) -> Result<Outcome, Rejection> {
         let mut task = self.task_for_elephant(space)?;
@@ -60,17 +60,20 @@ impl ArbiterShared {
             return Err(Rejection::new("R5", texts::NO_ROUND));
         }
         let seat = task
-            .seat(role)
+            .seat(&role)
             .cloned()
-            .ok_or_else(|| Rejection::new("R5", texts::role_not_in_team(role.id())))?;
-        self.check_order(&task, role, task.round, seat.count)?;
+            .ok_or_else(|| Rejection::new("R5", texts::role_not_in_team(role.as_str())))?;
+        self.check_order(&task, &role, task.round, seat.count)?;
         if let Err(rejection) = self.check_artifacts(&task) {
             return Err(self.pause_task(task, "R3", "artefactos_modificados", rejection.message));
         }
-        if task.attempts(role, task.round) >= 3 {
-            return Err(Rejection::new("R5", texts::too_many_attempts(role.id())));
+        if task.attempts(&role, task.round) >= 3 {
+            return Err(Rejection::new(
+                "R5",
+                texts::too_many_attempts(role.as_str()),
+            ));
         }
-        let plan = self.prepare_launch(&task, role, &seat, brief)?;
+        let plan = self.prepare_launch(&task, &role, &seat, brief)?;
         self.deliver(&mut task, plan)
     }
 
@@ -78,21 +81,21 @@ impl ArbiterShared {
     fn prepare_launch(
         &self,
         task: &crate::state::Task,
-        role: Role,
+        role: &RoleId,
         seat: &ez_team::Seat,
         brief: PathBuf,
     ) -> Result<LaunchPlan, Rejection> {
         let round = task.round;
         let attempt = task.attempts(role, round) + 1;
-        let index = if role == Role::Developer {
+        let index = if is_indexed(role, seat.count) {
             task.fish_in_round(round)
-                .filter(|fish| fish.role == Role::Developer)
+                .filter(|fish| fish.role == *role)
                 .count() as u32
                 + 1
         } else {
             1
         };
-        let fish = fish_id(role, round, index);
+        let fish = fish_id(role, round, index, is_indexed(role, seat.count));
         let suffix = attempt_suffix(attempt);
         let key = FishKey {
             space: task.space.id.clone(),
@@ -105,15 +108,14 @@ impl ArbiterShared {
         let instructions = folder.join(format!("{fish}{suffix}.instrucciones.md"));
         let report_path = folder.join(format!("{fish}{suffix}.informe.md"));
         let start = self.copy_fish_brief(task, &brief, &fish_brief)?;
-        let context =
-            self.instruction_context(task, role, &key, round, fish_brief, &report_path)?;
+        let context = self.instruction_context(task, role, seat, &key, round)?;
         self.write_instructions(&context, &instructions, &fish)?;
         let token = new_token();
         Ok(LaunchPlan {
             request: self.launch_request(task, role, seat, &key, &instructions, &token),
             key,
             fish,
-            role,
+            role: role.clone(),
             report_path,
             start,
         })
@@ -132,7 +134,7 @@ impl ArbiterShared {
         task.last_fp = Some(plan.start.clone());
         task.fish.push(FishRecord {
             key: plan.key.clone(),
-            role: plan.role,
+            role: plan.role.clone(),
             terminal: terminal.clone(),
             round: task.round,
             start: Some(plan.start),
@@ -152,7 +154,7 @@ impl ArbiterShared {
             task,
             "fish_launched",
             serde_json::json!({
-                "fish": plan.fish, "role": plan.role.id(), "terminal": terminal,
+                "fish": plan.fish, "role": plan.role.as_str(), "terminal": terminal,
                 "attempt": plan.key.attempt,
             }),
         ));
@@ -234,7 +236,7 @@ impl ArbiterShared {
         self.launcher.revoke(&plan.request.token);
         task.fish.push(FishRecord {
             key: plan.key.clone(),
-            role: plan.request.role,
+            role: plan.request.role.clone(),
             terminal: String::new(),
             round: task.round,
             start: None,
@@ -266,15 +268,21 @@ impl ArbiterShared {
     fn instruction_context(
         &self,
         task: &crate::state::Task,
-        role: Role,
+        role: &RoleId,
+        seat: &ez_team::Seat,
         key: &FishKey,
         round: u32,
-        fish_brief: PathBuf,
-        report_path: &Path,
     ) -> Result<InstructionContext, Rejection> {
+        let def = task
+            .role_def(role)
+            .ok_or_else(|| Rejection::new("R5", texts::role_not_in_team(role.as_str())))?;
+        let folder = paths::round_dir(&task.space.folder, &task.id, round);
+        let suffix = attempt_suffix(key.attempt);
+        let fish_brief = folder.join(format!("{}{}.encargo.md", key.fish, suffix));
+        let report_path = folder.join(format!("{}{}.informe.md", key.fish, suffix));
         let qa_report = task
             .fish_in_round(round)
-            .find(|record| record.role == Role::Qa)
+            .find(|record| task.is_writes_tests(&record.role))
             .and_then(|record| {
                 task.work
                     .iter()
@@ -283,17 +291,26 @@ impl ArbiterShared {
             });
         let task_dir = paths::task_dir(&task.space.folder, &task.id);
         Ok(InstructionContext {
-            role,
+            role: role.clone(),
+            role_name: def.name.clone(),
             fish: key.fish.clone(),
+            parent: None,
             round,
             folder: task.space.folder.clone(),
             brief: task_dir.join("encargo.md"),
             criteria: task_dir.join("criterios.toml"),
             plan: task_dir.join("plan.md"),
             fish_brief,
-            report: report_path.to_path_buf(),
+            report: report_path,
             qa_report,
             min_mutations: self.load_criteria(task)?.validacion.mutaciones_minimas,
+            delegable_roles: seat.delegates_to.clone(),
+            drafts: task
+                .space
+                .folder
+                .join(".ez")
+                .join("borrador")
+                .join(&key.fish),
         })
     }
 
@@ -322,33 +339,42 @@ impl ArbiterShared {
     fn launch_request(
         &self,
         task: &crate::state::Task,
-        role: Role,
+        role: &RoleId,
         seat: &ez_team::Seat,
         key: &FishKey,
         instructions: &Path,
         token: &str,
     ) -> crate::types::LaunchRequest {
         let mut env = std::collections::BTreeMap::new();
-        env.insert("EZ_ROLE".to_string(), "fish".to_string());
+        env.insert("EZ_ROLE".to_string(), "sub".to_string());
         env.insert("EZ_FISH".to_string(), key.fish.clone());
         env.insert("EZ_TOKEN".to_string(), token.to_string());
         let mut labels = std::collections::BTreeMap::new();
         labels.insert("ez".to_string(), "1".to_string());
         labels.insert("ez_space".to_string(), task.space.id.clone());
         labels.insert("ez_task".to_string(), task.id.clone());
-        labels.insert("ez_role".to_string(), role.id().to_string());
+        labels.insert("ez_role".to_string(), role.as_str().to_string());
         labels.insert("ez_fish".to_string(), key.fish.clone());
         labels.insert("ez_attempt".to_string(), key.attempt.to_string());
         crate::types::LaunchRequest {
             fish: key.fish.clone(),
             hc_name: hc_name(&task.id, &key.fish, key.attempt),
-            role,
+            role: role.clone(),
             seat: seat.clone(),
             cwd: task.space.folder.clone(),
             env,
             labels,
-            first_line: self.writer.first_line(role, instructions),
+            first_line: self
+                .writer
+                .first_line(&task_role_name(task, role), instructions),
             token: token.to_string(),
         }
     }
+}
+
+/// Nombre humano del papel para la primera línea del subagente.
+fn task_role_name(task: &crate::state::Task, role: &RoleId) -> String {
+    task.role_def(role)
+        .map(|def| def.name.clone())
+        .unwrap_or_else(|| role.as_str().to_string())
 }

@@ -8,6 +8,8 @@ mod events;
 mod fish;
 #[path = "arbiter/fixes.rs"]
 mod fixes;
+#[path = "arbiter/open_roles.rs"]
+mod open_roles;
 #[path = "arbiter/round.rs"]
 mod round;
 #[path = "arbiter/support.rs"]

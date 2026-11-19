@@ -27,7 +27,7 @@ use std::time::Duration;
 use crossbeam_channel::{Receiver, Sender};
 use parking_lot::Mutex;
 
-use ez_team::Role;
+use ez_team::{builtin, RoleId};
 
 use crate::events::{ArbiterEvent, Card, ElephantEvent};
 use crate::state::{Task, WorkState};
@@ -205,7 +205,9 @@ impl ArbiterShared {
                 brief,
                 criteria,
             } => self.task_new(&space, title, brief, criteria),
-            Command::TeamPropose { seats, card } => self.team_propose(&space, seats, card),
+            Command::TeamPropose { seats, roles, card } => {
+                self.team_propose(&space, seats, roles, card)
+            }
             Command::RoundStart => self.round_start(&space),
             Command::FishNew { role, brief } => self.fish_new(&space, role, brief),
             Command::FishSend { fish, file } => self.fish_send(&space, &fish, file),
@@ -559,9 +561,16 @@ pub(crate) fn hc_name(task: &str, fish: &str, attempt: u32) -> String {
 }
 
 /// Id de pez de un papel en una ronda (`dev-r1-2`, `qa-r1`…).
-pub(crate) fn fish_id(role: Role, round: u32, index: u32) -> String {
-    match role {
-        Role::Developer => format!("dev-r{round}-{index}"),
-        other => format!("{}-r{round}", other.short()),
+pub(crate) fn fish_id(role: &RoleId, round: u32, index: u32, indexed: bool) -> String {
+    let short = role.short();
+    if indexed {
+        format!("{short}-r{round}-{index}")
+    } else {
+        format!("{short}-r{round}")
     }
+}
+
+/// Los papeles con varios puestos (y el desarrollador incluido) llevan índice en su id.
+pub(crate) fn is_indexed(role: &RoleId, count: u32) -> bool {
+    role.as_str() == builtin::DEVELOPER || count > 1
 }

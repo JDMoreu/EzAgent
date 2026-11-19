@@ -3,8 +3,9 @@
 use std::fs;
 use std::time::Instant;
 
+use crate::support::role;
 use ez_arbiter::{Caller, Command, Delivery, FishKey, Verdict};
-use ez_team::{Role, Seat};
+use ez_team::{builtin, Seat};
 
 use super::support::Fixture;
 
@@ -66,7 +67,7 @@ fn old_fish_key_is_rejected_after_relaunch() {
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Planner,
+                role: role(builtin::PLANNER),
                 brief: f.brief(),
             },
         )
@@ -78,14 +79,14 @@ fn old_fish_key_is_rejected_after_relaunch() {
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Planner,
+                role: role(builtin::PLANNER),
                 brief: f.brief(),
             },
         )
         .expect_err("segundo intento fallido");
     assert_eq!(second.rule, "R5");
     f.launcher.clear_fail();
-    f.launch(Role::Planner);
+    f.launch(role(builtin::PLANNER));
 
     let old = FishKey {
         space: "s1".into(),
@@ -107,7 +108,7 @@ fn token_is_absent_from_disk_and_live_events() {
     let f = Fixture::new("token-invisible");
     let receiver = f.arbiter.subscribe();
     let _ = f.setup();
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     let token = token_of(&f, "dev-r1-1");
     let live: String = receiver
         .try_iter()
@@ -127,23 +128,23 @@ fn token_is_absent_from_disk_and_live_events() {
 fn tokens_are_revoked_on_report_exit_and_stop() {
     let f = Fixture::new("revocaciones");
     let _ = f.setup();
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.report("dev-r1-1", Verdict::Pass, None, None)
         .expect("informe del desarrollador");
-    f.launch(Role::Qa);
+    f.launch(role(builtin::QA));
     let qa_token = token_of(&f, "qa-r1");
     f.report("qa-r1", Verdict::Pass, None, None)
         .expect("informe del QA");
     assert!(f.launcher.revoked().contains(&qa_token));
 
-    f.launch(Role::QaValidator);
+    f.launch(role(builtin::QA_VALIDATOR));
     let dev_token = token_of(&f, "valqa-r1");
     f.arbiter.fish_failed(&f.fish_key("valqa-r1"), "se cayó");
     assert!(f.launcher.revoked().contains(&dev_token));
 
     let other = Fixture::new("revocacion-stop");
     let _ = other.setup();
-    other.launch(Role::Developer);
+    other.launch(role(builtin::DEVELOPER));
     let dev_token = token_of(&other, "dev-r1-1");
     other.arbiter.stop("s1").expect("detener");
     assert!(other.launcher.revoked().contains(&dev_token));
@@ -159,7 +160,7 @@ fn launcher_error_and_failed_delivery_fail_the_work() {
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Planner,
+                role: role(builtin::PLANNER),
                 brief: error.brief(),
             },
         )
@@ -167,7 +168,7 @@ fn launcher_error_and_failed_delivery_fail_the_work() {
     assert_eq!(rejection.rule, "R5");
     assert!(rejection
         .message
-        .contains("No pude entregar el encargo a plan-r1: no hay hc"));
+        .contains("No pude entregar el encargo al subagente plan-r1: no hay hc"));
     assert_eq!(error.snapshot()["fish"][0]["id"], "plan-r1");
 
     let failed = Fixture::new("delivery-fallida");
@@ -180,7 +181,7 @@ fn launcher_error_and_failed_delivery_fail_the_work() {
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Planner,
+                role: role(builtin::PLANNER),
                 brief: failed.brief(),
             },
         )
@@ -199,7 +200,7 @@ fn unconfirmed_delivery_continues_and_is_announced() {
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Planner,
+                role: role(builtin::PLANNER),
                 brief: f.brief(),
             },
         )
@@ -212,7 +213,7 @@ fn unconfirmed_delivery_continues_and_is_announced() {
 fn report_requires_the_exact_path_and_clean_pass() {
     let f = Fixture::new("ruta-informe");
     let _ = f.setup();
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     let key = f.fish_key("dev-r1-1");
     let outside = f.write("informe-equivocado.md", " Informe.\n");
     let error = f
@@ -250,7 +251,7 @@ fn developer_waits_for_the_plan() {
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Developer,
+                role: role(builtin::DEVELOPER),
                 brief: f.brief(),
             },
         )
@@ -263,30 +264,30 @@ fn developer_waits_for_the_plan() {
 fn reviewer_phase_is_enforced() {
     let reviewer = Fixture::new("fases-revisor");
     let mut seats = Fixture::tasks();
-    seats.push(Fixture::seat(Role::PlanReviewer, 1));
+    seats.push(Fixture::seat(role(builtin::PLAN_REVIEWER), 1));
     let _ = manual_round_with(&reviewer, seats);
     let error = reviewer
         .arbiter
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::PlanReviewer,
+                role: role(builtin::PLAN_REVIEWER),
                 brief: reviewer.brief(),
             },
         )
         .expect_err("revisor antes del plan");
     assert_eq!(error.rule, "R5");
-    reviewer.launch(Role::Planner);
+    reviewer.launch(role(builtin::PLANNER));
     reviewer
         .report("plan-r1", Verdict::Pass, None, None)
         .expect("informe del plan");
-    reviewer.launch(Role::PlanReviewer);
+    reviewer.launch(role(builtin::PLAN_REVIEWER));
     let error = reviewer
         .arbiter
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Developer,
+                role: role(builtin::DEVELOPER),
                 brief: reviewer.brief(),
             },
         )
@@ -296,7 +297,7 @@ fn reviewer_phase_is_enforced() {
     reviewer
         .report("revplan-r1", Verdict::Pass, None, None)
         .expect("informe del revisor");
-    reviewer.launch(Role::Developer);
+    reviewer.launch(role(builtin::DEVELOPER));
 }
 
 #[test]
@@ -312,7 +313,7 @@ fn planner_is_rejected_in_later_rounds() {
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Planner,
+                role: role(builtin::PLANNER),
                 brief: late.brief(),
             },
         )
@@ -325,16 +326,16 @@ fn planner_is_rejected_in_later_rounds() {
 fn developer_cannot_be_launched_or_corrected_after_qa() {
     let f = Fixture::new("dev-tras-qa");
     let _ = f.setup();
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.report("dev-r1-1", Verdict::Pass, None, None)
         .expect("informe del desarrollador");
-    f.launch(Role::Qa);
+    f.launch(role(builtin::QA));
     let error = f
         .arbiter
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Developer,
+                role: role(builtin::DEVELOPER),
                 brief: f.brief(),
             },
         )
@@ -364,26 +365,26 @@ fn verification_only_round_requires_a_clean_previous_round() {
         .arbiter
         .execute(&Fixture::elephant(), Command::RoundStart)
         .expect("ronda 2");
-    clean.launch(Role::Qa);
+    clean.launch(role(builtin::QA));
     clean
         .report("qa-r2", Verdict::Pass, None, None)
         .expect("informe del QA en ronda de verificación");
 
     let dirty = Fixture::new("no-verificacion");
     let _ = manual_round(&dirty);
-    dirty.launch(Role::Planner);
+    dirty.launch(role(builtin::PLANNER));
     dirty
         .report("plan-r1", Verdict::Pass, None, None)
         .expect("plan");
-    dirty.launch(Role::Developer);
+    dirty.launch(role(builtin::DEVELOPER));
     dirty
         .report("dev-r1-1", Verdict::Pass, None, None)
         .expect("dev");
-    dirty.launch(Role::Qa);
+    dirty.launch(role(builtin::QA));
     dirty
         .report("qa-r1", Verdict::Pass, None, None)
         .expect("qa");
-    dirty.launch(Role::QaValidator);
+    dirty.launch(role(builtin::QA_VALIDATOR));
     dirty
         .report("valqa-r1", Verdict::Pass, Some(1), Some(1))
         .expect("validador");
@@ -397,7 +398,7 @@ fn verification_only_round_requires_a_clean_previous_round() {
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Qa,
+                role: role(builtin::QA),
                 brief: dirty.brief(),
             },
         )
@@ -417,7 +418,7 @@ fn three_attempts_per_role_and_round_then_rejected() {
             .execute(
                 &Fixture::elephant(),
                 Command::FishNew {
-                    role: Role::Planner,
+                    role: role(builtin::PLANNER),
                     brief: f.brief(),
                 },
             )
@@ -429,7 +430,7 @@ fn three_attempts_per_role_and_round_then_rejected() {
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Planner,
+                role: role(builtin::PLANNER),
                 brief: f.brief(),
             },
         )
@@ -455,7 +456,7 @@ fn modified_artifact_pauses_and_resume_restores_it() {
         .execute(
             &Fixture::elephant(),
             Command::FishNew {
-                role: Role::Developer,
+                role: role(builtin::DEVELOPER),
                 brief: f.brief(),
             },
         )
@@ -469,7 +470,7 @@ fn modified_artifact_pauses_and_resume_restores_it() {
         fs::read_to_string(&live).expect("encargo restaurado"),
         original
     );
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
 }
 
 #[test]
@@ -512,7 +513,7 @@ fn timeout_returns_in_under_five_seconds() {
 fn hc_name_uses_eight_hex_digits_and_attempt_suffix() {
     let f = Fixture::new("nombre-hc");
     let task = manual_round(&f);
-    f.launch(Role::Planner);
+    f.launch(role(builtin::PLANNER));
     let first = token_of(&f, "plan-r1");
     assert!(!first.is_empty());
     let request = f
@@ -525,7 +526,7 @@ fn hc_name_uses_eight_hex_digits_and_attempt_suffix() {
     assert_eq!(request.labels["ez_attempt"], "1");
 
     f.arbiter.fish_failed(&f.fish_key("plan-r1"), "se fue");
-    f.launch(Role::Planner);
+    f.launch(role(builtin::PLANNER));
     let second = f
         .launcher
         .requests()

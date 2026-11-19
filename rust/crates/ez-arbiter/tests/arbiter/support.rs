@@ -9,7 +9,7 @@ use ez_arbiter::{
     Arbiter, Caller, Clock, Command, Delivery, FishKey, FishLauncher, InstructionWriter,
     LaunchRequest, Launched, Outcome, Rejection, Space, Verdict,
 };
-use ez_team::{InstructionContext, Role, Seat};
+use ez_team::{builtin, InstructionContext, RoleId, Seat};
 
 /// Reloj que no avanza solo.
 pub struct FakeClock {
@@ -150,15 +150,14 @@ impl InstructionWriter for FakeWriter {
         Ok(format!(
             "# Instrucciones de {} ({}) para la ronda {}",
             context.fish,
-            context.role.id(),
+            context.role.as_str(),
             context.round
         ))
     }
 
-    fn first_line(&self, role: Role, instructions: &Path) -> String {
+    fn first_line(&self, role_name: &str, instructions: &Path) -> String {
         format!(
-            "Eres un pez dorado de EzAgent con el papel {}. Lee {} y síguelo al pie de la letra.",
-            role.id(),
+            "Eres un subagente de EzAgent con el papel {role_name}. Lee {} y síguelo al pie de la letra.",
             instructions.display()
         )
     }
@@ -337,27 +336,41 @@ impl Fixture {
 
     pub fn tasks() -> Vec<Seat> {
         vec![
-            Self::seat(Role::Planner, 1),
-            Self::seat(Role::Developer, 1),
-            Self::seat(Role::Qa, 1),
-            Self::seat(Role::QaValidator, 1),
+            Self::seat(role(builtin::PLANNER), 1),
+            Self::seat(role(builtin::DEVELOPER), 1),
+            Self::seat(role(builtin::QA), 1),
+            Self::seat(role(builtin::QA_VALIDATOR), 1),
         ]
     }
 
-    pub fn seat(role: Role, count: u32) -> Seat {
+    pub fn seat(role: RoleId, count: u32) -> Seat {
+        let stage = ez_team::builtin_roles()
+            .iter()
+            .find(|def| def.id == role)
+            .map(|def| def.default_stage)
+            .unwrap_or(1);
         Seat {
             role,
             agent: "falso".to_string(),
             model: "modelo".to_string(),
             effort: None,
             count,
+            stage,
+            delegates_to: Vec::new(),
         }
     }
 
     pub fn team(&self, seats: Vec<Seat>) {
         let card = "Equipo propuesto para «Tarea de prueba».".to_string();
         self.arbiter
-            .execute(&Self::elephant(), Command::TeamPropose { seats, card })
+            .execute(
+                &Self::elephant(),
+                Command::TeamPropose {
+                    seats,
+                    roles: ez_team::builtin_roles(),
+                    card,
+                },
+            )
             .expect("proponer el equipo");
     }
 
@@ -370,13 +383,13 @@ impl Fixture {
         self.arbiter
             .execute(&Self::elephant(), Command::RoundStart)
             .expect("abrir la ronda");
-        self.launch(Role::Planner);
+        self.launch(role(builtin::PLANNER));
         self.report("plan-r1", Verdict::Pass, None, None)
             .expect("informe del planificador");
         task
     }
 
-    pub fn launch(&self, role: Role) -> String {
+    pub fn launch(&self, role: RoleId) -> String {
         let outcome = self
             .arbiter
             .execute(
@@ -444,6 +457,11 @@ impl Fixture {
             .snapshot("s1")
             .expect("instantánea del espacio")
     }
+}
+
+/// Construye un id de papel incluido para las pruebas.
+pub fn role(id: &str) -> RoleId {
+    RoleId::parse(id).expect("id del papel")
 }
 
 /// Tipo de un evento de traza ya serializado (bitácora).

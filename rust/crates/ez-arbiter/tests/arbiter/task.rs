@@ -2,8 +2,9 @@
 
 use std::path::PathBuf;
 
+use crate::support::role;
 use ez_arbiter::{Caller, Command, FishKey, Outcome, Rejection, Verdict};
-use ez_team::Role;
+use ez_team::builtin;
 
 use super::support::Fixture;
 
@@ -21,13 +22,13 @@ pub fn new_task(f: &Fixture, criteria: PathBuf) -> Result<Outcome, Rejection> {
 
 /// Informes que hacen limpia la ronda `n` (que ya está abierta).
 pub fn clean_round(f: &Fixture, n: u32) {
-    f.launch(Role::Developer);
+    f.launch(role(builtin::DEVELOPER));
     f.report(&format!("dev-r{n}-1"), Verdict::Pass, None, None)
         .expect("informe del desarrollador");
-    f.launch(Role::Qa);
+    f.launch(role(builtin::QA));
     f.report(&format!("qa-r{n}"), Verdict::Pass, None, None)
         .expect("informe del QA");
-    f.launch(Role::QaValidator);
+    f.launch(role(builtin::QA_VALIDATOR));
     f.report(&format!("valqa-r{n}"), Verdict::Pass, Some(3), Some(3))
         .expect("informe del validador");
     f.close_round().expect("cerrar ronda limpia");
@@ -47,7 +48,7 @@ fn r1_fish_cannot_use_elephant_commands() {
         .execute(&unknown, Command::RoundStart)
         .expect_err("un pez no abre rondas");
     assert_eq!(error.rule, "R1");
-    assert!(error.message.contains("elefante"));
+    assert!(error.message.contains("agente principal"));
 }
 
 #[test]

@@ -6,15 +6,16 @@ use std::path::Path;
 use crate::types::Verdict;
 
 /// R1: el comando es del elefante.
-pub const ELEPHANT_ONLY: &str = "Ese comando lo ejecuta el elefante del espacio, no un pez.";
+pub const ELEPHANT_ONLY: &str =
+    "Ese comando lo ejecuta el agente principal del espacio, no un subagente.";
 /// R1: el comando es de un pez.
-pub const FISH_ONLY: &str = "Solo un pez puede enviar un informe con `ez report`.";
+pub const FISH_ONLY: &str = "Solo un subagente puede enviar un informe con `ez report`.";
 /// El espacio no está registrado.
 pub const UNKNOWN_SPACE: &str =
     "Ese espacio no está registrado en el árbitro: ábrelo en la ventana primero.";
 /// R1: el pez no pertenece a ninguna tarea activa.
 pub const UNKNOWN_FISH: &str =
-    "Ese pez no pertenece a ninguna tarea activa: revisa el identificador.";
+    "Ese subagente no pertenece a ninguna tarea activa: revisa el identificador.";
 /// No hay tarea activa en el espacio.
 pub const NO_ACTIVE_TASK: &str =
     "No hay una tarea activa en este espacio: crea una con `ez task new`.";
@@ -69,15 +70,20 @@ pub fn waiting_for(fish: &[String]) -> String {
 }
 /// R5: ya hay un pez de ese papel en la ronda.
 pub fn already_in_round(role: &str) -> String {
-    format!("Ya hay un pez de {role} en esta ronda; solo se permite uno.")
+    format!("Ya hay un subagente de {role} en esta ronda; solo se permite uno.")
 }
-/// R5: se alcanzó el máximo de desarrolladores vivos.
-pub fn too_many_developers(alive: u32, max: u32) -> String {
+/// R5: se alcanzó el máximo de subagentes vivos de un papel.
+pub fn too_many_fish(alive: u32, max: u32) -> String {
     format!("Ya hay {alive} desarrolladores vivos y el equipo permite {max}.")
+}
+
+/// R9: ningún verificador informó en la ronda.
+pub fn no_verifier_reported() -> String {
+    "Ningún verificador informó en esta ronda.".to_string()
 }
 /// R5: el archivo del encargo del pez no existe.
 pub fn fish_brief_missing(path: &Path) -> String {
-    format!("No existe el encargo del pez: {}.", path.display())
+    format!("No existe el encargo del subagente: {}.", path.display())
 }
 /// R6: no se puede corregir a un verificador.
 pub fn cannot_correct(fish: &str) -> String {
@@ -111,7 +117,7 @@ pub fn already_reported(fish: &str) -> String {
 }
 /// R7: faltan los números de mutaciones.
 pub const MUTATIONS_REQUIRED: &str =
-    "El validador de QA debe informar `--mutations-tried` y `--mutations-caught`.";
+    "El papel que valida mutaciones debe informar `--mutations-tried` y `--mutations-caught`.";
 /// R7: falta el archivo del informe.
 pub fn report_missing(path: &Path) -> String {
     format!("No existe el informe: {}.", path.display())
@@ -234,7 +240,7 @@ pub fn round_started(round: u32) -> String {
 }
 /// Pez lanzado.
 pub fn fish_launched(fish: &str, terminal: &str) -> String {
-    format!("Pez {fish} lanzado en {terminal}.")
+    format!("Subagente {fish} lanzado en {terminal}.")
 }
 /// Corrección enviada.
 pub fn correction_sent(fish: &str) -> String {
@@ -253,13 +259,13 @@ pub fn verify_failed(failed: usize, total: usize) -> String {
 /// Elefante: pez bloqueado.
 pub fn elephant_blocked(fish: &str, kind: Option<&str>) -> String {
     match kind {
-        Some(kind) => format!("{fish} quedó bloqueado ({kind})."),
-        None => format!("{fish} quedó bloqueado."),
+        Some(kind) => format!("El subagente {fish} quedó bloqueado ({kind})."),
+        None => format!("El subagente {fish} quedó bloqueado."),
     }
 }
 /// Elefante: pez terminó su terminal.
 pub fn elephant_exited(fish: &str) -> String {
-    format!("La terminal de {fish} terminó.")
+    format!("La terminal del subagente {fish} terminó.")
 }
 /// Criterio en la tarjeta.
 pub fn card_criterion(id: &str, description: &str, command: &str) -> String {
@@ -302,7 +308,7 @@ pub fn status_fish(fish: &str, role: &str, task: &str, round: u32, pending: bool
     format!("Eres {fish} ({role}) en la ronda {round} de la tarea {task}: {work}.")
 }
 /// Estado de un pez sin tarea.
-pub const STATUS_UNKNOWN_FISH: &str = "Ese pez no tiene una tarea activa.";
+pub const STATUS_UNKNOWN_FISH: &str = "Ese subagente no tiene una tarea activa.";
 /// Estado de un espacio sin tarea.
 pub const STATUS_NO_TASK: &str = "El espacio no tiene una tarea activa.";
 /// Nombre del estado para la persona.
@@ -329,14 +335,14 @@ pub const ALREADY_PAUSED: &str = "La tarea ya está en pausa.";
 pub const NOT_PAUSED: &str = "La tarea no está en pausa.";
 
 /// R1: la clave del pez no coincide con ningún trabajo vigente (§14.1).
-pub const FISH_NOT_ACTIVE: &str = "Este pez ya no está activo en esta tarea.";
+pub const FISH_NOT_ACTIVE: &str = "Este subagente ya no está activo en esta tarea.";
 /// R5: la entrega del encargo falló (§14.2).
 pub fn delivery_failed(fish: &str, detail: &str) -> String {
-    format!("No pude entregar el encargo a {fish}: {detail}")
+    format!("No pude entregar el encargo al subagente {fish}: {detail}")
 }
 /// R5: la entrega no se pudo confirmar; el trabajo sigue.
 pub fn delivery_unconfirmed(fish: &str) -> String {
-    format!(" No se pudo confirmar la entrega a {fish}; revisa su terminal.")
+    format!(" No se pudo confirmar la entrega al subagente {fish}; revisa su terminal.")
 }
 /// R7: el informe no está en la ruta del trabajo pendiente (§14.3).
 pub fn wrong_report_path(path: &Path) -> String {
