@@ -175,3 +175,13 @@
   antes de la corrección).
 - No se fusiona a `eco/main` hasta que la persona confirme el cambio de los avisos (sin
   pregunta al final) o pida conservarlos con pregunta.
+
+### HD-6 (punta a punta, mcode) — validado y fusionado; fallos del producto → HD-9
+- El elefante ejecutó `e2e_delegate.exe`: **126/126**, código 0, foco restaurado y Herdr
+  limpio. Seis hijos (claude, opencode, mcode, qwen, codex, pi) con padre, nombre, etiquetas,
+  primer mensaje con la marca; tree/tab/right sin perder el padre; rechazos sin terminal;
+  estados terminado→validado, fallido por `hc kill`, avisos al padre falso; vigilante único.
+- Hallazgos reales del producto (no corregidos por HD-6, como pedía): B1 errores de `hc run`
+  por stderr (aviso espurio del vigilante, sin reintento n+1), B2 PowerShell sin `&` con
+  ruta citada, B3 el vigilante lee el voice.json real, B4 `--show tab` abre en el espacio a
+  la vista. HD-9 los corrige y quita los atajos del ejemplo.
