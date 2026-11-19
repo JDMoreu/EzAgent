@@ -127,3 +127,14 @@ usuario, EzAgent = árbitro (`ez`). Diseño: `docs/designs/espacio-elefante.md`.
   reales (gasta cuotas: preguntar). Si algo necesita una decisión del usuario, decidir lo
   más simple y seguro con `// DECISION` y dejarlo anotado aquí para la mañana.
 - Al terminar, dejar un resumen para el usuario en `rust-migration/reports/NOCHE-2026-11-18.md`.
+
+## Cierre de la noche (2026-11-19, 01:25)
+- **Ola completa integrada en `eco/main`** (5782d12 + resumen): ventana en árbol,
+  varios agentes principales con worktree, papeles abiertos, delegación por niveles, nombres
+  neutros, nota de voz, e2e con agentes falsos y hc real en verde. Verificación completa:
+  fmt, clippy y 2609 pruebas en verde.
+- Resumen para el usuario: `rust-migration/reports/NOCHE-2026-11-18.md`.
+- **Siguiente (preguntar antes):** prueba con CLIs reales (gasta cuotas; ver si reportan
+  OSC 7501 y si Codex deja ejecutar `ez.exe`); nota de voz con micrófono; subir `eco/main`;
+  luego llamada con la esfera, empaquetado con `hc.exe` y retiro del HUD.
+- Apagado: el usuario autorizó apagar el PC al terminar (solo esa noche).
