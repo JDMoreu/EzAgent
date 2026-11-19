@@ -3,8 +3,13 @@
 # terminal de hc para que HC_TERMINAL_ID exista y los workers cuelguen de ella.
 # No usa EZ_SHOW: no toca la ventana de Herdr de la persona.
 set -u
-[ -n "${HC_TERMINAL_ID:-}" ] || { echo "FALLO: ejecuta probar.sh desde una terminal de hc"; exit 3; }
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# hc no inyecta HC_TERMINAL_ID en comandos directos: si falta, se deriva del
+# nombre de esta terminal (primer argumento) con hc get.
+if [ -z "${HC_TERMINAL_ID:-}" ] && [ -n "${1:-}" ]; then
+  HC_TERMINAL_ID="$(hc get "$1" --json 2>/dev/null | python -c "import json,sys; print(json.load(sys.stdin).get('address',''))")"
+fi
+[ -n "${HC_TERMINAL_ID:-}" ] || { echo "FALLO: ejecuta probar.sh desde una terminal de hc"; exit 3; }
 WORK="${TEMP:-/tmp}/hd0-probar-$$"
 TOOLS="$WORK/tools"
 ADDRS=""
