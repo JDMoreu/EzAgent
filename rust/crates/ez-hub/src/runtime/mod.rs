@@ -32,6 +32,16 @@ use self::spaces::{ElephantTokens, MainChoice, Principales, SpaceConfig};
 
 pub use self::types::{FishInfo, MainAgentInfo, RuntimeStatus, SpaceTree, TreeNode};
 
+/// Opciones de arranque del motor (ECO-8). Permite a un ejemplo decir dónde
+/// están `ez.exe` y los binarios de los agentes cuando no arranca desde la
+/// carpeta del ejecutable de la ventana.
+#[derive(Debug, Clone, Default)]
+pub struct RuntimeOptions {
+    /// Carpeta que se antepone al `PATH` de los agentes; por omisión, la del
+    /// ejecutable actual.
+    pub ez_dir: Option<PathBuf>,
+}
+
 const HC_MISSING: &str = "No encontré herdr-core (hc). Instálalo desde https://releases.herdr.dev y vuelve a abrir EzAgent.";
 const EZ_PORT: u16 = 47830;
 const EVENT_LOG_LIMIT: usize = 500;
