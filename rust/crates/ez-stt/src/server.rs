@@ -1,18 +1,26 @@
-//! Port of `src/ezagent/voice/app.py` 285-383 (F4-03).
+//! Port of `src/ezagent/voice/app.py` 285-383 (F4-03), con la corrección DX-3.
 //!
-//! Arranque de `whisper-server`: sondeo del endpoint, puerto local libre,
-//! selección de motor (Vulkan o CPU) delegada en `scripts/start-whisper.ps1`
-//! y espera acotada a que responda.
+//! Arranque de `whisper-server`: sondeo del endpoint, puerto local libre y
+//! espera acotada a que responda. El ejecutable se lanza directo (sin
+//! `powershell` intermedio) dentro de un Job Object que lo mata con la app, y
+//! el puerto elegido se guarda en `%APPDATA%\EzAgent\whisper-server.json` para
+//! reutilizar el servidor sano en el siguiente arranque.
 
+mod job;
+
+use std::fs;
+use std::io;
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{info, warn};
 
 use ez_core::config::{python_str, truthy, VoiceConfig};
+use ez_core::dirs;
 
 use crate::client::{whisper_home, whisper_model_path, UrlParts};
 
@@ -20,6 +28,20 @@ use crate::client::{whisper_home, whisper_model_path, UrlParts};
 pub const WHISPER_WAIT_SECS: f64 = 25.0;
 /// `timeout` por defecto de `_whisper_ready`.
 pub const WHISPER_READY_TIMEOUT: Duration = Duration::from_secs(1);
+/// Tope de la consulta a `/health` del servidor guardado.
+const WHISPER_HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Nombre del archivo de estado propio del servidor.
+const STATE_FILE: &str = "whisper-server.json";
+/// Nombre del ejecutable de whisper.cpp.
+const SERVER_EXE: &str = "whisper-server.exe";
+/// Modelo VAD que `start-whisper.ps1` busca junto al modelo elegido.
+const VAD_MODEL: &str = "ggml-silero-v5.1.2.bin";
+/// Modelos por omisión del script, en su orden.
+const DEFAULT_MODELS: [&str; 2] = [
+    "ggml-large-v3-turbo-q8_0.bin",
+    "ggml-large-v3-turbo-q5_0.bin",
+];
 
 /// `_resource_root`: raíz de los recursos que acompañan al ejecutable.
 ///
@@ -115,17 +137,6 @@ fn config_truthy(config: &VoiceConfig, key: &str, default: bool) -> bool {
     config.get(key).map_or(default, truthy)
 }
 
-/// Nombres de carpeta donde puede estar `whisper-server.exe`.
-const SERVER_SUBDIRS: [&str; 4] = ["", "whisper_vulkan", "vulkan", "cpu"];
-
-fn has_server(home: Option<&Path>) -> bool {
-    home.is_some_and(|home| {
-        SERVER_SUBDIRS
-            .iter()
-            .any(|sub| home.join(sub).join("whisper-server.exe").is_file())
-    })
-}
-
 /// `urlunsplit` con el host local y el puerto recién elegido.
 fn url_for_local_port(url: &str, port: u16) -> String {
     let mut parts = UrlParts::split(url);
@@ -136,32 +147,191 @@ fn url_for_local_port(url: &str, port: u16) -> String {
     parts.unsplit()
 }
 
-/// Argumentos de `scripts/start-whisper.ps1`, en el orden del Python.
-fn start_args(
-    script: &Path,
-    port: u16,
-    engine: &str,
-    home: Option<&Path>,
-    model: Option<&Path>,
-) -> Vec<String> {
-    let mut args = vec![
-        "-NoProfile".to_string(),
-        "-ExecutionPolicy".to_string(),
-        "Bypass".to_string(),
-        "-File".to_string(),
-        script.to_string_lossy().into_owned(),
-        "-Port".to_string(),
-        port.to_string(),
-        "-Engine".to_string(),
-        engine.to_string(),
-    ];
-    if let Some(home) = home {
-        args.push("-WhisperHome".to_string());
-        args.push(home.to_string_lossy().into_owned());
+/// `{esquema}://{host}/health` del servidor.
+fn health_url(url: &str) -> String {
+    let mut parts = UrlParts::split(url);
+    if parts.scheme.is_empty() {
+        parts.scheme = "http".to_string();
     }
-    if let Some(model) = model {
-        args.push("-Model".to_string());
-        args.push(model.to_string_lossy().into_owned());
+    parts.path = "/health".to_string();
+    parts.query.clear();
+    parts.unsplit()
+}
+
+/// ¿El servidor guardado sigue sano? Se pregunta a `/health`; si el binario es
+/// viejo y no tiene esa ruta, basta con que el puerto acepte conexiones.
+fn server_healthy(url: &str) -> bool {
+    let Ok(client) = reqwest::blocking::Client::builder()
+        .timeout(WHISPER_HEALTH_TIMEOUT)
+        .build()
+    else {
+        return whisper_ready_timeout(url, WHISPER_READY_TIMEOUT);
+    };
+    match client.get(health_url(url)).send() {
+        Ok(response) if response.status().is_success() => true,
+        Ok(_) => whisper_ready_timeout(url, WHISPER_READY_TIMEOUT),
+        Err(_) => false,
+    }
+}
+
+/// Estado del servidor que arrancó esta app en un arranque anterior.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ServerState {
+    pid: u32,
+    port: u16,
+    url: String,
+}
+
+/// `%APPDATA%\EzAgent\whisper-server.json`.
+fn state_path() -> PathBuf {
+    dirs::app_data_dir().join(STATE_FILE)
+}
+
+fn read_state(path: &Path) -> Option<ServerState> {
+    let text = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+/// Escritura atómica: temporal en la misma carpeta y renombrar.
+fn write_state(path: &Path, state: &ServerState) -> io::Result<()> {
+    let text = serde_json::to_string(state).map_err(io::Error::other)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let temp = path.with_extension("json.tmp");
+    fs::write(&temp, text)?;
+    if let Err(error) = fs::rename(&temp, path) {
+        let _ = fs::remove_file(&temp);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn remove_state(path: &Path) {
+    let _ = fs::remove_file(path);
+}
+
+/// Consulta al sistema por el proceso guardado; las pruebas lo sustituyen.
+trait ProcessProbe {
+    fn image_name(&self, pid: u32) -> Option<String>;
+    fn terminate(&self, pid: u32) -> bool;
+}
+
+struct SystemProbe;
+
+impl ProcessProbe for SystemProbe {
+    fn image_name(&self, pid: u32) -> Option<String> {
+        job::process_image_name(pid)
+    }
+
+    fn terminate(&self, pid: u32) -> bool {
+        job::terminate(pid)
+    }
+}
+
+fn is_whisper_server(image: Option<&str>) -> bool {
+    image.is_some_and(|name| name.eq_ignore_ascii_case(SERVER_EXE))
+}
+
+/// Reutiliza el servidor sano del estado o retira el estado inservible.
+///
+/// Devuelve `true` cuando hay un servidor sano y deja su URL en `config`. Un
+/// servidor nuestro que no responde se cierra solo si `replace` es `true`.
+fn reuse_server(
+    config: &mut VoiceConfig,
+    state_file: &Path,
+    probe: &dyn ProcessProbe,
+    replace: bool,
+) -> bool {
+    let Some(state) = read_state(state_file) else {
+        // Un estado ilegible también es nuestro: se descarta.
+        remove_state(state_file);
+        return false;
+    };
+    let ours = is_whisper_server(probe.image_name(state.pid).as_deref());
+    if ours && server_healthy(&state.url) {
+        config.set("whisper_url", Value::String(state.url.clone()));
+        info!(
+            "whisper-server: reutilizo el de la app anterior (PID {}, puerto {}).",
+            state.pid, state.port
+        );
+        return true;
+    }
+    if ours && replace {
+        warn!(
+            "whisper-server (PID {}) no responde; lo cierro para arrancar otro.",
+            state.pid
+        );
+        if !probe.terminate(state.pid) {
+            warn!("No pude cerrar whisper-server (PID {}).", state.pid);
+        }
+    }
+    if !ours || replace {
+        remove_state(state_file);
+    }
+    false
+}
+
+/// Carpetas donde `start-whisper.ps1` busca `whisper-server.exe`, en su orden.
+fn server_candidates(engine: &str) -> Vec<&'static str> {
+    if engine.eq_ignore_ascii_case("cpu") {
+        vec!["cpu", "", "whisper_vulkan", "vulkan"]
+    } else {
+        vec!["", "whisper_vulkan", "vulkan", "cpu"]
+    }
+}
+
+/// Primer `whisper-server.exe` que existe en la carpeta de whisper.
+fn resolve_server(home: Option<&Path>, engine: &str) -> Option<PathBuf> {
+    let home = home?;
+    server_candidates(engine)
+        .into_iter()
+        .map(|subdirectory| home.join(subdirectory).join(SERVER_EXE))
+        .find(|path| path.is_file())
+}
+
+/// El modelo configurado o los que el script usa por omisión.
+fn resolve_model(model: Option<&Path>, home: Option<&Path>) -> Option<PathBuf> {
+    if let Some(model) = model.filter(|path| path.is_file()) {
+        return Some(model.to_path_buf());
+    }
+    let models = home?.join("models");
+    DEFAULT_MODELS
+        .iter()
+        .map(|name| models.join(name))
+        .find(|path| path.is_file())
+}
+
+/// Argumentos que recibía `whisper-server` del script `start-whisper.ps1`.
+fn server_args(port: u16, engine: &str, server: &Path, model: &Path) -> Vec<String> {
+    let mut args = vec![
+        "-m".to_string(),
+        model.to_string_lossy().into_owned(),
+        "--host".to_string(),
+        "127.0.0.1".to_string(),
+        "--port".to_string(),
+        port.to_string(),
+        "-l".to_string(),
+        "es".to_string(),
+        "-t".to_string(),
+        "6".to_string(),
+    ];
+    let cpu = engine.eq_ignore_ascii_case("cpu")
+        || server
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|name| name.eq_ignore_ascii_case("cpu"));
+    if cpu {
+        args.push("-ng".to_string());
+    }
+    if let Some(vad) = model
+        .parent()
+        .map(|folder| folder.join(VAD_MODEL))
+        .filter(|path| path.is_file())
+    {
+        args.push("--vad".to_string());
+        args.push("--vad-model".to_string());
+        args.push(vad.to_string_lossy().into_owned());
     }
     args
 }
@@ -169,27 +339,16 @@ fn start_args(
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-fn spawn_server(
-    script: &Path,
-    port: u16,
-    engine: &str,
-    home: Option<&Path>,
-    model: Option<&Path>,
-) -> std::io::Result<Child> {
-    // DECISION: se ejecuta el script del repo igual que el Python, sin shell
-    // interactivo (`-File` y argumentos en lista); el script elige Vulkan/CPU.
-    let mut command = Command::new("powershell");
+// DECISION: se lanza el ejecutable directo, sin `powershell` intermedio; el
+// script queda solo para arrancarlo a mano. El proceso es el que queda en el
+// Job Object y el que se guarda en el estado.
+fn spawn_server(server: &Path, args: &[String], cwd: &Path) -> io::Result<Child> {
+    let mut command = Command::new(server);
     command
-        .args(start_args(script, port, engine, home, model))
+        .args(args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        // DECISION: Python hereda el entorno; se copia explícitamente para que
-        // PowerShell tenga PATH, LOCALAPPDATA, SystemRoot, etc.
-        .env_clear()
-        .envs(std::env::vars_os());
-    if let Some(directory) = script.parent().and_then(Path::parent) {
-        command.current_dir(directory);
-    }
+        .current_dir(cwd);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -209,12 +368,44 @@ fn wait_until_ready(url: &str, wait_secs: f64) -> bool {
     false
 }
 
-fn ensure_whisper_at(config: &mut VoiceConfig, wait_secs: f64, root: &Path) -> Option<Child> {
+fn ensure_whisper_at(
+    config: &mut VoiceConfig,
+    wait_secs: f64,
+    root: &Path,
+    state_file: &Path,
+) -> Option<Child> {
+    let home = whisper_home();
+    let model = whisper_model_path(&config_text(config, "stt_model"));
+    ensure_whisper_in(
+        config,
+        wait_secs,
+        root,
+        state_file,
+        home.as_deref(),
+        model.as_deref(),
+        &SystemProbe,
+    )
+}
+
+/// Núcleo de [`ensure_whisper`] con la carpeta, el estado y la sonda inyectables.
+fn ensure_whisper_in(
+    config: &mut VoiceConfig,
+    wait_secs: f64,
+    root: &Path,
+    state_file: &Path,
+    home: Option<&Path>,
+    model: Option<&Path>,
+    probe: &dyn ProcessProbe,
+) -> Option<Child> {
+    let replace = config_truthy(config, "auto_start_whisper", true);
+    if reuse_server(config, state_file, probe, replace) {
+        return None;
+    }
     let url = config_text(config, "whisper_url");
     if whisper_ready(&url) {
         return None;
     }
-    if !config_truthy(config, "auto_start_whisper", true) {
+    if !replace {
         return None;
     }
     let parts = UrlParts::split(&url);
@@ -222,29 +413,6 @@ fn ensure_whisper_at(config: &mut VoiceConfig, wait_secs: f64, root: &Path) -> O
     if !is_local_host(host.as_deref()) {
         return None;
     }
-    let script = root.join("scripts").join("start-whisper.ps1");
-    if !script.is_file() {
-        info!(
-            "No encuentro {}; arranca whisper-server a mano.",
-            script.display()
-        );
-        return None;
-    }
-    let home = whisper_home();
-    let model = whisper_model_path(&config_text(config, "stt_model"));
-    if !has_server(home.as_deref()) && model.is_none() {
-        // DECISION: app.py usa log() propio (sin niveles); el aviso hablado lo
-        // emite la capa que trata el estado "error" del HUD.
-        info!("{}", missing_whisper_hint(packaged()));
-        return None;
-    }
-    let Some(port) = free_local_port() else {
-        warn!("No se pudo arrancar whisper-server: no hay puerto local libre");
-        return None;
-    };
-    config.set("whisper_url", Value::String(url_for_local_port(&url, port)));
-    info!("whisper-server: puerto local libre {port}.");
-    info!("whisper-server no responde; arrancándolo…");
     let engine = {
         let configured = config_text(config, "stt_engine");
         if configured.is_empty() {
@@ -253,18 +421,47 @@ fn ensure_whisper_at(config: &mut VoiceConfig, wait_secs: f64, root: &Path) -> O
             configured
         }
     };
-    let process = match spawn_server(&script, port, &engine, home.as_deref(), model.as_deref()) {
+    let Some(server) = resolve_server(home, &engine) else {
+        // DECISION: app.py usa log() propio (sin niveles); el aviso hablado lo
+        // emite la capa que trata el estado "error" del HUD.
+        info!("{}", missing_whisper_hint(packaged()));
+        return None;
+    };
+    let Some(model) = resolve_model(model, home) else {
+        info!("No encuentro el modelo de whisper; arranca whisper-server a mano.");
+        return None;
+    };
+    let Some(port) = free_local_port() else {
+        warn!("No se pudo arrancar whisper-server: no hay puerto local libre");
+        return None;
+    };
+    config.set("whisper_url", Value::String(url_for_local_port(&url, port)));
+    let updated = config_text(config, "whisper_url");
+    info!("whisper-server: puerto local libre {port}.");
+    info!("whisper-server no responde; arrancándolo…");
+    let args = server_args(port, &engine, &server, &model);
+    let process = match spawn_server(&server, &args, root) {
         Ok(process) => process,
         Err(error) => {
             warn!("No se pudo arrancar whisper-server: {error}");
             return None;
         }
     };
-    let updated = config_text(config, "whisper_url");
+    if !job::assign(&process) {
+        warn!("No pude atar whisper-server al Job de la app; cerrarlo quedará a medias.");
+    }
+    let state = ServerState {
+        pid: process.id(),
+        port,
+        url: updated.clone(),
+    };
+    if let Err(error) = write_state(state_file, &state) {
+        warn!("No pude guardar el estado de whisper-server: {error}");
+    }
     if wait_until_ready(&updated, wait_secs) {
         info!("whisper-server listo.");
     } else {
-        info!("whisper-server no respondió; revisa scripts\\start-whisper.ps1.");
+        info!("whisper-server no respondió; revisa los registros de whisper-server.");
     }
     Some(process)
 }
@@ -276,7 +473,7 @@ pub fn ensure_whisper(config: &mut VoiceConfig) -> Option<Child> {
 
 /// Igual que [`ensure_whisper`], con una espera explícita en segundos.
 pub fn ensure_whisper_with(config: &mut VoiceConfig, wait_secs: f64) -> Option<Child> {
-    ensure_whisper_at(config, wait_secs, &resource_root())
+    ensure_whisper_at(config, wait_secs, &resource_root(), &state_path())
 }
 
 #[cfg(test)]

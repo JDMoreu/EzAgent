@@ -132,8 +132,25 @@ impl Default for Options {
     }
 }
 
+/// Banderas de `whisper-server` con valor que `fake-whisper` acepta e ignora.
+const WHISPER_VALUE_FLAGS: [&str; 8] = [
+    "-m",
+    "--model",
+    "--host",
+    "-l",
+    "--language",
+    "-t",
+    "--threads",
+    "--vad-model",
+];
+/// Banderas de `whisper-server` sin valor que `fake-whisper` acepta.
+const WHISPER_FLAGS: [&str; 4] = ["-ng", "--vad", "--no-vad", "--log-disable"];
+
 impl Options {
     /// `--scenario <ruta>` y `--port <u16>`; cualquier otra cosa es error.
+    ///
+    /// Las banderas de `whisper-server` se toleran para que `fake-whisper`
+    /// pueda ocupar su lugar cuando la app lo lanza (DX-3).
     pub fn parse(args: &[String]) -> Result<Self> {
         let mut options = Options::default();
         let mut index = 0;
@@ -153,6 +170,13 @@ impl Options {
                         .with_context(|| format!("puerto no válido: {value}"))?;
                     index += 2;
                 }
+                flag if WHISPER_VALUE_FLAGS.contains(&flag) => {
+                    if args.get(index + 1).is_none() {
+                        anyhow::bail!("{flag} necesita un valor");
+                    }
+                    index += 2;
+                }
+                flag if WHISPER_FLAGS.contains(&flag) => index += 1,
                 other => anyhow::bail!("argumento desconocido: {other}"),
             }
         }
@@ -371,6 +395,32 @@ mod tests {
         assert_eq!(options.port, 9000);
         assert!(Options::parse(&["--port".into(), "x".into()]).is_err());
         assert!(Options::parse(&["--otra".into()]).is_err());
+    }
+
+    #[test]
+    fn whisper_server_flags_are_tolerated() {
+        let args: Vec<String> = [
+            "-m",
+            "model.bin",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "9100",
+            "-l",
+            "es",
+            "-t",
+            "6",
+            "-ng",
+            "--vad",
+            "--vad-model",
+            "vad.bin",
+        ]
+        .iter()
+        .map(|value| value.to_string())
+        .collect();
+        let options = Options::parse(&args).expect("banderas de whisper-server");
+        assert_eq!(options.port, 9100);
+        assert!(Options::parse(&["-m".into()]).is_err());
     }
 
     #[test]

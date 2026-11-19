@@ -16,6 +16,14 @@ serde_json = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
 fancy-regex = { workspace = true }
+# DX-3: Job Object que ata whisper-server a la vida de la app.
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
 
 [dev-dependencies]
 ez-parity = { path = "../ez-parity" }
+tiny_http = { workspace = true }
