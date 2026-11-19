@@ -19,6 +19,23 @@ use serde_json::{json, Value};
 
 const FIXTURES: &str = "../../../parity/fixtures/system_prompt.jsonl";
 
+/// El oráculo Python todavía no trae la regla de acuses (DX-2b). Solo se
+/// sustituye ese bloque al comparar; el resto del prompt se compara sin cambio.
+const PY_VOICE_FLOW_HINT: &str = "# Sin muletillas de espera\nNo uses frases de relleno antes de responder ni antes de una herramienta: nada de «un momento», «déjame ver», «pensando», «dame un segundo», «a ver» ni parecidas. Si necesitas una herramienta, llámala directamente; el sistema avisa por ti cuando la espera es larga. Empieza siempre por el contenido: el resultado, la respuesta o la única pregunta que falte.";
+
+fn with_current_hint(value: &mut Value) {
+    match value {
+        Value::String(text) => {
+            if text.contains(PY_VOICE_FLOW_HINT) {
+                *text = text.replace(PY_VOICE_FLOW_HINT, VOICE_FLOW_HINT);
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(with_current_hint),
+        Value::Object(map) => map.values_mut().for_each(with_current_hint),
+        _ => {}
+    }
+}
+
 type Warnings = Arc<Mutex<Vec<String>>>;
 type Warn = Box<dyn Fn(&str) + Send + Sync>;
 
@@ -212,8 +229,11 @@ fn every_system_prompt_case_matches_python() {
     let mut cases_run = 0;
     for case in &cases {
         let got = run_case(case, &root);
+        // DX-2b: el bloque de acuses solo existe en Rust; se alinea el esperado.
+        let mut expected_output = case.output.clone();
+        with_current_hint(&mut expected_output);
         let ok = match (&got, &case.error) {
-            (Ok(value), None) => value == &case.output,
+            (Ok(value), None) => value == &expected_output,
             (Err(message), Some(expected)) => message == expected,
             _ => false,
         };
@@ -234,4 +254,18 @@ fn every_system_prompt_case_matches_python() {
     let cases_in_file = cases.len();
     assert_eq!(cases_run, cases_in_file, "se saltó algún caso");
     assert!(cases_in_file >= 31, "faltan casos en el fixture");
+}
+
+#[test]
+fn voice_flow_hint_includes_the_short_ack_rule() {
+    assert!(VOICE_FLOW_HINT.starts_with(PY_VOICE_FLOW_HINT));
+    assert!(VOICE_FLOW_HINT.contains("# Acuses cortos"));
+    for reply in [
+        "Listo, quedo atento.",
+        "Me avisas si necesitas algo.",
+        "Entendido.",
+    ] {
+        assert!(VOICE_FLOW_HINT.contains(reply), "{reply}");
+    }
+    assert!(VOICE_FLOW_HINT.contains("No repitas el aviso"));
 }

@@ -8,9 +8,20 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+use ez_agent::system_prompt::VOICE_FLOW_HINT;
 use serde_json::{json, Value};
 
 const FROZEN: &str = "../../../parity/frozen/eval_context.json";
+
+/// El prompt congelado es anterior a la regla de acuses (DX-2b). Se alinea
+/// solo ese bloque; el resto del prompt se compara sin cambio.
+fn with_current_hint(prompt: &str) -> String {
+    let old_hint = VOICE_FLOW_HINT
+        .split("\n\n# Acuses cortos")
+        .next()
+        .unwrap_or(VOICE_FLOW_HINT);
+    prompt.replace(old_hint, VOICE_FLOW_HINT)
+}
 
 /// Casos del contrato offline (el mismo abanico que `evals/tests/contract.yaml`).
 const CASES: [&str; 3] = [
@@ -67,9 +78,10 @@ fn context_matches_the_frozen_python_provider() {
             actual["tools"], reference["tools"],
             "esquemas distintos en {user:?}"
         );
+        let reference_prompt = with_current_hint(reference["system_prompt"].as_str().unwrap_or(""));
         assert_eq!(
             without_clock(actual["system_prompt"].as_str().unwrap_or("")),
-            without_clock(reference["system_prompt"].as_str().unwrap_or("")),
+            without_clock(&reference_prompt),
             "prompt de sistema distinto en {user:?}"
         );
     }

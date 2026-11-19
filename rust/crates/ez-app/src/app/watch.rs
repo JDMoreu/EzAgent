@@ -346,6 +346,7 @@ impl VoiceApp {
         // El aviso nombra la pestaña; no repite lo que pidió el usuario.
         self.news_arrived(address, "", &shown, "done");
         self.inner.ui.hud.notice();
+        *self.inner.speech.last_outbound_question.write() = false;
         self.queue_announcement(&text, true);
     }
 
@@ -367,6 +368,8 @@ impl VoiceApp {
         // El aviso visual (spec 9.3) y la pregunta esperan su turno en la cola.
         self.news_arrived(address, "", &shown, reason);
         self.inner.ui.hud.notice();
+        // Si termina en «?», un «ok» posterior responde a la pregunta: al LLM.
+        *self.inner.speech.last_outbound_question.write() = question.trim_end().ends_with('?');
         self.queue_announcement(&question, true);
     }
 
@@ -395,17 +398,13 @@ impl VoiceApp {
         let flow = collapse_spaces(task);
         if reason == "done" && flow.starts_with(FLOW_PREFIX) {
             // Los nombres de las etapas no son el mensaje del usuario.
-            return format!(
-                "Oye, terminó {flow}. ¿Quieres que te lo resuma, que te muestre \
-                 el resultado o que haga algo más con él?"
-            );
+            // DECISION (DX-2b A1): afirmación, no pregunta, para que un «ok»
+            // posterior sea un acuse y no un «sí» (A2).
+            return format!("Oye, terminó {flow}. Cuando quieras te cuento el resultado.");
         }
         let shown = self.visible_agent(address, agent);
         if reason == "done" {
-            return format!(
-                "Oye, {shown} terminó. ¿Quieres que te resuma qué hizo, \
-                 que te lea la salida o que te la muestre?"
-            );
+            return format!("Oye, {shown} terminó. Cuando quieras te cuento qué hizo.");
         }
         let lead = capitalize(&shown);
         if reason == "lost" {

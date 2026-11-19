@@ -10,10 +10,11 @@ use std::sync::atomic::Ordering;
 
 use ez_audio::capture::list_input_devices;
 use ez_audio::wake::DEFAULT_WAKE_PHRASE;
+use ez_core::metrics::monotonic;
 use ez_core::pyvalue::{text_or_empty, truthy};
 use serde_json::Value;
 
-use super::core::{log, AppEvent, VoiceApp};
+use super::core::{cfg_float, log, AppEvent, VoiceApp};
 use crate::fast::{self, FastHost, FastOutcome};
 
 /// Operaciones de `VoiceApp` que pertenecen a otras tareas.
@@ -149,6 +150,30 @@ impl FastHost for AppFastHost<'_> {
     fn agent_label(&self, agent: &str) -> String {
         agent_label(self.app, agent)
     }
+
+    fn ack_context(&self) -> Option<(f64, Option<String>, bool)> {
+        let speech = &self.app.inner.speech;
+        // Se consume el tipo: un segundo acuse seguido no vuelve a activar el atajo.
+        let kind = speech.last_outbound_kind.write().take();
+        kind.map(|kind| {
+            let seconds = monotonic() - *speech.last_outbound_done_at.read();
+            let question = *speech.last_outbound_question.read();
+            (seconds, Some(kind), question)
+        })
+    }
+
+    fn ack_index(&self) -> usize {
+        self.app
+            .inner
+            .speech
+            .ack_index
+            .fetch_add(1, Ordering::SeqCst)
+    }
+
+    fn ack_window_secs(&self) -> f64 {
+        let cfg = self.app.config();
+        cfg_float(&cfg, "ack_fast_window_secs", fast::ACK_WINDOW_SECS)
+    }
 }
 
 impl VoiceApp {
@@ -164,9 +189,19 @@ impl VoiceApp {
 
     /// Igual que [`Self::fast_command`] con efectos intercambiables (pruebas).
     pub fn fast_command_with(&self, text: &str, effects: &dyn SettingsEffects) -> bool {
+        self.fast_command_outcome_with(text, effects).handled
+    }
+
+    /// Como [`Self::fast_command`] pero devuelve el resultado para saber si fue
+    /// un acuse y registrar `ack_fast` en lugar de `fast_command`.
+    pub fn fast_command_outcome(&self, text: &str) -> FastOutcome {
+        self.fast_command_outcome_with(text, self)
+    }
+
+    fn fast_command_outcome_with(&self, text: &str, effects: &dyn SettingsEffects) -> FastOutcome {
         let outcome = fast::fast_command(text, &AppFastHost { app: self });
         self.apply_fast_outcome(&outcome, effects);
-        outcome.handled
+        outcome
     }
 
     fn apply_fast_outcome(&self, outcome: &FastOutcome, effects: &dyn SettingsEffects) {
@@ -188,6 +223,7 @@ impl VoiceApp {
             self.inner.ui.hud.show_activity();
         }
         if let Some((kind, text)) = &outcome.speech {
+            *self.inner.speech.last_outbound_question.write() = text.trim_end().ends_with('?');
             effects.speak(text, kind);
         }
     }

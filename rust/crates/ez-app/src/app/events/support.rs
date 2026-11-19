@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 
 use crate::app::core::VoiceApp;
 use crate::app::core::{AppParts, SpeakerApi};
+use crate::app::states::tests::support::redirect_logs;
 
 struct FakeSpeaker;
 
@@ -52,6 +53,7 @@ pub(crate) struct Fixture {
 
 impl Fixture {
     pub(crate) fn new() -> Self {
+        redirect_logs();
         let mic = Arc::new(Mutex::new(MicCapture::new(None, VadSettings::default())));
         // Ningún test debe intentar abrir el dispositivo por omisión.
         mic.lock().set_device_index(None);
