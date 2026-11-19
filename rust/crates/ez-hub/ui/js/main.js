@@ -2,7 +2,7 @@
 
 import { TEXTS, AGENT_NAMES } from "./texts.js";
 import { renderTree, markSelected, ensureSelection } from "./tree.js";
-import { openTab, toggleSplit, sendToActive, tabCount, activeTerminalsWithData, fitAll } from "./tabs.js";
+import { openTab, toggleSplit, sendToActive, tabCount, activeTerminalsWithData, activeTerminalMetrics, fitAll } from "./tabs.js";
 import { renderPanel, reportCardError } from "./panel.js";
 import { wireVoice } from "./voice.js";
 
@@ -284,6 +284,8 @@ async function maybeSelfcheck() {
 }
 
 async function reportSelfcheck() {
+  const traceTexts = Array.from(byId("timeline-list").querySelectorAll(".event-text"));
+  const metrics = activeTerminalMetrics();
   const report = {
     errores: window.__ezErrors ?? [],
     nodos: byId("tree").querySelectorAll(".tree-row").length,
@@ -292,6 +294,15 @@ async function reportSelfcheck() {
     eventos: byId("timeline-list").querySelectorAll(".timeline-row").length,
     tarjetas: byId("card-list").querySelectorAll(".approval-card").length,
     textos_prohibidos: forbiddenCount(),
+    traza_ancho_min: traceTexts.length
+      ? Math.min(...traceTexts.map((node) => node.clientWidth))
+      : 0,
+    panel_ancho: byId("timeline-list").clientWidth,
+    etiquetas_pestañas: Array.from(byId("tab-list").querySelectorAll(".tab-label")).map(
+      (node) => node.textContent,
+    ),
+    banda_terminal_px: metrics.banda,
+    alto_celda_px: metrics.celda,
   };
   try {
     await invoke("selfcheck_report", { report });

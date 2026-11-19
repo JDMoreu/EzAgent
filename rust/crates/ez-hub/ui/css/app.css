@@ -100,7 +100,9 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .tree-row .dot.done { background: var(--good); }
 .tree-row .dot.blocked { background: var(--warn); }
 .tree-row .dot.error, .tree-row .dot.failed { background: var(--bad); }
+.tree-row .row-info { display: flex; flex-direction: column; min-width: 0; }
 .tree-row .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-row .task-title { color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-row .sub-label { color: var(--muted); font-size: 10px; flex: 1; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-row.space-row { font-weight: 600; }
 .tree-row.space-row .sub-label { font-weight: 400; }
@@ -169,12 +171,16 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .tab-pane[hidden] { display: none; }
 .empty { color: var(--muted); padding: 10px 2px; }
 
-.timeline-row {
-  display: grid; grid-template-columns: 42px 1fr; gap: 8px;
-  padding: 6px 0; border-bottom: 1px solid var(--border); align-items: start;
+/* Cada evento es un bloque a todo el ancho; la hora va encima, en tenue. */
+.timeline-row { display: block; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.timeline-row time {
+  display: block; margin-bottom: 2px;
+  color: var(--muted); font-family: var(--mono); font-size: 10px;
 }
-.timeline-row time { color: var(--muted); font-family: var(--mono); font-size: 11px; }
-.timeline-row .event-text { font-size: 12px; }
+.timeline-row .event-text {
+  display: block; width: 100%; font-size: 12px;
+  overflow-wrap: break-word; word-break: normal;
+}
 
 .approval-card { border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 10px; background: var(--bg); }
 .approval-card h3 { margin: 0 0 8px; font-size: 13px; }

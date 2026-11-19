@@ -6,7 +6,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 /// Lo que la vista informa 6 s después de cargar en modo `--selfcheck`.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SelfcheckReport {
     /// Errores de JavaScript capturados desde el primer momento.
@@ -26,6 +26,33 @@ pub struct SelfcheckReport {
     /// Apariciones de «elefante», «pez» o «peces» en el texto visible.
     #[serde(rename = "textos_prohibidos")]
     pub textos_prohibidos: usize,
+    /// `clientWidth` mínimo de los textos de la traza, en px.
+    #[serde(rename = "traza_ancho_min")]
+    pub traza_ancho_min: f64,
+    /// Ancho del panel de traza, en px.
+    #[serde(rename = "panel_ancho")]
+    pub panel_ancho: f64,
+    /// Etiquetas de las pestañas abiertas, en orden.
+    #[serde(rename = "etiquetas_pestañas")]
+    pub etiquetas_pestanas: Vec<String>,
+    /// Alto del área de la terminal menos el alto de la pantalla de xterm, en px.
+    #[serde(rename = "banda_terminal_px")]
+    pub banda_terminal_px: f64,
+    /// Alto de una celda de xterm, en px. Mide la banda permitida sin constantes.
+    #[serde(rename = "alto_celda_px")]
+    pub alto_celda_px: f64,
+}
+
+/// Etiquetas esperadas de las dos pestañas que abre el modo demostración:
+/// el nombre del primer agente principal y el id de su primer subagente.
+fn expected_tab_labels() -> Vec<String> {
+    let tree = crate::demo::tree();
+    let main = tree.nodes.first().expect("el demo tiene un principal");
+    let child = main
+        .children
+        .first()
+        .expect("el principal tiene un subagente");
+    vec![main.name.clone(), child.id.clone()]
 }
 
 /// Motivos por los que un informe no supera la autocomprobación.
@@ -51,6 +78,15 @@ pub fn failures(report: &SelfcheckReport) -> Vec<&'static str> {
     }
     if report.textos_prohibidos != 0 {
         out.push("hay textos prohibidos visibles");
+    }
+    if report.traza_ancho_min < 0.8 * report.panel_ancho - 40.0 {
+        out.push("el texto de la traza no ocupa el ancho del panel");
+    }
+    if report.etiquetas_pestanas != expected_tab_labels() {
+        out.push("las etiquetas de las pestañas no son las del demo");
+    }
+    if report.alto_celda_px <= 0.0 || report.banda_terminal_px >= report.alto_celda_px {
+        out.push("la terminal deja una franja inferior");
     }
     out
 }
@@ -86,6 +122,11 @@ mod tests {
             terminales_con_datos: 2,
             eventos: 6,
             tarjetas: 1,
+            traza_ancho_min: 320.0,
+            panel_ancho: 320.0,
+            etiquetas_pestanas: expected_tab_labels(),
+            banda_terminal_px: 2.0,
+            alto_celda_px: 12.0,
             ..SelfcheckReport::default()
         }
     }
@@ -140,9 +181,36 @@ mod tests {
             "eventos",
             "tarjetas",
             "textos_prohibidos",
+            "traza_ancho_min",
+            "panel_ancho",
+            "etiquetas_pestañas",
+            "banda_terminal_px",
+            "alto_celda_px",
         ] {
             assert!(text.contains(key), "falta {key} en {text}");
         }
+    }
+
+    #[test]
+    fn the_visual_measurements_fail_the_check() {
+        let narrow = SelfcheckReport {
+            traza_ancho_min: 40.0,
+            panel_ancho: 320.0,
+            ..good()
+        };
+        assert!(!evaluate(&narrow));
+        let wrong_labels = SelfcheckReport {
+            etiquetas_pestanas: vec!["Desarrollador".to_string(), "Desarrollador".to_string()],
+            ..good()
+        };
+        assert!(!evaluate(&wrong_labels));
+        let band = SelfcheckReport {
+            banda_terminal_px: 20.0,
+            alto_celda_px: 12.0,
+            ..good()
+        };
+        assert!(!evaluate(&band));
+        assert_eq!(expected_tab_labels(), ["Arquitecto", "dev-r1-1"]);
     }
 
     #[test]

@@ -41,7 +41,8 @@ export async function mountTerminal(host, { argv, cwd, space }) {
   const term = new Terminal({
     fontFamily: '"Cascadia Mono", Consolas, monospace',
     fontSize: 12,
-    lineHeight: 1.2,
+    // Alto de celda entero: evita la franja inferior al redondear filas.
+    lineHeight: 1,
     cursorBlink: true,
     theme: THEME,
     scrollback: 4000,
@@ -49,11 +50,16 @@ export async function mountTerminal(host, { argv, cwd, space }) {
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(host);
-  try {
-    fit.fit();
-  } catch {
-    // El panel todavía no tiene tamaño; se reajusta al mostrarlo.
-  }
+  const fitNow = () => {
+    try {
+      fit.fit();
+    } catch {
+      // El host está oculto o aún no tiene tamaño; se reintenta después.
+    }
+  };
+  fitNow();
+  requestAnimationFrame(fitNow);
+  if (document.fonts?.ready) document.fonts.ready.then(fitNow).catch(() => {});
 
   let viewId;
   let gotData = false;
@@ -103,13 +109,7 @@ export async function mountTerminal(host, { argv, cwd, space }) {
   return {
     term,
     id: viewId,
-    fit: () => {
-      try {
-        fit.fit();
-      } catch {
-        // El host está oculto; se reintentará al mostrarlo.
-      }
-    },
+    fit: fitNow,
     close: async () => {
       withData.delete(viewId);
       term.dispose();
