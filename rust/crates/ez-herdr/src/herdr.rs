@@ -19,6 +19,7 @@ use ez_core::pyvalue::{head_chars, py_strip, python_repr, python_str, text_or_em
 use serde_json::{Map, Value};
 
 mod actions;
+mod child;
 mod handoff;
 mod names;
 pub(crate) mod process;
@@ -28,6 +29,7 @@ mod text;
 
 pub use actions::ReadyCallback;
 pub use actions::RunAgent;
+pub use child::{hc_slug, Placement};
 pub use names::{candidate_labels, resolve_name, NameCandidate, NameHit, NameKind, NameMatch};
 pub use runtime::{system as system_runtime, HerdrRuntime, SystemRuntime};
 pub use text::{strip_ansi, visible_name};

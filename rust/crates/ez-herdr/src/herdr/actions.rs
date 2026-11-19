@@ -6,6 +6,7 @@ use ez_core::pyjson::dumps;
 use ez_core::pyvalue::{head_chars, py_strip, python_str, truthy};
 use serde_json::{json, Map, Value};
 
+use super::child::{hc_slug, Placement};
 use super::text::{command_line, valid_keys};
 use super::{
     error_row, python_text, value_or_text, AgentLaunch, Herdr, HerdrError, LaunchSupport,
@@ -14,22 +15,34 @@ use super::{
 
 /// Resultado de abrir la terminal: lista para el `finish_launch` o el error
 /// que Python devuelve tal cual.
-enum LaunchStep {
+pub(super) enum LaunchStep {
     Ready(String, Map<String, Value>),
     Failed(Map<String, Value>),
 }
 
 /// Lo que `run_agent` ya resolvió antes de abrir la terminal.
-struct LaunchPlan<'a> {
-    argv: Vec<String>,
-    launch: AgentLaunch,
-    key: String,
-    folder: String,
-    label: String,
-    task_text: String,
-    background: bool,
-    space: Option<&'a str>,
-    prepend: Option<&'a [String]>,
+pub(super) struct LaunchPlan<'a> {
+    pub(super) argv: Vec<String>,
+    pub(super) launch: AgentLaunch,
+    pub(super) key: String,
+    pub(super) folder: String,
+    pub(super) label: String,
+    pub(super) task_text: String,
+    pub(super) background: bool,
+    pub(super) space: Option<&'a str>,
+    pub(super) prepend: Option<&'a [String]>,
+    /// Terminal padre: con ella el subagente cuelga de su agente (§8).
+    pub(super) parent: Option<&'a str>,
+    /// Nombre que `hc` acepta para el subagente.
+    pub(super) hc_name: Option<&'a str>,
+    /// Etiquetas extra del subagente.
+    pub(super) labels: Option<Map<String, Value>>,
+    /// Dónde se ve el subagente en Herdr.
+    pub(super) show: Placement,
+    /// Si `hc` avisa al padre de lo que hace el subagente.
+    pub(super) notify: bool,
+    /// Si el subagente sobrevive al padre.
+    pub(super) outlive_parent: bool,
 }
 
 /// Callback del lanzamiento asíncrono (`on_ready` del Python).
@@ -54,6 +67,19 @@ pub struct RunAgent<'a> {
     pub env: Option<Map<String, Value>>,
     pub path_prepend: Option<Vec<String>>,
     pub extra_args: Option<Vec<String>>,
+    /// Terminal padre del subagente (§8): con ella el lanzamiento va por
+    /// `hc run --parent` y el subagente queda bajo su agente.
+    pub parent: Option<&'a str>,
+    /// Nombre del subagente para `hc` (el que se ve en Herdr).
+    pub hc_name: Option<&'a str>,
+    /// Etiquetas extra del subagente (los valores van como texto).
+    pub labels: Option<Map<String, Value>>,
+    /// Dónde se ve el subagente: árbol, pestaña, panel a la derecha o debajo.
+    pub show: Placement,
+    /// Si `hc` avisa al padre de lo que hace el subagente (por omisión, no).
+    pub notify: bool,
+    /// Si el subagente sobrevive al cierre del padre.
+    pub outlive_parent: bool,
 }
 
 impl Herdr {
@@ -154,12 +180,48 @@ impl Herdr {
         let Some((key, mut argv)) = self.launch_inputs(params.agent, &launch) else {
             return Ok(self.unavailable(params.agent, &launch.error));
         };
+        let (folder, label, task_text) = self.launch_texts(&params, &key);
         if let Some(extra) = &params.extra_args {
             argv.extend(extra.iter().cloned());
         }
         if let Some(env) = params.env {
             launch.env.extend(env);
         }
+        let mut prepared = LaunchPlan {
+            argv,
+            launch,
+            key,
+            folder,
+            label,
+            task_text,
+            background: params.background,
+            space: params.space,
+            prepend: params.path_prepend.as_deref(),
+            parent: params.parent.map(str::trim).filter(|p| !p.is_empty()),
+            hc_name: params.hc_name.map(str::trim).filter(|n| !n.is_empty()),
+            labels: params.labels,
+            show: params.show,
+            notify: params.notify,
+            outlive_parent: params.outlive_parent,
+        };
+        let (address, where_row) = match self.open_launch(&launcher, &mut prepared)? {
+            LaunchStep::Ready(address, where_row) => (address, where_row),
+            LaunchStep::Failed(row) => return Ok(row),
+        };
+        let base = launch_base(
+            &address,
+            &prepared.key,
+            params.model,
+            params.effort,
+            &prepared.folder,
+            &prepared.argv,
+            where_row,
+        );
+        self.finish_run(launcher, params.on_ready, &prepared, address, base)
+    }
+
+    /// Carpeta, etiqueta y tarea ya resueltas antes de abrir la terminal.
+    fn launch_texts(&self, params: &RunAgent<'_>, key: &str) -> (String, String, String) {
         let folder = params
             .cwd
             .filter(|folder| !folder.is_empty())
@@ -179,31 +241,7 @@ impl Herdr {
         } else {
             task
         };
-        let prepared = LaunchPlan {
-            argv,
-            launch,
-            key,
-            folder,
-            label,
-            task_text,
-            background: params.background,
-            space: params.space,
-            prepend: params.path_prepend.as_deref(),
-        };
-        let (address, where_row) = match self.open_launch(&launcher, &prepared)? {
-            LaunchStep::Ready(address, where_row) => (address, where_row),
-            LaunchStep::Failed(row) => return Ok(row),
-        };
-        let base = launch_base(
-            &address,
-            &prepared.key,
-            params.model,
-            params.effort,
-            &prepared.folder,
-            &prepared.argv,
-            where_row,
-        );
-        self.finish_run(launcher, params.on_ready, &prepared, address, base)
+        (folder, label, task_text)
     }
 
     /// `(key, argv)` si el agente existe y el perfil devolvió un comando.
@@ -214,8 +252,13 @@ impl Herdr {
     fn open_launch<L: LaunchSupport>(
         &self,
         launcher: &L,
-        plan: &LaunchPlan<'_>,
+        plan: &mut LaunchPlan<'_>,
     ) -> Result<LaunchStep, HerdrError> {
+        // Con padre, el subagente va siempre por `hc run --parent` (§8): es la
+        // única ruta que puede dejarlo colgando de su agente.
+        if plan.parent.is_some() {
+            return self.launch_child(plan);
+        }
         if plan.background {
             self.launch_background(
                 &plan.argv,
@@ -316,25 +359,21 @@ impl Herdr {
         label: &str,
         key: &str,
     ) -> Result<LaunchStep, HerdrError> {
-        let run_argv = if !launch.env.is_empty() || prepend.is_some_and(|list| !list.is_empty()) {
-            super::powershell_command(&command_line(argv, &launch.env, prepend))
-        } else {
-            argv.to_vec()
-        };
-        let mut args: Vec<String> = [
-            "run",
-            "--json",
-            "--bg",
-            "--no-parent",
-            "--cwd",
-            folder,
-            "--name",
-            label,
-            "--label",
-        ]
-        .iter()
-        .map(|part| part.to_string())
-        .collect();
+        let run_argv = wrapped_argv(argv, &launch.env, prepend);
+        let mut args: Vec<String> = vec![
+            "run".to_string(),
+            "--json".to_string(),
+            "--bg".to_string(),
+            "--no-parent".to_string(),
+            "--cwd".to_string(),
+            folder.to_string(),
+            "--name".to_string(),
+            // DECISION: `hc` solo acepta nombres de 1-32 caracteres de
+            // `a-z 0-9 - _ .`; la etiqueta legible («claude · voz») se
+            // convierte con `hc_slug`.
+            hc_slug(label),
+            "--label".to_string(),
+        ];
         args.push(format!("agent={key}"));
         args.push("--".to_string());
         args.extend(run_argv);
@@ -445,6 +484,20 @@ impl Herdr {
             Value::String("Terminal terminado.".to_string()),
         );
         Ok(row)
+    }
+}
+
+/// El comando del agente con su entorno: si hay variables o carpetas en el
+/// PATH, va por PowerShell (igual que el lanzamiento en segundo plano).
+pub(super) fn wrapped_argv(
+    argv: &[String],
+    env: &Map<String, Value>,
+    prepend: Option<&[String]>,
+) -> Vec<String> {
+    if !env.is_empty() || prepend.is_some_and(|list| !list.is_empty()) {
+        super::powershell_command(&command_line(argv, env, prepend))
+    } else {
+        argv.to_vec()
     }
 }
 

@@ -91,6 +91,7 @@ impl VoiceApp {
                     env: None,
                     path_prepend: None,
                     extra_args: None,
+                    ..RunAgent::default()
                 },
             )
             .map_err(|error| error.to_string())?;

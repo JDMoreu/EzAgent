@@ -216,6 +216,7 @@ pub(super) fn run_agent_case(
         env,
         path_prepend,
         extra_args,
+        ..RunAgent::default()
     };
     let herdr = Arc::new(Herdr::with_runtime(config(temp, input), runtime_of(world)));
     let result = herdr
