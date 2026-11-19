@@ -275,3 +275,9 @@
   reproduce, corrige, añade `panic hook` y una prueba de humo de la app real.
 - Regla nueva: todo cambio de interfaz necesita una prueba de humo de la app real antes de
   validarlo.
+
+### Incidente de memoria 2 (19-nov ~14:00): whisper-server huérfanos
+- Memoria virtual libre 3,8 GB. Causa: 7 `whisper-server` (12,5 GB), uno por cada arranque
+  de la app de hoy; los de instancias muertas quedaron vivos. El elefante cerró 5 (+ sus
+  envolturas de PowerShell); el de las 07:55 da «Acceso denegado» (probablemente elevado).
+  Virtual libre → 15,4 GB. Bug del producto → DX-3 (Job Object, reutilizar el sano).
