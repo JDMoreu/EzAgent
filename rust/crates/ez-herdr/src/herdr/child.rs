@@ -331,8 +331,11 @@ impl Herdr {
             .cloned()
             .unwrap_or_else(|| Value::Object(requested_labels(plan)));
         let mut row = Map::new();
-        row.insert("visible".to_string(), Value::Bool(false));
-        row.insert("background".to_string(), Value::Bool(true));
+        // DECISION: visible es lo contrario de background: un subagente en
+        // pestaña o panel se ve; en el árbol, solo está debajo de su agente.
+        let visible = placed.placement != Placement::Tree;
+        row.insert("visible".to_string(), Value::Bool(visible));
+        row.insert("background".to_string(), Value::Bool(!visible));
         // DECISION: si `hc get` respondió, el padre es el real (vacío si no
         // tiene); si no respondió, se queda el pedido como mejor dato.
         let parent_text = match terminal {

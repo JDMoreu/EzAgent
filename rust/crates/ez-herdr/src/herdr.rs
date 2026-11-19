@@ -20,6 +20,7 @@ use serde_json::{Map, Value};
 
 mod actions;
 mod child;
+mod delegate;
 mod handoff;
 mod names;
 pub(crate) mod process;
@@ -30,6 +31,9 @@ mod text;
 pub use actions::ReadyCallback;
 pub use actions::RunAgent;
 pub use child::{hc_slug, Placement};
+pub use delegate::{
+    default_name, first_message, role_short, valid_name, DelegateError, DelegateRequest,
+};
 pub use names::{candidate_labels, resolve_name, NameCandidate, NameHit, NameKind, NameMatch};
 pub use runtime::{system as system_runtime, HerdrRuntime, SystemRuntime};
 pub use text::{strip_ansi, visible_name};

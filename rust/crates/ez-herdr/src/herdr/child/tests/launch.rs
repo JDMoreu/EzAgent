@@ -358,6 +358,50 @@ fn un_padre_distinto_del_pedido_se_avisa() {
 }
 
 #[test]
+fn el_resultado_dice_si_el_subagente_se_ve_o_queda_en_el_arbol() {
+    let fake = Fake::new()
+        .route("hc:run", vec![hc_run_ok()])
+        .route("hc:get", vec![hc_get_ok("t6h")]);
+    let result = herdr_de(&fake)
+        .run_agent(
+            Driver::default(),
+            RunAgent {
+                agent: "claude",
+                parent: Some("t6h"),
+                show: Placement::Tree,
+                ..RunAgent::default()
+            },
+        )
+        .expect("sin proceso");
+    assert_eq!(result["visible"], false);
+    assert_eq!(result["background"], true);
+}
+
+#[test]
+fn un_subagente_en_pestana_se_ve_y_no_queda_en_el_arbol() {
+    let fake = Fake::new()
+        .route("hc:run", vec![hc_run_ok()])
+        .route("hc:get", vec![hc_get_ok("t6h")])
+        .route(
+            "app:terminal.keep",
+            vec![Reply::json(&json!({"ok": true, "tab": "t12"}))],
+        );
+    let result = herdr_de(&fake)
+        .run_agent(
+            Driver::default(),
+            RunAgent {
+                agent: "claude",
+                parent: Some("t6h"),
+                show: Placement::Tab,
+                ..RunAgent::default()
+            },
+        )
+        .expect("sin proceso");
+    assert_eq!(result["visible"], true);
+    assert_eq!(result["background"], false);
+}
+
+#[test]
 fn un_nombre_ocupado_vuelve_como_error() {
     let fake = Fake::new().route(
         "hc:run",
