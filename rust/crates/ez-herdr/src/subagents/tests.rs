@@ -70,6 +70,7 @@ pub(super) fn change(state: TaskState, at_ms: u64, by: &str, detail: &str) -> Ch
 fn task_state_names_and_serde_round_trip() {
     let cases = [
         (TaskState::InProgress, "en_proceso"),
+        (TaskState::Blocked, "bloqueado"),
         (TaskState::Done, "terminado"),
         (TaskState::Failed, "fallido"),
         (TaskState::Validated, "validado"),
@@ -89,6 +90,7 @@ fn task_state_names_and_serde_round_trip() {
     }
     assert_eq!(TaskState::parse("otro"), None);
     assert!(!TaskState::InProgress.is_final());
+    assert!(!TaskState::Blocked.is_final());
     assert!(!TaskState::Done.is_final());
     assert!(TaskState::Failed.is_final());
     assert!(TaskState::Validated.is_final());
@@ -229,6 +231,38 @@ fn pending_notices_excludes_parent_changes_and_already_notified() {
     let pending = pending_notices(&records);
     let names: Vec<&str> = pending.iter().map(|record| record.name.as_str()).collect();
     assert_eq!(names, ["dev1-opencode", "plan1-opencode"]);
+}
+
+#[test]
+fn notice_text_for_blocked_and_for_resuming() {
+    let mut blocked = rec("dev1-opencode", "t6h", "t12", TaskState::Blocked);
+    blocked
+        .history
+        .push(change(TaskState::InProgress, 1, "t6h", "encargo entregado"));
+    blocked.history.push(change(
+        TaskState::Blocked,
+        2,
+        "vigilante",
+        "límite de uso del plan gratuito (se reinicia a las 19:00)",
+    ));
+    assert_eq!(
+        notice_text(&blocked),
+        "[EzAgent · aviso] dev1-opencode (OpenCode · deepseek-v4.1-flash) está bloqueado: \
+         límite de uso del plan gratuito (se reinicia a las 19:00). Opciones: \
+         ez retry dev1-opencode --auto | ez retry dev1-opencode --agent … | esperar."
+    );
+
+    blocked.state = TaskState::InProgress;
+    blocked.history.push(change(
+        TaskState::InProgress,
+        3,
+        "vigilante",
+        "siguió trabajando",
+    ));
+    assert_eq!(
+        notice_text(&blocked),
+        "[EzAgent · aviso] dev1-opencode (OpenCode · deepseek-v4.1-flash) siguió trabajando."
+    );
 }
 
 mod registry;

@@ -20,12 +20,14 @@ pub use watch::{
     DEFAULT_IDLE_MS, DEFAULT_INTERVAL_MS,
 };
 
-/// Estado de una tarea delegada (§13). Serializa como `"en_proceso"`,
-/// `"terminado"`, `"fallido"`, `"validado"`.
+/// Estado de una tarea delegada (§13 y `novedades-subagentes.md` §2).
+/// Serializa como `"en_proceso"`, `"bloqueado"`, `"terminado"`, `"fallido"`,
+/// `"validado"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub enum TaskState {
     InProgress,
+    Blocked,
     Done,
     Failed,
     Validated,
@@ -36,6 +38,7 @@ impl TaskState {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::InProgress => "en_proceso",
+            Self::Blocked => "bloqueado",
             Self::Done => "terminado",
             Self::Failed => "fallido",
             Self::Validated => "validado",
@@ -46,6 +49,7 @@ impl TaskState {
     pub fn parse(text: &str) -> Option<Self> {
         match text {
             "en_proceso" => Some(Self::InProgress),
+            "bloqueado" => Some(Self::Blocked),
             "terminado" => Some(Self::Done),
             "fallido" => Some(Self::Failed),
             "validado" => Some(Self::Validated),
@@ -197,7 +201,11 @@ fn looks_like_address(name: &str) -> bool {
 pub(crate) fn transition_allowed(from: TaskState, to: TaskState) -> bool {
     matches!(
         (from, to),
-        (TaskState::InProgress, TaskState::Done)
+        (TaskState::InProgress, TaskState::Blocked)
+            | (TaskState::Blocked, TaskState::InProgress)
+            | (TaskState::Blocked, TaskState::Done)
+            | (TaskState::Blocked, TaskState::Failed)
+            | (TaskState::InProgress, TaskState::Done)
             | (TaskState::InProgress, TaskState::Failed)
             | (TaskState::Done, TaskState::Validated)
             | (TaskState::Done, TaskState::Failed)
@@ -242,6 +250,23 @@ pub fn notice_text(record: &Record) -> String {
                 record.name, label, reason, record.terminal
             )
         }
+        TaskState::Blocked => {
+            let detail = record
+                .history
+                .last()
+                .map(|change| one_line(&change.detail, 300))
+                .unwrap_or_default();
+            let detail = detail.trim_end_matches('.');
+            let detail = if detail.is_empty() {
+                "necesita que alguien haga algo"
+            } else {
+                detail
+            };
+            format!(
+                "[EzAgent · aviso] {} ({}) está bloqueado: {}. Opciones: ez retry {} --auto | ez retry {} --agent … | esperar.",
+                record.name, label, detail, record.name, record.name
+            )
+        }
         TaskState::Validated => {
             let Some(validation) = &record.validation else {
                 // DECISION: un registro validado sin validación es dato incompleto;
@@ -263,14 +288,30 @@ pub fn notice_text(record: &Record) -> String {
         }
         // DECISION: §13 no define aviso para `en_proceso`; se usa este texto corto
         // para que el vigilante pueda avisar del alta sin inventar un formato nuevo.
-        TaskState::InProgress => format!(
-            "[EzAgent · aviso] {} ({}) está en proceso.",
-            record.name, label
-        ),
+        // Si vuelve de `bloqueado`, el aviso dice «siguió trabajando» (§3).
+        TaskState::InProgress => {
+            let resumed = record
+                .history
+                .len()
+                .checked_sub(2)
+                .and_then(|index| record.history.get(index))
+                .is_some_and(|change| change.state == TaskState::Blocked);
+            if resumed {
+                format!(
+                    "[EzAgent · aviso] {} ({}) siguió trabajando.",
+                    record.name, label
+                )
+            } else {
+                format!(
+                    "[EzAgent · aviso] {} ({}) está en proceso.",
+                    record.name, label
+                )
+            }
+        }
     }
 }
 
-fn agent_label(record: &Record) -> String {
+pub(crate) fn agent_label(record: &Record) -> String {
     match record.model.as_deref() {
         Some(model) if !model.is_empty() => format!("{} · {}", record.label, model),
         _ => record.label.clone(),

@@ -445,18 +445,23 @@ fn fresh_lock_reports_busy() {
     ));
 }
 
-const ALL_STATES: [TaskState; 4] = [
+const ALL_STATES: [TaskState; 5] = [
     TaskState::InProgress,
+    TaskState::Blocked,
     TaskState::Done,
     TaskState::Failed,
     TaskState::Validated,
 ];
 
-/// Tabla de transiciones permitidas por el diseño (§13), independiente del código.
+/// Tabla de transiciones permitidas por el diseño (§13 y novedades §2).
 fn spec_allows(from: TaskState, to: TaskState) -> bool {
     matches!(
         (from, to),
-        (TaskState::InProgress, TaskState::Done)
+        (TaskState::InProgress, TaskState::Blocked)
+            | (TaskState::Blocked, TaskState::InProgress)
+            | (TaskState::Blocked, TaskState::Done)
+            | (TaskState::Blocked, TaskState::Failed)
+            | (TaskState::InProgress, TaskState::Done)
             | (TaskState::InProgress, TaskState::Failed)
             | (TaskState::Done, TaskState::Validated)
             | (TaskState::Done, TaskState::Failed)
@@ -471,6 +476,21 @@ fn seed(registry: &Registry, name: &str, parent: &str, state: TaskState) {
             registry
                 .create(&rec(name, parent, "t12", state))
                 .expect("crear en estado inicial");
+        }
+        TaskState::Blocked => {
+            registry
+                .create(&rec(name, parent, "t12", TaskState::InProgress))
+                .expect("crear");
+            registry
+                .transition(
+                    parent,
+                    name,
+                    TaskState::Blocked,
+                    "vigilante",
+                    "prueba",
+                    |_| {},
+                )
+                .expect("pasar a bloqueado");
         }
         TaskState::Done => {
             registry
@@ -495,7 +515,7 @@ fn seed(registry: &Registry, name: &str, parent: &str, state: TaskState) {
 }
 
 #[test]
-fn transition_table_all_sixteen_pairs() {
+fn transition_table_all_twenty_five_pairs() {
     for from in ALL_STATES {
         for to in ALL_STATES {
             let tmp = TempRoot::new();
