@@ -444,3 +444,110 @@ fn fresh_lock_reports_busy() {
         Err(RegistryError::Busy(_))
     ));
 }
+
+const ALL_STATES: [TaskState; 4] = [
+    TaskState::InProgress,
+    TaskState::Done,
+    TaskState::Failed,
+    TaskState::Validated,
+];
+
+/// Tabla de transiciones permitidas por el diseño (§13), independiente del código.
+fn spec_allows(from: TaskState, to: TaskState) -> bool {
+    matches!(
+        (from, to),
+        (TaskState::InProgress, TaskState::Done)
+            | (TaskState::InProgress, TaskState::Failed)
+            | (TaskState::Done, TaskState::Validated)
+            | (TaskState::Done, TaskState::Failed)
+    )
+}
+
+/// Deja un registro en cualquier estado para la prueba (`create` admite
+/// `en_proceso` y `fallido`; los otros se alcanzan por transiciones válidas).
+fn seed(registry: &Registry, name: &str, parent: &str, state: TaskState) {
+    match state {
+        TaskState::InProgress | TaskState::Failed => {
+            registry
+                .create(&rec(name, parent, "t12", state))
+                .expect("crear en estado inicial");
+        }
+        TaskState::Done => {
+            registry
+                .create(&rec(name, parent, "t12", TaskState::InProgress))
+                .expect("crear");
+            registry
+                .transition(parent, name, TaskState::Done, name, "fin", |_| {})
+                .expect("pasar a terminado");
+        }
+        TaskState::Validated => {
+            registry
+                .create(&rec(name, parent, "t12", TaskState::InProgress))
+                .expect("crear");
+            registry
+                .transition(parent, name, TaskState::Done, name, "fin", |_| {})
+                .expect("pasar a terminado");
+            registry
+                .transition(parent, name, TaskState::Validated, "t7", "validado", |_| {})
+                .expect("pasar a validado");
+        }
+    }
+}
+
+#[test]
+fn transition_table_all_sixteen_pairs() {
+    for from in ALL_STATES {
+        for to in ALL_STATES {
+            let tmp = TempRoot::new();
+            let registry = Registry::at(tmp.path());
+            let name = "dev1-opencode";
+            seed(&registry, name, "t6h", from);
+
+            let path = tmp.path().join("t6h").join(format!("{name}.json"));
+            let before = std::fs::read_to_string(&path).expect("leer antes");
+            let result = registry.transition("t6h", name, to, "t7", "intento", |_| {});
+
+            if spec_allows(from, to) {
+                assert_eq!(result.expect("transición permitida").state, to);
+            } else {
+                let error = result.expect_err("transición prohibida");
+                assert_eq!(
+                    error.to_string(),
+                    format!(
+                        "{name} está «{}»; no puede pasar a «{}».",
+                        from.as_str(),
+                        to.as_str()
+                    )
+                );
+                assert_eq!(
+                    std::fs::read_to_string(&path).expect("leer después"),
+                    before,
+                    "el JSON no debe cambiar en {from} → {to}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn create_rejects_terminal_initial_states() {
+    let tmp = TempRoot::new();
+    let registry = Registry::at(tmp.path());
+    for (state, label, name) in [
+        (TaskState::Done, "terminado", "dev1-opencode"),
+        (TaskState::Validated, "validado", "qa1-opencode"),
+    ] {
+        let error = registry
+            .create(&rec(name, "t6h", "t12", state))
+            .expect_err("create debe rechazar un estado final");
+        assert!(matches!(error, RegistryError::Invalid(_)));
+        assert_eq!(
+            error.to_string(),
+            format!("{name} no puede crearse en estado «{label}»; solo «en_proceso» o «fallido».")
+        );
+        assert!(
+            !tmp.path().join("t6h").join(format!("{name}.json")).exists(),
+            "no debe crearse el registro en {label}"
+        );
+    }
+}
