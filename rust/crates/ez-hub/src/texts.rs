@@ -5,6 +5,9 @@ use serde_json::Value;
 /// Traduce un evento de la traza a su texto visible (brief ECO-6b §4).
 /// Los campos que el evento no trae se dejan vacíos o a cero; la vista aplica
 /// la misma tabla en `ui/js/texts.js` a los eventos que llegan del árbitro.
+// DECISION: el brief pide la tabla en texts.js (un solo lugar de la vista) y
+// también pruebas Rust de la traducción; se mantiene aquí el espejo que rellena
+// `texto` en los eventos de ejemplo y se prueba cada tipo.
 pub fn event_text(kind: &str, data: &Value) -> String {
     let text = |key: &str| {
         data.get(key)

@@ -1,7 +1,7 @@
 // Arranque de la ventana: árbol, pestañas, barra, traza y tarjetas (§15.6).
 
 import { TEXTS, AGENT_NAMES } from "./texts.js";
-import { renderTree, markSelected } from "./tree.js";
+import { renderTree, markSelected, ensureSelection } from "./tree.js";
 import { openTab, toggleSplit, sendToActive, tabCount, activeTerminalsWithData, fitAll } from "./tabs.js";
 import { renderPanel, reportCardError } from "./panel.js";
 import { wireVoice } from "./voice.js";
@@ -46,7 +46,7 @@ async function loadTree() {
   if (!activeSpace) return;
   currentTree = await invoke("space_tree", { space: activeSpace.id });
   renderTree(byId("tree"), spaces, activeSpace, currentTree.nodes, selectSpace, onNode);
-  markSelected(byId("tree"), activeSpace.id ? `space:${activeSpace.id}` : null);
+  ensureSelection(byId("tree"), `space:${activeSpace.id}`);
 }
 
 async function loadTrace() {

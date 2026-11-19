@@ -13,6 +13,14 @@ export function markSelected(container, key) {
   }
 }
 
+/** Conserva la selección entre refrescos; si el nodo desaparece, usa el espacio. */
+export function ensureSelection(container, fallback) {
+  const exists = Array.from(container.querySelectorAll(".tree-row")).some(
+    (row) => row.dataset.key === selected,
+  );
+  markSelected(container, exists ? selected : fallback);
+}
+
 /** Abre o cierra los hijos de un nodo; el estado sobrevive a los refrescos. */
 export function toggleCollapse(container, key) {
   if (collapsed.has(key)) collapsed.delete(key);
@@ -113,14 +121,20 @@ export function renderTree(container, spaces, activeSpace, nodes, onSpace, onNod
 }
 
 function addNode(container, node, depth, parent, space, onNode) {
-  const sub = node.role
-    ? `${node.role}${node.agent ? ` · ${agentLabel(node.agent)}` : ""}`
-    : `${agentLabel(node.agent)} · ${node.model ?? ""}`;
+  let label = node.name || node.id;
+  let sub;
+  if (node.role) {
+    label = node.id;
+    sub = node.role;
+  } else {
+    sub = `${agentLabel(node.agent)} · ${node.model ?? ""}`;
+    if (node.title) sub += ` · ${node.title}`;
+  }
   const button = row(container, {
     key: node.id,
     parent,
     depth,
-    label: node.name || node.id,
+    label,
     sub,
     status: node.status,
     twisty: node.children.length > 0,

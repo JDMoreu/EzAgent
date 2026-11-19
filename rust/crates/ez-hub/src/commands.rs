@@ -217,6 +217,8 @@ impl AppState {
     }
 
     /// Envía el texto de la barra a una vista PTY directa (modo demostración).
+    // DECISION: `agent_send` necesita el motor, que no existe en `--demo`; esta
+    // vista directa mantiene la barra usable en el ejemplo sin tocar el motor.
     pub fn send_view_text(&self, id: &str, text: &str) -> Result<(), String> {
         self.write_view(id, &input::encode_input(text))
     }
