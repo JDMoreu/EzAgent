@@ -606,7 +606,13 @@ fn main() {
         .nth(1)
         .unwrap_or_else(|| "sequence".to_string());
     let big = mode == "big";
-    let temp = std::env::temp_dir().join(format!("ezagent-dx1d-{}", std::process::id()));
+    // Carpeta única por corrida: el registro de pánicos de una corrida anterior
+    // no puede hacer fallar la comprobación de «sin PÁNICO».
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis())
+        .unwrap_or(0);
+    let temp = std::env::temp_dir().join(format!("ezagent-dx1d-{}-{stamp}", std::process::id()));
     let _ = std::fs::create_dir_all(&temp);
     // El hook de pánico escribe el mensaje y la ubicación antes de abortar.
     ez_core::panics::install_hook_in(&temp.join("logs"));
