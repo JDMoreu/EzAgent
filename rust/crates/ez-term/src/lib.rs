@@ -17,4 +17,4 @@ pub use client::HcClient;
 pub use error::TermError;
 pub use events::{EventStream, TermEvent};
 pub use locate::locate_hc;
-pub use types::{ReadText, RunSpec, SendOutcome, Status, Terminal};
+pub use types::{Delivery, ReadText, RunSpec, SendOutcome, Status, Terminal};

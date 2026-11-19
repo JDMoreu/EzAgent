@@ -335,6 +335,7 @@ fn simple_calls_use_the_simple_timeout() {
         Duration::from_millis(120),
         Duration::from_secs(1),
         Duration::from_secs(1),
+        Duration::from_millis(1),
     );
     assert_eq!(
         client.get("t1"),
@@ -358,6 +359,7 @@ fn send_uses_its_own_timeout() {
         Duration::from_secs(1),
         Duration::from_millis(120),
         Duration::from_secs(1),
+        Duration::from_millis(1),
     );
     assert_eq!(
         client.send("t1", "hola"),
@@ -382,6 +384,7 @@ fn wait_adds_its_margin_to_the_caller_timeout() {
         Duration::from_secs(1),
         Duration::from_secs(1),
         Duration::from_millis(120),
+        Duration::from_millis(1),
     );
     assert_eq!(
         client.wait("t1", 0.1),
