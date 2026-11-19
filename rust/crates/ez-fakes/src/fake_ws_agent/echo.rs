@@ -3,11 +3,18 @@
 //! Es el agente de la prueba de punta a punta (HD-6): no usa modelos, solo
 //! anota el argv, el entorno y cada línea que le llega, para que la prueba
 //! compruebe qué se le entregó a cada tipo de agente.
+//!
+//! Con `--report` el agente falso también entrega su estado con
+//! `ez report --state …` (§13 del diseño).
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use serde_json::{json, Map, Value};
+
+/// El cuerpo del informe que deja el agente falso.
+const REPORT_BODY: &str = "# Informe\n\nEl agente falso terminó su tarea.\n";
 
 /// Las variables que el registro guarda (solo las que estén presentes).
 const ENV_VARS: [&str; 5] = [
@@ -18,24 +25,87 @@ const ENV_VARS: [&str; 5] = [
     "CODEX_HOME",
 ];
 
-/// Lo que el modo eco necesita: dónde guardar el registro y los argumentos
-/// libres que recibió (los flags del tipo de agente).
+/// Lo que el agente falso declara al terminar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReportMode {
+    /// No declara nada (por omisión).
+    #[default]
+    None,
+    /// Declara que terminó.
+    Done,
+    /// Declara que falló.
+    Failed,
+}
+
+impl ReportMode {
+    /// El modo según su nombre (`terminado`, `fallido` o `none`).
+    pub fn parse(text: &str) -> Option<Self> {
+        match text.trim().to_lowercase().as_str() {
+            "none" => Some(Self::None),
+            "terminado" => Some(Self::Done),
+            "fallido" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+
+    /// El estado que se declara (`--state`); `None` si no declara nada.
+    pub fn state(self) -> Option<&'static str> {
+        match self {
+            Self::None => None,
+            Self::Done => Some("terminado"),
+            Self::Failed => Some("fallido"),
+        }
+    }
+}
+
+/// Lo que el modo eco necesita: dónde guardar el registro, qué declarar y los
+/// argumentos libres que recibió (los flags del tipo de agente).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Echo {
     /// La carpeta donde queda el registro.
     pub folder: PathBuf,
+    /// Lo que declara al terminar.
+    pub report: ReportMode,
+    /// La ruta de `ez` (por omisión, el que esté en el PATH).
+    pub ez: Option<PathBuf>,
     /// Los argumentos libres (los que van después de la carpeta).
     pub extra: Vec<String>,
 }
 
-/// Analiza `--echo <carpeta> [argumentos…]`.
+/// Analiza `--echo <carpeta> [--report estado] [--ez ruta] [argumentos…]`.
 pub fn parse(args: &[String]) -> Result<Echo, String> {
     let Some(folder) = args.first() else {
         return Err("--echo necesita la carpeta donde guardar el registro.".to_string());
     };
+    let mut rest = args.get(1..).unwrap_or(&[]);
+    let mut report = ReportMode::None;
+    let mut ez = None;
+    loop {
+        match rest.first().map(String::as_str) {
+            Some("--report") => {
+                let value = rest
+                    .get(1)
+                    .ok_or_else(|| "--report necesita el estado.".to_string())?;
+                report = ReportMode::parse(value).ok_or_else(|| {
+                    format!("--report debe ser terminado, fallido o none (no «{value}»).")
+                })?;
+                rest = rest.get(2..).unwrap_or(&[]);
+            }
+            Some("--ez") => {
+                let value = rest
+                    .get(1)
+                    .ok_or_else(|| "--ez necesita la ruta de ez.".to_string())?;
+                ez = Some(PathBuf::from(value));
+                rest = rest.get(2..).unwrap_or(&[]);
+            }
+            _ => break,
+        }
+    }
     Ok(Echo {
         folder: PathBuf::from(folder),
-        extra: args.get(1..).unwrap_or(&[]).to_vec(),
+        report,
+        ez,
+        extra: rest.to_vec(),
     })
 }
 
@@ -96,12 +166,16 @@ impl Record {
 
 /// La ruta del registro: `<carpeta>/<HC_TERMINAL_ID o pid>.json`.
 pub fn record_path(folder: &Path) -> PathBuf {
-    let name = std::env::var("HC_TERMINAL_ID")
+    folder.join(format!("{}.json", identifier()))
+}
+
+/// El identificador del agente falso: el de su terminal o el del proceso.
+pub fn identifier() -> String {
+    std::env::var("HC_TERMINAL_ID")
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| std::process::id().to_string());
-    folder.join(format!("{name}.json"))
+        .unwrap_or_else(|| std::process::id().to_string())
 }
 
 /// El bucle del modo eco: anota, repite y vuelve a esperar.
@@ -118,11 +192,74 @@ pub fn run(echo: &Echo) -> Result<(), String> {
         super::announce("working")?;
         record.lines.push(line.clone());
         record.write(&path)?;
+        // DECISION: el estado se declara con la primera línea: es cuando el
+        // subagente ya recibió el encargo.
+        if record.lines.len() == 1 {
+            declare(echo, &line)?;
+        }
         write_line(&format!("recibido: {line}"))?;
         super::announce("idle")?;
         super::prompt()?;
     }
     Ok(())
+}
+
+/// Escribe el informe y lo declara con `ez report` (sin shell).
+fn declare(echo: &Echo, line: &str) -> Result<(), String> {
+    let Some(state) = echo.report.state() else {
+        return Ok(());
+    };
+    let report = echo.folder.join(format!("{}-informe.md", identifier()));
+    std::fs::write(&report, REPORT_BODY)
+        .map_err(|error| format!("no pude escribir {}: {error}", report.display()))?;
+    let summary = format!("eco {}", mark(line));
+    let program = echo.ez.clone().unwrap_or_else(|| PathBuf::from("ez"));
+    let output = ez_command(&program)
+        .args(report_args(state, &report, &summary))
+        .output()
+        .map_err(|error| format!("no pude ejecutar {} report: {error}", program.display()))?;
+    if !output.status.success() {
+        let reason = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "ez report fue rechazado: {}",
+            reason.trim().replace('\n', " | ")
+        ));
+    }
+    Ok(())
+}
+
+/// Los argumentos de `ez report` que declara el estado.
+pub fn report_args(state: &str, report: &Path, summary: &str) -> Vec<String> {
+    vec![
+        "report".to_string(),
+        "--state".to_string(),
+        state.to_string(),
+        "--file".to_string(),
+        report.to_string_lossy().into_owned(),
+        "--summary".to_string(),
+        summary.to_string(),
+    ]
+}
+
+/// La primera marca `E2E-…` de la línea; si no hay, «sin marca».
+fn mark(text: &str) -> String {
+    let Some(index) = text.find("E2E-") else {
+        return "sin marca".to_string();
+    };
+    let rest = &text[index..];
+    let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+    rest[..end].to_string()
+}
+
+/// El comando `ez` listo para recibir argumentos en lista (sin shell).
+fn ez_command(program: &Path) -> Command {
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    command
 }
 
 /// Escribe una línea en stdout.
@@ -148,6 +285,72 @@ mod tests {
         let echo = parse(&args(&["registros", "--model", "x", "--standalone"])).expect("análisis");
         assert_eq!(echo.folder, PathBuf::from("registros"));
         assert_eq!(echo.extra, args(&["--model", "x", "--standalone"]));
+        assert_eq!(echo.report, ReportMode::None);
+        assert_eq!(echo.ez, None);
+    }
+
+    #[test]
+    fn el_modo_eco_toma_el_informe_y_la_ruta_de_ez() {
+        let echo = parse(&args(&[
+            "registros",
+            "--report",
+            "terminado",
+            "--ez",
+            "ez.exe",
+            "--standalone",
+        ]))
+        .expect("análisis");
+        assert_eq!(echo.report, ReportMode::Done);
+        assert_eq!(echo.ez, Some(PathBuf::from("ez.exe")));
+        assert_eq!(echo.extra, args(&["--standalone"]));
+    }
+
+    #[test]
+    fn el_modo_eco_rechaza_un_estado_desconocido() {
+        let error = parse(&args(&["registros", "--report", "casi"]));
+        assert!(error.is_err(), "{error:?}");
+    }
+
+    #[test]
+    fn el_comando_del_informe_arma_el_report() {
+        let args = report_args(
+            "terminado",
+            Path::new("registros/t12-informe.md"),
+            "eco E2E-1",
+        );
+        assert_eq!(
+            args,
+            [
+                "report",
+                "--state",
+                "terminado",
+                "--file",
+                "registros/t12-informe.md",
+                "--summary",
+                "eco E2E-1"
+            ]
+        );
+    }
+
+    #[test]
+    fn la_marca_toma_la_primera_e2e() {
+        assert_eq!(mark("trabaja E2E-7 algo"), "E2E-7");
+        assert_eq!(mark("nada que ver"), "sin marca");
+    }
+
+    #[test]
+    fn sin_informe_no_se_declada_nada() {
+        let folder = std::env::temp_dir().join(format!("ez-fake-echo-none-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        let echo = Echo {
+            folder: folder.clone(),
+            report: ReportMode::None,
+            ez: None,
+            extra: Vec::new(),
+        };
+        declare(&echo, "hola").expect("sin declarar");
+        assert!(!folder.exists());
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

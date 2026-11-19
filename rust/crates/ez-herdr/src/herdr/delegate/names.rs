@@ -3,6 +3,8 @@
 //! Un nombre de `hc` es `^[a-z0-9][a-z0-9_.-]{0,31}$` y no puede tener forma
 //! de dirección (`^t[0-9][0-9a-z]*$`, que `hc` rechaza).
 
+use super::super::child::{hc_valid_name, looks_like_address};
+
 /// Máximo de caracteres de un nombre de `hc`.
 const MAX_NAME: usize = 32;
 
@@ -54,45 +56,10 @@ pub fn default_name(role: &str, n: usize, agent: &str) -> String {
 
 /// ¿El nombre sirve para `hc`? (`^[a-z0-9][a-z0-9_.-]{0,31}$`, sin forma de
 /// dirección).
+///
+/// DECISION (R4-1): la regla vive una sola vez, en `child::hc_valid_name`.
 pub fn valid_name(name: &str) -> bool {
-    let mut characters = name.chars();
-    let Some(first) = characters.next() else {
-        return false;
-    };
-    if !first.is_ascii_lowercase() && !first.is_ascii_digit() {
-        return false;
-    }
-    if name.chars().count() > MAX_NAME {
-        return false;
-    }
-    if !characters.all(|character| {
-        character.is_ascii_lowercase()
-            || character.is_ascii_digit()
-            || character == '_'
-            || character == '.'
-            || character == '-'
-    }) {
-        return false;
-    }
-    !looks_like_address(name)
-}
-
-/// ¿El nombre tiene forma de dirección (`t7`, `t9n`)? `hc` los rechaza.
-fn looks_like_address(name: &str) -> bool {
-    let mut characters = name.chars();
-    let Some(first) = characters.next() else {
-        return false;
-    };
-    if first != 't' {
-        return false;
-    }
-    let Some(second) = characters.next() else {
-        return false;
-    };
-    if !second.is_ascii_digit() {
-        return false;
-    }
-    characters.all(|character| character.is_ascii_lowercase() || character.is_ascii_digit())
+    hc_valid_name(name)
 }
 
 /// El tipo del agente, en minúsculas y solo con lo que `hc` acepta.

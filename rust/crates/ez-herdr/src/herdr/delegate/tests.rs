@@ -16,6 +16,8 @@ use crate::herdr::{AgentLaunch, Completed, Herdr, HerdrRuntime, LaunchSupport, R
 
 use super::*;
 
+mod state;
+
 /// Respuesta preparada de un proceso.
 #[derive(Clone)]
 struct Reply {
@@ -177,6 +179,8 @@ impl HerdrRuntime for Fake {
 #[derive(Clone, Default)]
 struct Launcher {
     task: Arc<Mutex<String>>,
+    /// Si el encargo se entregó (por omisión, sí).
+    sent: Option<bool>,
 }
 
 impl LaunchSupport for Launcher {
@@ -206,7 +210,7 @@ impl LaunchSupport for Launcher {
         *self.task.lock().expect("tarea") = task.to_string();
         json!({
             "ok": true,
-            "task_sent": true,
+            "task_sent": self.sent.unwrap_or(true),
             "warnings": launch.warnings,
         })
         .as_object()
@@ -291,6 +295,7 @@ fn un_rechazo_del_catalogo_no_crea_nada() {
         Launcher::default(),
         &|_, _, _| Err("No conozco el agente «nada».".to_string()),
         &request(),
+        None,
     );
     match result {
         Err(DelegateError::Rejected(message)) => {
@@ -305,7 +310,7 @@ fn un_rechazo_del_catalogo_no_crea_nada() {
 fn sin_hc_no_se_delega() {
     let fake = Fake::without_hc();
     let herdr = herdr_de(&fake);
-    let result = herdr.delegate(Launcher::default(), &accepted, &request());
+    let result = herdr.delegate(Launcher::default(), &accepted, &request(), None);
     match result {
         Err(DelegateError::Unavailable(message)) => {
             assert!(message.contains("hc"), "{message}");
@@ -330,7 +335,7 @@ fn el_nombre_automatico_suma_los_subagentes_del_padre() {
         .route("hc:get", vec![hc_get_ok("dev3-opencode")]);
     let herdr = herdr_de(&fake);
     let result = herdr
-        .delegate(Launcher::default(), &accepted, &request())
+        .delegate(Launcher::default(), &accepted, &request(), None)
         .expect("delegación");
     assert_eq!(result["name"], "dev3-opencode");
     let argv = fake.argv_of("hc", "run").expect("hc run");
@@ -354,7 +359,7 @@ fn el_numero_del_nombre_cuenta_las_terminales_del_padre() {
         .route("hc:get", vec![hc_get_ok("dev1-opencode")]);
     let herdr = herdr_de(&fake);
     herdr
-        .delegate(Launcher::default(), &accepted, &request())
+        .delegate(Launcher::default(), &accepted, &request(), None)
         .expect("delegación");
     let argv = fake.argv_of("hc", "run").expect("hc run");
     assert_eq!(arg_after(&argv, "--name").as_deref(), Some("dev4-opencode"));
@@ -370,7 +375,7 @@ fn un_nombre_ocupado_prueba_el_siguiente() {
         .route("hc:get", vec![hc_get_ok("dev1-opencode")]);
     let herdr = herdr_de(&fake);
     let result = herdr
-        .delegate(Launcher::default(), &accepted, &request())
+        .delegate(Launcher::default(), &accepted, &request(), None)
         .expect("delegación");
     assert_eq!(fake.count_of("hc", "run"), 2);
     assert_eq!(result["ok"], true);
@@ -382,7 +387,7 @@ fn un_nombre_pedido_que_está_ocupado_es_un_rechazo() {
     let herdr = herdr_de(&fake);
     let mut request = request();
     request.name = Some("mio".to_string());
-    let result = herdr.delegate(Launcher::default(), &accepted, &request);
+    let result = herdr.delegate(Launcher::default(), &accepted, &request, None);
     match result {
         Err(DelegateError::Rejected(message)) => {
             assert!(message.contains("already named"), "{message}");
@@ -405,7 +410,7 @@ fn el_hc_run_lleva_el_padre_y_las_etiquetas() {
     request.effort = Some("high".to_string());
     request.outlive_parent = true;
     herdr
-        .delegate(Launcher::default(), &accepted, &request)
+        .delegate(Launcher::default(), &accepted, &request, None)
         .expect("delegación");
     let argv = fake.argv_of("hc", "run").expect("hc run");
     assert_eq!(arg_after(&argv, "--parent").as_deref(), Some("t6h"));
@@ -427,7 +432,7 @@ fn sin_modelo_ni_esfuerzo_no_hay_etiquetas_de_ellos() {
         .route("hc:get", vec![hc_get_ok("dev1-opencode")]);
     let herdr = herdr_de(&fake);
     herdr
-        .delegate(Launcher::default(), &accepted, &request())
+        .delegate(Launcher::default(), &accepted, &request(), None)
         .expect("delegación");
     let argv = fake.argv_of("hc", "run").expect("hc run");
     assert!(!argv.iter().any(|part| part.starts_with("ez.model=")));
@@ -443,7 +448,7 @@ fn el_subagente_recibe_el_primer_mensaje() {
     let launcher = Launcher::default();
     let task = Arc::clone(&launcher.task);
     herdr
-        .delegate(launcher, &accepted, &request())
+        .delegate(launcher, &accepted, &request(), None)
         .expect("delegación");
     let sent = task.lock().expect("tarea").clone();
     assert!(sent.starts_with(
@@ -461,7 +466,7 @@ fn el_resultado_informa_lo_que_quedo() {
         .route("hc:get", vec![hc_get_ok("dev1-opencode")]);
     let herdr = herdr_de(&fake);
     let result = herdr
-        .delegate(Launcher::default(), &accepted, &request())
+        .delegate(Launcher::default(), &accepted, &request(), None)
         .expect("delegación");
     assert_eq!(result["ok"], true);
     assert_eq!(result["terminal"], "t12");
@@ -495,6 +500,7 @@ fn los_avisos_del_catalogo_suman_a_los_del_lanzamiento() {
                 })
             },
             &request(),
+            None,
         )
         .expect("delegación");
     let warnings = result["warnings"].as_array().expect("avisos");
