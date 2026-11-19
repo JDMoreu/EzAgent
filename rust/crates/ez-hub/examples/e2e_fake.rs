@@ -65,6 +65,12 @@ fn tail_text(tail: &[Value]) -> String {
 }
 
 fn run_flow(layout: &Layout) -> Result<String, String> {
+    let runtime = start_engine(layout)?;
+    drive(&runtime, layout)?;
+    verify(layout)
+}
+
+fn start_engine(layout: &Layout) -> Result<HubRuntime, String> {
     let options = RuntimeOptions {
         ez_dir: Some(layout.bins.clone()),
     };
@@ -78,41 +84,32 @@ fn run_flow(layout: &Layout) -> Result<String, String> {
     ));
     let address = runtime.ensure_main_agent(&layout.space, ELEPHANT)?;
     emit(&format!("Agente principal lanzado en {address}."));
+    Ok(runtime)
+}
 
+fn drive(runtime: &HubRuntime, layout: &Layout) -> Result<(), String> {
     let deadline = Instant::now() + DEADLINE;
     let mut handled = std::collections::BTreeSet::new();
     let mut closed = false;
     let mut integrated = false;
     loop {
-        let seen = watch::read(&runtime, &layout.space, ELEPHANT)?;
+        let seen = watch::read(runtime, &layout.space, ELEPHANT)?;
         let tail = seen.tail;
         for card in seen.cards {
-            if !handled.insert(card.id.clone()) {
-                continue;
+            if handled.insert(card.id.clone()) {
+                handle_card(runtime, layout, &card, &tail)?;
             }
-            match card.kind.as_str() {
-                "task" | "team" => {
-                    runtime.card_action(&card.id, "approve", None)?;
-                    emit(&format!("Aprobada la tarjeta {} ({}).", card.id, card.kind));
-                }
-                "integrate" => {
-                    runtime.card_action(&card.id, "merge", None)?;
-                    emit(&format!("Integrada la rama desde la tarjeta {}.", card.id));
-                }
-                "pause" => {
-                    return Err(format!(
-                        "el árbitro pausó la tarea (tarjeta {}); últimos eventos: {}",
-                        card.id,
-                        tail_text(&tail)
-                    ));
-                }
-                _ => {}
-            }
+        }
+        if seen.kinds.contains("rejected") {
+            return Err(format!(
+                "el árbitro rechazó un comando; últimos eventos: {}",
+                tail_text(&tail)
+            ));
         }
         closed |= seen.kinds.contains("task_closed");
         integrated |= seen.kinds.contains("integrated");
         if closed && integrated {
-            break;
+            return Ok(());
         }
         if Instant::now() >= deadline {
             return Err(format!(
@@ -122,7 +119,45 @@ fn run_flow(layout: &Layout) -> Result<String, String> {
         }
         sleep(POLL);
     }
+}
 
+fn handle_card(
+    runtime: &HubRuntime,
+    layout: &Layout,
+    card: &watch::Card,
+    tail: &[Value],
+) -> Result<(), String> {
+    match card.kind.as_str() {
+        "task" | "team" => {
+            runtime.card_action(&card.id, "approve", None)?;
+            emit(&format!("Aprobada la tarjeta {} ({}).", card.id, card.kind));
+        }
+        "integrate" => {
+            // DECISION: `git merge` no lleva cambios sin confirmar; el banco de
+            // pruebas confirma el archivo del doble antes de integrar.
+            if layout.worktree.join("fake").is_dir() {
+                git_head(&layout.worktree, &["add", "fake"])?;
+                git_head(
+                    &layout.worktree,
+                    &["commit", "-q", "-m", "EzAgent: trabajo del subagente falso"],
+                )?;
+            }
+            runtime.card_action(&card.id, "merge", None)?;
+            emit(&format!("Integrada la rama desde la tarjeta {}.", card.id));
+        }
+        "pause" => {
+            return Err(format!(
+                "el árbitro pausó la tarea (tarjeta {}); últimos eventos: {}",
+                card.id,
+                tail_text(tail)
+            ));
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn verify(layout: &Layout) -> Result<String, String> {
     let DiskCheck {
         clean_rounds,
         leaked_token,

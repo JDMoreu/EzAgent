@@ -19,6 +19,8 @@ pub struct Layout {
     pub repo: PathBuf,
     /// Datos privados de la app (`%APPDATA%\EzAgent\hub` simulado).
     pub data: PathBuf,
+    /// Worktree del agente principal.
+    pub worktree: PathBuf,
     /// Carpeta con `ez.exe` y `fake-ws-agent.exe`.
     pub bins: PathBuf,
     /// Id del espacio.
@@ -119,15 +121,9 @@ fn profiles(fake: &Path, script: &Path) -> String {
     )
 }
 
-/// Crea todo lo necesario; devuelve error si falta `hc` o no se pueden compilar los binarios.
+/// Crea todo lo necesario; devuelve error si no se pueden compilar los binarios.
 pub fn prepare() -> Result<Layout, String> {
-    let bins = target_dir()?;
-    let ez = ensure_binary(&bins, "ez-ctl", "ez")?;
-    if !ez.is_file() {
-        return Err("falta el binario ez".to_string());
-    }
-    let fake = ensure_binary(&bins, "ez-fakes", "fake-ws-agent")?;
-
+    let (bins, fake) = tools()?;
     let root = std::env::temp_dir().join(format!("ez-e2e-fake-{}", Uuid::new_v4().simple()));
     std::fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     let repo = root.join("repo");
@@ -136,18 +132,51 @@ pub fn prepare() -> Result<Layout, String> {
     let script = root.join("guion.toml");
     let space = format!("e2e{}", &Uuid::new_v4().simple().to_string()[..8]);
     let token = ez_ctl::new_token();
+    let base_branch = init_repo(&repo, &worktree)?;
+    write(&script, &scenario::script())?;
+    write_data(Seed {
+        data: &data,
+        space: &space,
+        repo: &repo,
+        worktree: &worktree,
+        base_branch: &base_branch,
+        fake: &fake,
+        script: &script,
+        token: &token,
+    })?;
+    Ok(Layout {
+        root,
+        repo,
+        data,
+        worktree,
+        bins,
+        space,
+        token,
+    })
+}
 
-    std::fs::create_dir_all(&repo).map_err(|error| error.to_string())?;
+fn tools() -> Result<(PathBuf, PathBuf), String> {
+    let bins = target_dir()?;
+    let ez = ensure_binary(&bins, "ez-ctl", "ez")?;
+    if !ez.is_file() {
+        return Err("falta el binario ez".to_string());
+    }
+    let fake = ensure_binary(&bins, "ez-fakes", "fake-ws-agent")?;
+    Ok((bins, fake))
+}
+
+fn init_repo(repo: &Path, worktree: &Path) -> Result<String, String> {
+    std::fs::create_dir_all(repo).map_err(|error| error.to_string())?;
     write(&repo.join("README.md"), "Repositorio de prueba ECO-8.\n")?;
-    git(&repo, &["init", "-q"])?;
-    git(&repo, &["config", "user.email", "e2e@ezagent.local"])?;
-    git(&repo, &["config", "user.name", "EzAgent E2E"])?;
-    git(&repo, &["add", "README.md"])?;
-    git(&repo, &["commit", "-q", "-m", "inicial"])?;
-    let base_branch = git(&repo, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    git(repo, &["init", "-q"])?;
+    git(repo, &["config", "user.email", "e2e@ezagent.local"])?;
+    git(repo, &["config", "user.name", "EzAgent E2E"])?;
+    git(repo, &["add", "README.md"])?;
+    git(repo, &["commit", "-q", "-m", "inicial"])?;
+    let base = git(repo, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     let branch = format!("ez/{ELEPHANT}");
     git(
-        &repo,
+        repo,
         &[
             "worktree",
             "add",
@@ -157,10 +186,34 @@ pub fn prepare() -> Result<Layout, String> {
             &worktree.to_string_lossy(),
         ],
     )?;
+    Ok(base)
+}
 
-    write(&script, &scenario::script())?;
-    write(&data.join("espacios.json"), &spaces(&space, &repo))?;
-    write(&data.join("agentes.toml"), &profiles(&fake, &script))?;
+/// Datos con los que se siembra la carpeta privada de la app.
+struct Seed<'a> {
+    data: &'a Path,
+    space: &'a str,
+    repo: &'a Path,
+    worktree: &'a Path,
+    base_branch: &'a str,
+    fake: &'a Path,
+    script: &'a Path,
+    token: &'a str,
+}
+
+fn write_data(seed: Seed<'_>) -> Result<(), String> {
+    let Seed {
+        data,
+        space,
+        repo,
+        worktree,
+        base_branch,
+        fake,
+        script,
+        token,
+    } = seed;
+    write(&data.join("espacios.json"), &spaces(space, repo))?;
+    write(&data.join("agentes.toml"), &profiles(fake, script))?;
     write(
         &data.join("suscripciones.toml"),
         "[[suscripcion]]\nnombre = \"Falsos\"\nagentes = [\"fake_main\", \"fake_exec\", \"fake_verify\"]\n",
@@ -170,7 +223,7 @@ pub fn prepare() -> Result<Layout, String> {
             "key": { "space": space, "elephant": ELEPHANT },
             "name": "Principal falso",
             "worktree": worktree,
-            "branch": branch,
+            "branch": format!("ez/{ELEPHANT}"),
             "base_branch": base_branch,
         }]
     });
@@ -180,16 +233,7 @@ pub fn prepare() -> Result<Layout, String> {
     let choices = serde_json::json!({
         ELEPHANT: { "agente": "fake_main", "modelo": "main-1" }
     });
-    write(&data.join("principales.json"), &choices.to_string())?;
-
-    Ok(Layout {
-        root,
-        repo,
-        data,
-        bins,
-        space,
-        token,
-    })
+    write(&data.join("principales.json"), &choices.to_string())
 }
 
 fn spaces(space: &str, repo: &Path) -> String {

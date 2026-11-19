@@ -70,21 +70,35 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
 }
 
 /// Bucle de terminal: anuncia `idle`, atiende líneas y vuelve a `idle`.
+/// Ningún candado de E/S queda tomado mientras se ejecuta un subproceso.
 pub fn run(args: &[String]) -> Result<(), String> {
     let parsed = parse(args)?;
-    let stdin = io::stdin();
-    let mut out = io::stdout().lock();
-    state::announce(&mut out, "idle")?;
-    prompt(&mut out)?;
-    for line in stdin.lock().lines() {
-        let line = line.map_err(|error| format!("no pude leer stdin: {error}"))?;
-        state::announce(&mut out, "working")?;
+    announce("idle")?;
+    prompt()?;
+    while let Some(line) = next_line()? {
+        announce("working")?;
         let result = handle(&parsed.mode, &line);
-        state::announce(&mut out, "idle")?;
-        prompt(&mut out)?;
+        announce("idle")?;
+        prompt()?;
         result?;
     }
     Ok(())
+}
+
+fn next_line() -> Result<Option<String>, String> {
+    let stdin = io::stdin();
+    let mut reader = stdin.lock();
+    let mut line = String::new();
+    let read = reader
+        .read_line(&mut line)
+        .map_err(|error| format!("no pude leer stdin: {error}"))?;
+    Ok((read > 0).then_some(line))
+}
+
+fn announce(status: &str) -> Result<(), String> {
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    state::announce(&mut out, status)
 }
 
 fn handle(mode: &Mode, line: &str) -> Result<(), String> {
@@ -116,7 +130,9 @@ fn subagent(mode: &Mode, first_line: &str) -> Result<(), String> {
     report::send(&report_path, instructions::asks_mutations(&text))
 }
 
-fn prompt(out: &mut dyn Write) -> Result<(), String> {
+fn prompt() -> Result<(), String> {
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
     out.write_all(b"fake listo> ")
         .map_err(|error| format!("no pude escribir el prompt: {error}"))?;
     out.flush()

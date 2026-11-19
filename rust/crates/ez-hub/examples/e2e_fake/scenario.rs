@@ -28,6 +28,7 @@ modelo = \"exec-1\"
 papel = \"plan_reviewer\"
 agente = \"fake_verify\"
 modelo = \"verify-1\"
+etapa = 5
 
 [[papel]]
 papel = \"developer\"
@@ -122,26 +123,30 @@ pub fn script() -> String {
         ".ez/borrador/equipo.toml",
     ]));
     text.push_str(&step_wait("team_approved"));
-    text.push_str(&step_ez(&["round", "start"]));
-    for role in [
-        "planner",
-        "plan_reviewer",
-        "developer",
-        "qa",
-        "qa_validator",
-    ] {
-        text.push_str(&delegate(role));
-        text.push_str(&step_wait("fish_reported"));
-    }
-    text.push_str(&step_ez(&["round", "close"]));
-    text.push_str(&step_ez(&["round", "start"]));
-    for role in ["qa", "qa_validator"] {
-        text.push_str(&delegate(role));
-        text.push_str(&step_wait("fish_reported"));
-    }
-    text.push_str(&step_ez(&["round", "close"]));
+    // DECISION: el revisor del plan va en la etapa 5 para que una ronda solo
+    // de verificación no espere su informe (ver el informe ECO-8-r1).
+    round(
+        &mut text,
+        &[
+            "planner",
+            "developer",
+            "qa",
+            "plan_reviewer",
+            "qa_validator",
+        ],
+    );
+    round(&mut text, &["qa", "qa_validator"]);
     text.push_str(&step_ez(&["close"]));
     text
+}
+
+fn round(text: &mut String, roles: &[&str]) {
+    text.push_str(&step_ez(&["round", "start"]));
+    for role in roles {
+        text.push_str(&delegate(role));
+        text.push_str(&step_wait("fish_reported"));
+    }
+    text.push_str(&step_ez(&["round", "close"]));
 }
 
 #[cfg(test)]
