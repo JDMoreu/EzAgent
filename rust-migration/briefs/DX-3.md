@@ -33,3 +33,21 @@ No toques la app abierta de la persona ni su `whisper-server`. Nada pasa de 1 GB
 
 ## Criterios
 fmt, clippy y test de los crates tocados en verde; informe `DX-3-r1.md` con la prueba de humo.
+
+## Adenda del agente principal (antes de lanzar)
+- **Archivos que se tocan**: `rust/crates/ez-stt/src/server.rs` (lo lanza hoy con
+  `Command::new("powershell")` y un guion), un archivo nuevo `ez-stt/src/server/job.rs`,
+  `ez-stt/src/server/tests.rs`, `ez-stt/Cargo.toml` (el crate `windows` del workspace con
+  las features justas), `ez-fakes` si el servidor falso necesita algo, y
+  `scripts/stop-voice.ps1` (lo llama `EzAgent.bat stop`). En paralelo DX-1d toca `ez-app` y
+  `ez-core`: **no los toques**; si hace falta cambiar `ez-app`, detente y dilo en el informe.
+- **Excepción a `_COMMON-ECO`**: el `unsafe` de las llamadas al Job Object
+  (`CreateJobObjectW`, `SetInformationJobObject`, `AssignProcessToJobObject`) solo en
+  `server/job.rs`, cada bloque con `// SAFETY:`. Los procesos hijos del `powershell`
+  intermedio heredan el Job: si lo conservas, comprueba que el `whisper-server` real (el
+  nieto) también muere.
+- La prueba de humo usa el **servidor falso** (`fake-whisper`) configurado como servidor de
+  la app con `APPDATA` temporal; nunca el `whisper-server` real ni el modelo (pasaría de
+  1 GB). Identifica los procesos de tu prueba por PID, nunca por nombre: la persona tiene su
+  propio `whisper-server` vivo y no se toca.
+- Rama `work/DX-3` desde `eco/main`. Compila en primer plano y espera el resultado.
