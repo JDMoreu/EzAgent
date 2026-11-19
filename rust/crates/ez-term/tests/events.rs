@@ -14,6 +14,63 @@ fn next(stream: &EventStream) -> TermEvent {
         .expect("evento en la conexión")
 }
 
+fn script_created_status_finished(fake: support::Fake) {
+    fake.hello();
+    let subscribe = fake.request();
+    fake.respond(
+        &subscribe,
+        json!({"channel": null, "seq": 10, "terminals": []}),
+    );
+    fake.notify(json!({
+        "seq": 11,
+        "terminal": "t1",
+        "type": "created",
+        "data": support::terminal("t2", "dos"),
+    }));
+    fake.notify(json!({
+        "seq": 12,
+        "terminal": "t2",
+        "type": "status",
+        "data": {"state": "working", "kind": null, "msg": "pensando", "title": "", "app": "opencode", "progress": 40},
+    }));
+    fake.notify(json!({
+        "seq": 13,
+        "terminal": "t2",
+        "type": "status",
+        "data": {"msg": "sin palabra de estado"},
+    }));
+    fake.notify(json!({
+        "seq": 14,
+        "terminal": "t2",
+        "type": "finished",
+        "data": {"exit_code": 0, "finished_ms": 7, "reason": "exited", "signal": null},
+    }));
+}
+
+fn script_removed_heartbeat_missed(fake: support::Fake) {
+    fake.hello();
+    let subscribe = fake.request();
+    fake.respond(
+        &subscribe,
+        json!({"channel": null, "seq": 10, "terminals": []}),
+    );
+    fake.notify(json!({"seq": 15, "terminal": "t2", "type": "removed", "data": {}}));
+    fake.notify(json!({
+        "seq": 16,
+        "terminal": "t2",
+        "type": "foreground",
+        "data": {"name": "PING.EXE", "pid": 10004},
+    }));
+    fake.raw(json!({"jsonrpc": "2.0", "method": "heartbeat", "params": {}}));
+    fake.raw(json!({
+        "jsonrpc": "2.0",
+        "method": "missed",
+        "params": {"seq": 20, "terminals": [support::terminal("t3", "tres")]},
+    }));
+    // Sin foto en el aviso: se entrega vacía (DECISION en `events.rs`).
+    fake.raw(json!({"jsonrpc": "2.0", "method": "missed", "params": {"seq": 21}}));
+}
+
 #[test]
 fn subscribe_sends_labels_and_keeps_snapshot() {
     let (stream, script) = support::events_scripted(|fake| {
@@ -38,56 +95,8 @@ fn subscribe_sends_labels_and_keeps_snapshot() {
 }
 
 #[test]
-fn events_follow_the_script_and_end_with_closed() {
-    let (stream, script) = support::events_scripted(|fake| {
-        fake.hello();
-        let subscribe = fake.request();
-        fake.respond(
-            &subscribe,
-            json!({"channel": null, "seq": 10, "terminals": []}),
-        );
-
-        fake.notify(json!({
-            "seq": 11,
-            "terminal": "t1",
-            "type": "created",
-            "data": support::terminal("t2", "dos"),
-        }));
-        fake.notify(json!({
-            "seq": 12,
-            "terminal": "t2",
-            "type": "status",
-            "data": {"state": "working", "kind": null, "msg": "pensando", "title": "", "app": "opencode", "progress": 40},
-        }));
-        fake.notify(json!({
-            "seq": 13,
-            "terminal": "t2",
-            "type": "status",
-            "data": {"msg": "sin palabra de estado"},
-        }));
-        fake.notify(json!({
-            "seq": 14,
-            "terminal": "t2",
-            "type": "finished",
-            "data": {"exit_code": 0, "finished_ms": 7, "reason": "exited", "signal": null},
-        }));
-        fake.notify(json!({"seq": 15, "terminal": "t2", "type": "removed", "data": {}}));
-        fake.notify(json!({
-            "seq": 16,
-            "terminal": "t2",
-            "type": "foreground",
-            "data": {"name": "PING.EXE", "pid": 10004},
-        }));
-        fake.raw(json!({"jsonrpc": "2.0", "method": "heartbeat", "params": {}}));
-        fake.raw(json!({
-            "jsonrpc": "2.0",
-            "method": "missed",
-            "params": {"seq": 20, "terminals": [support::terminal("t3", "tres")]},
-        }));
-        // Sin foto en el aviso: se entrega vacía (DECISION en `events.rs`).
-        fake.raw(json!({"jsonrpc": "2.0", "method": "missed", "params": {"seq": 21}}));
-    });
-
+fn created_status_and_finished_events() {
+    let (stream, script) = support::events_scripted(script_created_status_finished);
     match next(&stream) {
         TermEvent::Created(terminal) => assert_eq!(terminal.name.as_deref(), Some("dos")),
         other => panic!("se esperaba Created: {other:?}"),
@@ -119,6 +128,13 @@ fn events_follow_the_script_and_end_with_closed() {
         }
         other => panic!("se esperaba Finished: {other:?}"),
     }
+    assert_eq!(next(&stream), TermEvent::Closed);
+    script.join().expect("guion");
+}
+
+#[test]
+fn removed_heartbeat_and_missed_events() {
+    let (stream, script) = support::events_scripted(script_removed_heartbeat_missed);
     assert_eq!(
         next(&stream),
         TermEvent::Removed {
