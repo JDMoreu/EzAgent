@@ -250,3 +250,11 @@
   hilo de pintura, no congela la app): con 33 mensajes el contenido tarda ~2,4 s en aparecer.
   La virtualización lo resuelve.
 - La app de la persona no cambia hasta recompilar: se le pregunta antes.
+
+### HD-0d (supervisor) — revisión 1: \r corregido; devuelto (HD-0e) por falsos positivos
+- Bien: `strip_cr` en todo dato, no mata terminales vivas por «desconocido», se engancha a
+  una terminal viva con su nombre, sesión nueva al cambiar de modelo; `probar.sh` 11 casos en
+  verde fuera de hc (el entorno donde falló).
+- Mal: C0-6 detecta límites con palabras sueltas y con el agente trabajando, y cierra la
+  terminal: IR-2 (que leerá IR-0) quedaría `fallido`. HD-0e: mismo criterio que NV-1b.
+  El supervisor sigue fuera de uso hasta HD-0e.
