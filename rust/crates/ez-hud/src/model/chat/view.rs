@@ -288,7 +288,8 @@ impl ChatView {
     }
 
     /// Whether the panel must keep repainting.
-    pub fn animating(&mut self, now: f64) -> bool {        let flashing = self.flash.as_ref().is_some_and(|(_, until)| now < *until);
+    pub fn animating(&mut self, now: f64) -> bool {
+        let flashing = self.flash.as_ref().is_some_and(|(_, until)| now < *until);
         let mut fading = self.deleting.is_some();
         if let Some(deleting) = &self.deleting {
             if now - deleting.2 >= DELETE_SECS {

@@ -454,7 +454,8 @@ pub(super) fn composite_caret(
         for index in 0..clip.columns {
             let source_column = clip.src_column + index;
             let dst_column = clip.dst_column + index;
-            let patch_index = ((source_row - patch_y) * patch_width + (source_column - patch_x)) * 4;
+            let patch_index =
+                ((source_row - patch_y) * patch_width + (source_column - patch_x)) * 4;
             let content_index = (source_row * content_width + source_column) * 4;
             let cover = cover[source_row * coverage_width + source_column];
             let matte = cover * opacity;

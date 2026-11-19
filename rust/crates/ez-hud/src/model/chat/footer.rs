@@ -269,7 +269,14 @@ impl ChatView {
         let Some(rect) = self.caret_rect(now) else {
             return;
         };
-        canvas::fill_round_rect(buf, rect, CARET_RADIUS, self.color("MINT"), self.g.scale, 1.0);
+        canvas::fill_round_rect(
+            buf,
+            rect,
+            CARET_RADIUS,
+            self.color("MINT"),
+            self.g.scale,
+            1.0,
+        );
     }
 
     /// Where the caret is, in logical pixels, when its phase shows it.

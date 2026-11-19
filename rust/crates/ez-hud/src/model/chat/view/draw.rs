@@ -25,7 +25,10 @@ impl ChatView {
             self.scroll.set_max(0.0);
             return;
         }
-        let heights: Vec<f64> = messages.iter().map(|msg| self.height_of(msg, now)).collect();
+        let heights: Vec<f64> = messages
+            .iter()
+            .map(|msg| self.height_of(msg, now))
+            .collect();
         let stamps: Vec<f64> = messages.iter().map(labels::stamp_height).collect();
         let mut total = PAD
             + heights

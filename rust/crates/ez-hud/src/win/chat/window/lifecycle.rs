@@ -253,6 +253,34 @@ impl Drop for ChatPanel {
 mod tests {
     use super::*;
 
+    use crate::model::chat::view::test_support::view_with;
+    use crate::model::chat::view::{ChatMessage, Role};
+    use crate::win::chat::test_support::{fake_ui, Recorder};
+
+    /// Abrir el chat no maqueta el historial en el hilo que abre.
+    ///
+    /// DECISION: el maquetado es trabajo del hilo de pintura (DX-1, paso 1).
+    /// Antes costaba ~89 ms por mensaje y lo pagaba el hilo que abre el chat
+    /// (el principal de la app): con 33 mensajes eran unos tres segundos de
+    /// interfaz congelida.
+    #[test]
+    fn opening_the_chat_does_not_lay_out_the_history() {
+        let panel = ChatPanel::new(fake_ui(), Arc::new(Recorder::default()));
+        let messages: Vec<ChatMessage> = (1..=40)
+            .map(|id| ChatMessage::new(id, Role::User, format!("mensaje {id}")))
+            .collect();
+        let mut view = view_with(messages, Vec::new());
+        panel.prepare_view(&mut view, (0.0, 0.0, 440.0, 600.0));
+        assert_eq!(
+            view.layouts(),
+            0,
+            "the thread that opens the chat laid out the history"
+        );
+        // The paint thread is the one that does it.
+        view.render(0.0);
+        assert!(view.layouts() > 0, "the painted frame laid out nothing");
+    }
+
     #[test]
     fn the_window_sits_around_the_panel_with_the_shadow_margin() {
         let panel = (100.4, 200.6, 500.0, 800.0);

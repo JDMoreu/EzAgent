@@ -12,7 +12,7 @@
 //! cola de mensajes, así que nunca bloquean al llamador.
 
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle, ThreadId};
@@ -42,7 +42,12 @@ pub struct LayeredWindow {
     pub lazy_drag: bool,
     pub max_height: i32,
     pub click_through: bool,
-    interval: f64,
+    /// Cadence of the presentation, in seconds (the bits of an `f64`).
+    ///
+    /// DECISION: it is atomic because the owner changes it from another
+    /// thread: the panel asks for 30 fps at rest and the window thread has
+    /// to present at that cadence (DX-1, paso 8).
+    interval_bits: AtomicU64,
     want_mouse_hook: bool,
     wid: usize,
     hwnd: AtomicIsize,
@@ -73,7 +78,7 @@ impl LayeredWindow {
             lazy_drag: options.lazy_drag,
             max_height: options.max_height,
             click_through: options.click_through,
-            interval: options.interval,
+            interval_bits: AtomicU64::new(options.interval.to_bits()),
             want_mouse_hook: options.mouse_hook,
             wid,
             hwnd: AtomicIsize::new(0),
@@ -224,6 +229,22 @@ impl LayeredWindow {
     pub fn present(&self, frame: RgbaFrame) {
         *self.pending_frame.lock() = Some(frame);
         self.state.lock().dirty = true;
+        self.wake();
+    }
+
+    /// La cadencia de la presentación, en segundos.
+    pub fn interval(&self) -> f64 {
+        f64::from_bits(self.interval_bits.load(Ordering::Relaxed))
+    }
+
+    /// Cambia la cadencia de la presentación.
+    ///
+    /// DECISION: el hilo de la ventana presenta a 60 fps fijos aunque el
+    /// dueño pida menos: con el chat abierto eso era medio núcleo de CPU
+    /// para nada (DX-1, paso 8).
+    pub fn set_interval(&self, seconds: f64) {
+        self.interval_bits
+            .store(seconds.max(0.001).to_bits(), Ordering::Relaxed);
         self.wake();
     }
 
