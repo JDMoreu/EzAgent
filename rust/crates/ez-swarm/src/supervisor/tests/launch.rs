@@ -109,7 +109,6 @@ fn two_member_swarm(fixture: &super::Fixture) -> String {
             effort: "high".to_string(),
             task: "Portar".to_string(),
             parallel: true,
-            ..MemberSpec::default()
         },
     ];
     fixture

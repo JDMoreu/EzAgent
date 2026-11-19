@@ -194,6 +194,8 @@ fn root_address(context: &LaunchContext, info: &SwarmInfo, member: &Member) -> O
     let members = match context.service.store.members(&info.id) {
         Ok(members) => members,
         Err(error) => {
+            // DECISION: un fallo al leer el tablero no debe impedir el lanzamiento;
+            // se abre como hoy (sin padre) y se avisa en el log.
             warn!(
                 "Enjambre {}: no pude leer los miembros para hallar la raíz: {error}",
                 info.id
@@ -219,7 +221,10 @@ fn member_labels(info: &SwarmInfo, member: &Member, parent: Option<&str>) -> Map
             labels.insert("ez.model".to_string(), Value::String(member.model.clone()));
         }
         if !member.effort.is_empty() {
-            labels.insert("ez.effort".to_string(), Value::String(member.effort.clone()));
+            labels.insert(
+                "ez.effort".to_string(),
+                Value::String(member.effort.clone()),
+            );
         }
     }
     labels
