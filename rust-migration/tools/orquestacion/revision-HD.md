@@ -167,3 +167,11 @@
   modo interactivo, `SID=ses_hd0crevs1`, sin lanzar nada.
 - Observación: el núcleo de hc se reinició varias veces durante el día (lo vieron HD-0, HD-0b
   y HD-0c); el supervisor ya lo tolera.
+
+### DX-2c — validado (DX-2 completo, sin fusionar: espera la decisión de la persona)
+- Las pruebas escriben latencia/auditoría en un temporal (`EZAGENT_LOGS_DIR`, fijado por el
+  soporte de pruebas). Comprobado por el elefante: 75 pruebas de `fast::`, `app::events::` y
+  `app::watch::` en verde y el `latency.jsonl` real sigue con 469 líneas (9 `ack_fast` de
+  antes de la corrección).
+- No se fusiona a `eco/main` hasta que la persona confirme el cambio de los avisos (sin
+  pregunta al final) o pida conservarlos con pregunta.
