@@ -75,7 +75,12 @@ fn hc_path(env: &dyn Fn(&str) -> Option<String>) -> String {
     // donde Herdr vive en otro sitio).
     let from_config = VoiceConfig::load(None)
         .ok()
-        .and_then(|config| config.get("hc_path").and_then(Value::as_str).map(str::to_string))
+        .and_then(|config| {
+            config
+                .get("hc_path")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
         .unwrap_or_default();
     if from_config.trim().is_empty() {
         "hc".to_string()
@@ -125,10 +130,7 @@ pub(crate) enum LocalState {
 }
 
 /// Analiza `ez report` en el modo local.
-pub(crate) fn build_report(
-    parsed: &mut Parsed,
-    cwd: &Path,
-) -> Result<LocalState, CliError> {
+pub(crate) fn build_report(parsed: &mut Parsed, cwd: &Path) -> Result<LocalState, CliError> {
     let state = parsed.required("state")?;
     let state = match state.as_str() {
         "terminado" => TaskState::Done,
@@ -150,10 +152,7 @@ pub(crate) fn build_report(
 }
 
 /// Analiza `ez validate`.
-pub(crate) fn build_validate(
-    parsed: &mut Parsed,
-    cwd: &Path,
-) -> Result<LocalState, CliError> {
+pub(crate) fn build_validate(parsed: &mut Parsed, cwd: &Path) -> Result<LocalState, CliError> {
     let name = parsed.word("Falta el nombre de la tarea.")?;
     if name.trim().is_empty() {
         return Err(CliError::Usage(
@@ -212,7 +211,9 @@ pub(crate) fn run_state(
         LocalState::Report(command) => run_report(command, &context, json, out, err),
         LocalState::Validate(command) => run_validate(command, &context, json, out, err),
         LocalState::Tasks(command) => run_tasks(command, &context, json, out, err),
-        LocalState::Watch(command) => super::watch::run_watch(command, &context, env, json, out, err),
+        LocalState::Watch(command) => {
+            super::watch::run_watch(command, &context, env, json, out, err)
+        }
     }
 }
 
@@ -458,7 +459,14 @@ fn print_json(out: &mut dyn Write, value: &impl serde::Serialize) {
 
 /// La tabla legible de `ez tasks`.
 fn print_table(out: &mut dyn Write, records: &[Record]) {
-    let headers = ["nombre", "tipo · modelo", "papel", "estado", "hace", "resumen"];
+    let headers = [
+        "nombre",
+        "tipo · modelo",
+        "papel",
+        "estado",
+        "hace",
+        "resumen",
+    ];
     let mut rows: Vec<Vec<String>> = Vec::new();
     for record in records {
         rows.push(vec![
@@ -470,7 +478,10 @@ fn print_table(out: &mut dyn Write, records: &[Record]) {
             summary_line(record),
         ]);
     }
-    let mut widths: Vec<usize> = headers.iter().map(|header| header.chars().count()).collect();
+    let mut widths: Vec<usize> = headers
+        .iter()
+        .map(|header| header.chars().count())
+        .collect();
     for row in &rows {
         for (index, cell) in row.iter().enumerate() {
             widths[index] = widths[index].max(cell.chars().count());

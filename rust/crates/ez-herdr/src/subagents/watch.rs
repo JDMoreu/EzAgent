@@ -179,11 +179,7 @@ pub struct Watcher {
 
 impl Watcher {
     /// Un vigilante del padre de `config`.
-    pub fn new(
-        config: WatchConfig,
-        registry: Registry,
-        runtime: Arc<dyn WatchRuntime>,
-    ) -> Self {
+    pub fn new(config: WatchConfig, registry: Registry, runtime: Arc<dyn WatchRuntime>) -> Self {
         let now = runtime.now_ms();
         Self {
             config,

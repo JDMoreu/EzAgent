@@ -15,7 +15,7 @@ mod state;
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
-pub use echo::Echo;
+pub use echo::{Echo, ReportMode};
 
 /// Uso del binario `fake-ws-agent`.
 pub const USAGE: &str = "
@@ -25,12 +25,15 @@ Uso:
   fake-ws-agent --exec
   fake-ws-agent --verify
   fake-ws-agent --main RUTA_GUION
-  fake-ws-agent --echo CARPETA [argumentos libres…]
+  fake-ws-agent --echo CARPETA [--report terminado|fallido|none] [--ez RUTA]
+                [argumentos libres…]
 
   --exec    subagente ejecutor: escribe fake/<id>.txt y entrega su informe.
   --verify  subagente verificador: entrega su informe sin tocar el proyecto.
   --main    agente principal: sigue el guion TOML de comandos `ez`.
   --echo    anota argv, entorno y lo que recibe en CARPETA/<id>.json.
+  --report  lo que el agente declara al terminar (por omisión, nada).
+  --ez      la ruta de `ez` para entregar el estado (por omisión, el del PATH).
 ";
 
 /// Modo de operación del agente falso.
@@ -183,9 +186,46 @@ mod tests {
             mode,
             Mode::Echo(Echo {
                 folder: PathBuf::from("registros"),
+                report: ReportMode::None,
+                ez: None,
                 extra: vec!["--model".to_string(), "x".to_string()],
             })
         );
+    }
+
+    #[test]
+    fn el_modo_eco_toma_el_informe_y_la_ruta_de_ez() {
+        let mode = parse(&[
+            "--echo".into(),
+            "registros".into(),
+            "--report".into(),
+            "terminado".into(),
+            "--ez".into(),
+            "ez.exe".into(),
+            "--standalone".into(),
+        ])
+        .unwrap()
+        .mode;
+        assert_eq!(
+            mode,
+            Mode::Echo(Echo {
+                folder: PathBuf::from("registros"),
+                report: ReportMode::Done,
+                ez: Some(PathBuf::from("ez.exe")),
+                extra: vec!["--standalone".to_string()],
+            })
+        );
+    }
+
+    #[test]
+    fn el_modo_eco_rechaza_un_estato_desconocido() {
+        let error = parse(&[
+            "--echo".into(),
+            "registros".into(),
+            "--report".into(),
+            "casi".into(),
+        ]);
+        assert!(error.is_err(), "{error:?}");
     }
 
     #[test]

@@ -256,8 +256,7 @@ fn build_state(
     // árbitro lleva su propio estado.
     if arbiter {
         return Err(CliError::Usage(
-            "En una tarea del árbitro el estado de los subagentes lo lleva el árbitro."
-                .to_string(),
+            "En una tarea del árbitro el estado de los subagentes lo lleva el árbitro.".to_string(),
         ));
     }
     if partial_env {

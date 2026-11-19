@@ -154,14 +154,19 @@ fn make_watcher(fake: &Arc<Fake>, registry: Registry) -> Watcher {
 fn una_terminal_terminada_sin_informe_queda_fallida_y_se_avisa() {
     let root = temp_root("fallida");
     let registry = Registry::at(&root);
-    registry.create(&record("dev1-opencode", "t12")).expect("registro");
+    registry
+        .create(&record("dev1-opencode", "t12"))
+        .expect("registro");
     let fake = Fake::new()
         .with_ls(r#"{"terminals":[{"address":"t12","state":"finished","exit_code":1}]}"#)
         .with_get(r#"{"address":"t6h","state":"live"}"#);
     let mut watcher = make_watcher(&fake, Registry::at(&root));
     let tick = watcher.tick();
     assert_eq!(tick.failed, vec!["dev1-opencode".to_string()]);
-    let saved = registry.get("t6h", "dev1-opencode").expect("leer").expect("registro");
+    let saved = registry
+        .get("t6h", "dev1-opencode")
+        .expect("leer")
+        .expect("registro");
     assert_eq!(saved.state, TaskState::Failed);
     let detail = saved.history.last().expect("cambio").detail.clone();
     assert_eq!(detail, "la terminal terminó sin informe (código 1)");
@@ -176,7 +181,9 @@ fn una_terminal_terminada_sin_informe_queda_fallida_y_se_avisa() {
 fn un_aviso_no_se_repite() {
     let root = temp_root("repite");
     let registry = Registry::at(&root);
-    registry.create(&record("dev1-opencode", "t12")).expect("registro");
+    registry
+        .create(&record("dev1-opencode", "t12"))
+        .expect("registro");
     registry
         .transition(
             "t6h",
@@ -204,7 +211,9 @@ fn un_aviso_no_se_repite() {
 fn un_cambio_hecho_por_el_padre_no_se_avisa() {
     let root = temp_root("padre");
     let registry = Registry::at(&root);
-    registry.create(&record("dev1-opencode", "t12")).expect("registro");
+    registry
+        .create(&record("dev1-opencode", "t12"))
+        .expect("registro");
     registry
         .transition(
             "t6h",
@@ -229,7 +238,9 @@ fn un_cambio_hecho_por_el_padre_no_se_avisa() {
 fn un_aviso_que_no_se_puede_mandar_se_reintenta() {
     let root = temp_root("reintento");
     let registry = Registry::at(&root);
-    registry.create(&record("dev1-opencode", "t12")).expect("registro");
+    registry
+        .create(&record("dev1-opencode", "t12"))
+        .expect("registro");
     registry
         .transition(
             "t6h",

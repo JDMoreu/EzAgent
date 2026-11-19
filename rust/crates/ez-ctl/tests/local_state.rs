@@ -86,7 +86,10 @@ fn el_report_sin_terminal_es_codigo_3() {
     let (code, out, err) = run_local(&["report", "--state", "terminado"], dir.path(), None, &root);
     assert_eq!(code, 3);
     assert!(out.is_empty());
-    assert!(err.contains("Ejecútalo desde la terminal de un agente en Herdr."), "{err}");
+    assert!(
+        err.contains("Ejecútalo desde la terminal de un agente en Herdr."),
+        "{err}"
+    );
 }
 
 #[test]
@@ -108,10 +111,18 @@ fn el_report_con_un_archivo_que_no_existe_es_codigo_2() {
 fn el_report_con_un_estado_desconocido_es_codigo_2() {
     let dir = TempDir::new();
     let root = dir.path().join("subagentes");
-    let (code, out, err) = run_local(&["report", "--state", "casi"], dir.path(), Some("t12"), &root);
+    let (code, out, err) = run_local(
+        &["report", "--state", "casi"],
+        dir.path(),
+        Some("t12"),
+        &root,
+    );
     assert_eq!(code, 2);
     assert!(out.is_empty());
-    assert!(err.contains("--state debe ser terminado o fallido"), "{err}");
+    assert!(
+        err.contains("--state debe ser terminado o fallido"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -139,7 +150,10 @@ fn el_report_de_un_subagente_registra_el_estado() {
         &root,
     );
     assert_eq!(code, 0, "{err}");
-    assert!(out.contains("Estado registrado: terminado (dev1-opencode)."), "{out}");
+    assert!(
+        out.contains("Estado registrado: terminado (dev1-opencode)."),
+        "{out}"
+    );
     let saved = registry
         .get("t6h", "dev1-opencode")
         .expect("leer")
@@ -224,7 +238,13 @@ fn el_validate_del_padre_pasa_la_tarea() {
         )
         .expect("cambio");
     let (code, out, err) = run_local(
-        &["validate", "dev1-opencode", "--pass", "--summary", "todo bien"],
+        &[
+            "validate",
+            "dev1-opencode",
+            "--pass",
+            "--summary",
+            "todo bien",
+        ],
         dir.path(),
         Some("t6h"),
         &root,
@@ -264,7 +284,13 @@ fn el_validate_que_falla_deja_la_tarea_fallida() {
         )
         .expect("cambio");
     let (code, _, err) = run_local(
-        &["validate", "dev1-opencode", "--fail", "--summary", "falta el informe"],
+        &[
+            "validate",
+            "dev1-opencode",
+            "--fail",
+            "--summary",
+            "falta el informe",
+        ],
         dir.path(),
         Some("t6h"),
         &root,

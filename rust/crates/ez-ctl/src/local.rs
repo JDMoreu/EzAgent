@@ -331,7 +331,12 @@ pub fn delegate(request: &LocalDelegate, parent: &str) -> Result<Map<String, Val
         outlive_parent: request.outlive_parent,
     };
     herdr
-        .delegate(launcher, &check, &delegate_request, Some(&delegate_state(parent, &herdr)))
+        .delegate(
+            launcher,
+            &check,
+            &delegate_request,
+            Some(&delegate_state(parent, &herdr)),
+        )
         .map_err(|error| match error {
             DelegateError::Rejected(message) => LocalError::Rejected(message),
             DelegateError::Unavailable(message) => LocalError::Unavailable(message),
@@ -378,14 +383,21 @@ pub fn summary(row: &Map<String, Value>) -> String {
     if !effort.is_empty() {
         details.push(effort);
     }
-    format!(
+    let mut line = format!(
         "Subagente {} ({}) lanzado: {}, hijo de {}, {}.",
         text(row, "name"),
         text(row, "terminal"),
         details.join(" · "),
         text(row, "parent"),
         placement_text(&text(row, "placed"))
-    )
+    );
+    // DECISION: el estado del subagente va al final de la línea: el padre
+    // sabe de inmediato si la tarea quedó en proceso o falló.
+    let state = text(row, "state");
+    if !state.is_empty() {
+        line.push_str(&format!(" Estado: {state}."));
+    }
+    line
 }
 
 /// Los avisos que dejó la delegación.
