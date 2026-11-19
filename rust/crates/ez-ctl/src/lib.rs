@@ -7,6 +7,7 @@ mod cli;
 mod client;
 mod local;
 mod protocol;
+mod scan_cmds;
 mod server;
 
 pub use cli::{main_with, SKILL};

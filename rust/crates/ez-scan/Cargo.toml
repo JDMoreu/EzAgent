@@ -1,0 +1,18 @@
+[package]
+name = "ez-scan"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "ez_scan"
+path = "src/lib.rs"
+
+[dependencies]
+ez-core = { path = "../ez-core" }
+ez-herdr = { path = "../ez-herdr" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sysinfo = { workspace = true }
+tracing = { workspace = true }
