@@ -359,6 +359,8 @@ impl Watcher {
                     ) {
                         tracing::warn!("EzAgent: no pude anotar uso.json: {error}");
                     }
+                    // El reintento automático ya ve el agotamiento en `uso.json`.
+                    self.trigger_auto_retry(record, &detail, tick);
                 }
                 return;
             }

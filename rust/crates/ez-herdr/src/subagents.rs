@@ -11,11 +11,13 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 mod registry;
+mod retry;
 #[cfg(test)]
 mod tests;
 mod watch;
 
 pub use registry::Registry;
+pub use retry::{retry, AutoRetry, RetryError, RetryOutcome, RetryRequest};
 pub use watch::{
     ensure_watcher, epoch_ms, watcher_args, watcher_name, DelegateState, HcOutput, HcRuntime,
     MemoryProbe, MemoryReading, WatchConfig, WatchRuntime, WatchStop, Watcher, WatcherSetup,
@@ -117,6 +119,15 @@ pub struct Record {
     pub role: String,
     pub cwd: String,
     pub brief_head: String,
+    /// La ruta del encargo (`--brief`) que se le entregó.
+    ///
+    /// Los registros anteriores a NV-2 no la tienen: `ez retry` usa entonces
+    /// `brief_head`. `#[serde(default)]` mantiene esos archivos legibles.
+    #[serde(default)]
+    pub brief_path: Option<String>,
+    /// El subagente al que este reemplaza (`ez retry`).
+    #[serde(default)]
+    pub retry_of: Option<String>,
     pub state: TaskState,
     pub since_ms: u64,
     pub history: Vec<Change>,

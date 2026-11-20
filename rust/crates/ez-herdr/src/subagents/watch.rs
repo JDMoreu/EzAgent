@@ -19,7 +19,8 @@ use serde_json::Value;
 use crate::herdr::{hc_slug, HerdrRuntime};
 
 use super::{
-    notice_text, pending_notices, InvalidRecord, ListOutcome, Record, Registry, TaskState,
+    notice_text, pending_notices, AutoRetry, InvalidRecord, ListOutcome, Record, Registry,
+    TaskState,
 };
 
 mod children;
@@ -166,6 +167,8 @@ pub struct Tick {
     pub resumed: Vec<String>,
     /// Los avisos de «sin avance» (sin cambio de estado).
     pub stalled: Vec<String>,
+    /// Los reintentos automáticos que lanzaron un hijo nuevo.
+    pub retried: Vec<String>,
     /// Los avisos que se mandaron al padre.
     pub notified: Vec<String>,
     /// Se avisó de memoria baja en esta vuelta.
@@ -204,6 +207,8 @@ pub struct Watcher {
     memory: Option<Arc<dyn MemoryProbe>>,
     /// Ya se avisó de memoria baja en este episodio.
     memory_low: bool,
+    /// El reintento automático de §4 (lo instala `ez watch`).
+    auto_retry: Option<Arc<dyn AutoRetry>>,
 }
 
 impl Watcher {
@@ -221,6 +226,7 @@ impl Watcher {
             warned_invalid: HashSet::new(),
             memory: None,
             memory_low: false,
+            auto_retry: None,
         }
     }
 
@@ -228,6 +234,24 @@ impl Watcher {
     pub fn with_novelty_file(mut self, path: impl Into<PathBuf>) -> Self {
         self.novelty_file = Some(path.into());
         self
+    }
+
+    /// El reintento automático de §4 (`ez watch` lo implementa con `ez-scan`).
+    pub fn with_auto_retry(mut self, hook: Arc<dyn AutoRetry>) -> Self {
+        self.auto_retry = Some(hook);
+        self
+    }
+
+    /// Pregunta al gancho si corresponde reintentar un bloqueo por límite.
+    pub(super) fn trigger_auto_retry(&self, record: &Record, cause: &str, tick: &mut Tick) {
+        let Some(hook) = &self.auto_retry else {
+            return;
+        };
+        match hook.auto_retry(record, cause) {
+            Ok(Some(name)) => tick.retried.push(name),
+            Ok(None) => {}
+            Err(error) => tracing::warn!("EzAgent: no pude reintentar {}: {error}", record.name),
+        }
     }
 
     /// Una vuelta: mira las terminales, marca lo que terminó y avisa.

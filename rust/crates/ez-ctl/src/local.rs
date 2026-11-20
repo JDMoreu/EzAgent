@@ -21,9 +21,11 @@ use crate::cli::{CliError, Parsed};
 use crate::protocol::Request;
 
 pub(crate) mod choice;
+mod retry;
 mod state;
 mod watch;
 
+pub(crate) use retry::{build_retry, run_retry, LocalRetry};
 pub(crate) use state::{
     build_report as build_local_report, build_tasks, build_validate, run_state, LocalState,
 };
@@ -359,6 +361,7 @@ pub fn delegate(
         model: filled.model,
         effort: filled.effort,
         brief,
+        brief_path: Some(request.brief_path.clone()),
         name: request.name.clone(),
         show: request.show,
         cwd: request.cwd.clone(),

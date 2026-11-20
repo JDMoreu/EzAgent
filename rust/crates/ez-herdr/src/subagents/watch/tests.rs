@@ -7,6 +7,8 @@ use crate::subagents::{Record, Registry, TaskState};
 
 use super::*;
 
+mod auto;
+
 /// El estado del doble de `hc`.
 #[derive(Default)]
 struct FakeState {
@@ -196,6 +198,8 @@ fn record(name: &str, terminal: &str) -> Record {
         role: "developer".to_string(),
         cwd: "C:\\ws".to_string(),
         brief_head: "arregla el parser".to_string(),
+        brief_path: None,
+        retry_of: None,
         state: TaskState::InProgress,
         since_ms: epoch_ms(),
         history: Vec::new(),
