@@ -5,7 +5,7 @@ use std::thread;
 
 use ez_core::metrics::monotonic;
 
-use crate::geometry::{panel_rect, MORPH_SECS};
+use crate::geometry::{panel_rect, WorkArea, MORPH_SECS, SCREEN_PAD};
 use crate::model::chat::view::ChatView;
 use crate::theme::card_palette;
 use crate::win::monitor::work_area;
@@ -58,8 +58,10 @@ impl ChatPanel {
         };
         let view = Box::new(view.with_hotkey(hotkey_label(&self.ui.chat_hotkey())));
         let form = form_around(anchor, self.ui.bar_scale(), self.ui.form_size());
-        let panel = panel_rect(form, work_area(), self.ui.scale(), self.ui.chat_size());
-        let (x, y, width, height) = window_rect(panel, self.margin());
+        let margin = self.margin();
+        let work = panel_work_area(work_area(), self.ui.scale(), margin);
+        let panel = panel_rect(form, work, self.ui.scale(), self.ui.chat_size());
+        let (x, y, width, height) = window_rect(panel, margin);
         let window = Arc::new(ChatWindow::new(self, x, y, width, height));
         let mut view = view;
         self.prepare_view(&mut view, panel);
@@ -231,6 +233,21 @@ fn form_around(anchor: (f64, f64), bar: f64, size: (f64, f64)) -> crate::geometr
     )
 }
 
+/// Área para el panel que deja sitio al margen de sombra de la ventana.
+///
+/// `panel_rect` ya aplica `SCREEN_PAD`; se descuenta solo la diferencia con el
+/// margen de la ventana, para que `panel + margen` quepa entero en `work`.
+fn panel_work_area(work: WorkArea, scale: f64, margin: i32) -> WorkArea {
+    let pad = SCREEN_PAD * scale;
+    let inset = (f64::from(margin) - pad).max(0.0).ceil() as i32;
+    (
+        work.0 + inset,
+        work.1 + inset,
+        work.2 - inset,
+        work.3 - inset,
+    )
+}
+
 /// Window rectangle around the panel, leaving room for the shadow.
 fn window_rect(panel: crate::geometry::Rect, margin: i32) -> (i32, i32, i32, i32) {
     (
@@ -290,5 +307,34 @@ mod tests {
         let scaled = form_around((500.0, 500.0), 1.5, (100.0, 36.0));
         assert_eq!(scaled.2 - scaled.0, 150.0);
         assert_eq!(scaled.3 - scaled.1, 54.0);
+    }
+
+    /// DX-7c: el humo real dejaba el borde inferior de la ventana en 1528,
+    /// un píxel fuera de `DISPLAY2` (hasta 1527), por la sombra.
+    #[test]
+    fn the_chat_window_with_its_shadow_stays_inside_the_monitor() {
+        let work = (-1080, -393, 0, 1527);
+        let form = (-671.0, 1469.0, -409.0, 1512.0);
+        let panel = panel_rect(
+            form,
+            panel_work_area(work, 1.0, 16),
+            1.0,
+            Some((434.0, 704.0)),
+        );
+        let (x, y, width, height) = window_rect(panel, 16);
+        assert_eq!((x, y, x + width, y + height), (-773, 791, -307, 1527));
+    }
+
+    #[test]
+    fn a_maximum_panel_with_its_shadow_still_fits() {
+        let work = (-1080, -393, 0, 1527);
+        let panel = panel_rect(
+            (0.0, 0.0, 1.0, 1.0),
+            panel_work_area(work, 1.0, 16),
+            1.0,
+            Some((10_000.0, 10_000.0)),
+        );
+        let (x, y, width, height) = window_rect(panel, 16);
+        assert_eq!((x, y, x + width, y + height), work);
     }
 }
