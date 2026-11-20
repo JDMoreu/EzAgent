@@ -2,6 +2,11 @@
 #
 # Uso: powershell -NoProfile -File scripts\tests\humo-whisper.ps1
 #
+# DX-7b: la app de la prueba abre sus ventanas solo en la pantalla secundaria.
+# Antes de arrancarla, el guion verifica que exista; si no, falla sin abrir
+# nada. No hay ruta de prueba hacia la principal. La app de la persona no
+# define EZAGENT_TEST_MONITOR.
+#
 # Requiere, desde rust/:
 #   cargo build --release -p ez-app --bin ezagent-voice
 #   cargo build --release -p ez-fakes --bin fake-whisper
@@ -43,6 +48,7 @@ $originalWhisperHome = $env:EZAGENT_WHISPER_HOME
 $originalWhisperUrl = $env:WHISPER_URL
 $originalWhisperEngine = $env:WHISPER_ENGINE
 $originalHome = $env:EZAGENT_HOME
+$originalTestMonitor = $env:EZAGENT_TEST_MONITOR
 $originalLlm = @{}
 foreach ($name in @("LLM_PROVIDER", "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "LLM_API_STYLE")) {
     $originalLlm[$name] = [Environment]::GetEnvironmentVariable($name)
@@ -92,6 +98,21 @@ function Stop-OwnProcess([int]$ProcessId) {
     if (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) {
         Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
     }
+}
+
+function Assert-SecondaryMonitor {
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        $secondary = @([System.Windows.Forms.Screen]::AllScreens |
+            Where-Object { -not $_.Primary })
+    } catch {
+        throw ("No se pudo verificar la pantalla secundaria: {0}" -f $_.Exception.Message)
+    }
+    if ($secondary.Count -eq 0) {
+        throw "No hay una pantalla secundaria verificable; el humo no abre ventanas en la principal."
+    }
+    $screen = $secondary[0]
+    Write-Host ("   OK: pantalla secundaria {0} {1}" -f $screen.DeviceName, $screen.Bounds)
 }
 
 function Start-VoiceApp {
@@ -154,6 +175,8 @@ try {
     $env:LLM_MODEL = "humo"
     $env:LLM_API_KEY = "humo"
     $env:LLM_API_STYLE = "openai"
+    $env:EZAGENT_TEST_MONITOR = "secondary"
+    Assert-SecondaryMonitor
 
     Write-Host "== 1. arranca, se mata sin aviso y el servidor muere =="
     $first = Start-VoiceApp
@@ -264,6 +287,7 @@ finally {
     $env:EZAGENT_HOME = $originalHome
     $env:WHISPER_URL = $originalWhisperUrl
     $env:WHISPER_ENGINE = $originalWhisperEngine
+    $env:EZAGENT_TEST_MONITOR = $originalTestMonitor
     foreach ($name in $originalLlm.Keys) {
         [Environment]::SetEnvironmentVariable($name, $originalLlm[$name])
     }

@@ -22,6 +22,11 @@
 //! ./target/debug/examples/diag_subagents_smoke.exe             # fake-hc
 //! ./target/debug/examples/diag_subagents_smoke.exe --real-hc    # hc real
 //! ```
+//!
+//! DX-7b: pone `EZAGENT_TEST_MONITOR=secondary` y comprueba antes de arrancar
+//! que la pantalla secundaria exista; si no, falla sin lanzar la app. No hay
+//! ruta de prueba hacia la principal. Este humo no abre el HUD (`hud_hidden`),
+//! así que no tiene ventanas propias que comprobar.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -360,6 +365,21 @@ fn fail(logs: &Path, temp: &Path, message: &str) -> i32 {
 }
 
 fn main() {
+    use std::io::Write as _;
+
+    // DX-7b: sin secundaria verificada no se arranca ningún proceso de la app.
+    std::env::set_var(ez_hud::win::monitor::TEST_MONITOR_ENV, "secondary");
+    let monitor = match ez_hud::win::monitor::require_secondary_monitor() {
+        Ok(rect) => rect,
+        Err(reason) => {
+            let _ = writeln!(std::io::stderr(), "no se arranca el humo: {reason}");
+            std::process::exit(2);
+        }
+    };
+    let _ = writeln!(
+        std::io::stderr(),
+        "monitor verificado: secundario · rect {monitor:?}"
+    );
     let mode = std::env::args().nth(1).unwrap_or_default();
     let code = if mode == "--real-hc" {
         real::run()
