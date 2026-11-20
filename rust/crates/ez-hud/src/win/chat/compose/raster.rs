@@ -232,40 +232,6 @@ pub(super) fn shade_rows(
     }
 }
 
-/// `_shade_frame`: only the `band`-pixel border of `alpha` darkens the canvas.
-pub(super) fn shade_frame(
-    canvas: &mut Array3<f32>,
-    alpha: &Array2<f32>,
-    x0: i32,
-    y0: i32,
-    band: i32,
-    gain: f32,
-) {
-    let (height, width) = alpha.dim();
-    let band = band.max(1).min(height as i32).min(width as i32) as usize;
-    if band * 2 >= height || band * 2 >= width {
-        shade_rows(canvas, alpha, 0, width, 0, height, x0, y0, gain);
-        return;
-    }
-    for rows in [0..band, height - band..height] {
-        shade_rows(canvas, alpha, 0, width, rows.start, rows.end, x0, y0, gain);
-    }
-    let middle = band..height - band;
-    for columns in [0..band, width - band..width] {
-        shade_rows(
-            canvas,
-            alpha,
-            columns.start,
-            columns.end,
-            middle.start,
-            middle.end,
-            x0,
-            y0,
-            gain,
-        );
-    }
-}
-
 /// `_paint_content` without the temporary: content × coverage × row mask.
 ///
 /// `skip` is the rectangle of the source that is painted apart (the caret);
@@ -627,18 +593,6 @@ mod tests {
         composite(&mut canvas, &src, 1, 1);
         assert_eq!(canvas[[1, 1, 3]], 1.0);
         assert_eq!(canvas[[1, 1, 0]], 0.25);
-    }
-
-    #[test]
-    fn a_band_leaves_the_centre_of_the_canvas_alone() {
-        let mut canvas = Array3::<f32>::zeros((6, 6, 4));
-        let alpha = Array2::<f32>::ones((6, 6));
-        shade_frame(&mut canvas, &alpha, 0, 0, 1, 1.0);
-        assert_eq!(canvas[[3, 3, 3]], 0.0);
-        assert_eq!(canvas[[0, 3, 3]], 1.0);
-        assert_eq!(canvas[[5, 0, 3]], 1.0);
-        assert_eq!(canvas[[3, 5, 3]], 1.0);
-        assert_eq!(canvas[[3, 0, 3]], 1.0);
     }
 
     #[test]

@@ -21,6 +21,7 @@ from .chat_geometry import (
     lerp,
     lerp_rect,
     rounded_coverage,
+    rounded_shadow,
     smoothstep,
 )
 from .chat_header import HEADER_H
@@ -188,20 +189,26 @@ class PaintMixin:
         )
 
     def _shadow_under(self, canvas, rect: Rect, radius: float, k: float) -> None:
+        """Una sola sombra suave que asoma por el borde (DX-1g).
+
+        Antes eran tres capas concéntricas: al sumarse se veían como varias sombras
+        apiladas. La caída suave es la del diseño (``rounded_shadow``) y llega hasta donde
+        llegaban las tres capas; el pico conserva el alfa que dejaban las tres juntas.
+        """
+        # DECISION: una sola pasada (DX-1g). El pico `1 - (1 - 0.10*k)^3` es el alfa
+        # que dejaban las tres bandas superpuestas: el borde más oscuro no cambia.
         k *= 0.55
         if k <= 0.01:
             return
         x0, y0, x1, y1 = (round(v) for v in rect)
         w, h = x1 - x0, y1 - y0
-        grow = round(MARGIN * self.ui.s * 0.8)
+        if w < 2 or h < 2:
+            return
+        reach = max(1, round(MARGIN * self.ui.s * 0.8))
         shift = round(self.ui.s * 5)
-        for step in range(3):
-            g = grow * (step + 1) // 3
-            cov = rounded_coverage(w + 2 * g, h + 2 * g, radius + g)
-            # La sombra es negra: basta con oscurecer; el cuerpo tapa su centro y solo se
-            # compone el marco que asoma (con las esquinas redondeadas y el desplazamiento).
-            band = int(0.3 * (radius + g)) + g + shift + 2
-            self._shade_frame(canvas, cov * (k * 0.10), x0 - g, y0 - g + shift, band)
+        shadow = rounded_shadow(w, h, radius, reach)
+        peak = 1.0 - (1.0 - k * 0.10) ** 3
+        self._shade(canvas, shadow * peak, x0 - reach, y0 - reach + shift)
 
     @staticmethod
     def _composite_over(canvas, rgb, alpha, x0: int, y0: int) -> None:
@@ -220,20 +227,6 @@ class PaintMixin:
         region *= 1.0 - a
         region[..., :3] += rgb[sy0 : sy0 + ch, sx0 : sx0 + cw]
         region[..., 3:] += a
-
-    @staticmethod
-    def _shade_frame(canvas, alpha, x0: int, y0: int, band: int) -> None:
-        """Oscurece el marco de ``band`` px que ocupa ``alpha`` (su centro queda tapado)."""
-        h, w = alpha.shape[:2]
-        band = min(max(1, band), h, w)
-        if band * 2 >= h or band * 2 >= w:  # marco casi todo el lienzo: una sola pasada
-            PaintMixin._shade(canvas, alpha, x0, y0)
-            return
-        for yy in (slice(0, band), slice(h - band, h)):
-            PaintMixin._shade(canvas, alpha[yy], x0, y0 + yy.start)
-        mid = slice(band, h - band)
-        for xx in (slice(0, band), slice(w - band, w)):
-            PaintMixin._shade(canvas, alpha[mid, xx], x0 + xx.start, y0 + band)
 
     @staticmethod
     def _shade(canvas, alpha, x0: int, y0: int) -> None:

@@ -26,6 +26,7 @@ use crate::paint::hotkey_field::parts_for;
 use crate::tokens::palette_version;
 
 use super::compose::{self, Frame};
+use super::trace;
 use anim::{step, update_live};
 
 mod actions;
@@ -87,6 +88,18 @@ pub enum AnimState {
     Open,
     /// Shrinking back into the bar shape.
     Closing,
+}
+
+impl AnimState {
+    /// Name of the state as it appears in the frame journal.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AnimState::Closed => "closed",
+            AnimState::Opening => "opening",
+            AnimState::Open => "open",
+            AnimState::Closing => "closing",
+        }
+    }
 }
 
 /// `_Anim`: state, start instant and eased progress (0 = shape, 1 = panel).
@@ -339,7 +352,13 @@ impl ChatPanel {
         let now = monotonic();
 
         // (1) The signature of the content and the state of the morph.
-        let (sig, anim) = {
+        //
+        // DECISION: the state is read **before** `step` (DX-1f). `step` turns
+        // the morph into `Open` in the frame that crosses its end, and that
+        // frame used to take the stable path: it laid out the history under
+        // the panel lock, which is what DX-1b removed. The frame that ends the
+        // morph is still a morph frame; the next one is the stable panel.
+        let (sig, was_open) = {
             let mut state = self.state.lock();
             let PanelState {
                 anim,
@@ -356,12 +375,23 @@ impl ChatPanel {
             };
             self.refresh_view(view, pal_seen, base, content);
             update_live(self.ui.as_ref(), view, act, last, now);
-            (compose::content_signature(view), anim.state)
+            (
+                compose::content_signature(view),
+                anim.state == AnimState::Open,
+            )
         };
 
         // (2) The content layer, with the view out of the state.
-        if anim != AnimState::Closing && !self.content_is_fresh(&sig) {
-            self.paint_content(now, sig);
+        //
+        // DECISION: during the morph the history is not laid out (DX-1f). It is
+        // the most expensive work of the panel and it used to run before the
+        // first opening frame: with a real conversation the morph was over by
+        // the time that frame was ready, so the panel appeared all at once
+        // (the closing reused the layer and did animate). The morph paints the
+        // frame and the content arrives with the first frame of the open
+        // panel, still on the paint thread.
+        if was_open && !self.content_is_fresh(&sig) {
+            self.paint_content(now, sig.clone());
         }
 
         // (3) The frame, with the state taken (it is short).
@@ -411,10 +441,14 @@ impl ChatPanel {
             act: *act,
             now,
         };
-        if anim.state == AnimState::Open {
-            compose::stable(&mut scene, base, content, window_rect)
+        if was_open {
+            let frame = compose::stable(&mut scene, base, content, window_rect);
+            record_frame(anim, p, now, window_rect, &sig, content, &frame);
+            frame
         } else {
-            compose::compose(&mut scene, p, true, window_rect, content)
+            let frame = compose::compose_morph(&mut scene, p, true, window_rect, content);
+            record_frame(anim, p, now, window_rect, &sig, content, &frame);
+            frame
         }
     }
 
@@ -456,6 +490,42 @@ impl ChatPanel {
             }
         }
     }
+}
+
+/// Records the frame in the diagnostic journal when it is on (DX-1f).
+///
+/// The journal exists to tell an opening that morphed from one that jumped:
+/// the caller already knows the phase, the progress and whether the content
+/// layer was there.
+fn record_frame(
+    anim: &Anim,
+    p: f64,
+    now: f64,
+    window: compose::WindowRect,
+    sig: &compose::ContentSig,
+    content: &compose::ContentCache,
+    frame: &Frame,
+) {
+    if !trace::enabled() {
+        return;
+    }
+    trace::push(trace::FrameRecord {
+        elapsed: now - anim.t0,
+        ready: ez_core::metrics::monotonic() - anim.t0,
+        phase: anim.state.as_str(),
+        p,
+        width: window.width,
+        height: window.height,
+        alpha: frame
+            .bgra
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|pixel| pixel[3])
+            .max()
+            .unwrap_or(0),
+        content: content.matches(sig),
+    });
 }
 
 /// `_interval`: 60 fps while animating or working, 30 fps at rest.

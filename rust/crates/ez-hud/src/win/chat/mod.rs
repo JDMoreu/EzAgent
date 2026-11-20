@@ -9,6 +9,7 @@
 //! that the chat needs is allowed here (AGENTS.rust.md §5).
 
 pub mod compose;
+pub mod trace;
 pub mod window;
 
 pub use crate::geometry::{

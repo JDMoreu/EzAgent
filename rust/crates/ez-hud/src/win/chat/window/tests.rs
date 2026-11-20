@@ -583,6 +583,211 @@ fn closing_paints_intermediate_frames_before_removing_the_window() {
     );
 }
 
+/// DX-1f: una apertura con historial lento tiene que animarse.
+///
+/// Antes, el primer cuadro de la apertura maquetaba todo el historial (aquí,
+/// dos copias lentas): cuando terminaba, el morph ya había pasado y la persona
+/// veía el panel aparecer de golpe. Durante el morph el historial no se
+/// maqueta; aparece cuando está, ya con el panel abierto.
+#[test]
+fn a_slow_history_does_not_eat_the_opening_animation() {
+    let copying = Arc::new(AtomicBool::new(false));
+    let mut view = ChatView::new(
+        Box::new(SlowModel {
+            messages: vec![ChatMessage::new(1, Role::User, "hola")],
+            copying: Arc::clone(&copying),
+            delay: Duration::from_millis(300),
+        }),
+        Box::new(FakeHost),
+        Box::new(FakeInput::default()),
+    );
+    view.configure(
+        440.0,
+        600.0,
+        1.0,
+        "dark",
+        crate::tokens::palette("dark").expect("the dark palette exists"),
+    );
+    let (panel, _recorder) = open_panel(view);
+    {
+        let mut state = panel.state.lock();
+        state.anim = Anim {
+            state: AnimState::Opening,
+            t0: ez_core::metrics::monotonic(),
+            p: 0.0,
+        };
+    }
+    let started = Instant::now();
+    let frame = panel.render();
+    let took = started.elapsed();
+    let (anim, p) = {
+        let state = panel.state.lock();
+        (state.anim.state, state.anim.p)
+    };
+    assert_eq!((frame.width, frame.height), (120, 120));
+    assert!(
+        took < Duration::from_millis(150),
+        "el primer cuadro de la apertura tardó {took:?}: maquetó el historial"
+    );
+    assert!(
+        anim == AnimState::Opening,
+        "el morph terminó en el primer cuadro"
+    );
+    assert!(p < 0.5, "la apertura empezó casi terminada: p={p}");
+    // El contenido llega después, cuando el panel ya está abierto.
+    {
+        let mut state = panel.state.lock();
+        state.anim = Anim {
+            state: AnimState::Open,
+            t0: 0.0,
+            p: 1.0,
+        };
+    }
+    let _ = panel.render();
+    let renders = panel
+        .state
+        .lock()
+        .view
+        .as_ref()
+        .map_or(0, |view| view.content_renders());
+    assert!(renders > 0, "el contenido no se pintó nunca");
+}
+
+/// DX-1f: el cuadro que termina el morph no maqueta bajo el candado.
+///
+/// `step` pasa a `Open` dentro del cuadro. Si ese cuadro tomara el camino
+/// estable, maquetaría el historial **con el candado del panel tomado** (lo
+/// que DX-1b quitó, y la app volvía a quedarse sin responder). El cuadro que
+/// cruza el final sigue siendo del morph; el historial se maqueta en el
+/// siguiente, con la vista fuera del candado.
+#[test]
+fn the_frame_that_ends_the_morph_does_not_lay_out_the_history() {
+    let (panel, _) = open_panel(empty_view());
+    {
+        let mut state = panel.state.lock();
+        state.view = Some(SendView(Box::new(sample_view())));
+        state.anim = Anim {
+            state: AnimState::Opening,
+            t0: ez_core::metrics::monotonic() - MORPH_SECS,
+            p: 1.0,
+        };
+        state.content = compose::ContentCache::default();
+    }
+    let _ = panel.render();
+    assert_eq!(panel.state.lock().anim.state, AnimState::Open);
+    let layouts = panel
+        .state
+        .lock()
+        .view
+        .as_ref()
+        .map_or(0, |view| view.layouts());
+    assert_eq!(
+        layouts, 0,
+        "el cuadro que termina el morph maquetó el historial"
+    );
+    // El siguiente cuadro ya es el panel estable: ahí llega el contenido.
+    let _ = panel.render();
+    let layouts = panel
+        .state
+        .lock()
+        .view
+        .as_ref()
+        .map_or(0, |view| view.layouts());
+    assert!(layouts > 0, "el contenido no llegó al panel abierto");
+}
+
+/// DX-1g: el panel pinta **una** sombra suave, no varias apiladas.
+///
+/// El alfa del borde crece hacia el cuerpo sin escalones (la caída suave de
+/// `rounded_shadow`) y nunca pasa del pico de una sola sombra: 40/255, el alfa
+/// que dejaban las tres capas del diseño anterior. Si la sombra se compusiera
+/// dos veces, el borde llegaría a 80 y la prueba falla. Se mira en el panel
+/// quieto, en la apertura, en el cierre y tras redimensionar.
+#[test]
+fn the_panel_paints_one_soft_shadow() {
+    let mut view = empty_view();
+    view.configure(
+        440.0,
+        640.0,
+        1.0,
+        "light",
+        crate::tokens::palette("light").expect("the light palette exists"),
+    );
+    let ui = Arc::new(FakeUi {
+        theme: "light",
+        ..FakeUi::default()
+    });
+    let panel = Arc::new(ChatPanel::new(
+        Arc::clone(&ui) as Arc<dyn ChatUi>,
+        Arc::new(Recorder::default()),
+    ));
+    {
+        let mut state = panel.state.lock();
+        state.view = Some(SendView(Box::new(view)));
+        state.anim = Anim {
+            state: AnimState::Open,
+            t0: 0.0,
+            p: 1.0,
+        };
+        state.last = 0.0;
+    }
+    let window = Arc::new(ChatWindow::new(&panel, 0, 0, 472, 672));
+    *panel.window.lock() = Some(Arc::clone(&window));
+    {
+        let mut inner = panel.state.lock();
+        inner.form = (16.0, 16.0, 456.0, 656.0);
+    }
+    for state in [AnimState::Open, AnimState::Opening, AnimState::Closing] {
+        // El morph ya avanzado (no al final: el cierre dura 0,20 s y se apagaría).
+        let elapsed = if state == AnimState::Closing {
+            0.05
+        } else {
+            0.25
+        };
+        {
+            let mut inner = panel.state.lock();
+            inner.anim = Anim {
+                state,
+                t0: ez_core::metrics::monotonic() - elapsed,
+                p: 0.9,
+            };
+        }
+        let frame = panel.render();
+        assert_one_soft_shadow(&frame, 336, state);
+    }
+    // Redimensionado: el mismo panel en una ventana más alta.
+    window.resize(472, 732);
+    let frame = panel.render();
+    assert_one_soft_shadow(&frame, 366, AnimState::Open);
+}
+
+/// El borde izquierdo, desde fuera hasta el cuerpo: una sola sombra.
+fn assert_one_soft_shadow(frame: &compose::Frame, row: usize, state: AnimState) {
+    let profile: Vec<u8> = (0..120).map(|x| frame.pixel(x, row)[3]).collect();
+    let body = profile
+        .iter()
+        .position(|alpha| *alpha == 255)
+        .unwrap_or_else(|| panic!("the body is missing ({state:?}): {profile:?}"));
+    let ring = &profile[..body];
+    // Suave y de una sola pasada: cada píxel, hacia el cuerpo, no aclara.
+    assert!(
+        ring.windows(2).all(|pair| pair[0] <= pair[1]),
+        "the shadow has a step ({state:?}): {profile:?}"
+    );
+    // El pico de una sola sombra (40/255); dos composiciones darían ~80.
+    let peak = ring.iter().copied().max().unwrap_or(0);
+    assert!(
+        peak <= 40,
+        "the shadow is composed more than once ({state:?}, peak {peak}): {profile:?}"
+    );
+    // Una sombra suave tiene varios niveles; tres bandas planas no.
+    let levels: std::collections::BTreeSet<u8> = ring.iter().copied().filter(|a| *a > 0).collect();
+    assert!(
+        levels.len() >= 5,
+        "the shadow is stepped, not soft ({state:?}): {profile:?}"
+    );
+}
+
 /// Un parser que entra en pánico: la maquetación del historial falla.
 struct PanicHost;
 

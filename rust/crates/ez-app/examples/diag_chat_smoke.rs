@@ -28,6 +28,13 @@
 //! `PÁNICO` en el registro temporal y el pico de memoria no puede pasar de
 //! 1 GB.
 //!
+//! `anim` (DX-1f) abre el chat con el clic real de la barra, espera a que el
+//! contenido llegue, lo cierra con el clic real del botón de la cabecera y
+//! compara los cuadros de las dos animaciones: la apertura tiene que presentar
+//! al menos tantos cuadros intermedios como el cierre y empezar casi en cero.
+//! Antes el primer cuadro maquetaba todo el historial y el panel aparecía de
+//! golpe.
+//!
 //! Si el proceso se cae, el ejemplo muere con él: eso es la reproducción.
 
 use std::path::PathBuf;
@@ -41,9 +48,18 @@ use ez_audio::capture::{MicCapture, VadSettings};
 use ez_chat::session::ChatModel;
 use ez_chat::store::ChatStore;
 use ez_core::config::VoiceConfig;
+use ez_hud::model::chat::view::{BTN, HEADER_H, PAD};
+use ez_hud::win::chat::trace::{self, FrameRecord};
+use ez_hud::win::chat::{CLOSE_SECS, MARGIN, MORPH_SECS};
 
 /// Segundos que el chat tiene que seguir vivo.
 const ALIVE_SECS: u64 = 10;
+
+/// Escribe una línea del informe (el ejemplo no usa `eprintln!`).
+fn say(text: &str) {
+    use std::io::Write;
+    let _ = writeln!(std::io::stderr(), "{text}");
+}
 
 /// Altavoz mudo: el ejemplo no necesita Kokoro ni la DLL de ONNX.
 struct SilentSpeaker;
@@ -162,6 +178,26 @@ fn big_history_jsonl() -> String {
             _ => ("system", "Conversación compactada.".to_string()),
         };
         texts.push(item);
+    }
+    history_from(&texts)
+}
+
+/// Historial normal para medir la animación (DX-1f).
+///
+/// DECISION: sin la palabra de 2 000 caracteres del humo de DX-1d. Cortarla es
+/// O(n²) en `split_word` y tarda segundos; aquí lo que se mide es el morph, no
+/// el coste del texto.
+fn anim_history_jsonl() -> String {
+    let mut texts: Vec<(&str, String)> = Vec::new();
+    for index in 0..24 {
+        let role = if index % 2 == 0 { "user" } else { "assistant" };
+        let text = match index % 4 {
+            0 => format!("Mensaje {index}: revisa `work/DX-1f`."),
+            1 => format!("## Caso {index}\n\nTexto con **negrita** y ñáéíóú. 🎉"),
+            2 => format!("Una respuesta corta del asistente ({index})."),
+            _ => format!("```rust\nfn caso_{index}() {{}}\n```"),
+        };
+        texts.push((role, text));
     }
     history_from(&texts)
 }
@@ -517,6 +553,222 @@ fn click_bar(_app: &VoiceApp, _item: &str) -> bool {
     false
 }
 
+/// Hace clic en el botón de cerrar de la cabecera del chat (ventana propia).
+///
+/// La barra no sirve para cerrar: con el chat abierto su forma está oculta y
+/// `pointer_down` ignora el clic (`form_hidden`). El botón de cerrar del panel
+/// sí recibe el mismo camino real (`WndProc` → vista → `Action::close`), y su
+/// centro se deduce de la geometría del panel (margen de la sombra y escala).
+#[cfg(windows)]
+fn click_chat_close(app: &VoiceApp) -> bool {
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetClassNameW, GetClientRect, GetWindowTextW, GetWindowThreadProcessId,
+        PostMessageW, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+    };
+
+    unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let list = unsafe { &mut *(lparam.0 as *mut Vec<(HWND, u32, String, String)>) };
+        let mut pid = 0u32;
+        // SAFETY: `hwnd` lo entrega EnumWindows y `pid` es local.
+        unsafe {
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        }
+        let mut class = [0u16; 128];
+        // SAFETY: búfer local del tamaño que pide el API.
+        let length = unsafe { GetClassNameW(hwnd, &mut class) }.max(0) as usize;
+        let mut title = [0u16; 256];
+        // SAFETY: igual que el anterior.
+        let shown = unsafe { GetWindowTextW(hwnd, &mut title) }.max(0) as usize;
+        list.push((
+            hwnd,
+            pid,
+            String::from_utf16_lossy(&class[..length.min(class.len())]),
+            String::from_utf16_lossy(&title[..shown.min(title.len())]),
+        ));
+        BOOL::from(true)
+    }
+
+    let mut windows: Vec<(HWND, u32, String, String)> = Vec::new();
+    // SAFETY: el callback escribe en `windows`, vivo durante la llamada.
+    unsafe {
+        let _ = EnumWindows(
+            Some(collect),
+            LPARAM(&mut windows as *mut Vec<(HWND, u32, String, String)> as isize),
+        );
+    }
+    let me = std::process::id();
+    let Some((hwnd, ..)) = windows.iter().find(|(_, pid, class, title)| {
+        *pid == me && class == "ezagent-layered-window" && title == "EzAgent"
+    }) else {
+        say("no encontré la ventana del chat");
+        return false;
+    };
+    let hwnd = *hwnd;
+    let mut rect = RECT::default();
+    // SAFETY: la ventana es de este proceso y `rect` es local.
+    if unsafe { GetClientRect(hwnd, &mut rect) }.is_err() {
+        return false;
+    }
+    // El lienzo es el panel más el margen de la sombra, en píxeles físicos.
+    let scale = app.hud().inner().scale();
+    let margin = (MARGIN * scale).round_ties_even() as i32;
+    let logical_w = f64::from((rect.right - 2 * margin).max(1)) / scale;
+    let logical_x = logical_w - PAD - BTN / 2.0 + 6.0;
+    let x = margin + (logical_x * scale).round_ties_even() as i32;
+    let y = margin + (HEADER_H / 2.0 * scale).round_ties_even() as i32;
+    let point = LPARAM(((y as isize) << 16) | (x as isize & 0xffff));
+    // SAFETY: mensajes propios a una ventana de este proceso.
+    unsafe {
+        let _ = PostMessageW(Some(hwnd), WM_MOUSEMOVE, WPARAM(0), point);
+        let _ = PostMessageW(Some(hwnd), WM_LBUTTONDOWN, WPARAM(1), point);
+        let _ = PostMessageW(Some(hwnd), WM_LBUTTONUP, WPARAM(0), point);
+    }
+    say(&format!(
+        "clic en cerrar del chat ({x},{y}) · lienzo {}x{} · escala {scale}",
+        rect.right, rect.bottom
+    ));
+    true
+}
+
+#[cfg(not(windows))]
+fn click_chat_close(_app: &VoiceApp) -> bool {
+    false
+}
+
+/// Cuadros intermedios presentados dentro de la duración de la animación.
+///
+/// Se descartan los extremos (el cuadro inicial casi en 0 y el final en 1):
+/// una apertura que salta de 0 a 1 en un cuadro cuenta **cero**. El instante
+/// es el de entrega del cuadro (`ready`), no el del reloj de la animación: un
+/// cuadro que se compone en p = 0,5 pero se entrega 300 ms después no se ve
+/// "dentro" de la animación.
+fn middle_frames(frames: &[FrameRecord], seconds: f64) -> usize {
+    frames
+        .iter()
+        .filter(|frame| {
+            frame.p > 0.02 && frame.p < 0.98 && frame.ready >= 0.0 && frame.ready <= seconds
+        })
+        .count()
+}
+
+/// Imprime un cuadro por línea, como la tabla del informe.
+fn print_frames(frames: &[FrameRecord]) {
+    say("fase       t(ms)  listo(ms)      p    tamaño   alfa  contenido");
+    for frame in frames {
+        say(&format!(
+            "{:<8} {:>7.2} {:>9.2} {:>6.3}   {:>4}x{:<4} {:>4}  {}",
+            frame.phase,
+            frame.elapsed * 1000.0,
+            frame.ready * 1000.0,
+            frame.p,
+            frame.width,
+            frame.height,
+            frame.alpha,
+            if frame.content { "sí" } else { "no" }
+        ));
+    }
+}
+
+/// DX-1f: la apertura tiene que presentar cuadros intermedios como el cierre.
+///
+/// Antes, el primer cuadro de la apertura maquetaba todo el historial: cuando
+/// terminaba, el morph ya había pasado y el panel aparecía de golpe. El cierre
+/// no maquetaba (reusaba la capa de contenido) y sí se veía.
+fn check_animation(app: &VoiceApp, opened: bool) -> i32 {
+    let mut peak_mb = working_set_mb();
+    say(&format!(
+        "diario: encendido={} cuadros={}",
+        trace::enabled(),
+        trace::records().len()
+    ));
+    // 1) Esperar a que el morph termine y el contenido llegue.
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while Instant::now() < deadline {
+        app.tick();
+        peak_mb = peak_mb.max(working_set_mb());
+        if trace::records()
+            .iter()
+            .any(|frame| frame.phase == "open" && frame.content)
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let all = trace::records();
+    let opening: Vec<FrameRecord> = all
+        .iter()
+        .copied()
+        .filter(|frame| frame.phase == "opening")
+        .collect();
+    let first_open = all
+        .iter()
+        .copied()
+        .find(|frame| frame.phase == "open")
+        .map(|frame| frame.elapsed);
+    let content_at = all
+        .iter()
+        .copied()
+        .find(|frame| frame.phase == "open" && frame.content)
+        .map(|frame| frame.elapsed);
+    // 2) Cerrar con un clic real en el botón de la cabecera.
+    trace::clear();
+    let clicked = click_chat_close(app);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < deadline {
+        app.tick();
+        peak_mb = peak_mb.max(working_set_mb());
+        if trace::records()
+            .iter()
+            .any(|frame| frame.phase == "closing" && frame.p <= 0.0)
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let closing: Vec<FrameRecord> = trace::records()
+        .into_iter()
+        .filter(|frame| frame.phase == "closing")
+        .collect();
+
+    say("=== cuadros de la apertura ===");
+    print_frames(&opening);
+    say("=== cuadros del cierre ===");
+    print_frames(&closing);
+
+    let open_middle = middle_frames(&opening, MORPH_SECS);
+    let close_middle = middle_frames(&closing, CLOSE_SECS);
+    let start = opening.first().map_or(1.0, |frame| frame.p);
+    say(&format!(
+        "apertura: {open_middle} cuadros intermedios · primer p {start:.3} · contenido a los {} ms",
+        content_at.map_or(f64::NAN, |seconds| seconds * 1000.0)
+    ));
+    say(&format!(
+        "cierre: {close_middle} cuadros intermedios · primer cuadro abierto a los {} ms",
+        first_open.map_or(f64::NAN, |seconds| seconds * 1000.0)
+    ));
+    let ok = opened
+        && clicked
+        && start < 0.5
+        && open_middle >= close_middle.max(2)
+        && close_middle >= 2
+        && content_at.is_some()
+        && peak_mb <= 1024;
+    say(&format!(
+        "RESULT anim opening_frames={open_middle} closing_frames={close_middle} first_p={start:.3} content_ms={}",
+        content_at.map_or(f64::NAN, |seconds| seconds * 1000.0)
+    ));
+    say(&format!("RSS pico (anim): {peak_mb} MB"));
+    if ok {
+        say("estado: la apertura se anima");
+        0
+    } else {
+        say("estado: la apertura es un salto");
+        1
+    }
+}
+
 /// Mensajes que atiende el `WndProc` de las ventanas layered, con coordenadas
 /// al azar (dentro y fuera del panel).
 #[cfg(windows)]
@@ -606,6 +858,8 @@ fn main() {
         .nth(1)
         .unwrap_or_else(|| "sequence".to_string());
     let big = mode == "big";
+    // DX-1f: `anim` mide la animación de apertura y de cierre.
+    let anim = mode == "anim";
     // Carpeta única por corrida: el registro de pánicos de una corrida anterior
     // no puede hacer fallar la comprobación de «sin PÁNICO».
     let stamp = std::time::SystemTime::now()
@@ -622,6 +876,8 @@ fn main() {
     }
     let content = if big {
         big_history_jsonl()
+    } else if anim {
+        anim_history_jsonl()
     } else {
         history_jsonl()
     };
@@ -684,13 +940,13 @@ fn main() {
         // La app que se cayó estaba en llamada («Llamada iniciada»).
         app.start_call();
         eprintln!("llamada iniciada");
-        if mode == "real" {
+        if mode == "real" || anim {
             // El clic real del engranaje: barra → `WndProc` → `HUD: panel`.
             std::thread::sleep(Duration::from_secs(1));
             click_bar(&app, "gear");
             app.tick();
             eprintln!("clic del panel enviado");
-            std::thread::sleep(Duration::from_secs(3));
+            std::thread::sleep(Duration::from_secs(if anim { 1 } else { 3 }));
         } else {
             // «HUD: panel»: el clic del engranaje pasa por la cola real.
             app.on_hud_action("panel");
@@ -703,17 +959,48 @@ fn main() {
     // El camino del atajo: `handle_hotkey("chat")` → `toggle_chat` →
     // `ChatPanel::open` (ventana nativa, hilo de pintura y `WndProc`). En la
     // secuencia, el clic del botón del chat pasa por la cola real (`HUD: chat`).
+    if anim {
+        // Solo los cuadros de la prueba: el diario está apagado por omisión.
+        trace::enable(true);
+        trace::clear();
+    }
     if mode == "chat" || big {
         app.handle_hotkey("chat");
-    } else if mode == "real" {
+    } else if mode == "real" || anim {
         click_bar(&app, "chat");
         app.tick();
     } else {
         app.on_hud_action("chat");
         app.tick();
     }
+    if anim {
+        // El clic entra por la cola de la barra: se espera a que el panel abra.
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !app.hud().chat_is_open() && Instant::now() < deadline {
+            app.tick();
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
     let opened = app.hud().chat_is_open();
     eprintln!("chat abierto: {opened}");
+
+    if anim {
+        let code = check_animation(&app, opened);
+        let panics = panic_lines(&temp.join("logs"));
+        if panics.is_empty() {
+            say("registro temporal: sin PÁNICO");
+        } else {
+            say(&format!(
+                "registro temporal: {} línea(s) de PÁNICO",
+                panics.len()
+            ));
+            for line in &panics {
+                say(line);
+            }
+        }
+        app.shutdown();
+        std::process::exit(if code == 0 && panics.is_empty() { 0 } else { 1 });
+    }
 
     let deadline = Instant::now() + Duration::from_secs(ALIVE_SECS);
     let mut ticks = 0u64;
@@ -767,7 +1054,7 @@ fn main() {
     }
     let alive = app.hud().chat_is_open();
     let panics = panic_lines(&temp.join("logs"));
-    eprintln!("RSS pico: {peak_mb} MB");
+    eprintln!("RSS pico: {peak_mb} MB (décimas: {ticks})");
     if panics.is_empty() {
         eprintln!("registro temporal: sin PÁNICO");
     } else {
