@@ -254,10 +254,11 @@ impl ChatView {
 
     /// Height of a message, without laying it out again when it is known.
     ///
-    /// DECISION: the height is cached apart from the tile (DX-1, paso 3). The
-    /// total height of the conversation needs the height of every message, but
-    /// the tile is only needed for the ones on screen; without this the view
-    /// laid out the whole history in every frame.
+    /// DECISION: the height is measured, not painted (DX-1c). The total
+    /// height of the conversation needs the height of every message, but the
+    /// tile is only needed for the ones on screen; measuring is about ten
+    /// times cheaper than painting (the height of the message is cached apart
+    /// from the tile since DX-1, paso 3).
     pub(crate) fn height_of(&mut self, msg: &ChatMessage, now: f64) -> f64 {
         let key = self.cache_key(msg);
         if let Some(cached) = self.cache.height(msg.id) {
@@ -265,13 +266,22 @@ impl ChatView {
                 return cached.height;
             }
         }
-        let entry = self.entry(msg, now);
-        let height = entry.height;
+        if msg.streaming {
+            // The tile of an answer that is growing is refreshed at most
+            // every 50 ms; the height must be the one of the tile that is
+            // going to be painted, not the one of the new text.
+            if let Some(cached) = self.cache.get_mut(msg.id) {
+                if !cached.entry.plain.is_empty() && now - cached.at < STREAM_REFRESH {
+                    return cached.entry.height;
+                }
+            }
+        }
+        let height = self.measure_entry(msg);
         self.cache.insert_height(msg.id, key, height);
         height
     }
 
-    fn build_entry(&self, msg: &ChatMessage) -> Entry {
+    pub(super) fn build_entry(&self, msg: &ChatMessage) -> Entry {
         match msg.role {
             Role::User => self.user_entry(msg),
             Role::System => self.note_entry(msg),
@@ -346,12 +356,7 @@ impl ChatView {
 
     fn user_entry(&self, msg: &ChatMessage) -> Entry {
         let blocks = self.host.parse(&msg.text);
-        let rich = blocks.iter().any(|block| {
-            matches!(
-                block,
-                Block::Document(_) | Block::Image(_) | Block::Table(_) | Block::Code(_)
-            )
-        });
+        let rich = is_rich(&blocks);
         let limit = self.content_w() * if rich { 0.94 } else { 0.82 };
         let (inner, inline) = self.user_inner(&blocks, limit, rich);
         let options = RenderOptions {
@@ -411,7 +416,7 @@ impl ChatView {
 
     /// Bubble width that fits the text and the copy icon, plus whether the
     /// icon fits on the last line.
-    fn user_inner(&self, blocks: &[Block], limit: f64, rich: bool) -> (f64, bool) {
+    pub(super) fn user_inner(&self, blocks: &[Block], limit: f64, rich: bool) -> (f64, bool) {
         let mut natural: f64 = 0.0;
         for block in blocks {
             let spans = match block {
@@ -516,7 +521,7 @@ impl ChatView {
     }
 
     /// Palette of an answer: errors paint the text in the error tone.
-    fn assistant_palette(&self, error: bool) -> ColorMap {
+    pub(super) fn assistant_palette(&self, error: bool) -> ColorMap {
         let mut pal = self.g.pal.clone();
         if error {
             let error = pal["ERR"];
@@ -542,6 +547,19 @@ impl ChatView {
             )
         })
     }
+}
+
+/// Whether the message has blocks that need the whole width (`rich`).
+///
+/// DECISION: the bubble of the user is narrower when the message is only
+/// text. The painting path and the measuring path must agree on it (DX-1c).
+pub(super) fn is_rich(blocks: &[Block]) -> bool {
+    blocks.iter().any(|block| {
+        matches!(
+            block,
+            Block::Document(_) | Block::Image(_) | Block::Table(_) | Block::Code(_)
+        )
+    })
 }
 
 /// `_premult`: straight RGBA bytes to premultiplied `float32`.

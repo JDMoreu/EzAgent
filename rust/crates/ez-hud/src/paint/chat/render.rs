@@ -356,8 +356,8 @@ fn gap(prev: Option<&Block>, block: &Block) -> f64 {
     PARA_GAP
 }
 
-/// RGBA image with every block stacked and its logical height.
-pub fn render_blocks(blocks: &[Block], ctx: &mut Ctx<'_>) -> (Image, f64) {
+/// The blocks stacked with the height of each one, without painting them.
+fn stack_blocks(blocks: &[Block], ctx: &mut Ctx<'_>) -> (Vec<(f64, Painter)>, f64) {
     let mut placed: Vec<(f64, Painter)> = Vec::new();
     let mut y = 0.0;
     let mut prev: Option<&Block> = None;
@@ -368,7 +368,12 @@ pub fn render_blocks(blocks: &[Block], ctx: &mut Ctx<'_>) -> (Image, f64) {
         y += height;
         prev = Some(block);
     }
-    let total = y.max(1.0);
+    (placed, y.max(1.0))
+}
+
+/// RGBA image with every block stacked and its logical height.
+pub fn render_blocks(blocks: &[Block], ctx: &mut Ctx<'_>) -> (Image, f64) {
+    let (placed, total) = stack_blocks(blocks, ctx);
     let width = ctx.px(ctx.width).max(1) as u32;
     let height = ctx.px(total).max(1) as u32;
     let mut image = Image::new(width, height, Rgba::TRANSPARENT);
@@ -376,6 +381,17 @@ pub fn render_blocks(blocks: &[Block], ctx: &mut Ctx<'_>) -> (Image, f64) {
         painter(&mut image, ctx, 0.0, top);
     }
     (image, total)
+}
+
+/// Logical height of the blocks, without painting them.
+///
+/// DECISION: the height of a message is needed to know where the next one
+/// starts, but painting it is what costs (DX-1c). The view measures the
+/// whole conversation (cheap) and paints only what is on screen (expensive).
+/// The height is the same one [`render_blocks`] returns: both go through
+/// [`stack_blocks`].
+pub fn measure_blocks(blocks: &[Block], ctx: &mut Ctx<'_>) -> f64 {
+    stack_blocks(blocks, ctx).1
 }
 
 /// Parses and draws `text` in a column of `width` logical pixels.

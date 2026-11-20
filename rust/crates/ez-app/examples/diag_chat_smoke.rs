@@ -22,6 +22,12 @@
 //! iniciada, «HUD: panel» (el menú de ajustes), tres segundos, «HUD: chat».
 //! `chat` abre el chat directamente (la prueba de humo corta).
 //!
+//! `big` abre un historial sintético de 320 mensajes (markdown, código,
+//! emojis y mensajes vacíos) y lo recorre con la rueda hasta arriba y hasta
+//! abajo (DX-1c): la app tiene que seguir viva, no puede haber ninguna línea
+//! `PÁNICO` en el registro temporal y el pico de memoria no puede pasar de
+//! 1 GB.
+//!
 //! Si el proceso se cae, el ejemplo muere con él: eso es la reproducción.
 
 use std::path::PathBuf;
@@ -127,6 +133,41 @@ fn history_jsonl() -> String {
         texts.push((role, text));
         index += 1;
     }
+    history_from(&texts)
+}
+
+/// Historial largo para la prueba de humo de DX-1c: 320 mensajes con todas
+/// las formas que puede recibir el panel (markdown, código, emojis, vacíos).
+fn big_history_jsonl() -> String {
+    let mut texts: Vec<(&str, String)> = Vec::new();
+    while texts.len() < 320 {
+        let index = texts.len();
+        let item = match index % 5 {
+            0 => (
+                "user",
+                format!("Mensaje {index}: revisa `work/DX-1c` y dime qué falta. 🦙"),
+            ),
+            1 => ("assistant", rich()),
+            2 => ("user", String::new()),
+            3 => (
+                "assistant",
+                format!(
+                    "## Caso {index}\n\n\
+                     Texto con **negrita**, ñáéíóú y emojis 🎉\n\n\
+                     ```rust\n\
+                     fn caso_{index}() {{}}\n\
+                     ```\n"
+                ),
+            ),
+            _ => ("system", "Conversación compactada.".to_string()),
+        };
+        texts.push(item);
+    }
+    history_from(&texts)
+}
+
+/// El JSONL con la sesión y los mensajes dados.
+fn history_from(texts: &[(&str, String)]) -> String {
     let mut out = String::new();
     out.push_str("{\"v\":1,\"t\":1000.0,\"event\":\"session\",\"session\":1,\"seq\":1}\n");
     for (number, (role, text)) in texts.iter().enumerate() {
@@ -168,11 +209,11 @@ fn seed_config(dir: &std::path::Path) -> std::io::Result<()> {
 }
 
 /// Escribe el historial sintético en una carpeta temporal y devuelve la ruta.
-fn seed_history(dir: &std::path::Path) -> std::io::Result<PathBuf> {
+fn seed_history(dir: &std::path::Path, content: &str) -> std::io::Result<PathBuf> {
     let history = dir.join("history");
     std::fs::create_dir_all(&history)?;
     let path = history.join("chat.jsonl");
-    std::fs::write(&path, history_jsonl())?;
+    std::fs::write(&path, content)?;
     Ok(path)
 }
 
@@ -267,6 +308,107 @@ fn poke_chat_window() {
 
 #[cfg(not(windows))]
 fn poke_chat_window() {}
+
+/// Entrega muescas de rueda a la ventana del chat de **este** proceso.
+///
+/// `delta > 0` sube hacia los mensajes viejos, como el ratón. No usa
+/// `SendInput`, así que no mueve el ratón de la persona.
+#[cfg(windows)]
+fn wheel_chat(delta: i16, notches: usize) {
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetClassNameW, GetWindowTextW, GetWindowThreadProcessId, PostMessageW,
+        WM_MOUSEWHEEL,
+    };
+
+    unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let list = unsafe { &mut *(lparam.0 as *mut Vec<isize>) };
+        let mut pid = 0u32;
+        // SAFETY: `hwnd` lo entrega EnumWindows y `pid` es local.
+        unsafe {
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        }
+        if pid != std::process::id() {
+            return BOOL::from(true);
+        }
+        let mut class = [0u16; 128];
+        // SAFETY: búfer local del tamaño que pide el API.
+        let length = unsafe { GetClassNameW(hwnd, &mut class) }.max(0) as usize;
+        let mut title = [0u16; 256];
+        // SAFETY: igual que el anterior.
+        let shown = unsafe { GetWindowTextW(hwnd, &mut title) }.max(0) as usize;
+        let class = String::from_utf16_lossy(&class[..length.min(class.len())]);
+        let title = String::from_utf16_lossy(&title[..shown.min(title.len())]);
+        if class == "ezagent-layered-window" && title == "EzAgent" {
+            list.push(hwnd.0 as isize);
+        }
+        BOOL::from(true)
+    }
+
+    let mut windows: Vec<isize> = Vec::new();
+    // SAFETY: el callback solo escribe en `windows`, vivo durante la llamada.
+    unsafe {
+        let _ = EnumWindows(
+            Some(collect),
+            LPARAM(&mut windows as *mut Vec<isize> as isize),
+        );
+    }
+    let wparam = WPARAM((delta as u16 as usize) << 16);
+    for _ in 0..notches {
+        for hwnd in &windows {
+            let hwnd = HWND(*hwnd as *mut std::ffi::c_void);
+            // SAFETY: mensajes propios a una ventana de este proceso.
+            unsafe {
+                let _ = PostMessageW(Some(hwnd), WM_MOUSEWHEEL, wparam, LPARAM(0));
+            }
+        }
+    }
+    eprintln!(
+        "rueda: {notches} muescas de {delta} en {} ventana(s)",
+        windows.len()
+    );
+}
+
+#[cfg(not(windows))]
+fn wheel_chat(_delta: i16, _notches: usize) {}
+
+/// Memoria de trabajo del proceso, en MB.
+#[cfg(windows)]
+fn working_set_mb() -> u64 {
+    use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+    use windows::Win32::System::Threading::GetCurrentProcess;
+
+    let mut counters = PROCESS_MEMORY_COUNTERS::default();
+    let size = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+    // SAFETY: `counters` es local y del tamaño declarado.
+    if unsafe { GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, size) }.is_err() {
+        return 0;
+    }
+    (counters.WorkingSetSize / (1024 * 1024)) as u64
+}
+
+#[cfg(not(windows))]
+fn working_set_mb() -> u64 {
+    0
+}
+
+/// Líneas `PÁNICO` que dejó el hook en el registro temporal.
+fn panic_lines(dir: &std::path::Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let Ok(content) = std::fs::read_to_string(entry.path()) else {
+            continue;
+        };
+        for line in content.lines().filter(|line| line.contains("PÁNICO")) {
+            out.push(line.to_string());
+        }
+    }
+    out
+}
 
 /// Hace clic en un botón de la barra como lo haría el ratón: los mismos
 /// mensajes que entrega Windows a su `WndProc`, sin `SendInput`.
@@ -463,7 +605,14 @@ fn main() {
     let mode = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "sequence".to_string());
-    let temp = std::env::temp_dir().join(format!("ezagent-dx1d-{}", std::process::id()));
+    let big = mode == "big";
+    // Carpeta única por corrida: el registro de pánicos de una corrida anterior
+    // no puede hacer fallar la comprobación de «sin PÁNICO».
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis())
+        .unwrap_or(0);
+    let temp = std::env::temp_dir().join(format!("ezagent-dx1d-{}-{stamp}", std::process::id()));
     let _ = std::fs::create_dir_all(&temp);
     // El hook de pánico escribe el mensaje y la ubicación antes de abortar.
     ez_core::panics::install_hook_in(&temp.join("logs"));
@@ -471,13 +620,21 @@ fn main() {
         eprintln!("No pude escribir la configuración sintética: {error}");
         std::process::exit(1);
     }
-    let history = match seed_history(&temp) {
+    let content = if big {
+        big_history_jsonl()
+    } else {
+        history_jsonl()
+    };
+    let history = match seed_history(&temp, &content) {
         Ok(path) => path,
         Err(error) => {
             eprintln!("No pude escribir el historial sintético: {error}");
             std::process::exit(1);
         }
     };
+    if big {
+        eprintln!("historial: 320 mensajes sintéticos");
+    }
     // La app lee `%APPDATA%\EzAgent`: con una carpeta temporal no se toca el
     // historial, la configuración ni el registro de la persona.
     std::env::set_var("APPDATA", &temp);
@@ -523,7 +680,7 @@ fn main() {
         app.hud().inner().layout()
     );
 
-    if mode != "chat" {
+    if mode != "chat" && !big {
         // La app que se cayó estaba en llamada («Llamada iniciada»).
         app.start_call();
         eprintln!("llamada iniciada");
@@ -546,7 +703,7 @@ fn main() {
     // El camino del atajo: `handle_hotkey("chat")` → `toggle_chat` →
     // `ChatPanel::open` (ventana nativa, hilo de pintura y `WndProc`). En la
     // secuencia, el clic del botón del chat pasa por la cola real (`HUD: chat`).
-    if mode == "chat" {
+    if mode == "chat" || big {
         app.handle_hotkey("chat");
     } else if mode == "real" {
         click_bar(&app, "chat");
@@ -561,10 +718,38 @@ fn main() {
     let deadline = Instant::now() + Duration::from_secs(ALIVE_SECS);
     let mut ticks = 0u64;
     let mut poked = false;
+    let mut peak_mb = working_set_mb();
+    // Etapas del historial grande: dejar que el primer cuadro termine, subir
+    // hasta arriba, bajar hasta abajo (DX-1c).
+    let mut stage = 0;
     while Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(100));
         ticks += 1;
         app.tick();
+        peak_mb = peak_mb.max(working_set_mb());
+        if big {
+            match stage {
+                0 if ticks >= 40 => {
+                    wheel_chat(32_767, 120);
+                    eprintln!("desplazamiento: hasta arriba");
+                    stage = 1;
+                }
+                1 if ticks >= 55 => {
+                    eprintln!("vivo tras arriba: {}", app.hud().chat_is_open());
+                    stage = 2;
+                }
+                2 if ticks >= 70 => {
+                    wheel_chat(-32_767, 120);
+                    eprintln!("desplazamiento: hasta abajo");
+                    stage = 3;
+                }
+                3 if ticks >= 85 => {
+                    eprintln!("vivo tras abajo: {}", app.hud().chat_is_open());
+                    stage = 4;
+                }
+                _ => {}
+            }
+        }
         // `monkey`: entrega mensajes de ratón a la ventana del chat como los
         // entrega Windows (el panel nace bajo el puntero). Sin `SendInput`: no
         // se mueve el ratón de la persona ni se toca otra ventana.
@@ -581,9 +766,19 @@ fn main() {
         }
     }
     let alive = app.hud().chat_is_open();
+    let panics = panic_lines(&temp.join("logs"));
+    eprintln!("RSS pico: {peak_mb} MB");
+    if panics.is_empty() {
+        eprintln!("registro temporal: sin PÁNICO");
+    } else {
+        eprintln!("registro temporal: {} línea(s) de PÁNICO", panics.len());
+        for line in &panics {
+            eprintln!("{line}");
+        }
+    }
     eprintln!("RESULT chat_open={alive} alive_secs={ALIVE_SECS}");
     app.shutdown();
-    if !alive {
+    if !alive || !panics.is_empty() || peak_mb > 1024 {
         std::process::exit(1);
     }
 }
