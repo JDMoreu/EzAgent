@@ -17,6 +17,16 @@ path = "src/bin/ez.rs"
 name = "e2e_delegate"
 path = "examples/e2e_delegate.rs"
 
+[[example]]
+name = "e2e_inventory"
+path = "examples/e2e_inventory.rs"
+
+[dev-dependencies]
+# Fixtures of the end-to-end inventory test: SQLite databases and RFC 3339
+# timestamps. Both come from [workspace.dependencies]; no crate is added.
+chrono = { workspace = true }
+rusqlite = { workspace = true }
+
 [dependencies]
 ez-core = { path = "../ez-core" }
 ez-herdr = { path = "../ez-herdr" }

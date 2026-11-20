@@ -1107,12 +1107,14 @@ dependencies = [
 name = "ez-ctl"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "crossbeam-channel",
  "ez-core",
  "ez-herdr",
  "ez-scan",
  "parking_lot 0.13.0",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "tiny_http",
