@@ -220,6 +220,10 @@ impl VoiceApp {
     ///
     /// No vigila ni lanza nada: solo deja el enjambre guardado en pausa y
     /// escribe la pregunta en el chat (y la dice, si no hay silencio).
+    // DECISION: se pregunta como aviso (`announce`) y no como confirmación: así
+    // `arm_confirmation` (F48) nunca rearma algo de una sesión anterior.
+    // DECISION: no se vigila de forma pasiva hasta el «sí»: una cadena podría
+    // lanzar su paso siguiente sola, que es justo lo que se evita.
     pub(crate) fn begin_pending_resume(&self) {
         if self.inner.agents.pending_resume.lock().is_some() {
             return;
@@ -239,6 +243,10 @@ impl VoiceApp {
     }
 
     /// El arranque: retiene lo pendiente y, en producción, levanta el enjambre.
+    ///
+    // DECISION: el servidor y el supervisor del enjambre sí arrancan (los usa
+    // `ezs` en la sesión), pero los enjambres guardados quedan en pausa antes
+    // de que el supervisor haga su primera pasada; solo el «sí» los reactiva.
     pub(crate) fn start_pending_resume(&self) {
         self.begin_pending_resume();
         let stack = self.inner.agents.swarm.lock().clone();
@@ -320,6 +328,7 @@ impl VoiceApp {
         }
         if pending.declined {
             // Tras un «no», un «sí» suelto puede responder a otra cosa.
+            // DECISION: solo los verbos de reanudar retoman lo que se dejó.
             if is_resume_command(&key) {
                 self.resume_pending_resume(pending);
                 return true;
@@ -341,6 +350,8 @@ impl VoiceApp {
     }
 
     /// Reanuda en un hilo: `check_task_now` y la cadena hablan con Herdr.
+    // DECISION: hilo aparte (`ezagent-resume-pending`) para no bloquear la UI
+    // con `hc` ni con el lanzamiento que pide `check_task_now`.
     fn resume_pending_resume(&self, pending: PendingResume) {
         *self.inner.agents.pending_resume.lock() = None;
         let app = self.clone();
