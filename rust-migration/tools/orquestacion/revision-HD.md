@@ -611,3 +611,10 @@
   de la pregunta, sin depender del texto generado por el LLM, y probar ambos casos.
 - Informe de entrega y worktree limpio comprobados. Sin pruebas propias de DX-5c; brief
   `DX-5d.md` y devolución enviados a `dx-5`.
+
+### DX-6 — revisión: devuelto (DX-6b)
+- El ejemplo entregado no abre ventanas; falta preparar el humo visual pedido por el brief.
+  La foto parte de `watched` y del registro `voz`, mientras DX-4 retiene tareas sin
+  vigilarlas: se pidió probar que las tareas guardadas también se vean en espera.
+- Informe y worktree limpio comprobados. Sin pruebas propias aún; brief `DX-6b.md` y
+  devolución enviados a `dx-6`. El humo visual queda pendiente de DX-7.
