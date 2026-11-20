@@ -64,6 +64,10 @@ impl VoiceApp {
             self.set_state(LISTENING);
             return;
         }
+        // DX-4: la respuesta a la pregunta del arranque no sigue al atajo ni al LLM.
+        if self.answer_pending_resume(&text) {
+            return;
+        }
         if self.answer_retry_offer(&text) {
             return;
         }

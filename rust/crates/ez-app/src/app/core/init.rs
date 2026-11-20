@@ -461,6 +461,8 @@ fn agents_state(
         herdr,
         registry,
         retry_offer: Mutex::new(None),
+        pending_resume: Mutex::new(None),
+        swarm_hold: Mutex::new(None),
         subagents_watch_stop: Arc::new(Flag::new()),
         announced: Mutex::new(std::collections::HashMap::new()),
         watcher,

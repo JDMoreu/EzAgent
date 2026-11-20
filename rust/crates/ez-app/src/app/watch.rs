@@ -5,8 +5,11 @@
 //! de los agentes son datos no confiables: se recortan y se entregan, nunca se
 //! interpretan como instrucciones.
 
+pub(crate) mod resume;
 #[cfg(test)]
 mod tests;
+
+pub use resume::{HeldSwarm, PendingResume};
 
 use std::collections::{HashMap, HashSet};
 
