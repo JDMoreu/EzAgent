@@ -74,17 +74,30 @@ pruebas detectan el fallo que dicen cubrir.
 
 ## 5. Lo que falta
 
-<!-- Se completa al cerrar la jornada. -->
-- NV-3c y DX-1f: ver §6.
-- **Recompilar tu app** con DX-1c, DX-3 (y lo que se valide de NV-3/DX-1f): pendiente de
-  tu permiso; hoy tu app corre la versión de las 17:26 (DX-1b + DX-1d + DX-2).
+- **Recompilar tu app** (pendiente de tu permiso). Hoy corre la versión de las 17:25
+  (DX-1b + DX-1d + DX-2). Al recompilar desde `eco/main` llegan DX-1c (chat rápido), DX-3
+  (whisper se cierra con la app), NV-3 (la app avisa de las novedades de sus subagentes),
+  DX-1f (animación de apertura) y DX-1g (una sola sombra). Hasta entonces, si cierras la
+  app, su `whisper-server` queda vivo.
 - **DX-1e** (abrir el chat en tiempo constante con cualquier historial): propuesto, no
-  lanzado.
-- Riesgos conocidos: el disparador exacto de la caída de las 13:52 no se reprodujo (si
-  vuelve, el registro dirá archivo y línea); la prueba `a_dirty_round…` de `ez-app` es
-  inestable bajo carga; los subagentes lanzados a mano con `hc run` no entran en el
-  registro (usar `ez delegate` a partir de ahora).
+  lanzado. Con 100 mensajes ya abre en ~0,9 s.
+- **Pruebas inestables con el equipo saturado** (pasan aisladas y por crate):
+  `ez-app` `a_dirty_round_creates_one_fix_task_per_blocking_finding` (anterior a hoy),
+  `ez-ctl` `stop_closes_the_port_and_url_is_loopback` (anterior a hoy) y
+  `ez-app` `el_vigilante_de_la_app_bloquea_y_avisa_sin_escribir_el_registro` (NV-3; con
+  `ez-app` solo, 378/378). Propuesta: endurecer sus esperas (NV-3d).
+- **Riesgos conocidos**: el disparador exacto de la caída de las 13:52 no se reprodujo (si
+  vuelve, el registro dirá archivo y línea); los subagentes lanzados a mano con `hc run`
+  no entran en el registro (usar `ez delegate`); nada se subió a GitHub ni se fusionó en
+  `main`.
 
 ## 6. Cierre
 
-<!-- Se completa al cerrar la jornada. -->
+- `eco/main` final con todo lo de esta jornada fusionado (DX-1h, 5d795c6, es la última
+  fusión de código). Batería completa de 8 crates (`ez-herdr`, `ez-ctl`, `ez-scan`,
+  `ez-app`, `ez-stt`, `ez-hud`, `ez-core`, `ez-fakes`): **1 722 pruebas en verde**; las
+  únicas fallas fueron las inestables de §5 bajo carga, y pasan aisladas. clippy sin avisos
+  propios (los 14 son del `freetype-sys` incluido).
+- Todos los subagentes cerrados y sus worktrees retirados; ningún `whisper-server` vivo.
+- El PC se apaga al terminar, como pediste (apagado programado a las 00:00, aplazado
+  automáticamente a la 01:00 y a las 02:00 mientras seguía el trabajo).

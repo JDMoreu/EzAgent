@@ -565,3 +565,17 @@
 - `shutdown /s` a las 00:00; vigilante (`scratchpad/apagado.sh`) que a las 23:50 lo aplaza
   una hora si el trabajo no terminó (y no aplaza si la sesión del agente principal ya no
   existe). Si se termina antes, el agente principal apaga al cerrar.
+
+### DX-1f + DX-1g + DX-1h — validados y fusionados (222d116, 5d795c6)
+- DX-1f: la apertura del morph ya no maqueta el historial (0 → 11 cuadros intermedios; el
+  cierre 8). DX-1g: una sola sombra suave (antes tres bandas apiladas), oráculo Python y PNG
+  del morph regenerados, umbrales intactos. DX-1h: la prueba de la sombra medía el
+  redimensionado con el panel cerrándose (dependía del reloj); ahora pasa en debug y release.
+- Corrida del elefante: 25 suites release; mutación del morph detectada; humo `anim` 11/8,
+  `chat`, `real` sin PÁNICO; capturas de la esquina antes/después revisadas.
+
+### Cierre de la jornada (20-nov ~01:45)
+- Batería completa de 8 crates: 1 722 pruebas en verde; fallaron solo pruebas inestables
+  bajo carga (pasan aisladas; `ez-app` solo 378/378). Informe final:
+  `rust-migration/reports/INFORME-FINAL-2026-11-19.md`. App de la persona sin recompilar
+  (sin permiso). Apagado del PC al terminar, por petición de la persona.
