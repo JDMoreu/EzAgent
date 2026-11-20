@@ -44,6 +44,14 @@ impl VoiceApp {
             .unwrap_or_else(|| Arc::new(Herdr::new(cfg.clone())));
         let registry = Arc::new(match parts.subagents_dir.take() {
             Some(dir) => Registry::at(dir),
+            // DECISION: en pruebas nunca se toca el registro real de la
+            // persona (mismo criterio que `EZAGENT_LOGS_DIR`, DX-2c).
+            #[cfg(test)]
+            None => Registry::at(
+                std::env::temp_dir()
+                    .join(format!("ezagent-test-subagentes-{}", std::process::id())),
+            ),
+            #[cfg(not(test))]
             None => Registry::from_env(),
         });
         let watched = Arc::new(Mutex::new(std::collections::HashSet::new()));
@@ -452,6 +460,7 @@ fn agents_state(
         herdr,
         registry,
         retry_offer: Mutex::new(None),
+        announced: Mutex::new(std::collections::HashMap::new()),
         watcher,
         swarm: Mutex::new(None),
         agent: Mutex::new(None),

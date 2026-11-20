@@ -13,8 +13,8 @@ mod port;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use port::AppHerdrPort;
 pub use phrases::{news_text, overview_phrase, parse_status_query, status_phrase, StatusQuery};
+pub(crate) use port::AppHerdrPort;
 
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -49,7 +49,19 @@ impl VoiceApp {
             return;
         };
         for record in outcome.records {
-            if record.notified == Some(record.state) {
+            // Lo contado en esta sesión manda: el `notified` del disco puede
+            // llegar tarde si un aviso posterior lo pisó.
+            let seen = self
+                .inner
+                .agents
+                .announced
+                .lock()
+                .get(&record.name)
+                .copied();
+            if seen == Some(record.state) {
+                continue;
+            }
+            if seen.is_none() && record.notified == Some(record.state) {
                 continue;
             }
             // §13: el padre no se avisa de lo que hizo él mismo.
@@ -71,13 +83,30 @@ impl VoiceApp {
                 }
                 self.queue_announcement(&text, true);
             }
-            if let Err(error) = registry.mark_notified(VOICE_PARENT, &record.name, record.state) {
-                tracing::warn!(
-                    "EzAgent: no pude marcar el aviso de {}: {}",
-                    record.name,
-                    error.message()
-                );
-            }
+            self.inner
+                .agents
+                .announced
+                .lock()
+                .insert(record.name.clone(), record.state);
+            // El `notified` del disco se guarda fuera de la UI: el candado del
+            // registro puede esperar a otro escritor. Si el subagente ya cambió
+            // otra vez, este aviso quedó viejo y no se escribe.
+            let app = self.clone();
+            let registry = Arc::clone(&registry);
+            let name = record.name.clone();
+            let state = record.state;
+            self.start_worker("ezagent-subagents-mark", move || {
+                let current = app.inner.agents.announced.lock().get(&name).copied();
+                if current != Some(state) {
+                    return;
+                }
+                if let Err(error) = registry.mark_notified(VOICE_PARENT, &name, state) {
+                    tracing::warn!(
+                        "EzAgent: no pude marcar el aviso de {name}: {}",
+                        error.message()
+                    );
+                }
+            });
         }
     }
 

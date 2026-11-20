@@ -39,6 +39,18 @@ const NAME_PREFIXES: [&str; 6] = [
 /// Artículos que pueden ir entre el comienzo y el nombre.
 const ARTICLES: [&str; 4] = ["el agente ", "el subagente ", "la tarea ", "la agente "];
 
+/// Preguntas generales que no nombran un subagente («¿cómo va todo?»).
+const GENERAL_WORDS: [&str; 8] = [
+    "todo",
+    "todo esto",
+    "esto",
+    "el proyecto",
+    "la cosa",
+    "las cosas",
+    "el trabajo",
+    "todo lo demas",
+];
+
 /// Minúsculas, sin tildes ni signos, conservando `-`, `_` y `.` de los nombres.
 fn query_key(text: &str) -> String {
     let folded = strip_accents(&text.to_lowercase());
@@ -75,6 +87,9 @@ pub fn parse_status_query(text: &str) -> Option<StatusQuery> {
             }
         }
         let name = name.trim_matches('.').trim();
+        if GENERAL_WORDS.contains(&name) {
+            continue;
+        }
         if valid_name(name) {
             return Some(StatusQuery::One(name.to_string()));
         }
@@ -89,7 +104,11 @@ fn label_of(record: &Record) -> String {
     } else {
         record.label.clone()
     };
-    let agent = match record.model.as_deref().filter(|model| !model.trim().is_empty()) {
+    let agent = match record
+        .model
+        .as_deref()
+        .filter(|model| !model.trim().is_empty())
+    {
         Some(model) => format!("{agent} · {model}"),
         None => agent,
     };
@@ -144,6 +163,10 @@ pub fn news_text(record: &Record) -> Option<String> {
         }
         TaskState::Failed => {
             let detail = last_detail(record).unwrap_or_else(|| "no sé por qué".to_string());
+            // `ez retry` marca el registro viejo; el reintento ya se contó.
+            if detail.starts_with("reemplazado por") {
+                return None;
+            }
             Some(format!("Ojo: {label} falló: {detail}."))
         }
         TaskState::Done => {
@@ -206,7 +229,10 @@ fn validated_text(record: &Record, label: &str) -> String {
     if validation.verdict {
         format!("{label} quedó validado por {}: {summary}.", validation.by)
     } else {
-        format!("{label} no pasó la validación de {}: {summary}.", validation.by)
+        format!(
+            "{label} no pasó la validación de {}: {summary}.",
+            validation.by
+        )
     }
 }
 
@@ -225,7 +251,7 @@ pub fn overview_phrase(records: &[Record]) -> String {
         return "No tengo subagentes lanzados por mí.".to_string();
     }
     let mut sorted: Vec<&Record> = records.iter().collect();
-    sorted.sort_by(|left, right| right.since_ms.cmp(&left.since_ms));
+    sorted.sort_by_key(|record| std::cmp::Reverse(record.since_ms));
     let parts: Vec<String> = sorted
         .iter()
         .take(4)

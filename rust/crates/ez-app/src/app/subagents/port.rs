@@ -19,14 +19,14 @@ use super::VOICE_PARENT;
 
 /// Lo que el lanzamiento necesita para su registro, ya clonado antes de mover
 /// los parámetros al adaptador real.
-struct Launch {
-    agent: String,
-    model: Option<String>,
-    effort: Option<String>,
-    cwd: Option<String>,
-    name: Option<String>,
-    hc_name: Option<String>,
-    task: String,
+pub(super) struct Launch {
+    pub(super) agent: String,
+    pub(super) model: Option<String>,
+    pub(super) effort: Option<String>,
+    pub(super) cwd: Option<String>,
+    pub(super) name: Option<String>,
+    pub(super) hc_name: Option<String>,
+    pub(super) task: String,
 }
 
 impl Launch {
@@ -99,7 +99,14 @@ impl HerdrPort for AppHerdrPort {
     fn run_agent(&self, params: RunAgent<'_>) -> Result<Map<String, Value>, PortError> {
         let launch = Launch::of(&params);
         let result = <Arc<Herdr> as HerdrPort>::run_agent(&self.inner, params)?;
-        register_launch(&self.inner, &self.registry, &launch, &result);
+        // Un rechazo normal (agente desconocido, nombre ocupado) ya vuelve al
+        // turno como error de la herramienta: solo se avisa de un fallo al
+        // guardar el registro de un lanzamiento que sí salió.
+        if result.get("ok").is_some_and(truthy) {
+            if let Err(error) = register_launch(&self.inner, &self.registry, &launch, &result) {
+                tracing::warn!("EzAgent: {error}");
+            }
+        }
         Ok(result)
     }
 
@@ -144,18 +151,21 @@ impl HerdrPort for AppHerdrPort {
 }
 
 /// Guarda el registro de un lanzamiento confirmado; nunca falla el lanzamiento.
-fn register_launch(
+///
+/// `Err` es el motivo para el registro del proceso (la delegación ya salió
+/// bien): se devuelve en vez de escribirlo para que las pruebas lo comprueben.
+pub(super) fn register_launch(
     herdr: &Herdr,
     registry: &Registry,
     launch: &Launch,
     result: &Map<String, Value>,
-) {
+) -> Result<Record, String> {
     if !result.get("ok").is_some_and(truthy) {
-        return;
+        return Err("hc no confirmó el lanzamiento".to_string());
     }
     let terminal = text(result, "terminal");
     if terminal.is_empty() {
-        return;
+        return Err("hc no devolvió la terminal".to_string());
     }
     let agent = {
         let key = text(result, "agent");
@@ -166,8 +176,9 @@ fn register_launch(
         }
     };
     let Some(name) = record_name(registry, launch, &agent) else {
-        tracing::warn!("EzAgent: no encontré nombre libre para el registro de {agent}");
-        return;
+        return Err(format!(
+            "no encontré nombre libre para el registro de {agent}"
+        ));
     };
     let now = epoch_ms();
     let launching = result.get("launching").is_some_and(truthy);
@@ -212,13 +223,14 @@ fn register_launch(
         validation: None,
         notified: None,
     };
-    if let Err(error) = registry.create(&record) {
-        tracing::warn!(
-            "EzAgent: el subagente {} arrancó pero no pude guardar su registro: {}",
+    registry.create(&record).map_err(|error| {
+        format!(
+            "el subagente {} arrancó pero no pude guardar su registro: {}",
             record.name,
             error.message()
-        );
-    }
+        )
+    })?;
+    Ok(record)
 }
 
 /// El nombre del registro: el pedido si vale y está libre; si no, el de §6.
@@ -227,21 +239,30 @@ fn record_name(registry: &Registry, launch: &Launch, agent: &str) -> Option<Stri
     if let Some(name) = launch.hc_name.as_deref() {
         wanted.push(name.trim().to_string());
     }
-    if let Some(name) = launch.name.as_deref().filter(|name| !name.trim().is_empty()) {
+    if let Some(name) = launch
+        .name
+        .as_deref()
+        .filter(|name| !name.trim().is_empty())
+    {
         wanted.push(hc_slug(name));
     }
     for candidate in wanted {
-        if valid_name(&candidate) && registry.get(VOICE_PARENT, &candidate).ok().is_none() {
+        if valid_name(&candidate) && name_free(registry, &candidate) {
             return Some(candidate);
         }
     }
     for index in 1..=100 {
         let candidate = default_name(VOICE_PARENT, index, agent);
-        if registry.get(VOICE_PARENT, &candidate).ok().is_none() {
+        if name_free(registry, &candidate) {
             return Some(candidate);
         }
     }
     None
+}
+
+/// ¿No hay ya un registro con ese nombre? (un archivo ilegible no bloquea).
+fn name_free(registry: &Registry, name: &str) -> bool {
+    !matches!(registry.get(VOICE_PARENT, name), Ok(Some(_)))
 }
 
 /// La etiqueta del perfil (`OpenCode`, `Claude Code`…).

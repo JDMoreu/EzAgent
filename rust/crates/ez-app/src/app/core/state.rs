@@ -266,6 +266,9 @@ pub struct AgentsState {
     pub registry: Arc<Registry>,
     /// Subagente cuya oferta de reintento espera un «sí»/«dale».
     pub retry_offer: Mutex<Option<String>>,
+    /// Estados ya contados en esta sesión (el `notified` del disco se escribe
+    /// en un hilo aparte para no esperar el candado del registro en la UI).
+    pub announced: Mutex<HashMap<String, ez_herdr::subagents::TaskState>>,
     /// `self.watcher`.
     pub watcher: Arc<Watcher>,
     /// `self.swarm`.
