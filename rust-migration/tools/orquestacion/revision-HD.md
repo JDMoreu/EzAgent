@@ -625,3 +625,13 @@
   a `ez-agent/src/runtime.rs`, `runtime/state.rs` y sus pruebas; pide verificar el ciclo
   real, fallar cerrado ante ambigüedad y comprobar respuestas legítimas y abandono.
 - Informe y worktree limpio comprobados; brief enviado a `dx-5`.
+
+### Reanudación con carga limitada: DX-7 y DX-5e
+- Las cinco sesiones anteriores terminaron con código 1; se reabrió solo DX-7 sin pruebas,
+  compilaciones ni ventanas. Entregó informe parcial y rama limpia.
+- DX-7 permite volver a la pantalla principal si falta la secundaria. Se pidió en DX-7b
+  que cada humo verifique la secundaria antes de abrir ventanas o lanzar procesos que las
+  abran, y falle cerrado. La instrucción de la persona prevalece sobre el fallback del brief.
+- Revisión estática de DX-5e: la detección de nombres no distingue negaciones y «no» se
+  acepta como conector. Se preparó DX-5f; falta comprobar el caso con pruebas. No se ha
+  lanzado otro subagente ni se han ejecutado pruebas por la carga del equipo.
