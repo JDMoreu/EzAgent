@@ -359,7 +359,7 @@ mod tests {
         }
 
         fn which(&self, program: &str) -> Option<PathBuf> {
-            (Path::new(program) == self.path).then(|| self.path.clone())
+            (Path::new(program) == self.path.as_path()).then(|| self.path.clone())
         }
 
         fn monotonic(&self) -> f64 {
@@ -388,8 +388,55 @@ mod tests {
         }
     }
 
+    /// El medidor de la guarda con el Herdr falso: memoria fija.
+    struct FixedProbe {
+        herdr: Herdr,
+    }
+
+    impl Probe for FixedProbe {
+        fn system(&self, _workdir: &Path) -> Result<SystemInfo, String> {
+            Err("no se usa".to_string())
+        }
+
+        fn free_ram_mb(&self) -> Result<u64, String> {
+            Ok(100)
+        }
+
+        fn free_commit_mb(&self) -> Result<u64, String> {
+            Ok(100)
+        }
+
+        fn cpu_percent(&self) -> Result<f32, String> {
+            Ok(0.0)
+        }
+
+        fn disk_free_mb(&self, _workdir: &Path) -> Option<u64> {
+            None
+        }
+
+        fn subagents(
+            &self,
+            parent: &str,
+            thresholds: &crate::Thresholds,
+        ) -> Result<Vec<SubagentUsage>, String> {
+            subagents_with(&self.herdr, parent, thresholds)
+        }
+
+        fn which(&self, _program: &str) -> Option<PathBuf> {
+            None
+        }
+
+        fn version(&self, _program: &Path) -> Option<String> {
+            None
+        }
+
+        fn opencode_models(&self, _program: &Path) -> Vec<String> {
+            Vec::new()
+        }
+    }
+
     #[test]
-    fn la_guarda_mide_con_el_hc_de_la_configuracion() {
+    fn la_guarda_rechaza_con_el_hc_configurado_y_umbrales_absurdos() {
         let root = std::env::temp_dir().join(format!("ez-scan-hc-{}", std::process::id()));
         let hc = root.join("herdr-core").join("hc.exe");
         std::fs::create_dir_all(hc.parent().expect("carpeta")).expect("carpeta");
@@ -400,13 +447,19 @@ mod tests {
             path: hc.clone(),
             calls: Mutex::new(Vec::new()),
         });
-        let herdr = Herdr::with_runtime(cfg, runtime.clone());
-        let children =
-            subagents_with(&herdr, "t20b", &crate::Thresholds::default()).expect("medir");
-        assert!(children.is_empty());
+        let probe = FixedProbe {
+            herdr: Herdr::with_runtime(cfg, runtime.clone()),
+        };
+        let thresholds = crate::Thresholds {
+            min_free_ram_mb: 999_999_999,
+            min_free_commit_mb: 999_999_999,
+            ..crate::Thresholds::default()
+        };
+        let error = crate::capacity::check(&probe, "t20b", &thresholds).expect_err("rechaza");
+        assert!(error.starts_with("Recursos justos:"), "{error}");
         let calls = runtime.calls.lock().expect("llamadas");
         assert_eq!(calls.len(), 1);
-        assert_eq!(Path::new(&calls[0][0]), hc);
+        assert_eq!(Path::new(&calls[0][0]), hc.as_path());
         let _ = std::fs::remove_dir_all(&root);
     }
 

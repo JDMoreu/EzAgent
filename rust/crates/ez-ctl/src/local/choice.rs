@@ -77,10 +77,10 @@ pub(crate) struct Filled {
     pub(crate) warnings: Vec<String>,
 }
 
-/// Usa la recomendación cuando falta el tipo y completa modelo/esfuerzo.
+/// Usa la recomendación cuando falta el tipo y completa lo que falte.
 ///
-/// Con `--agent` explícito, lo que no esté en `modelos.toml` se queda como
-/// vino y se avisa: la persona manda.
+/// Con `--agent` y `--model` explícitos, el modelo se respeta y solo se
+/// completa el esfuerzo; el modelo nunca se toca ni se avisa de que faltaba.
 pub(crate) fn fill(request: &LocalDelegate, inputs: &Inputs) -> Result<Filled, LocalError> {
     let automatic = request.agent.trim().is_empty();
     if !automatic && request.model.is_some() {
