@@ -45,6 +45,12 @@ pub struct SwarmArgs {
 /// Fábrica del enjambre; el arnés la usa para inyectar el reloj de prueba.
 pub type SwarmFactory = Arc<dyn Fn(SwarmArgs) -> Option<Arc<SwarmStack>> + Send + Sync>;
 
+/// Ejecuta `ez retry <nombre> --auto` y devuelve el nombre del hijo nuevo.
+///
+/// `Ok` con el nombre nuevo (o el mismo si `ez` no lo dice); `Err` con el
+/// motivo para la persona. La costura permite probar la aceptación sin `ez`.
+pub type RetryRunner = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
+
 /// Lo que la app necesita del altavoz (`ez_tts::Speaker` en producción).
 // DECISION: Kokoro carga un modelo real y no se puede abrir en una prueba;
 // este rasgo es la costura de los dobles (`AppParts::new`).
@@ -151,6 +157,11 @@ pub struct AppParts {
     pub chat: Option<Arc<ChatModel>>,
     /// `self.herdr`; `None` lo construye con la configuración.
     pub herdr: Option<Arc<Herdr>>,
+    /// Raíz del registro de subagentes; `None` usa `EZ_SUBAGENTS_DIR` o
+    /// `%LOCALAPPDATA%`. Las pruebas pasan siempre una carpeta temporal.
+    pub subagents_dir: Option<PathBuf>,
+    /// Reintento inyectado; `None` ejecuta `ez retry ... --auto` de verdad.
+    pub retry_runner: Option<RetryRunner>,
     /// `_whisper_proc` que devolvió `ensure_whisper`.
     pub whisper_proc: Option<Child>,
     /// `_whisper_ready(cfg.whisper_url)` ya medido.
@@ -193,6 +204,8 @@ impl AppParts {
             hud_factory: None,
             chat: None,
             herdr: None,
+            subagents_dir: None,
+            retry_runner: None,
             whisper_proc: None,
             whisper_ready: true,
             build_swarm: false,

@@ -64,6 +64,9 @@ impl VoiceApp {
             self.set_state(LISTENING);
             return;
         }
+        if self.answer_retry_offer(&text) {
+            return;
+        }
         self.log_turn_timing();
         log(format!("Tú: {text}"));
         let fast_t0 = monotonic();

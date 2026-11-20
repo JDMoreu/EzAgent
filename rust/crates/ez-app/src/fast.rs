@@ -213,6 +213,16 @@ pub trait FastHost {
     fn ack_window_secs(&self) -> f64 {
         ACK_WINDOW_SECS
     }
+
+    /// Estado de un subagente del registro (NV-3), si este host tiene registro.
+    fn subagent_status(&self, _name: &str) -> Option<String> {
+        None
+    }
+
+    /// Lista de los subagentes lanzados por la app (NV-3).
+    fn subagents_overview(&self) -> Option<String> {
+        None
+    }
 }
 
 /// `VoiceApp._normalize`: minúsculas, sin tildes, sin signos y con un solo
@@ -319,6 +329,18 @@ pub fn fast_command(text: &str, host: &dyn FastHost) -> FastOutcome {
     if set_contains(&TASK_WORDS, &key) {
         info!("Atajo local: listar tareas pendientes.");
         return tasks_outcome(host);
+    }
+    // «¿cómo va ir-2?» / «¿cómo van los agentes?»: la frase la escribe el
+    // código con los datos del registro (NV-3), como los acuses de DX-2.
+    if let Some(query) = crate::app::subagents::parse_status_query(text) {
+        let phrase = match query {
+            crate::app::subagents::StatusQuery::One(name) => host.subagent_status(&name),
+            crate::app::subagents::StatusQuery::All => host.subagents_overview(),
+        };
+        if let Some(phrase) = phrase {
+            info!("Atajo local: estado de subagentes.");
+            return answer(phrase);
+        }
     }
     // DECISION: se comprueba al final para que los atajos reales ganen siempre.
     // Solo se consulta el contexto si el texto es un acuse puro: así un atajo

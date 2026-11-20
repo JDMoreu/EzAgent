@@ -42,6 +42,10 @@ impl VoiceApp {
             .herdr
             .take()
             .unwrap_or_else(|| Arc::new(Herdr::new(cfg.clone())));
+        let registry = Arc::new(match parts.subagents_dir.take() {
+            Some(dir) => Registry::at(dir),
+            None => Registry::from_env(),
+        });
         let watched = Arc::new(Mutex::new(std::collections::HashSet::new()));
         let hooks: Arc<RwLock<Arc<dyn AppHooks>>> = Arc::new(RwLock::new(Arc::new(NullHooks)));
         let watcher = Arc::new(build_watcher(
@@ -69,7 +73,7 @@ impl VoiceApp {
             audio: audio_state(Arc::clone(&parts.mic)),
             speech: speech_state(Arc::clone(&parts.speaker)),
             chat: chat_state(prepared.chat, prepared.contexts, Arc::clone(&trace)),
-            agents: agents_state(tasks, herdr, watcher, prepared.messenger, watched),
+            agents: agents_state(tasks, herdr, registry, watcher, prepared.messenger, watched),
             ui: ui_state(
                 prepared.ui,
                 prepared.hud,
@@ -438,6 +442,7 @@ fn chat_state(chat: Arc<ChatModel>, contexts: ChatContexts, trace: TraceSlot) ->
 fn agents_state(
     tasks: Arc<TaskRegistry>,
     herdr: Arc<Herdr>,
+    registry: Arc<Registry>,
     watcher: Arc<Watcher>,
     messenger: MessengerSlot,
     watched: Arc<Mutex<std::collections::HashSet<String>>>,
@@ -445,6 +450,8 @@ fn agents_state(
     AgentsState {
         tasks,
         herdr,
+        registry,
+        retry_offer: Mutex::new(None),
         watcher,
         swarm: Mutex::new(None),
         agent: Mutex::new(None),
@@ -498,5 +505,6 @@ fn runtime_state(
         background: parts.background,
         mic_capture: parts.mic_capture,
         tool_acks: parts.tool_acks,
+        retry_runner: parts.retry_runner.take(),
     }
 }

@@ -39,6 +39,7 @@ use ez_core::config::{config_path, int_value, python_str, truthy, VoiceConfig};
 use ez_core::metrics::{monotonic, LatencyStats, TurnTimings};
 use ez_core::pyvalue::py_strip;
 use ez_herdr::herdr::Herdr;
+use ez_herdr::subagents::Registry;
 use ez_herdr::tasks::TaskRegistry;
 use ez_herdr::watcher::{AnnounceCallback, EventCallback, TargetsCallback, Watcher};
 use ez_hud::win::drop::create_ui;
@@ -58,7 +59,7 @@ pub use self::events::{AppEvent, MenuEvent, Queue};
 pub use self::hooks::{AppHooks, NullHooks, NullObserver, ShutdownObserver};
 pub use self::hud::AppHud;
 pub use self::hud_bridge::{flush_config_saves, HudConfig, HudHost};
-pub use self::services::{AppParts, SpeakerApi, SwarmArgs, SwarmFactory};
+pub use self::services::{AppParts, RetryRunner, SpeakerApi, SwarmArgs, SwarmFactory};
 use self::state::{
     AgentsState, AudioState, ChatState, ConfigState, Flag, Inner, LlmModels, MessengerSlot,
     RuntimeState, SavedLlm, SessionState, SpeechState, TurnState, UiState,
