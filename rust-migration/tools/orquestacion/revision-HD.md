@@ -499,3 +499,7 @@
   `CARGO_BUILD_JOBS=2` y un solo `cargo`. IR-5 escrito pero **no se lanza** hasta que haya
   memoria. Guardián relanzado con umbrales críticos (virtual < 2,5 GB o RAM < 1,2 GB).
 - Lección: cerrar la terminal del subagente al fusionar (no dejarla para después).
+- 19:42: crítico (RAM libre 1,2 GB; el juego 11,2 GB). NV-3 **pausado**: `hc interrupt` (un
+  Esc no basta en OpenCode) + `hc keys nv-3 esc esc` → `idle`; su `cargo check -p ez-app`
+  terminó con la interrupción. Ningún subagente compila. Se reanuda cuando la RAM libre pase
+  de 4,5 GB y la virtual de 6 GB en dos lecturas seguidas.
