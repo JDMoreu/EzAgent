@@ -1,11 +1,11 @@
 # DX-3b: humo reproducible de whisper-server atado a la vida de la app (DX-3).
 #
 # Uso: powershell -NoProfile -File scripts\tests\humo-whisper.ps1
-#      powershell -NoProfile -File scripts\tests\humo-whisper.ps1 -Primary
 #
-# DX-7: la app de la prueba abre sus ventanas en la pantalla secundaria
-# (EZAGENT_TEST_MONITOR=secondary); con -Primary, en la principal. La app de la
-# persona no define esa variable.
+# DX-7b: la app de la prueba abre sus ventanas solo en la pantalla secundaria.
+# Antes de arrancarla, el guion verifica que exista; si no, falla sin abrir
+# nada. No hay ruta de prueba hacia la principal. La app de la persona no
+# define EZAGENT_TEST_MONITOR.
 #
 # Requiere, desde rust/:
 #   cargo build --release -p ez-app --bin ezagent-voice
@@ -20,8 +20,7 @@
 
 param(
     [string]$App = "",
-    [string]$Fake = "",
-    [switch]$Primary
+    [string]$Fake = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -101,6 +100,21 @@ function Stop-OwnProcess([int]$ProcessId) {
     }
 }
 
+function Assert-SecondaryMonitor {
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        $secondary = @([System.Windows.Forms.Screen]::AllScreens |
+            Where-Object { -not $_.Primary })
+    } catch {
+        throw ("No se pudo verificar la pantalla secundaria: {0}" -f $_.Exception.Message)
+    }
+    if ($secondary.Count -eq 0) {
+        throw "No hay una pantalla secundaria verificable; el humo no abre ventanas en la principal."
+    }
+    $screen = $secondary[0]
+    Write-Host ("   OK: pantalla secundaria {0} {1}" -f $screen.DeviceName, $screen.Bounds)
+}
+
 function Start-VoiceApp {
     $process = Start-Process -PassThru -FilePath $App -ArgumentList @("--config", $configPath)
     $script:started.Add($process.Id)
@@ -161,7 +175,8 @@ try {
     $env:LLM_MODEL = "humo"
     $env:LLM_API_KEY = "humo"
     $env:LLM_API_STYLE = "openai"
-    $env:EZAGENT_TEST_MONITOR = if ($Primary) { "primary" } else { "secondary" }
+    $env:EZAGENT_TEST_MONITOR = "secondary"
+    Assert-SecondaryMonitor
 
     Write-Host "== 1. arranca, se mata sin aviso y el servidor muere =="
     $first = Start-VoiceApp

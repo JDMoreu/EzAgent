@@ -32,25 +32,28 @@ pub const EDGE_MARGIN: i32 = 18;
 pub const DEFAULT_WORK_AREA: Rect = (0, 0, 1920, 1080);
 
 /// Variable **solo para pruebas**: `secondary` mueve las ventanas del HUD al
-/// primer monitor no principal; `primary` las deja donde siempre.
+/// primer monitor no principal. Cualquier otro valor se ignora.
 ///
-/// La app de la persona no la define; un valor desconocido se ignora.
+/// La app de la persona no la define. DX-7b: la variable no puede pedir la
+/// pantalla principal; los humos validan la secundaria antes de abrir nada.
 pub const TEST_MONITOR_ENV: &str = "EZAGENT_TEST_MONITOR";
 
 /// Monitor que piden las pruebas con [`TEST_MONITOR_ENV`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScreenChoice {
-    /// Monitor principal (el comportamiento de siempre).
+    /// Monitor principal (solo para la lógica pura de [`choose_monitor`]).
     Primary,
     /// Primer monitor no principal, en el orden de `EnumDisplayMonitors`.
     Secondary,
 }
 
 /// Interpreta el valor de [`TEST_MONITOR_ENV`] (sin leer el entorno).
+///
+/// DX-7b: solo `secondary` activa el modo de prueba; cualquier otro valor se
+/// ignora y la app queda en su pantalla normal.
 pub fn screen_choice(value: Option<&str>) -> Option<ScreenChoice> {
     match value?.trim().to_ascii_lowercase().as_str() {
         "secondary" => Some(ScreenChoice::Secondary),
-        "primary" => Some(ScreenChoice::Primary),
         _ => None,
     }
 }
@@ -81,6 +84,24 @@ pub fn choose_monitor(
             .find(|(_, _, primary)| !*primary)
             .map(|(rect, work, _)| (*rect, *work)),
     }
+}
+
+/// Comprueba que hay un monitor secundario y devuelve su `rcMonitor`.
+///
+/// Falla cerrado: una lista vacía o sin monitor no principal devuelve el
+/// motivo, para que un humo no cree ventanas. La lista es la misma que usa
+/// [`choose_monitor`].
+pub fn require_secondary(monitors: &[(Rect, Rect, bool)]) -> Result<Rect, String> {
+    if monitors.is_empty() {
+        return Err(String::from(
+            "no se pudieron enumerar los monitores del escritorio; no se puede verificar la secundaria",
+        ));
+    }
+    choose_monitor(monitors, ScreenChoice::Secondary)
+        .map(|(rect, _)| rect)
+        .ok_or_else(|| {
+            String::from("no hay un monitor secundario disponible; los humos no abren ventanas en la principal")
+        })
 }
 
 /// `true` si `rect` está entero dentro de `monitor`.
@@ -132,6 +153,17 @@ fn desktop_monitors() -> Vec<(Rect, Rect, bool)> {
 /// Área de trabajo del monitor pedido, si existe.
 fn chosen_area(choice: ScreenChoice) -> Option<(Rect, Rect)> {
     choose_monitor(&desktop_monitors(), choice)
+}
+
+/// Comprueba el monitor secundario real antes de crear ventanas o procesos.
+///
+/// Falla cerrado si [`TEST_MONITOR_ENV`] no pide `secondary`, si Windows no
+/// enumera monitores o si no hay ninguno no principal. Devuelve su `rcMonitor`.
+pub fn require_secondary_monitor() -> Result<Rect, String> {
+    if requested_screen() != Some(ScreenChoice::Secondary) {
+        return Err(format!("{TEST_MONITOR_ENV} no pide el monitor secundario"));
+    }
+    require_secondary(&desktop_monitors())
 }
 
 fn as_rect(rect: RECT) -> Rect {
@@ -338,17 +370,33 @@ mod tests {
     }
 
     #[test]
-    fn test_monitor_variable_understands_both_values() {
+    fn test_monitor_variable_only_accepts_secondary() {
         assert_eq!(
             screen_choice(Some("secondary")),
             Some(ScreenChoice::Secondary)
         );
         assert_eq!(
-            screen_choice(Some(" Primary ")),
-            Some(ScreenChoice::Primary)
+            screen_choice(Some(" SECONDARY ")),
+            Some(ScreenChoice::Secondary)
         );
+        assert_eq!(screen_choice(Some("primary")), None);
         assert_eq!(screen_choice(Some("DISPLAY2")), None);
         assert_eq!(screen_choice(None), None);
+    }
+
+    #[test]
+    fn secondary_validation_accepts_a_vertical_secondary() {
+        let primary = ((0, 0, 1920, 1080), (0, 0, 1920, 1040), true);
+        let secondary = ((-1080, -393, 0, 1527), (-1080, -393, 0, 1527), false);
+        assert_eq!(require_secondary(&[primary, secondary]), Ok(secondary.0));
+    }
+
+    #[test]
+    fn secondary_validation_fails_closed_without_a_secondary() {
+        let primary = ((0, 0, 1920, 1080), (0, 0, 1920, 1040), true);
+        let error = require_secondary(&[primary]).expect_err("sin secundaria");
+        assert!(error.contains("secundaria"));
+        assert!(require_secondary(&[]).is_err());
     }
 
     #[test]

@@ -11,12 +11,12 @@
 //!
 //! ```text
 //! cargo run --release -p ez-hud --example panic_boundary
-//! cargo run --release -p ez-hud --example panic_boundary -- --primary
 //! ```
 //!
-//! DX-7: por omisión la ventana se abre en el **monitor secundario**
-//! (`EZAGENT_TEST_MONITOR=secondary`); con `--primary`, en el principal. Al
-//! final imprime el rectángulo de la ventana y falla si quedó fuera del monitor
+//! DX-7b: la ventana se abre **solo** en el monitor secundario. Antes de
+//! crearla se comprueba que la secundaria exista; si no, la prueba falla sin
+//! abrir ventanas. No hay ruta de prueba hacia la pantalla principal. Al final
+//! imprime el rectángulo de la ventana y falla si quedó fuera del monitor
 //! pedido.
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,7 +24,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ez_hud::win::layered::{LayeredWindow, RgbaFrame, WindowHooks, WindowOptions};
-use ez_hud::win::monitor::{monitor_rect, rect_inside, work_area, TEST_MONITOR_ENV};
+use ez_hud::win::monitor::{
+    monitor_rect, rect_inside, require_secondary_monitor, work_area, TEST_MONITOR_ENV,
+};
 use windows::Win32::Foundation::{LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, PostMessageW, WM_LBUTTONDOWN};
 
@@ -48,15 +50,14 @@ impl WindowHooks for PanicHook {
 }
 
 fn main() {
-    // DX-7: las pruebas, en la pantalla secundaria salvo que se pida la
-    // principal. Un valor explícito en el entorno se respeta; `--primary`
-    // manda sobre él.
-    let primary = std::env::args().any(|arg| arg == "--primary");
-    if primary || std::env::var_os(TEST_MONITOR_ENV).is_none() {
-        std::env::set_var(
-            TEST_MONITOR_ENV,
-            if primary { "primary" } else { "secondary" },
-        );
+    // DX-7b: sin secundaria verificada no se crea ninguna ventana.
+    std::env::set_var(TEST_MONITOR_ENV, "secondary");
+    match require_secondary_monitor() {
+        Ok(rect) => say(&format!("monitor verificado: secundario · rect {rect:?}")),
+        Err(reason) => {
+            say(&format!("no se abre la prueba: {reason}"));
+            std::process::exit(2);
+        }
     }
     let work = work_area();
     let dir = std::env::temp_dir().join(format!("ezagent-dx1d-panic-{}", std::process::id()));

@@ -16,13 +16,13 @@
 //! ```text
 //! cargo run --release -p ez-app --example diag_chat_smoke
 //! cargo run --release -p ez-app --example diag_chat_smoke -- chat
-//! cargo run --release -p ez-app --example diag_chat_smoke -- chat --primary
 //! ```
 //!
-//! DX-7: por omisión las ventanas se abren en el **monitor secundario**
-//! (`EZAGENT_TEST_MONITOR=secondary`); con `--primary` se ven en el principal.
-//! Al terminar imprime el rectángulo de cada ventana y falla si alguna quedó
-//! fuera del monitor pedido.
+//! DX-7b: las ventanas se abren **solo** en el monitor secundario. Antes de
+//! crear nada se comprueba que la secundaria exista; si no, el humo falla sin
+//! abrir ventanas. No hay ruta de prueba hacia la pantalla principal. Al
+//! terminar imprime el rectángulo de cada ventana y falla si alguna quedó fuera
+//! del monitor pedido.
 //!
 //! El modo por omisión reproduce la secuencia que tumbó la app: llamada
 //! iniciada, «HUD: panel» (el menú de ajustes), tres segundos, «HUD: chat».
@@ -951,23 +951,21 @@ fn fuzz_windows(rounds: usize) {
 fn fuzz_windows(_rounds: usize) {}
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    // DX-7: `--primary` deja las ventanas en la pantalla principal.
-    let primary = args.iter().any(|arg| arg == "--primary");
-    let mode = args
-        .iter()
-        .find(|arg| arg.as_str() != "--primary")
-        .cloned()
+    // DX-7b: sin secundaria verificada no se crea ninguna ventana.
+    std::env::set_var(TEST_MONITOR_ENV, "secondary");
+    let monitor = match ez_hud::win::monitor::require_secondary_monitor() {
+        Ok(rect) => rect,
+        Err(reason) => {
+            say(&format!("no se abre el humo: {reason}"));
+            std::process::exit(2);
+        }
+    };
+    say(&format!(
+        "monitor verificado: secundario · rect {monitor:?}"
+    ));
+    let mode = std::env::args()
+        .nth(1)
         .unwrap_or_else(|| "sequence".to_string());
-    // DECISION (DX-7): los humos usan la secundaria por omisión para no
-    // estorbar a la persona; la app real no define esta variable. Un valor
-    // explícito en el entorno se respeta; `--primary` manda sobre él.
-    if primary || std::env::var_os(TEST_MONITOR_ENV).is_none() {
-        std::env::set_var(
-            TEST_MONITOR_ENV,
-            if primary { "primary" } else { "secondary" },
-        );
-    }
     let big = mode == "big";
     // DX-1f: `anim` mide la animación de apertura y de cierre.
     let anim = mode == "anim";
