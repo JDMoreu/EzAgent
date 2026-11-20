@@ -757,7 +757,8 @@ fn the_panel_paints_one_soft_shadow() {
     }
     // Redimensionado: el mismo panel en una ventana más alta.
     //
-    // El bucle deja el panel en `Closing` y el morph apaga la sombra con el
+    // DECISION: el cuadro del redimensionado se mide con el panel abierto. El
+    // bucle deja el panel en `Closing` y el morph apaga la sombra con el
     // progreso (`shadow_k`): sin volver a `Open`, este cuadro dependía del
     // reloj real (en debug el cierre ya había avanzado entre un cuadro y el
     // siguiente y no quedaba sombra; en release sí).
