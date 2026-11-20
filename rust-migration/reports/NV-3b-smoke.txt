@@ -1,0 +1,10 @@
+app viva; fake-hc C:\Users\JDMoreu\Documents\EzAgent-wt\NV-3\rust\target\debug\examples\../fake-hc.exe; registros en C:\Users\JDMoreu\AppData\Local\Temp\ezagent-nv3-humo-21760-1795141889635036200\subagentes
+registros: ir-1 (t1, límite) e ir-2 (t2, muerto) en_proceso
+ANUNCIO bloqueado: Ojo: ir-1 (OpenCode · glm-5.3) está bloqueado: límite de uso del plan gratuito (se reinicia a las 19:00). ¿Lo reintento con la recomendación?
+ANUNCIO fallido: Ojo: ir-2 (OpenCode · glm-5.3) falló: la terminal terminó sin informe.
+estado real: ir-1 = bloqueado (vigilante); ir-2 = fallido (vigilante)
+oferta de reintento: Some("ir-1")
+atajo «¿cómo va ir-1?»: handled=true
+app viva al final: true
+PÁNICO en el registro temporal: 0
+RESULT bloqueado=true fallido=true oferta=ir-1 atajo=true viva=true panico=0

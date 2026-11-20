@@ -1,17 +1,20 @@
-//! NV-3: anuncios de los subagentes en la app real, sin micrófono.
+//! NV-3b: anuncios de los subagentes en la app real, sin micrófono.
 //!
 //! Monta la app (`VoiceApp`) con dobles de micrófono y altavoz, apunta
 //! `APPDATA`, `EZAGENT_LOGS_DIR` y `EZ_SUBAGENTS_DIR` a una carpeta temporal y
-//! escribe registros falsos del padre `voz` que cambian de estado:
-//! `en_proceso` → `bloqueado` por límite → `terminado`.
+//! usa el `fake-hc` de `ez-fakes` con dos hijos falsos registrados bajo `voz`:
+//! uno parado con «Free limit reached» y otro muerto sin informe. El vigilante
+//! de la app los marca `bloqueado` y `fallido`; nadie escribe esos estados a
+//! mano. Los anuncios tienen que aparecer en el chat.
 //!
-//! La app vive, el latido de actividad (`activity_tick`) lee el registro y los
-//! anuncios tienen que aparecer en el chat. Al final comprueba que el registro
-//! temporal no tenga ningún `PÁNICO`. No abre micrófono, no habla de verdad y
-//! no toca la carpeta ni los subagentes de la persona.
+//! Al final comprueba que el registro temporal no tenga ningún `PÁNICO`. No
+//! abre micrófono, no habla de verdad, no lanza agentes reales y no toca la
+//! carpeta, los registros ni la ventana de Herdr de la persona.
 //!
 //! ```text
-//! cargo run -p ez-app --example diag_subagents_smoke
+//! cargo build -p ez-fakes --bin fake-hc
+//! cargo build -p ez-app --example diag_subagents_smoke
+//! ./target/debug/examples/diag_subagents_smoke.exe
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -19,12 +22,13 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ez_app::app::core::{AppParts, SpeakerApi, VoiceApp};
+use ez_app::app::core::{AppParts, SpeakerApi, SubagentWatch, VoiceApp};
 use ez_app::app::live::LiveHooks;
 use ez_audio::capture::{MicCapture, VadSettings};
 use ez_chat::session::ChatModel;
 use ez_core::config::VoiceConfig;
-use ez_herdr::subagents::{epoch_ms, Change, Record, Registry, TaskState};
+use ez_herdr::herdr::system_runtime;
+use ez_herdr::subagents::{epoch_ms, Change, HcRuntime, Record, Registry, TaskState};
 use serde_json::json;
 
 /// Altavoz mudo: el ejemplo no carga Kokoro.
@@ -68,12 +72,16 @@ fn temp_dir() -> PathBuf {
     std::env::temp_dir().join(unique)
 }
 
-fn seed_config(dir: &Path) -> std::io::Result<()> {
+fn seed_config(dir: &Path, fake_hc: &Path, fake_state: &Path) -> std::io::Result<()> {
     let config = json!({
         // DECISION: sin barra visible; la prueba mira el chat y la voz, no el HUD.
         "hud_hidden": true,
         "smart_turn": false,
-        "chat_voice": false
+        "chat_voice": false,
+        "hc_path": fake_hc.to_string_lossy(),
+        "herdr_app_path": fake_hc.to_string_lossy(),
+        "default_cwd": dir.to_string_lossy(),
+        "fake_hc_state": fake_state.to_string_lossy()
     });
     std::fs::write(
         dir.join("voice.json"),
@@ -81,11 +89,61 @@ fn seed_config(dir: &Path) -> std::io::Result<()> {
     )
 }
 
-fn fake_record() -> Record {
+/// El `fake-hc` que deja `cargo build -p ez-fakes --bin fake-hc`.
+fn fake_hc_binary() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let folder = exe.parent()?;
+    [
+        folder.join("fake-hc.exe"),
+        folder.join("../fake-hc.exe"),
+        folder.join("../../fake-hc.exe"),
+    ]
+    .into_iter()
+    .find(|candidate| candidate.is_file())
+}
+
+/// El estado del `fake-hc`: un hijo vivo con el límite en pantalla y otro muerto.
+fn seed_fake_hc(path: &Path) -> std::io::Result<()> {
+    let state = json!({
+        "next": 2,
+        "spaces": ["main"],
+        "terminals": [
+            {
+                "address": "t1",
+                "tab": "tab1",
+                "space": "main",
+                "name": "ir-1",
+                "title": "ir-1",
+                "agent": "opencode",
+                "state": "live",
+                "cwd": "C:\\humo",
+                "where": "main / ir-1",
+                "screen": "Free limit reached. Resets at 7:00 p.m.\n"
+            },
+            {
+                "address": "t2",
+                "tab": "tab2",
+                "space": "main",
+                "name": "ir-2",
+                "title": "ir-2",
+                "agent": "opencode",
+                "state": "finished",
+                "cwd": "C:\\humo",
+                "where": "main / ir-2",
+                "screen": "",
+                "exit_code": 1
+            }
+        ]
+    });
+    std::fs::write(path, serde_json::to_vec_pretty(&state).unwrap_or_default())
+}
+
+/// Un registro que la app dejó al lanzar al hijo falso (`by = voz`).
+fn fake_record(name: &str, terminal: &str) -> Record {
     let now = epoch_ms();
     Record {
-        name: "ir-1".to_string(),
-        terminal: "t-falso".to_string(),
+        name: name.to_string(),
+        terminal: terminal.to_string(),
         parent: "voz".to_string(),
         agent: "opencode".to_string(),
         label: "OpenCode".to_string(),
@@ -101,7 +159,7 @@ fn fake_record() -> Record {
         history: vec![Change {
             state: TaskState::InProgress,
             at_ms: now,
-            by: "vigilante".to_string(),
+            by: "voz".to_string(),
             detail: "encargo entregado".to_string(),
         }],
         summary: None,
@@ -170,7 +228,20 @@ fn main() {
     std::env::set_var("EZAGENT_LOGS_DIR", &logs);
     std::env::set_var("EZ_SUBAGENTS_DIR", &subagents);
     ez_core::panics::install_hook_in(&logs);
-    if let Err(error) = seed_config(&temp) {
+    let Some(fake_hc) = fake_hc_binary() else {
+        eprintln!(
+            "No encuentro fake-hc.exe; compílalo con `cargo build -p ez-fakes --bin fake-hc`."
+        );
+        std::process::exit(1);
+    };
+    let fake_state = temp.join("fake-hc.json");
+    if let Err(error) = seed_fake_hc(&fake_state) {
+        eprintln!("No pude escribir el estado del fake-hc: {error}");
+        std::process::exit(1);
+    }
+    // `fake-hc` lee y guarda su estado aquí; el vigilante lo hereda como hijo.
+    std::env::set_var("FAKE_HC_STATE", &fake_state);
+    if let Err(error) = seed_config(&temp, &fake_hc, &fake_state) {
         eprintln!("No pude escribir la configuración sintética: {error}");
         std::process::exit(1);
     }
@@ -190,7 +261,7 @@ fn main() {
         ))),
     );
     // DECISION: sin hilos de fondo, atajos ni agente: el ejemplo solo quiere el
-    // camino de los anuncios y el chat (mismo estilo que `diag_chat_smoke`).
+    // vigilante, los anuncios y el chat (mismo estilo que `diag_chat_smoke`).
     parts.background = false;
     parts.build_swarm = false;
     parts.build_agent = false;
@@ -198,34 +269,38 @@ fn main() {
     parts.whisper_ready = true;
     parts.chat = Some(Arc::clone(&chat));
     parts.config_file = Some(temp.join("voice.json"));
+    parts.subagent_watch = Some(SubagentWatch {
+        runtime: Arc::new(HcRuntime::new(
+            system_runtime(),
+            fake_hc.to_string_lossy().into_owned(),
+        )),
+        novelty_file: Some(temp.join("novedades.toml")),
+        interval_ms: 100,
+        grace_ms: 0,
+    });
 
     let app = VoiceApp::with_services(cfg, None, parts);
     app.set_hooks(Arc::new(LiveHooks::new(&app)));
-    eprintln!("app viva; registros en {}", subagents.display());
-
-    let registry = Registry::at(&subagents);
-    if let Err(error) = registry.create(&fake_record()) {
-        eprintln!("No pude crear el registro falso: {}", error.message());
-        std::process::exit(1);
-    }
-    app.activity_tick();
-    app.tick();
     eprintln!(
-        "estado inicial: ir-1 en_proceso; anuncios={}",
-        notes(&chat).len()
+        "app viva; fake-hc {}; registros en {}",
+        fake_hc.display(),
+        subagents.display()
     );
 
-    if let Err(error) = registry.transition(
-        "voz",
-        "ir-1",
-        TaskState::Blocked,
-        "vigilante",
-        "límite de uso del plan gratuito (se reinicia a las 7:00 p.m.)",
-        |_| {},
-    ) {
-        eprintln!("No pude marcar el bloqueo: {}", error.message());
-        std::process::exit(1);
+    let registry = Registry::at(&subagents);
+    for record in [fake_record("ir-1", "t1"), fake_record("ir-2", "t2")] {
+        if let Err(error) = registry.create(&record) {
+            eprintln!(
+                "No pude crear el registro de {}: {}",
+                record.name,
+                error.message()
+            );
+            std::process::exit(1);
+        }
     }
+    eprintln!("registros: ir-1 (t1, límite) e ir-2 (t2, muerto) en_proceso");
+
+    // Nadie escribe `bloqueado`/`fallido`: lo hace el vigilante de la app.
     let blocked = wait_for_note(&app, &chat, "está bloqueado");
     if let Some(text) = notes(&chat)
         .into_iter()
@@ -233,28 +308,35 @@ fn main() {
     {
         eprintln!("ANUNCIO bloqueado: {text}");
     }
-
-    if let Err(error) = registry.transition(
-        "voz",
-        "ir-1",
-        TaskState::Done,
-        "ez report",
-        "informe entregado",
-        |record| {
-            record.summary = Some("Rama NV-3 en verde.".to_string());
-            record.report = Some("rust-migration/reports/NV-3-r1.md".to_string());
-        },
-    ) {
-        eprintln!("No pude marcar el término: {}", error.message());
-        std::process::exit(1);
+    let failed = wait_for_note(&app, &chat, "falló");
+    if let Some(text) = notes(&chat).into_iter().find(|text| text.contains("falló")) {
+        eprintln!("ANUNCIO fallido: {text}");
     }
-    let done = wait_for_note(&app, &chat, "terminó");
-    if let Some(text) = notes(&chat)
-        .into_iter()
-        .find(|text| text.contains("terminó"))
-    {
-        eprintln!("ANUNCIO terminado: {text}");
-    }
+    let state_of = |name: &str| {
+        registry
+            .get("voz", name)
+            .ok()
+            .flatten()
+            .map(|record| {
+                format!(
+                    "{} ({})",
+                    record.state.as_str(),
+                    record
+                        .history
+                        .last()
+                        .map(|change| change.by.clone())
+                        .unwrap_or_default()
+                )
+            })
+            .unwrap_or_else(|| "sin registro".to_string())
+    };
+    eprintln!(
+        "estado real: ir-1 = {}; ir-2 = {}",
+        state_of("ir-1"),
+        state_of("ir-2")
+    );
+    let offer = app.pending_retry();
+    eprintln!("oferta de reintento: {offer:?}");
 
     let status = app.fast_command("¿cómo va ir-1?");
     eprintln!("atajo «¿cómo va ir-1?»: handled={status}");
@@ -267,9 +349,15 @@ fn main() {
     for line in &panics {
         eprintln!("  {line}");
     }
-    let ok = blocked && done && status && alive && panics.is_empty();
+    let ok = blocked
+        && failed
+        && offer.as_deref() == Some("ir-1")
+        && status
+        && alive
+        && panics.is_empty();
     eprintln!(
-        "RESULT bloqueado={blocked} terminado={done} atajo={status} viva={alive} panico={}",
+        "RESULT bloqueado={blocked} fallido={failed} oferta={} atajo={status} viva={alive} panico={}",
+        offer.as_deref().unwrap_or("ninguna"),
         panics.len()
     );
     let _ = std::fs::remove_dir_all(&temp);

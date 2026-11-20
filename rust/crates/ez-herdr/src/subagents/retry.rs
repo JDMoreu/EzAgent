@@ -190,10 +190,18 @@ pub fn retry<L: LaunchSupport + Clone + Send + 'static>(
     }
     let mut taken = names_in_use(herdr);
     let mut attempts = 0;
+    // DECISION: un padre que no es una terminal (la app de voz, `voz`) lanza
+    // al hijo SIN `--parent`: `hc run --parent voz` da `not_found` (19-nov).
+    // El registro sigue bajo `request.parent`; solo cambia el padre de `hc`.
+    let hc_parent = if herdr.get_agent(&request.parent).is_ok() {
+        request.parent.as_str()
+    } else {
+        ""
+    };
     loop {
         attempts += 1;
         let name = next_retry_name(registry, &request.parent, &request.old.name, &taken)?;
-        let delegate_request = delegate_request(request, &name);
+        let delegate_request = delegate_request(request, &name, hc_parent);
         match herdr.delegate(launcher.clone(), check, &delegate_request, None) {
             Ok(row) => return finish(herdr, request, registry, row, &name),
             Err(DelegateError::Rejected(message))
@@ -207,7 +215,7 @@ pub fn retry<L: LaunchSupport + Clone + Send + 'static>(
 }
 
 /// El `ez delegate` del reintento: el mismo encargo con la nota de §4 delante.
-fn delegate_request(request: &RetryRequest, name: &str) -> DelegateRequest {
+fn delegate_request(request: &RetryRequest, name: &str, hc_parent: &str) -> DelegateRequest {
     // DECISION: el lanzamiento no retoma ninguna sesión anterior (aquí no hay
     // `--session`): una terminal nueva es una sesión nueva, que es justo la
     // lección de OpenCode del 19-nov.
@@ -230,7 +238,7 @@ fn delegate_request(request: &RetryRequest, name: &str) -> DelegateRequest {
         // persona; la ubicación no es parte de la resolución de la novedad.
         show: Placement::Tree,
         cwd: Some(request.old.cwd.clone()).filter(|folder| !folder.trim().is_empty()),
-        parent: request.parent.clone(),
+        parent: hc_parent.to_string(),
         // DECISION: los avisos los da EzAgent (§13), nunca `hc`.
         notify: false,
         outlive_parent: false,
@@ -267,6 +275,9 @@ fn finish(
     } else {
         name
     };
+    // El resultado habla del registro: su padre es siempre el del registro
+    // viejo, aunque el lanzamiento no haya tenido padre de `hc`.
+    row.insert("parent".to_string(), Value::String(request.parent.clone()));
     let record = build_record(request, &row, &name);
     let saved = match registry.create(&record) {
         Ok(()) => Some(record.clone()),
@@ -318,15 +329,12 @@ fn build_record(request: &RetryRequest, row: &Map<String, Value>, name: &str) ->
             "no se pudo entregar el encargo al subagente".to_string(),
         )
     };
-    let parent = text(row, "parent");
     Record {
         name: name.to_string(),
         terminal: text(row, "terminal"),
-        parent: if parent.is_empty() {
-            request.parent.clone()
-        } else {
-            parent
-        },
+        // El registro vive bajo el padre del registro viejo aunque el
+        // lanzamiento de `hc` no tenga padre (la app de voz).
+        parent: request.parent.clone(),
         agent: text(row, "agent"),
         label: text(row, "label"),
         model: optional_text(row, "model"),

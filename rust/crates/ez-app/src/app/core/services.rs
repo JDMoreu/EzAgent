@@ -51,6 +51,17 @@ pub type SwarmFactory = Arc<dyn Fn(SwarmArgs) -> Option<Arc<SwarmStack>> + Send 
 /// motivo para la persona. La costura permite probar la aceptación sin `ez`.
 pub type RetryRunner = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
 
+/// La vigilancia de los subagentes de la app (`voz`) con el `Watcher` real.
+pub struct SubagentWatch {
+    /// `hc` y el reloj que usa el vigilante.
+    pub runtime: Arc<dyn ez_herdr::subagents::WatchRuntime>,
+    /// `novedades.toml`; `None` usa el de la app (`%APPDATA%\EzAgent`).
+    pub novelty_file: Option<PathBuf>,
+    /// Cada cuánto mira y el margen de una terminal recién lanzada (ms).
+    pub interval_ms: u64,
+    pub grace_ms: u64,
+}
+
 /// Lo que la app necesita del altavoz (`ez_tts::Speaker` en producción).
 // DECISION: Kokoro carga un modelo real y no se puede abrir en una prueba;
 // este rasgo es la costura de los dobles (`AppParts::new`).
@@ -162,6 +173,11 @@ pub struct AppParts {
     pub subagents_dir: Option<PathBuf>,
     /// Reintento inyectado; `None` ejecuta `ez retry ... --auto` de verdad.
     pub retry_runner: Option<RetryRunner>,
+    /// Vigilante de `voz` inyectado (pruebas y humo); `None` lo arranca en
+    /// producción con el `hc` de la configuración.
+    pub subagent_watch: Option<SubagentWatch>,
+    /// `true` arranca el vigilante de `voz` si no se inyectó uno (producción).
+    pub watch_subagents: bool,
     /// `_whisper_proc` que devolvió `ensure_whisper`.
     pub whisper_proc: Option<Child>,
     /// `_whisper_ready(cfg.whisper_url)` ya medido.
@@ -206,6 +222,8 @@ impl AppParts {
             herdr: None,
             subagents_dir: None,
             retry_runner: None,
+            subagent_watch: None,
+            watch_subagents: false,
             whisper_proc: None,
             whisper_ready: true,
             build_swarm: false,

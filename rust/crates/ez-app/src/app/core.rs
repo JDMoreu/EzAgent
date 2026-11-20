@@ -59,7 +59,9 @@ pub use self::events::{AppEvent, MenuEvent, Queue};
 pub use self::hooks::{AppHooks, NullHooks, NullObserver, ShutdownObserver};
 pub use self::hud::AppHud;
 pub use self::hud_bridge::{flush_config_saves, HudConfig, HudHost};
-pub use self::services::{AppParts, RetryRunner, SpeakerApi, SwarmArgs, SwarmFactory};
+pub use self::services::{
+    AppParts, RetryRunner, SpeakerApi, SubagentWatch, SwarmArgs, SwarmFactory,
+};
 use self::state::{
     AgentsState, AudioState, ChatState, ConfigState, Flag, Inner, LlmModels, MessengerSlot,
     RuntimeState, SavedLlm, SessionState, SpeechState, TurnState, UiState,
@@ -278,6 +280,7 @@ impl VoiceApp {
         parts.build_swarm = true;
         parts.build_agent = true;
         parts.background = true;
+        parts.watch_subagents = true;
         Ok(Self::with_services(cfg, tasks_path, parts))
     }
 

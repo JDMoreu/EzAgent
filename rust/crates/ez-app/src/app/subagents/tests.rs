@@ -5,16 +5,14 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ez_core::config::VoiceConfig;
-use ez_herdr::herdr::Herdr;
 use ez_herdr::subagents::{epoch_ms, Change, Record, Registry, TaskState, Validation};
 use parking_lot::Mutex;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
-use crate::app::core::{RetryRunner, VoiceApp};
+use crate::app::core::{AppParts, RetryRunner, VoiceApp};
 use crate::app::states::tests::support::Fixture;
 
 use super::phrases::{news_text, overview_phrase, parse_status_query, status_phrase, StatusQuery};
-use super::port::{register_launch, Launch};
 use super::VOICE_PARENT;
 
 /// Carpeta temporal propia, borrada al terminar.
@@ -51,6 +49,11 @@ struct Ctx {
 }
 
 fn ctx(tag: &str) -> Ctx {
+    ctx_with(tag, |_| {})
+}
+
+/// Igual, con las piezas que la prueba necesite ajustar (vigilante incluido).
+fn ctx_with(tag: &str, setup: impl FnOnce(&mut AppParts)) -> Ctx {
     let temp = TempDir::new(tag);
     let dir = temp.0.join("subagentes");
     let retries = Arc::new(Mutex::new(Vec::new()));
@@ -66,6 +69,7 @@ fn ctx(tag: &str) -> Ctx {
             Ok(format!("{name}-r1"))
         });
         parts.retry_runner = Some(runner);
+        setup(parts);
     });
     let registry = Arc::new(Registry::at(temp.0.join("subagentes")));
     Ctx {
@@ -475,91 +479,8 @@ fn status_answers_come_from_the_registry() {
     assert!(!app.fast_command("hola mundo"));
 }
 
-fn outcome(row: Value) -> Map<String, Value> {
-    row.as_object().cloned().expect("objeto")
-}
-
 #[test]
-fn a_launch_leaves_a_record_under_the_voice_parent() {
-    let temp = TempDir::new("port");
-    let registry = Registry::at(temp.0.join("subagentes"));
-    let herdr = Herdr::new(VoiceConfig::new());
-    let launch = Launch {
-        agent: "opencode".to_string(),
-        model: Some("glm-5.3".to_string()),
-        effort: None,
-        cwd: Some("C:\\work".to_string()),
-        name: Some("ir-9".to_string()),
-        hc_name: None,
-        task: "Revisa la rama work/NV-3.".to_string(),
-    };
-    let row = outcome(json!({
-        "ok": true,
-        "terminal": "t1",
-        "agent": "opencode",
-        "model": "glm-5.3",
-        "cwd": "C:\\work",
-        "launching": true
-    }));
-    registry
-        .create(&record("probe", TaskState::InProgress, VOICE_PARENT))
-        .expect("registro directo");
-    let created = register_launch(&herdr, &registry, &launch, &row);
-    assert!(created.is_ok(), "registro: {created:?}");
-    let listed = registry.list_lenient(VOICE_PARENT).expect("lista");
-    assert!(
-        listed.records.len() == 2,
-        "sonda + lanzamiento; inválidos: {:?}",
-        listed.invalid
-    );
-    let saved = registry
-        .get(VOICE_PARENT, "ir-9")
-        .expect("lectura")
-        .expect("registro");
-    assert_eq!(saved.terminal, "t1");
-    assert_eq!(saved.parent, VOICE_PARENT);
-    assert_eq!(saved.agent, "opencode");
-    assert_eq!(saved.state, TaskState::InProgress);
-    assert_eq!(saved.brief_head, "Revisa la rama work/NV-3.");
-    assert_eq!(saved.history[0].by, VOICE_PARENT);
-    assert_eq!(saved.notified, None);
-
-    // Un segundo lanzamiento con el mismo nombre visible usa el de §6.
-    let again = register_launch(&herdr, &registry, &launch, &row);
-    assert!(again.is_ok(), "segundo registro: {again:?}");
-    let fallback = registry
-        .get(VOICE_PARENT, "voz1-opencode")
-        .expect("lectura")
-        .expect("nombre automático");
-    assert_eq!(fallback.terminal, "t1");
-    assert_eq!(
-        registry.list(VOICE_PARENT).expect("lista").len(),
-        3,
-        "dos lanzamientos, dos registros (más la sonda)"
-    );
-
-    // Un fallo de `hc` no deja registro.
-    let failed = outcome(json!({"ok": false, "error": "sin hc"}));
-    assert!(register_launch(&herdr, &registry, &launch, &failed).is_err());
-    assert_eq!(registry.list(VOICE_PARENT).expect("lista").len(), 3);
-
-    // Un agente abierto sin encargo tampoco deja registro.
-    let empty = Launch {
-        agent: "opencode".to_string(),
-        model: None,
-        effort: None,
-        cwd: None,
-        name: Some("sin-encargo".to_string()),
-        hc_name: None,
-        task: String::new(),
-    };
-    let before = registry.list(VOICE_PARENT).expect("lista").len();
-    assert!(register_launch(&herdr, &registry, &empty, &row).is_err());
-    assert_eq!(registry.list(VOICE_PARENT).expect("lista").len(), before);
-}
-
-#[test]
-fn the_status_tool_answers_with_the_record_text() {
+fn el_status_tool_answers_with_the_record_text() {
     let temp = TempDir::new("tool");
     let registry = Arc::new(Registry::at(temp.0.join("subagentes")));
     registry
@@ -595,3 +516,6 @@ fn the_status_tool_answers_with_the_record_text() {
     assert!(message.contains("ir-1 (OpenCode · glm-5.3) terminó"));
     assert!(message.contains("Todo en verde"));
 }
+
+mod port;
+mod watch;

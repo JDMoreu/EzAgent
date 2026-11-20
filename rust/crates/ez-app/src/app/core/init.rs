@@ -107,7 +107,7 @@ impl VoiceApp {
     }
 
     /// Lo que `__init__` hace después de construir los servicios.
-    fn finish_start(&self, parts: AppParts) {
+    fn finish_start(&self, mut parts: AppParts) {
         self.install_menu_provider();
         // El Python crea el detector de turno antes de tocar la barra.
         self.apply_start_audio();
@@ -116,6 +116,7 @@ impl VoiceApp {
         self.install_chat();
         self.install_hotkeys(parts.background);
         self.start_warm_workers(parts.background, parts.warm_stt);
+        self.start_subagent_watch(parts.subagent_watch.take(), parts.watch_subagents);
         self.schedule_start_timers();
         self.inner.runtime.observer.step("iniciado");
     }
@@ -460,6 +461,7 @@ fn agents_state(
         herdr,
         registry,
         retry_offer: Mutex::new(None),
+        subagents_watch_stop: Arc::new(Flag::new()),
         announced: Mutex::new(std::collections::HashMap::new()),
         watcher,
         swarm: Mutex::new(None),

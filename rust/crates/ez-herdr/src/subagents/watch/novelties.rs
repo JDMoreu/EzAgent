@@ -490,7 +490,7 @@ impl Watcher {
             agent_label(record),
             record.terminal
         );
-        if self.send(&text) {
+        if self.send(Some(record), &text) {
             if let Some(memory) = self.screens.get_mut(&record.name) {
                 memory.stall_notified = true;
             }

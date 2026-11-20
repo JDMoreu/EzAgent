@@ -1,12 +1,13 @@
 //! La app de voz como padre de sus subagentes (NV-3).
 //!
 //! La app lanza agentes por `delegate_to_agent`; aquí deja su registro
-//! (`ez_herdr::subagents::Registry` bajo el padre fijo `voz`), anuncia cada
-//! novedad por voz y en el chat, responde «¿cómo va X?» con los datos del
-//! registro y ofrece/ejecuta `ez retry --auto`.
+//! (`ez_herdr::subagents::Registry` bajo el padre fijo `voz`), lo vigila con el
+//! `Watcher` de `ez-herdr` (bloqueos, fallos sin informe y «sin avance»),
+//! anuncia cada novedad por voz y en el chat, responde «¿cómo va X?» con los
+//! datos del registro y ofrece/ejecuta `ez retry --auto`.
 //!
-//! La app no es una terminal de Herdr: el registro es la única fuente y la
-//! pantalla del subagente nunca se lee ni se ejecuta.
+//! La app no es una terminal de Herdr: el padre no tiene `hc get` de vida y los
+//! avisos no van por `hc send`, sino al mismo camino de anuncios de la app.
 
 mod phrases;
 mod port;
@@ -18,15 +19,20 @@ pub(crate) use port::AppHerdrPort;
 
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use ez_agent::registry::{ToolResult, ToolSpec};
 use ez_core::pytime::timestamp;
 use ez_core::pyvalue::py_strip;
-use ez_herdr::subagents::{one_line, Registry, TaskState};
+use ez_herdr::herdr::system_runtime;
+use ez_herdr::subagents::{
+    one_line, HcRuntime, NoticeSink, Record, Registry, TaskState, WatchConfig, Watcher,
+    DEFAULT_GRACE_MS, DEFAULT_IDLE_MS, DEFAULT_INTERVAL_MS,
+};
 use serde_json::{json, Value};
 
-use super::core::VoiceApp;
+use super::core::state::Inner;
+use super::core::{SubagentWatch, VoiceApp};
 
 /// El padre fijo de los subagentes de la app (§13): un nombre de `hc` válido
 /// que no existe como terminal, porque la app no vive en Herdr.
@@ -39,7 +45,63 @@ const RETRY_THREAD: &str = "ezagent-retry";
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 impl VoiceApp {
+    /// Arranca el vigilante de `voz` en su hilo (el `Watcher` de `ez-herdr`).
+    ///
+    /// En producción sale con el `hc` de la configuración; en las pruebas y el
+    /// humo entra por [`SubagentWatch`]. Sin ninguno de los dos (dobles de
+    /// prueba) no se arranca nada.
+    pub(crate) fn start_subagent_watch(&self, setup: Option<SubagentWatch>, watch: bool) {
+        let setup = match setup {
+            Some(setup) => setup,
+            None if watch => SubagentWatch {
+                runtime: Arc::new(HcRuntime::new(
+                    system_runtime(),
+                    self.inner.agents.herdr.hc_path(),
+                )),
+                novelty_file: None,
+                interval_ms: DEFAULT_INTERVAL_MS,
+                grace_ms: DEFAULT_GRACE_MS,
+            },
+            None => return,
+        };
+        let SubagentWatch {
+            runtime,
+            novelty_file,
+            interval_ms,
+            grace_ms,
+        } = setup;
+        let app = self.clone();
+        let stop = Arc::clone(&self.inner.agents.subagents_watch_stop);
+        self.start_worker("ezagent-subagents-watch", move || {
+            let config = WatchConfig {
+                parent: VOICE_PARENT.to_string(),
+                interval_ms,
+                idle_ms: DEFAULT_IDLE_MS,
+                grace_ms,
+            };
+            // El registro del vigilante es otro mango de la misma carpeta.
+            let registry = Registry::at(app.inner.agents.registry.root().to_path_buf());
+            let mut watcher = Watcher::new(config, registry, runtime)
+                .without_parent_terminal()
+                .with_notice_sink(Arc::new(AppNoticeSink {
+                    inner: Arc::downgrade(&app.inner),
+                }));
+            if let Some(file) = novelty_file {
+                watcher = watcher.with_novelty_file(file);
+            }
+            while !stop.is_set() {
+                let _ = watcher.tick();
+                if stop.wait_timeout(interval_ms as f64 / 1000.0) {
+                    break;
+                }
+            }
+        });
+    }
+
     /// Anuncia las novedades pendientes del registro (una vez por episodio).
+    ///
+    /// Es el respaldo del vigilante: si el `hc` no responde, un `ez report`
+    /// todavía se anuncia en la siguiente vuelta.
     pub(crate) fn poll_subagents(&self) {
         if self.inner.session.shutdown_done.load(Ordering::SeqCst) {
             return;
@@ -49,21 +111,6 @@ impl VoiceApp {
             return;
         };
         for record in outcome.records {
-            // Lo contado en esta sesión manda: el `notified` del disco puede
-            // llegar tarde si un aviso posterior lo pisó.
-            let seen = self
-                .inner
-                .agents
-                .announced
-                .lock()
-                .get(&record.name)
-                .copied();
-            if seen == Some(record.state) {
-                continue;
-            }
-            if seen.is_none() && record.notified == Some(record.state) {
-                continue;
-            }
             // §13: el padre no se avisa de lo que hizo él mismo.
             if record
                 .history
@@ -75,40 +122,97 @@ impl VoiceApp {
             let Some(text) = news_text(&record) else {
                 continue;
             };
-            self.inner.chat.chat.add_note(&text);
-            let muted = timestamp() < *self.inner.session.mute_until.lock();
-            if !muted {
-                if record.state == TaskState::Blocked {
-                    *self.inner.agents.retry_offer.lock() = Some(record.name.clone());
-                }
-                self.queue_announcement(&text, true);
+            if !self.take_subagent_news(&record) {
+                continue;
             }
-            self.inner
-                .agents
-                .announced
-                .lock()
-                .insert(record.name.clone(), record.state);
-            // DECISION: el `notified` del disco se guarda fuera de la UI (el
-            // candado del registro puede esperar a otro escritor). Si el
-            // subagente ya cambió otra vez, este aviso quedó viejo y no se
-            // escribe.
-            let app = self.clone();
-            let registry = Arc::clone(&registry);
-            let name = record.name.clone();
-            let state = record.state;
-            self.start_worker("ezagent-subagents-mark", move || {
-                let current = app.inner.agents.announced.lock().get(&name).copied();
-                if current != Some(state) {
-                    return;
-                }
-                if let Err(error) = registry.mark_notified(VOICE_PARENT, &name, state) {
-                    tracing::warn!(
-                        "EzAgent: no pude marcar el aviso de {name}: {}",
-                        error.message()
-                    );
-                }
-            });
+            self.emit_subagent_news(Some(&record), &text, true);
         }
+    }
+
+    /// Lo que ve el vigilante cuando entrega un aviso (`NoticeSink`).
+    ///
+    /// El texto corto lo escribe `news_text` con el registro; el del vigilante
+    /// solo se usa cuando no hay estado nuevo (un «sin avance» o un archivo
+    /// ilegible). Nada del texto se ejecuta.
+    pub(crate) fn subagent_notice(&self, record: Option<&Record>, fallback: &str) {
+        match record {
+            Some(record) => match news_text(record) {
+                Some(text) => {
+                    if self.take_subagent_news(record) {
+                        self.emit_subagent_news(Some(record), &text, false);
+                    }
+                }
+                // El «sin avance» no cambia el estado: el vigilante ya lo
+                // limita a una vez por episodio.
+                None if record.state == TaskState::InProgress => {
+                    self.emit_subagent_news(Some(record), fallback, false);
+                }
+                // `fallido` con «reemplazado por …»: el reintento ya lo contó.
+                None => {}
+            },
+            None => self.emit_subagent_news(None, fallback, false),
+        }
+    }
+
+    /// Marca la novedad como contada en esta sesión, si aún no lo estaba.
+    ///
+    /// La misma cerradura la usan el latido y el vigilante, así que una
+    /// novedad se anuncia una sola vez aunque los dos la vean a la vez.
+    fn take_subagent_news(&self, record: &Record) -> bool {
+        let mut announced = self.inner.agents.announced.lock();
+        let seen = announced.get(&record.name).copied();
+        if seen == Some(record.state) {
+            return false;
+        }
+        if seen.is_none() && record.notified == Some(record.state) {
+            return false;
+        }
+        announced.insert(record.name.clone(), record.state);
+        true
+    }
+
+    /// Chat y voz del aviso; con `mark_disk` lo deja anotado en el registro.
+    fn emit_subagent_news(&self, record: Option<&Record>, text: &str, mark_disk: bool) {
+        self.inner.chat.chat.add_note(text);
+        let muted = timestamp() < *self.inner.session.mute_until.lock();
+        if !muted {
+            if let Some(record) = record.filter(|record| record.state == TaskState::Blocked) {
+                *self.inner.agents.retry_offer.lock() = Some(record.name.clone());
+            }
+            self.queue_announcement(text, true);
+        }
+        if mark_disk {
+            self.mark_subagent_notified(record);
+        }
+    }
+
+    /// Guarda el `notified` fuera de la UI: el candado del registro puede
+    /// esperar a otro escritor. Si el subagente ya cambió otra vez, no se pisa.
+    fn mark_subagent_notified(&self, record: Option<&Record>) {
+        let Some(record) = record else {
+            return;
+        };
+        let app = self.clone();
+        let registry = Arc::clone(&self.inner.agents.registry);
+        let name = record.name.clone();
+        let state = record.state;
+        self.start_worker("ezagent-subagents-mark", move || {
+            let current = app.inner.agents.announced.lock().get(&name).copied();
+            if current != Some(state) {
+                return;
+            }
+            if let Err(error) = registry.mark_notified(VOICE_PARENT, &name, state) {
+                tracing::warn!(
+                    "EzAgent: no pude marcar el aviso de {name}: {}",
+                    error.message()
+                );
+            }
+        });
+    }
+
+    /// La oferta de reintento pendiente, si la hay (pruebas y humo).
+    pub fn pending_retry(&self) -> Option<String> {
+        self.inner.agents.retry_offer.lock().clone()
     }
 
     /// Responde «¿cómo va X?» con el registro; el texto lo escribe el código.
@@ -222,6 +326,27 @@ impl VoiceApp {
     }
 }
 
+/// El `NoticeSink` del vigilante de `voz`: lleva el aviso a la app.
+struct AppNoticeSink {
+    inner: Weak<Inner>,
+}
+
+impl NoticeSink for AppNoticeSink {
+    fn deliver(&self, record: Option<&Record>, text: &str) -> bool {
+        let Some(inner) = self.inner.upgrade() else {
+            return false;
+        };
+        let app = VoiceApp { inner };
+        if app.inner.session.shutdown_done.load(Ordering::SeqCst) {
+            // Al cerrar no hay a quién anunciar; se da por entregado para no
+            // dejar al vigilante reintentando.
+            return true;
+        }
+        app.subagent_notice(record, text);
+        true
+    }
+}
+
 /// Palabras que aceptan la oferta de reintento (se comparan enteras).
 const ACCEPT_WORDS: [&str; 9] = [
     "si", "dale", "hazlo", "adelante", "claro", "vale", "ok", "bueno", "listo",
@@ -295,9 +420,10 @@ fn ez_program() -> PathBuf {
     // el instalador de EzAgent) y, si no está, se deja resolver por el PATH.
     if let Ok(exe) = std::env::current_exe() {
         if let Some(folder) = exe.parent() {
-            let candidate = folder.join("ez.exe");
-            if candidate.is_file() {
-                return candidate;
+            for candidate in [folder.join("ez.exe"), folder.join("../ez.exe")] {
+                if candidate.is_file() {
+                    return candidate;
+                }
             }
         }
     }
