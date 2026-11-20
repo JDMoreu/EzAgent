@@ -369,6 +369,11 @@ impl VoiceApp {
             }
             return;
         }
+        // DX-4: la respuesta escrita a la pregunta del arranque.
+        if self.answer_pending_resume(text) {
+            self.inner.chat.chat.add_user(text, Source::Chat);
+            return;
+        }
         advance_turn(self);
         let generation = turn_gen(self);
         self.signal_tts_stop();

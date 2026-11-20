@@ -517,7 +517,6 @@ fn start_asks_the_hooks_and_skips_threads_in_doubles() {
     assert_eq!(
         fixture.hooks.calls.lock().clone(),
         vec![
-            "resume_pending_tasks".to_string(),
             "fetch_llm_models".to_string(),
             "create_tray".to_string(),
             "update_tray_title".to_string(),

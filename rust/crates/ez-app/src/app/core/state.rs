@@ -266,6 +266,8 @@ pub struct AgentsState {
     pub registry: Arc<Registry>,
     /// Subagente cuya oferta de reintento espera un «sí»/«dale».
     pub retry_offer: Mutex<Option<String>>,
+    /// Lo que quedó pendiente al abrir, retenido hasta la respuesta (DX-4).
+    pub pending_resume: Mutex<Option<crate::app::watch::PendingResume>>,
     /// Detiene el vigilante interno de `voz` al cerrar.
     pub subagents_watch_stop: Arc<Flag>,
     /// Estados ya contados en esta sesión (el `notified` del disco se escribe

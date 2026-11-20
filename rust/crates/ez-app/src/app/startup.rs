@@ -189,19 +189,13 @@ impl VoiceApp {
     pub fn start(&self) {
         if self.inner.runtime.background {
             self.inner.agents.watcher.start();
-            if let Some(swarm) = self.inner.agents.swarm.lock().clone() {
-                self.start_worker("ezagent-swarm-start", move || {
-                    if let Err(error) = swarm.start() {
-                        super::core::log(format!("No pude arrancar el enjambre: {error}"));
-                    }
-                });
-            }
         }
-        let hooks = self.hooks();
+        // DX-4: lo pendiente se pregunta y nada se reanuda solo al abrir.
         if self.inner.runtime.background {
-            self.start_worker("ezagent-resume-tasks", move || hooks.resume_pending_tasks());
+            let app = self.clone();
+            self.start_worker("ezagent-resume-tasks", move || app.start_pending_resume());
         } else {
-            hooks.resume_pending_tasks();
+            self.start_pending_resume();
         }
         // DECISION: `__init__` pedía modelos, dispositivos y bandeja; aquí se
         // difieren al arranque real para que los dobles no abran nada.

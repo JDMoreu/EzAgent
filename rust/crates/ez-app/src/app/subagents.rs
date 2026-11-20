@@ -359,7 +359,7 @@ const ACCEPT_WORDS: [&str; 9] = [
 const REFUSE_WORDS: [&str; 6] = ["no", "no gracias", "dejalo", "deja", "espera", "nada"];
 
 /// Minúsculas, sin tildes ni signos: «Sí, dale.» → `si dale`.
-fn plain_key(text: &str) -> String {
+pub(crate) fn plain_key(text: &str) -> String {
     let folded = ez_core::pyvalue::strip_accents(&text.to_lowercase());
     let mut out = String::with_capacity(folded.len());
     let mut pending_space = false;
