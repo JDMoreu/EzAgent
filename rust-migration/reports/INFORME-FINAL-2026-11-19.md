@@ -23,8 +23,9 @@ pruebas detectan el fallo que dicen cubrir.
 | Respuestas breves a «ok / listo / bueno» | **Hecho e instalado** (DX-2, DX-2b, DX-2c) |
 | La app se cayó al abrir el chat (13:52) | **Blindado** (DX-1d): un pánico ya no cierra la app y queda registrado; el disparador exacto no se reprodujo |
 | Al cerrar la app, que se cierre whisper | **Hecho** (DX-3: Job Object; humo y mutación) — **no instalado aún en tu app** |
-| La app de voz como padre: avisa novedades y responde «¿cómo va X?» | **En curso** (NV-3, NV-3b validados en pruebas; NV-3c: humo con `hc` real) |
-| La animación de la barra al chat no se ve | **En curso** (DX-1f) |
+| La app de voz como padre: avisa novedades y responde «¿cómo va X?» | **Hecho** (NV-3 + NV-3b + NV-3c: vigila a sus hijos, anuncia bloqueado/fallido, reintenta; humo con `hc` real) |
+| La animación de la barra al chat no se ve | **Hecho** (DX-1f: la apertura pasa de 0 a 11 cuadros intermedios) |
+| La ventana del chat tiene varias sombras apiladas | **Hecho** (DX-1g: una sola sombra suave); su prueba falla en depuración → DX-1h |
 | Máximo 3 compilando y vigilar recursos | Cumplido; tres incidentes de memoria atendidos (§4) |
 
 ## 2. Validado e integrado en `eco/main`
@@ -44,6 +45,8 @@ pruebas detectan el fallo que dicen cubrir.
 | DX-1c | Solo se maqueta lo visible | Humo con 320 mensajes; mutación |
 | DX-2/2b/2c | Acuses cortos naturales | Instalado en tu app |
 | DX-3/3b | `whisper-server` atado a la app; mismo servidor que el guion | Humo 4 pasos; mutación sin `KILL_ON_JOB_CLOSE` detectada |
+| NV-3/3b/3c | La app de voz vigila a sus subagentes (`voz`), anuncia novedades, «¿cómo va X?», reintento sin `--parent voz` | 2 mutaciones; humo `--real-hc` |
+| DX-1f/DX-1g | Apertura del chat animada; una sola sombra | Mutación del morph; humo `anim` 11/8 cuadros; capturas antes/después |
 
 ## 3. Lo que falló y cómo se resolvió
 
