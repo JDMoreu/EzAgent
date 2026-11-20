@@ -579,3 +579,21 @@
   bajo carga (pasan aisladas; `ez-app` solo 378/378). Informe final:
   `rust-migration/reports/INFORME-FINAL-2026-11-19.md`. App de la persona sin recompilar
   (sin permiso). Apagado del PC al terminar, por petición de la persona.
+
+### DX-4 — revisión: devuelto (DX-4b)
+- `store().live()` o la pausa pueden fallar y aun así arrancar el supervisor; un enjambre
+  activo podría actuar sin autorización. Los enjambres previamente pausados también se
+  reanudan con el «sí». Se pidió fallar cerrado, respetar la pausa previa y probar ambos.
+- Revisión de código; sin pruebas ni mutaciones propias todavía. Informe de entrega y
+  worktree limpio comprobados. Brief `DX-4b.md`; devolución enviada a `dx-4`.
+
+### DX-5 + DX-5b — revisión: devuelto (DX-5c)
+- `PendingPlace` puede reutilizar elecciones de una pregunta abandonada en otro pedido;
+  se pidió vincularlas al pedido y probar el abandono, espacio y agente.
+- Corrida propia: fmt y clippy de `ez-herdr`, `ez-agent`, `ez-app` en verde; batería de los
+  tres crates en verde (331, 299 y 369 pruebas principales, más integraciones). Sin ventanas.
+- Mutaciones restauradas: omitir la guarda de `run` produjo 6 fallos; invertir el cotejo del
+  espacio enfocado produjo 2 fallos. Herdr de solo lectura informó el espacio `EzAgent`.
+- Informe de entrega y worktree limpio comprobados. Brief `DX-5c.md`; devolución enviada a
+  `dx-5`. No se ejecutó el ejemplo que carga `voice.json` para respetar la prohibición de
+  leer credenciales.
