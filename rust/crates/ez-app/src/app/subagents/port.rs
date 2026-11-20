@@ -102,7 +102,7 @@ impl HerdrPort for AppHerdrPort {
         // Un rechazo normal (agente desconocido, nombre ocupado) ya vuelve al
         // turno como error de la herramienta: solo se avisa de un fallo al
         // guardar el registro de un lanzamiento que sí salió.
-        if result.get("ok").is_some_and(truthy) {
+        if result.get("ok").is_some_and(truthy) && !launch.task.trim().is_empty() {
             if let Err(error) = register_launch(&self.inner, &self.registry, &launch, &result) {
                 tracing::warn!("EzAgent: {error}");
             }
@@ -162,6 +162,10 @@ pub(super) fn register_launch(
 ) -> Result<Record, String> {
     if !result.get("ok").is_some_and(truthy) {
         return Err("hc no confirmó el lanzamiento".to_string());
+    }
+    // Un agente abierto sin encargo no tiene nada que seguir ni que reintentar.
+    if launch.task.trim().is_empty() {
+        return Err("el lanzamiento no tiene encargo".to_string());
     }
     let terminal = text(result, "terminal");
     if terminal.is_empty() {

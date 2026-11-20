@@ -1,4 +1,4 @@
-app viva; registros en C:\Users\JDMoreu\AppData\Local\Temp\ezagent-nv3-humo-10996-1795138239708176500\subagentes
+app viva; registros en C:\Users\JDMoreu\AppData\Local\Temp\ezagent-nv3-humo-12404-1795139328878981500\subagentes
 estado inicial: ir-1 en_proceso; anuncios=0
 ANUNCIO bloqueado: Ojo: ir-1 (OpenCode · glm-5.3) está bloqueado: límite de uso del plan gratuito (se reinicia a las 7:00 p.m.). ¿Lo reintento con la recomendación?
 ANUNCIO terminado: Listo: ir-1 (OpenCode · glm-5.3) terminó. Resumen: «Rama NV-3 en verde.».

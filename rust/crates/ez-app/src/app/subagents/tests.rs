@@ -542,6 +542,20 @@ fn a_launch_leaves_a_record_under_the_voice_parent() {
     let failed = outcome(json!({"ok": false, "error": "sin hc"}));
     assert!(register_launch(&herdr, &registry, &launch, &failed).is_err());
     assert_eq!(registry.list(VOICE_PARENT).expect("lista").len(), 3);
+
+    // Un agente abierto sin encargo tampoco deja registro.
+    let empty = Launch {
+        agent: "opencode".to_string(),
+        model: None,
+        effort: None,
+        cwd: None,
+        name: Some("sin-encargo".to_string()),
+        hc_name: None,
+        task: String::new(),
+    };
+    let before = registry.list(VOICE_PARENT).expect("lista").len();
+    assert!(register_launch(&herdr, &registry, &empty, &row).is_err());
+    assert_eq!(registry.list(VOICE_PARENT).expect("lista").len(), before);
 }
 
 #[test]

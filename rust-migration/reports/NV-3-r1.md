@@ -7,7 +7,7 @@
 ## Cambios
 - `rust/crates/ez-app/src/app/subagents.rs`: módulo nuevo. Latido de novedades del registro bajo el padre `voz` (aviso por voz y chat, una vez por episodio), «¿cómo va X?» y «¿cómo van los agentes?», oferta de reintento y `ez retry <nombre> --auto` tras «sí/dale», marca `fallido` de un lanzamiento asíncrono que no llegó y la herramienta `subagent_status` para las paráfrasis del LLM.
 - `rust/crates/ez-app/src/app/subagents/phrases.rs`: textos deterministas de cada estado (`bloqueado`, `fallido`, `terminado`, `validado`, retoma desde `bloqueado`), lista del registro y análisis de las formas directas de la pregunta (conserva guiones de los nombres; «¿cómo va todo?» no se toma por un subagente).
-- `rust/crates/ez-app/src/app/subagents/port.rs`: `AppHerdrPort`, el mismo `HerdrPort` de siempre con registro: tras un lanzamiento confirmado guarda un `Record` bajo `voz` con terminal, tipo, modelo, esfuerzo, etiqueta, carpeta, encargo (primeras 200 letras) e historial `by = "voz"`; un fallo al guardar solo deja aviso, nunca tumba el lanzamiento.
+- `rust/crates/ez-app/src/app/subagents/port.rs`: `AppHerdrPort`, el mismo `HerdrPort` de siempre con registro: tras un lanzamiento confirmado guarda un `Record` bajo `voz` con terminal, tipo, modelo, esfuerzo, etiqueta, carpeta, encargo (primeras 200 letras) e historial `by = "voz"`; un fallo al guardar solo deja aviso, nunca tumba el lanzamiento, y un agente abierto sin encargo no deja registro (no hay nada que seguir ni reintentar).
 - `rust/crates/ez-app/src/app/subagents/tests.rs`: pruebas con app real de dobles, registro temporal y reintento falso: cada estado se anuncia una vez, los cambios del padre no se anuncian, oferta aceptada/rechazada/caducada, respuestas del registro, atajo de voz, herramienta y registro de lanzamientos/nombres.
 - `rust/crates/ez-app/src/app/core/state.rs`: `AgentsState` gana `registry`, `retry_offer` y `announced`; `RuntimeState` gana `retry_runner`.
 - `rust/crates/ez-app/src/app/core/services.rs`: `AppParts` gana `subagents_dir` y `retry_runner`; tipo `RetryRunner` (costura de prueba del reintento).
@@ -35,7 +35,7 @@
 
 ## Verificación
 - `cargo fmt -p ez-app -- --check`: sin diferencias (código 0).
-- `cargo clippy -p ez-app --all-targets -- -D warnings`: `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 0.64s` (código 0).
+- `cargo clippy -p ez-app --all-targets -- -D warnings`: `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 3.74s` (código 0).
 - `cargo test -p ez-app`: código 0; **368 pruebas de la librería en verde** (359 previas + 9 nuevas), más las de integración:
   `test result: ok. 368 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out`
   `test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out`
@@ -44,7 +44,7 @@
 - Prueba de humo real: `cargo build -p ez-app --example diag_subagents_smoke` y `./target/debug/examples/diag_subagents_smoke.exe` (salida literal del programa, código 0):
 
 ```text
-app viva; registros en C:\Users\JDMoreu\AppData\Local\Temp\ezagent-nv3-humo-10996-1795138239708176500\subagentes
+app viva; registros en C:\Users\JDMoreu\AppData\Local\Temp\ezagent-nv3-humo-12404-1795139328878981500\subagentes
 estado inicial: ir-1 en_proceso; anuncios=0
 ANUNCIO bloqueado: Ojo: ir-1 (OpenCode · glm-5.3) está bloqueado: límite de uso del plan gratuito (se reinicia a las 7:00 p.m.). ¿Lo reintento con la recomendación?
 ANUNCIO terminado: Listo: ir-1 (OpenCode · glm-5.3) terminó. Resumen: «Rama NV-3 en verde.».
@@ -61,3 +61,4 @@ RESULT bloqueado=true terminado=true atajo=true viva=true panico=0
 - La app no corre un vigilante propio para el padre `voz` (no es una terminal de Herdr y el vigilante de NV-1 exige un padre vivo). Por eso un agente de la app que muera sin informe se queda `en_proceso` hasta que alguien escriba el registro; los estados que sí llegan (`terminado`/`fallido`/`validado`) los escribe `ez report`/`ez validate` y se anuncian. Detectar «límite de uso» para estos agentes requiere que el supervisor/vigilante escriba bajo `voz` (fuera de los archivos de NV-3).
 - Los agentes de cadena (`then`, prelanzamiento) no pasan por el puerto envuelto y no dejan registro propio; el enjambre ya anuncia su avance por el camino existente de `SwarmNotice` (no usa los registros `voz`).
 - El marcado `notified` es best-effort: si la app se cierra entre el anuncio y el hilo de marcado, la novedad se repite una vez al arrancar.
+- Una corrida intermedia de la suite completa falló en `app::core::hud_bridge::tests::the_writer_keeps_the_last_value_per_key_in_order` (ventana de 300 ms bajo carga, archivo ajeno a NV-3); sola pasa 10/10 y la corrida final de `cargo test -p ez-app` quedó en 368/368.
