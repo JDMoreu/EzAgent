@@ -184,9 +184,9 @@ fn big_history_jsonl() -> String {
 
 /// Historial normal para medir la animación (DX-1f).
 ///
-/// Sin la palabra de 2 000 caracteres del humo de DX-1d: cortarla es O(n²) en
-/// `split_word` y tarda segundos, y aquí lo que se mide es el morph, no el
-/// coste del texto.
+/// DECISION: sin la palabra de 2 000 caracteres del humo de DX-1d. Cortarla es
+/// O(n²) en `split_word` y tarda segundos; aquí lo que se mide es el morph, no
+/// el coste del texto.
 fn anim_history_jsonl() -> String {
     let mut texts: Vec<(&str, String)> = Vec::new();
     for index in 0..24 {

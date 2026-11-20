@@ -35,6 +35,8 @@ pub struct FrameRecord {
 /// Frames kept: a diagnostic never needs more than a few dozen.
 const CAP: usize = 4096;
 
+// DECISION: el diario está apagado por omisión (DX-1f). Es diagnóstico; en la
+// app solo cuesta un `AtomicBool` por cuadro y el humo lo enciende.
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static JOURNAL: Mutex<Vec<FrameRecord>> = Mutex::new(Vec::new());
 
