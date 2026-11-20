@@ -6,10 +6,12 @@
 
 use ndarray::{Array2, Array3};
 
-use crate::geometry::{lerp, lerp_rect, rounded_coverage, smoothstep, Rect, MARGIN, PANEL_RADIUS};
+use crate::geometry::{
+    lerp, lerp_rect, rounded_coverage, rounded_shadow, smoothstep, Rect, MARGIN, PANEL_RADIUS,
+};
 use crate::theme::card_palette;
 
-use super::raster::{canvas_width, points, points_mut, shade_frame, span};
+use super::raster::{canvas_width, points, points_mut, shade_rows, span};
 use super::round_i32;
 use super::{row_reveal, shape_progress, Scene};
 
@@ -302,7 +304,12 @@ fn ring_rows(
     }
 }
 
-/// `_shadow_under`: three stacked rounded shadows that only show at the border.
+/// `_shadow_under`: one soft shadow that only shows around the border (DX-1g).
+///
+/// DECISION: the three concentric bands added up and looked like several
+/// stacked shadows. The design's soft falloff (`rounded_shadow`) is used in a
+/// single pass that reaches as far as the three bands did; the peak keeps the
+/// alpha the three passes left together, so the darkest edge does not change.
 fn shadow_under(canvas: &mut Array3<f32>, rect: Rect, radius: f64, k: f64, scale: f64) {
     let k = k * 0.55;
     if k <= 0.01 {
@@ -312,24 +319,23 @@ fn shadow_under(canvas: &mut Array3<f32>, rect: Rect, radius: f64, k: f64, scale
     let y0 = round_i32(rect.1);
     let width = round_i32(rect.2) - x0;
     let height = round_i32(rect.3) - y0;
-    let grow = round_i32(MARGIN * scale * 0.8).max(0);
-    let shift = round_i32(scale * 5.0);
-    for step in 0..3 {
-        let extra = grow * (step + 1) / 3;
-        let coverage = rounded_coverage(
-            width + 2 * extra,
-            height + 2 * extra,
-            radius + f64::from(extra),
-            0.0,
-        );
-        let band = (0.3 * (radius + f64::from(extra))) as i32 + extra + shift + 2;
-        shade_frame(
-            canvas,
-            &coverage,
-            x0 - extra,
-            y0 - extra + shift,
-            band,
-            (k * 0.10) as f32,
-        );
+    if width < 2 || height < 2 {
+        return;
     }
+    let reach = round_i32(MARGIN * scale * 0.8).max(1);
+    let shift = round_i32(scale * 5.0);
+    let shadow = rounded_shadow(width, height, radius, reach);
+    let peak = 1.0 - (1.0 - k * 0.10).powi(3);
+    let (rows, columns) = shadow.dim();
+    shade_rows(
+        canvas,
+        &shadow,
+        0,
+        columns,
+        0,
+        rows,
+        x0 - reach,
+        y0 - reach + shift,
+        peak as f32,
+    );
 }
