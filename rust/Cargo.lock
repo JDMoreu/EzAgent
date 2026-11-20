@@ -1254,7 +1254,9 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "tiny_http",
  "tracing",
+ "windows",
 ]
 
 [[package]]

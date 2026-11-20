@@ -1,7 +1,12 @@
-//! Pruebas de `server.rs`: puertos, sondeo HTTP y argumentos de arranque.
+//! Pruebas de `server.rs`: puertos, sondeo HTTP, estado del servidor y
+//! argumentos de arranque.
 
+use std::cell::RefCell;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread::JoinHandle;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
@@ -21,15 +26,7 @@ fn temp_dir(tag: &str) -> PathBuf {
 }
 
 fn cleanup(path: &Path) {
-    if let Ok(entries) = std::fs::read_dir(path) {
-        for entry in entries.flatten() {
-            let file = entry.path();
-            if file.is_file() {
-                let _ = std::fs::remove_file(file);
-            }
-        }
-    }
-    let _ = std::fs::remove_dir(path);
+    let _ = std::fs::remove_dir_all(path);
 }
 
 fn closed_port() -> u16 {
@@ -37,6 +34,86 @@ fn closed_port() -> u16 {
     let port = listener.local_addr().expect("puerto").port();
     drop(listener);
     port
+}
+
+/// Servidor HTTP mínimo que responde a `/health` con el código pedido.
+struct HealthServer {
+    port: u16,
+    stop: Arc<AtomicBool>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl HealthServer {
+    fn start(status: u16) -> Self {
+        let server = tiny_http::Server::http(("127.0.0.1", 0)).expect("servidor de salud");
+        let port = server.server_addr().to_ip().expect("dirección IP").port();
+        let stop = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&stop);
+        let handle = std::thread::spawn(move || {
+            while !flag.load(Ordering::SeqCst) {
+                match server.recv_timeout(Duration::from_millis(20)) {
+                    Ok(Some(request)) => {
+                        let _ = request.respond(tiny_http::Response::empty(status));
+                    }
+                    Ok(None) => {}
+                    Err(_) => break,
+                }
+            }
+        });
+        Self {
+            port,
+            stop,
+            handle: Some(handle),
+        }
+    }
+
+    fn url(&self) -> String {
+        format!("http://127.0.0.1:{}/inference", self.port)
+    }
+}
+
+impl Drop for HealthServer {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+/// Sonda falsa: dice qué imagen tiene el PID y anota las bajas pedidas.
+struct FakeProbe {
+    image: Option<String>,
+    terminated: RefCell<Vec<u32>>,
+}
+
+impl FakeProbe {
+    fn seen(image: Option<&str>) -> Self {
+        Self {
+            image: image.map(str::to_string),
+            terminated: RefCell::new(Vec::new()),
+        }
+    }
+}
+
+impl ProcessProbe for FakeProbe {
+    fn image_name(&self, _pid: u32) -> Option<String> {
+        self.image.clone()
+    }
+
+    fn terminate(&self, pid: u32) -> bool {
+        self.terminated.borrow_mut().push(pid);
+        true
+    }
+}
+
+fn saved_state(path: &Path, pid: u32, url: &str, port: u16) {
+    let state = ServerState {
+        pid,
+        port,
+        url: url.to_string(),
+    };
+    write_state(path, &state).expect("estado de prueba");
 }
 
 #[test]
@@ -55,8 +132,6 @@ fn resource_root_prefers_the_copy_beside_the_executable() {
     assert_eq!(resource_root_in(Some(&base)), base);
     let empty = temp_dir("root-empty");
     assert_eq!(resource_root_in(Some(&empty)), resource_root_in(None));
-    let _ = std::fs::remove_file(&script);
-    let _ = std::fs::remove_dir(&scripts);
     cleanup(&base);
     cleanup(&empty);
 }
@@ -110,55 +185,198 @@ fn the_local_url_keeps_the_path_and_query() {
 }
 
 #[test]
-fn start_arguments_match_the_powershell_script() {
-    let script = Path::new("/repo/scripts/start-whisper.ps1");
-    let home = Path::new("/whisper");
-    let model = Path::new("/whisper/models/ggml-base-q5_1.bin");
+fn the_plan_matches_the_installed_layout() {
+    let home = temp_dir("plan");
+    let executable = home.join(SERVER_EXE);
+    std::fs::write(&executable, b"x").expect("ejecutable");
+    let models = home.join("models");
+    std::fs::create_dir_all(&models).expect("carpeta models");
+    let model = models.join(DEFAULT_MODELS[0]);
+    std::fs::write(&model, b"x").expect("modelo");
+    let vad = models.join(VAD_MODEL);
+    std::fs::write(&vad, b"x").expect("vad");
+    let mut config = VoiceConfig::new();
+    config.set("stt_engine", json!("auto"));
+    let plan = plan_for(&config, Some(&home), None, 53584).expect("plan");
+    assert_eq!(plan.executable, executable);
     assert_eq!(
-        start_args(script, 8088, "auto", Some(home), Some(model)),
-        [
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            "/repo/scripts/start-whisper.ps1",
-            "-Port",
-            "8088",
-            "-Engine",
-            "auto",
-            "-WhisperHome",
-            "/whisper",
-            "-Model",
-            "/whisper/models/ggml-base-q5_1.bin",
-        ]
+        plan.args.join(" "),
+        format!(
+            "-m {} --host 127.0.0.1 --port 53584 -l es -t 6 --vad --vad-model {}",
+            model.display(),
+            vad.display()
+        )
+    );
+    cleanup(&home);
+}
+
+#[test]
+fn the_health_url_is_the_server_root() {
+    assert_eq!(
+        health_url("http://127.0.0.1:8088/inference?x=1"),
+        "http://127.0.0.1:8088/health"
     );
     assert_eq!(
-        start_args(script, 9, "cpu", None, None),
-        [
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            "/repo/scripts/start-whisper.ps1",
-            "-Port",
-            "9",
-            "-Engine",
-            "cpu",
-        ]
+        health_url("https://127.0.0.1:9/v1/audio/transcriptions"),
+        "https://127.0.0.1:9/health"
     );
 }
 
 #[test]
-fn a_whisper_home_needs_one_of_the_known_server_folders() {
+fn health_uses_the_health_endpoint_and_falls_back_to_tcp() {
+    let healthy = HealthServer::start(200);
+    assert!(server_healthy(&healthy.url()));
+    let old = HealthServer::start(404);
+    assert!(server_healthy(&old.url()));
+    assert!(!server_healthy(&format!(
+        "http://127.0.0.1:{}/inference",
+        closed_port()
+    )));
+}
+
+#[test]
+fn the_server_state_round_trips_and_is_removed() {
+    let dir = temp_dir("state");
+    let path = dir.join(STATE_FILE);
+    assert!(read_state(&path).is_none());
+    saved_state(&path, 4242, "http://127.0.0.1:9/inference", 9);
+    assert_eq!(
+        read_state(&path).map(|state| state.pid),
+        Some(4242),
+        "el estado se lee"
+    );
+    saved_state(&path, 5252, "http://127.0.0.1:10/inference", 10);
+    assert_eq!(
+        read_state(&path).map(|state| state.pid),
+        Some(5252),
+        "se reemplaza el estado anterior"
+    );
+    remove_state(&path);
+    assert!(!path.exists());
+    cleanup(&dir);
+}
+
+#[test]
+fn a_healthy_saved_server_is_reused() {
+    let health = HealthServer::start(200);
+    let dir = temp_dir("reuse");
+    let path = dir.join(STATE_FILE);
+    let url = health.url();
+    saved_state(&path, 1234, &url, health.port);
+    let probe = FakeProbe::seen(Some("whisper-server.exe"));
+    let root = temp_dir("reuse-root");
+    let mut config = VoiceConfig::new();
+    config.set(
+        "whisper_url",
+        json!(format!("http://127.0.0.1:{}/inference", closed_port())),
+    );
+    let child = ensure_whisper_in(&mut config, 0.1, &root, &path, None, None, &probe);
+    assert!(child.is_none(), "no se lanza otro servidor");
+    assert_eq!(config_text(&config, "whisper_url"), url);
+    assert!(probe.terminated.borrow().is_empty());
+    assert!(path.exists(), "el estado sano se conserva");
+    cleanup(&root);
+    cleanup(&dir);
+}
+
+#[test]
+fn a_saved_server_that_does_not_respond_is_closed_and_replaced() {
+    let dir = temp_dir("hung");
+    let path = dir.join(STATE_FILE);
+    let url = format!("http://127.0.0.1:{}/inference", closed_port());
+    saved_state(&path, 4321, &url, 9);
+    let probe = FakeProbe::seen(Some("whisper-server.exe"));
+    let root = temp_dir("hung-root");
+    let mut config = VoiceConfig::new();
+    config.set("whisper_url", json!(url));
+    let child = ensure_whisper_in(&mut config, 0.1, &root, &path, None, None, &probe);
+    assert!(child.is_none());
+    assert_eq!(*probe.terminated.borrow(), vec![4321]);
+    assert!(!path.exists(), "el estado inservible se retira");
+    cleanup(&root);
+    cleanup(&dir);
+}
+
+#[test]
+fn a_saved_pid_from_another_program_is_never_terminated() {
+    let dir = temp_dir("foreign");
+    let path = dir.join(STATE_FILE);
+    let url = format!("http://127.0.0.1:{}/inference", closed_port());
+    saved_state(&path, 9999, &url, 9);
+    let probe = FakeProbe::seen(Some("notepad.exe"));
+    let root = temp_dir("foreign-root");
+    let mut config = VoiceConfig::new();
+    config.set("whisper_url", json!(url));
+    let child = ensure_whisper_in(&mut config, 0.1, &root, &path, None, None, &probe);
+    assert!(child.is_none());
+    assert!(probe.terminated.borrow().is_empty());
+    assert!(!path.exists());
+    cleanup(&root);
+    cleanup(&dir);
+}
+
+#[test]
+fn the_server_is_searched_in_the_script_order() {
     let home = temp_dir("server-home");
-    assert!(!has_server(None));
-    assert!(!has_server(Some(&home)));
+    assert!(resolve_server(Some(&home), "auto").is_none());
     let cpu = home.join("cpu");
     std::fs::create_dir_all(&cpu).expect("carpeta cpu");
-    std::fs::write(cpu.join("whisper-server.exe"), b"x").expect("binario");
-    assert!(has_server(Some(&home)));
-    cleanup(&cpu);
+    let cpu_exe = cpu.join(SERVER_EXE);
+    std::fs::write(&cpu_exe, b"x").expect("binario");
+    assert_eq!(resolve_server(Some(&home), "auto"), Some(cpu_exe.clone()));
+    let root_exe = home.join(SERVER_EXE);
+    std::fs::write(&root_exe, b"x").expect("binario");
+    assert_eq!(resolve_server(Some(&home), "auto"), Some(root_exe));
+    assert_eq!(resolve_server(Some(&home), "cpu"), Some(cpu_exe));
     cleanup(&home);
+}
+
+#[test]
+fn the_model_falls_back_to_the_script_defaults() {
+    let home = temp_dir("model-home");
+    let models = home.join("models");
+    std::fs::create_dir_all(&models).expect("carpeta models");
+    let q5 = models.join(DEFAULT_MODELS[1]);
+    std::fs::write(&q5, b"x").expect("modelo");
+    assert_eq!(resolve_model(None, Some(&home)), Some(q5.clone()));
+    let explicit = temp_dir("model-explicit");
+    let model = explicit.join("modelo.bin");
+    std::fs::write(&model, b"x").expect("modelo");
+    assert_eq!(resolve_model(Some(&model), Some(&home)), Some(model));
+    assert_eq!(resolve_model(None, None), None);
+    cleanup(&explicit);
+    cleanup(&home);
+}
+
+#[test]
+fn whisper_server_arguments_follow_the_script() {
+    let server = Path::new("/whisper/whisper-server.exe");
+    let model = Path::new("/whisper/models/m.bin");
+    assert_eq!(
+        server_args(9000, "auto", server, model),
+        [
+            "-m",
+            "/whisper/models/m.bin",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "9000",
+            "-l",
+            "es",
+            "-t",
+            "6",
+        ]
+    );
+    let cpu_server = Path::new("/whisper/cpu/whisper-server.exe");
+    assert!(server_args(1, "auto", cpu_server, model).contains(&"-ng".to_string()));
+    let dir = temp_dir("vad");
+    let vad_model = dir.join("m.bin");
+    std::fs::write(&vad_model, b"x").expect("modelo");
+    std::fs::write(dir.join(VAD_MODEL), b"x").expect("vad");
+    let args = server_args(1, "auto", server, &vad_model);
+    assert!(args.contains(&"--vad".to_string()));
+    assert!(args.contains(&dir.join(VAD_MODEL).to_string_lossy().into_owned()));
+    cleanup(&dir);
 }
 
 #[test]
@@ -171,22 +389,28 @@ fn a_ready_server_is_not_started() {
         json!(format!("http://127.0.0.1:{port}/inference")),
     );
     let root = temp_dir("ready");
-    let process = ensure_whisper_at(&mut config, 0.1, &root);
+    let state = root.join(STATE_FILE);
+    let probe = FakeProbe::seen(None);
+    let process = ensure_whisper_in(&mut config, 0.1, &root, &state, None, None, &probe);
     cleanup(&root);
     assert!(process.is_none());
 }
 
 #[test]
-fn a_missing_script_does_not_start_anything() {
+fn a_missing_server_does_not_start_anything() {
     let mut config = VoiceConfig::new();
     config.set(
         "whisper_url",
         json!(format!("http://127.0.0.1:{}/inference", closed_port())),
     );
-    let root = temp_dir("no-script");
-    let process = ensure_whisper_at(&mut config, 0.1, &root);
+    let root = temp_dir("no-server");
+    let state = root.join(STATE_FILE);
+    let probe = FakeProbe::seen(None);
+    // Sin carpeta ni modelo inyectados: nunca mira la instalación real.
+    let process = ensure_whisper_in(&mut config, 0.1, &root, &state, None, None, &probe);
     cleanup(&root);
     assert!(process.is_none());
+    assert!(!state.exists());
 }
 
 #[test]
@@ -198,7 +422,9 @@ fn auto_start_can_be_disabled() {
         json!(format!("http://127.0.0.1:{}/inference", closed_port())),
     );
     let root = temp_dir("no-auto");
-    let process = ensure_whisper_at(&mut config, 0.1, &root);
+    let state = root.join(STATE_FILE);
+    let probe = FakeProbe::seen(None);
+    let process = ensure_whisper_in(&mut config, 0.1, &root, &state, None, None, &probe);
     cleanup(&root);
     assert!(process.is_none());
 }
