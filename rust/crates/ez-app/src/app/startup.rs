@@ -339,6 +339,7 @@ impl VoiceApp {
         }
         self.signal_tts_stop();
         observer.step("vigilante");
+        self.inner.agents.subagents_watch_stop.set();
         self.inner.agents.watcher.stop();
         observer.step("enjambre");
         if let Some(swarm) = self.inner.agents.swarm.lock().clone() {

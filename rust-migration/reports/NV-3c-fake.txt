@@ -1,0 +1,8 @@
+app viva; fake-hc C:\Users\JDMoreu\Documents\EzAgent-wt\NV-3\rust\target\debug\examples\../fake-hc.exe
+ANUNCIO: Ojo: ir-2 (OpenCode · glm-5.3) falló: la terminal terminó sin informe.
+ANUNCIO: Ojo: ir-1 (OpenCode · glm-5.3) está bloqueado: límite de uso del plan gratuito (se reinicia a las 19:00). ¿Lo reintento con la recomendación?
+estado real: ir-1 = bloqueado; ir-2 = fallido
+oferta de reintento: Some("ir-1")
+atajo «¿cómo va ir-1?»: handled=true
+PÁNICO en el registro temporal: 0
+RESULT modo=fake-hc bloqueado=true fallido=true oferta=ir-1 atajo=true viva=true panico=0

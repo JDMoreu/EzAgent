@@ -11,12 +11,12 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use ez_core::pyvalue::truthy;
 use serde_json::Value;
 
-use crate::herdr::{hc_slug, HerdrRuntime};
+use crate::herdr::hc_slug;
 
 use super::{
     notice_text, pending_notices, AutoRetry, InvalidRecord, ListOutcome, Record, Registry,
@@ -26,10 +26,12 @@ use super::{
 mod children;
 mod memory;
 mod novelties;
+mod runtime;
 #[cfg(test)]
 mod tests;
 
 pub use memory::{MemoryProbe, MemoryReading};
+pub use runtime::{HcOutput, HcRuntime, WatchRuntime};
 
 /// Cada cuánto mira el vigilante (ms).
 pub const DEFAULT_INTERVAL_MS: u64 = 3_000;
@@ -40,79 +42,17 @@ pub const DEFAULT_IDLE_MS: u64 = 600_000;
 /// Margen para dar por muerta una terminal que todavía no aparece (ms).
 pub const DEFAULT_GRACE_MS: u64 = 6_000;
 
-/// La salida de `hc`.
-#[derive(Debug, Clone, Default)]
-pub struct HcOutput {
-    /// El código de salida del proceso.
-    pub code: i64,
-    /// La salida estándar.
-    pub stdout: String,
-    /// La salida de error.
-    pub stderr: String,
-}
-
-/// Lo que el vigilante necesita del exterior: `hc` y el reloj.
-pub trait WatchRuntime: Send + Sync {
-    /// Ejecuta `hc` con estos argumentos (sin shell).
-    fn hc(&self, args: &[String]) -> Result<HcOutput, String>;
-
-    /// Ahora, en milisegundos desde epoch.
-    fn now_ms(&self) -> u64;
-
-    /// Duerme estos milisegundos.
-    fn sleep_ms(&self, ms: u64);
-}
-
-/// El runtime real: `hc` a través del runtime de Herdr.
-pub struct HcRuntime {
-    runtime: Arc<dyn HerdrRuntime>,
-    hc: String,
-    timeout: f64,
-}
-
-impl HcRuntime {
-    /// Un runtime que habla con el `hc` de `path`.
-    pub fn new(runtime: Arc<dyn HerdrRuntime>, path: impl Into<String>) -> Self {
-        Self {
-            runtime,
-            hc: path.into(),
-            timeout: 30.0,
-        }
-    }
-
-    /// La ruta de `hc` que usa este runtime.
-    pub fn hc_path(&self) -> &str {
-        &self.hc
-    }
-
-    fn argv(&self, args: &[String]) -> Vec<String> {
-        let mut argv = Vec::with_capacity(args.len() + 1);
-        argv.push(self.hc.clone());
-        argv.extend_from_slice(args);
-        argv
-    }
-}
-
-impl WatchRuntime for HcRuntime {
-    fn hc(&self, args: &[String]) -> Result<HcOutput, String> {
-        let argv = self.argv(args);
-        match self.runtime.run(&argv, self.timeout, false) {
-            Ok(done) => Ok(HcOutput {
-                code: done.returncode,
-                stdout: done.stdout,
-                stderr: done.stderr,
-            }),
-            Err(error) => Err(error.to_string()),
-        }
-    }
-
-    fn now_ms(&self) -> u64 {
-        epoch_ms()
-    }
-
-    fn sleep_ms(&self, ms: u64) {
-        std::thread::sleep(Duration::from_millis(ms));
-    }
+/// Quién recibe los avisos del vigilante.
+///
+/// `ez watch` usa el camino de siempre (`hc send` a la terminal del padre);
+/// la app de voz instala uno propio para llevar el aviso a su chat y su voz.
+pub trait NoticeSink: Send + Sync {
+    /// Entrega un aviso ya escrito; `record` falta en los que no son de un
+    /// registro (un archivo ilegible o la memoria baja).
+    ///
+    /// `true` si llegó a su destino; si no, el vigilante lo reintenta en la
+    /// vuelta siguiente.
+    fn deliver(&self, record: Option<&Record>, text: &str) -> bool;
 }
 
 /// Ahora, en milisegundos desde epoch.
@@ -193,6 +133,12 @@ pub struct Watcher {
     config: WatchConfig,
     registry: Registry,
     runtime: Arc<dyn WatchRuntime>,
+    /// Quién recibe los avisos; `None` los manda a la terminal del padre con
+    /// `hc send` (el camino de `ez watch`).
+    notice_sink: Option<Arc<dyn NoticeSink>>,
+    /// `true` cuando el padre no es una terminal (la app de voz): no hay
+    /// `hc get` de vida y los hijos se cruzan por su dirección en el registro.
+    parentless: bool,
     /// Cuándo se vio cada registro por primera vez (para el margen).
     seen_at: HashMap<String, u64>,
     /// Cuándo fue la última vez que había algo pendiente.
@@ -219,6 +165,8 @@ impl Watcher {
             config,
             registry,
             runtime,
+            notice_sink: None,
+            parentless: false,
             seen_at: HashMap::new(),
             active_at: now,
             novelty_file: Some(ez_core::dirs::app_data_dir().join("novedades.toml")),
@@ -239,6 +187,23 @@ impl Watcher {
     /// El reintento automático de §4 (`ez watch` lo implementa con `ez-scan`).
     pub fn with_auto_retry(mut self, hook: Arc<dyn AutoRetry>) -> Self {
         self.auto_retry = Some(hook);
+        self
+    }
+
+    /// Otro destinatario de los avisos (la app de voz, en vez de `hc send`).
+    pub fn with_notice_sink(mut self, sink: Arc<dyn NoticeSink>) -> Self {
+        self.notice_sink = Some(sink);
+        self
+    }
+
+    /// El padre no es una terminal: su vida es la del proceso que lo corre.
+    ///
+    /// Sin `hc get` de vida y sin el filtro `ez.parent`: el registro del padre
+    /// es la única lista de hijos y se cruzan por la dirección de su terminal.
+    // DECISION: en la app no hay terminal `voz`; listar todas y cruzar por
+    // dirección evita inventar etiquetas `ez.parent` que `hc` no puede poner.
+    pub fn without_parent_terminal(mut self) -> Self {
+        self.parentless = true;
         self
     }
 
@@ -263,8 +228,14 @@ impl Watcher {
             // la vuelta siguiente en vez de dar por muerto al subagente.
             return tick;
         };
-        let alive = self.parent_alive();
-        tick.parent_alive = Some(alive);
+        let alive = if self.parentless {
+            true
+        } else {
+            self.parent_alive()
+        };
+        if !self.parentless {
+            tick.parent_alive = Some(alive);
+        }
         if !alive {
             return tick;
         }
@@ -305,14 +276,15 @@ impl Watcher {
     }
 
     /// Las terminales del padre, según `hc ls`.
+    ///
+    /// Con un padre que no es terminal no hay etiqueta `ez.parent` que filtrar:
+    /// se listan todas y el registro decide cuáles importan.
     fn children(&self) -> Option<Vec<Child>> {
-        let args = vec![
-            "ls".to_string(),
-            "--all".to_string(),
-            "--json".to_string(),
-            "--label".to_string(),
-            format!("ez.parent={}", self.config.parent),
-        ];
+        let mut args = vec!["ls".to_string(), "--all".to_string(), "--json".to_string()];
+        if !self.parentless {
+            args.push("--label".to_string());
+            args.push(format!("ez.parent={}", self.config.parent));
+        }
         let output = self.runtime.hc(&args).ok()?;
         if output.code != 0 {
             return None;
@@ -374,9 +346,9 @@ impl Watcher {
     fn notify(&mut self, records: &[Record], tick: &mut Tick) {
         for record in pending_notices(records) {
             let text = notice_text(record);
-            if !self.send(&text) {
-                // DECISION: si `hc send` falla, el aviso se reintenta en la
-                // vuelta siguiente (el registro sigue sin avisar).
+            if !self.send(Some(record), &text) {
+                // DECISION: si el aviso no llega, se reintenta en la vuelta
+                // siguiente (el registro sigue sin avisar).
                 continue;
             }
             let saved = self
@@ -399,14 +371,17 @@ impl Watcher {
                 "[EzAgent · aviso] Registro ilegible: {}. Lo salto; revisa el archivo.",
                 item.path.display()
             );
-            if self.send(&text) {
+            if self.send(None, &text) {
                 self.warned_invalid.insert(item.path.clone());
             }
         }
     }
 
-    /// `hc send <padre> <aviso>`.
-    fn send(&self, text: &str) -> bool {
+    /// El `NoticeSink` si lo hay; si no, `hc send <padre> <aviso>`.
+    fn send(&self, record: Option<&Record>, text: &str) -> bool {
+        if let Some(sink) = &self.notice_sink {
+            return sink.deliver(record, text);
+        }
         let args = vec![
             "send".to_string(),
             self.config.parent.clone(),

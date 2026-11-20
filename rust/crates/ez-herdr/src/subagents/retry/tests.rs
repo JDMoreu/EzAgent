@@ -240,13 +240,19 @@ fn old_record(name: &str, terminal: &str) -> Record {
 
 /// Crea el registro y lo deja `bloqueado` como lo haría el vigilante.
 fn seed_blocked(registry: &Registry, name: &str, terminal: &str) -> Record {
+    seed_blocked_at(registry, "t6h", name, terminal)
+}
+
+/// Igual, bajo el padre indicado (la app usa `voz`).
+fn seed_blocked_at(registry: &Registry, parent: &str, name: &str, terminal: &str) -> Record {
     let mut record = old_record(name, terminal);
+    record.parent = parent.to_string();
     record.state = TaskState::InProgress;
     record.history.clear();
     registry.create(&record).expect("registro viejo");
     registry
         .transition(
-            "t6h",
+            parent,
             name,
             TaskState::Blocked,
             "vigilante",
@@ -254,7 +260,7 @@ fn seed_blocked(registry: &Registry, name: &str, terminal: &str) -> Record {
             |_| {},
         )
         .expect("bloqueo");
-    registry.get("t6h", name).expect("leer").expect("registro")
+    registry.get(parent, name).expect("leer").expect("registro")
 }
 
 fn accepted(_agent: &str, model: Option<&str>, effort: Option<&str>) -> Result<Choice, String> {
@@ -285,9 +291,28 @@ fn get_state(terminal: &str, state: &str) -> Reply {
     }))
 }
 
+/// `hc` dice que no existe esa terminal (un padre que no es terminal).
+fn not_found(address: &str) -> Reply {
+    Reply {
+        rc: 1,
+        stdout: json!({
+            "error": {
+                "kind": "not_found",
+                "message": format!("no terminal \"{address}\""),
+            }
+        })
+        .to_string(),
+        stderr: String::new(),
+    }
+}
+
 fn request(old: Record) -> RetryRequest {
+    request_at("t6h", old)
+}
+
+fn request_at(parent: &str, old: Record) -> RetryRequest {
     RetryRequest {
-        parent: "t6h".to_string(),
+        parent: parent.to_string(),
         old,
         agent: "opencode".to_string(),
         model: Some("opencode-go/deepseek-v4.1-flash".to_string()),
@@ -297,18 +322,6 @@ fn request(old: Record) -> RetryRequest {
         cause: "límite de uso del plan gratuito (se reinicia a las 19:00)".to_string(),
         keep_terminal: false,
     }
-}
-
-#[test]
-fn el_nombre_continua_la_serie_y_se_recorta_a_32() {
-    assert_eq!(retry_name("dev1-opencode", 1), "dev1-opencode-r1");
-    assert_eq!(retry_name("dev1-opencode-r1", 2), "dev1-opencode-r2");
-    assert_eq!(
-        retry_name("qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq", 12)
-            .chars()
-            .count(),
-        32
-    );
 }
 
 #[test]
@@ -361,40 +374,14 @@ fn un_reintento_manual_enlaza_los_registros() {
     assert!(message.contains("Retomas el trabajo de dev1-opencode"));
     assert!(message.contains("Revisa `git status` y el registro"));
     assert!(message.ends_with("arregla el parser"), "{message}");
-    let _ = std::fs::remove_dir_all(&root);
-}
-
-#[test]
-fn un_fallido_tambien_se_puede_reintentar() {
-    let root = temp_root("fallido");
-    let registry = Registry::at(&root);
-    let mut old = old_record("dev1-opencode", "t11");
-    old.state = TaskState::Failed;
-    old.history.clear();
-    registry.create(&old).expect("viejo fallido");
-    let fake = Fake::new()
-        .route("hc:ls", vec![Reply::json(&json!({"terminals": []}))])
-        .route("hc:run", vec![run_ok("dev1-opencode-r1", "t20")]);
-    let herdr = herdr_of(&fake);
-    let outcome = retry(
-        &herdr,
-        Launcher::default(),
-        &accepted,
-        &request(old),
-        &registry,
-    )
-    .expect("reintento");
-    assert_eq!(outcome.row["name"], "dev1-opencode-r1");
-    let saved = registry
-        .get("t6h", "dev1-opencode")
-        .expect("leer")
-        .expect("viejo");
-    assert_eq!(saved.state, TaskState::Failed);
-    let new = registry
-        .get("t6h", "dev1-opencode-r1")
-        .expect("leer")
-        .expect("nuevo");
-    assert_eq!(new.retry_of.as_deref(), Some("dev1-opencode"));
+    // Un padre que sí es una terminal conserva el lanzamiento con `--parent`.
+    let run_call = fake.argv_of("run").expect("hc run de la terminal padre");
+    assert!(
+        run_call
+            .windows(2)
+            .any(|pair| pair[0] == "--parent" && pair[1] == "t6h"),
+        "{run_call:?}"
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -594,3 +581,6 @@ fn un_nombre_ocupado_a_la_carrera_prueba_el_siguiente() {
     assert_eq!(fake.count_of("run"), 2);
     let _ = std::fs::remove_dir_all(&root);
 }
+
+mod nombres;
+mod sin_padre;

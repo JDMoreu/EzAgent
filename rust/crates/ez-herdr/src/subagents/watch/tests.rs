@@ -171,7 +171,6 @@ fn temp_root(tag: &str) -> std::path::PathBuf {
     std::fs::create_dir_all(&folder).expect("carpeta temporal");
     folder
 }
-
 /// `uso.json` del registro, como JSON.
 fn usage(root: &std::path::Path) -> serde_json::Value {
     let text = std::fs::read_to_string(root.join("uso.json")).expect("uso.json");
@@ -538,6 +537,8 @@ fn sin_medidor_de_memoria_no_hay_aviso() {
     assert!(fake.sent().is_empty());
     let _ = std::fs::remove_dir_all(&root);
 }
+
+mod sink;
 
 mod novelties;
 mod pantalla;

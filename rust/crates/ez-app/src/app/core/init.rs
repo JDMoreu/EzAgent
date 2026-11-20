@@ -42,6 +42,18 @@ impl VoiceApp {
             .herdr
             .take()
             .unwrap_or_else(|| Arc::new(Herdr::new(cfg.clone())));
+        let registry = Arc::new(match parts.subagents_dir.take() {
+            Some(dir) => Registry::at(dir),
+            // DECISION: en pruebas nunca se toca el registro real de la
+            // persona (mismo criterio que `EZAGENT_LOGS_DIR`, DX-2c).
+            #[cfg(test)]
+            None => Registry::at(
+                std::env::temp_dir()
+                    .join(format!("ezagent-test-subagentes-{}", std::process::id())),
+            ),
+            #[cfg(not(test))]
+            None => Registry::from_env(),
+        });
         let watched = Arc::new(Mutex::new(std::collections::HashSet::new()));
         let hooks: Arc<RwLock<Arc<dyn AppHooks>>> = Arc::new(RwLock::new(Arc::new(NullHooks)));
         let watcher = Arc::new(build_watcher(
@@ -69,7 +81,7 @@ impl VoiceApp {
             audio: audio_state(Arc::clone(&parts.mic)),
             speech: speech_state(Arc::clone(&parts.speaker)),
             chat: chat_state(prepared.chat, prepared.contexts, Arc::clone(&trace)),
-            agents: agents_state(tasks, herdr, watcher, prepared.messenger, watched),
+            agents: agents_state(tasks, herdr, registry, watcher, prepared.messenger, watched),
             ui: ui_state(
                 prepared.ui,
                 prepared.hud,
@@ -95,7 +107,7 @@ impl VoiceApp {
     }
 
     /// Lo que `__init__` hace después de construir los servicios.
-    fn finish_start(&self, parts: AppParts) {
+    fn finish_start(&self, mut parts: AppParts) {
         self.install_menu_provider();
         // El Python crea el detector de turno antes de tocar la barra.
         self.apply_start_audio();
@@ -104,6 +116,7 @@ impl VoiceApp {
         self.install_chat();
         self.install_hotkeys(parts.background);
         self.start_warm_workers(parts.background, parts.warm_stt);
+        self.start_subagent_watch(parts.subagent_watch.take(), parts.watch_subagents);
         self.schedule_start_timers();
         self.inner.runtime.observer.step("iniciado");
     }
@@ -438,6 +451,7 @@ fn chat_state(chat: Arc<ChatModel>, contexts: ChatContexts, trace: TraceSlot) ->
 fn agents_state(
     tasks: Arc<TaskRegistry>,
     herdr: Arc<Herdr>,
+    registry: Arc<Registry>,
     watcher: Arc<Watcher>,
     messenger: MessengerSlot,
     watched: Arc<Mutex<std::collections::HashSet<String>>>,
@@ -445,6 +459,10 @@ fn agents_state(
     AgentsState {
         tasks,
         herdr,
+        registry,
+        retry_offer: Mutex::new(None),
+        subagents_watch_stop: Arc::new(Flag::new()),
+        announced: Mutex::new(std::collections::HashMap::new()),
         watcher,
         swarm: Mutex::new(None),
         agent: Mutex::new(None),
@@ -498,5 +516,6 @@ fn runtime_state(
         background: parts.background,
         mic_capture: parts.mic_capture,
         tool_acks: parts.tool_acks,
+        retry_runner: parts.retry_runner.take(),
     }
 }

@@ -26,6 +26,7 @@ impl VoiceApp {
         if self.inner.session.shutdown_done.load(Ordering::SeqCst) {
             return;
         }
+        self.poll_subagents();
         log::refresh_activity(self);
     }
 

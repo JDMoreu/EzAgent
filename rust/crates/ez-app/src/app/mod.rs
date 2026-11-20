@@ -16,6 +16,7 @@ pub mod pause;
 pub mod settings_apply;
 pub mod startup;
 pub mod states;
+pub mod subagents;
 pub mod tray_wiring;
 pub mod watch;
 pub mod workers;

@@ -37,7 +37,7 @@ impl Watcher {
         if self.memory_low {
             return;
         }
-        if self.send(&memory_text(&reading)) {
+        if self.send(None, &memory_text(&reading)) {
             self.memory_low = true;
             tick.memory_warned = true;
         }

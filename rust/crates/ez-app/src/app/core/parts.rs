@@ -202,6 +202,7 @@ impl VoiceApp {
             async_launch: true,
             launch_failed: Arc::new(move |address: &str, agent: &str, error: &str| {
                 super::callbacks::upgrade(&failed, |app| {
+                    app.subagent_launch_failed(address, error);
                     if let Some(runtime) = app.inner.agents.agent.lock().as_ref() {
                         runtime.launch_failed(address, agent, error);
                     }
@@ -225,9 +226,20 @@ impl VoiceApp {
                 }
             })),
         };
-        let herdr = Arc::clone(&self.inner.agents.herdr);
+        let port: Arc<dyn ez_agent::tools_herdr::HerdrPort> =
+            Arc::new(crate::app::subagents::AppHerdrPort::new(
+                Arc::clone(&self.inner.agents.herdr),
+                Arc::clone(&self.inner.agents.registry),
+            ));
         runtime.add_tool_group(Arc::new(move |_: &AgentRuntime| {
-            ez_agent::tools_herdr::build_herdr_tools(Arc::clone(&herdr), callbacks.clone())
+            ez_agent::tools_herdr::builder::build_herdr_tools_with_port(
+                Arc::clone(&port),
+                callbacks.clone(),
+            )
+        }));
+        let registry = Arc::clone(&self.inner.agents.registry);
+        runtime.add_tool_group(Arc::new(move |_: &AgentRuntime| {
+            vec![crate::app::subagents::status_tool(Arc::clone(&registry))]
         }));
         let swarm = self.inner.agents.swarm.lock().clone();
         if let Some(stack) = swarm {

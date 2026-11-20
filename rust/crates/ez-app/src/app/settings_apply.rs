@@ -174,6 +174,14 @@ impl FastHost for AppFastHost<'_> {
         let cfg = self.app.config();
         cfg_float(&cfg, "ack_fast_window_secs", fast::ACK_WINDOW_SECS)
     }
+
+    fn subagent_status(&self, name: &str) -> Option<String> {
+        Some(self.app.subagent_status_phrase(name))
+    }
+
+    fn subagents_overview(&self) -> Option<String> {
+        Some(self.app.subagents_overview_phrase())
+    }
 }
 
 impl VoiceApp {

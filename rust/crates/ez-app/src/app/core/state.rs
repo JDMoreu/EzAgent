@@ -16,6 +16,7 @@ use ez_chat::contexts::ChatContexts;
 use ez_core::config::VoiceConfig;
 use ez_core::metrics::{LatencyStats, TurnTimings};
 use ez_herdr::herdr::Herdr;
+use ez_herdr::subagents::Registry;
 use ez_herdr::tasks::TaskRegistry;
 use ez_herdr::watcher::Watcher;
 use ez_hud::win::ui_loop::UiLoop;
@@ -261,6 +262,15 @@ pub struct AgentsState {
     pub tasks: Arc<TaskRegistry>,
     /// `self.herdr`.
     pub herdr: Arc<Herdr>,
+    /// Registro de los subagentes que lanzó la app (NV-3, padre `voz`).
+    pub registry: Arc<Registry>,
+    /// Subagente cuya oferta de reintento espera un «sí»/«dale».
+    pub retry_offer: Mutex<Option<String>>,
+    /// Detiene el vigilante interno de `voz` al cerrar.
+    pub subagents_watch_stop: Arc<Flag>,
+    /// Estados ya contados en esta sesión (el `notified` del disco se escribe
+    /// en un hilo aparte para no esperar el candado del registro en la UI).
+    pub announced: Mutex<HashMap<String, ez_herdr::subagents::TaskState>>,
     /// `self.watcher`.
     pub watcher: Arc<Watcher>,
     /// `self.swarm`.
@@ -327,6 +337,8 @@ pub struct RuntimeState {
     pub mic_capture: bool,
     /// `false` filtra los acuses hablados de herramienta (costura del arnés).
     pub tool_acks: bool,
+    /// Ejecuta el reintento de un subagente; `None` usa `ez retry` real.
+    pub retry_runner: Option<super::services::RetryRunner>,
 }
 
 /// Estado completo compartido por todas las copias de [`super::VoiceApp`].

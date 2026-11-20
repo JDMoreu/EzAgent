@@ -181,6 +181,11 @@ impl Fixture {
     }
 
     pub(crate) fn with_config(cfg: VoiceConfig) -> Self {
+        Self::with_setup(cfg, |_| {})
+    }
+
+    /// Igual, con las piezas que la prueba necesite ajustar (NV-3 y otras).
+    pub(crate) fn with_setup(cfg: VoiceConfig, setup: impl FnOnce(&mut AppParts)) -> Self {
         redirect_logs();
         let mic = Arc::new(Mutex::new(MicCapture::new(None, VadSettings::default())));
         mic.lock().set_device_index(None);
@@ -193,6 +198,7 @@ impl Fixture {
         );
         parts.chat = Some(Arc::new(ChatModel::new(None, true)));
         parts.config_file = Some(config_file.clone());
+        setup(&mut parts);
         let app = VoiceApp::with_services(cfg, Some(tasks_path.clone()), parts);
         Self {
             app,
