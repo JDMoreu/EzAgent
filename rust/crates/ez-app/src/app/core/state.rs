@@ -268,6 +268,8 @@ pub struct AgentsState {
     pub retry_offer: Mutex<Option<String>>,
     /// Lo que quedó pendiente al abrir, retenido hasta la respuesta (DX-4).
     pub pending_resume: Mutex<Option<crate::app::watch::PendingResume>>,
+    /// Tablero del enjambre inyectado en las pruebas (fallos de inventario/pausa).
+    pub(crate) swarm_hold: Mutex<Option<Arc<dyn crate::app::watch::resume::SwarmHold>>>,
     /// Detiene el vigilante interno de `voz` al cerrar.
     pub subagents_watch_stop: Arc<Flag>,
     /// Estados ya contados en esta sesión (el `notified` del disco se escribe

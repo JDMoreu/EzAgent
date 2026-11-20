@@ -9,8 +9,11 @@
 #[cfg(test)]
 mod tests;
 
+use std::sync::Arc;
+
 use ez_core::pytime::timestamp;
 use ez_core::pyvalue::{collapse_spaces, head_chars, py_rstrip, py_strip, text_or_empty};
+use ez_swarm::stack::SwarmStack;
 use serde_json::{Map, Value};
 
 use super::super::core::{log, VoiceApp};
@@ -23,6 +26,8 @@ pub struct HeldSwarm {
     pub id: String,
     /// Lo que pidió la persona.
     pub goal: String,
+    /// Ya estaba en pausa antes de abrir: el «sí» no lo reactiva.
+    pub was_paused: bool,
 }
 
 /// Lo pendiente al abrir, retenido hasta la respuesta.
@@ -38,12 +43,98 @@ pub struct PendingResume {
     pub text: String,
     /// La persona dijo «no»: solo «reanuda lo pendiente» los retoma.
     pub declined: bool,
+    /// No se pudo inventariar o pausar el enjambre: no se reanuda nada.
+    pub blocked: Option<String>,
 }
 
 impl PendingResume {
-    /// ¿No hay nada que preguntar?
+    /// ¿No hay nada que retener?
     pub fn is_empty(&self) -> bool {
-        self.tasks.is_empty() && self.chains.is_empty() && self.swarms.is_empty()
+        self.tasks.is_empty()
+            && self.chains.is_empty()
+            && self.swarms.is_empty()
+            && self.blocked.is_none()
+    }
+}
+
+/// Lo que la retención al arrancar necesita del tablero del enjambre.
+///
+/// Producción lo cumple [`StackHold`]; las pruebas inyectan un doble que falla
+/// en `live` o `pause` y demuestra que no se arranca el supervisor.
+pub(crate) trait SwarmHold: Send + Sync {
+    /// Enjambres vivos (`active` o `paused`) con su pausa previa.
+    fn live(&self) -> Result<Vec<HeldSwarm>, String>;
+    /// Deja en pausa un enjambre activo.
+    fn pause(&self, id: &str) -> Result<(), String>;
+    /// Reactiva un enjambre que la app puso en pausa al abrir.
+    fn resume(&self, id: &str) -> Result<(), String>;
+    /// Detiene un enjambre descartado.
+    fn stop(&self, id: &str) -> Result<(), String>;
+    /// Adelanta la pasada del supervisor.
+    fn poke(&self);
+    /// Arranca el servidor y el supervisor.
+    fn start(&self) -> Result<(), String>;
+    /// Arranca solo el servidor local (sin supervisor).
+    fn start_server(&self) -> Result<(), String>;
+}
+
+/// Adaptador de producción sobre el [`SwarmStack`] de la app.
+struct StackHold(Arc<SwarmStack>);
+
+impl SwarmHold for StackHold {
+    fn live(&self) -> Result<Vec<HeldSwarm>, String> {
+        self.0
+            .store()
+            .live()
+            .map(|live| {
+                live.into_iter()
+                    .map(|info| HeldSwarm {
+                        id: info.id,
+                        goal: info.goal,
+                        was_paused: info.status == "paused",
+                    })
+                    .collect()
+            })
+            .map_err(|error| format!("No pude leer los enjambres guardados: {error}"))
+    }
+
+    fn pause(&self, id: &str) -> Result<(), String> {
+        self.0
+            .service
+            .pause(id)
+            .map_err(|error| format!("No pude dejar el enjambre {id} en pausa: {error}"))
+    }
+
+    fn resume(&self, id: &str) -> Result<(), String> {
+        self.0
+            .service
+            .resume(id)
+            .map_err(|error| format!("No pude reanudar el enjambre {id}: {error}"))
+    }
+
+    fn stop(&self, id: &str) -> Result<(), String> {
+        self.0
+            .service
+            .stop(id)
+            .map_err(|error| format!("No pude descartar el enjambre {id}: {error}"))
+    }
+
+    fn poke(&self) {
+        self.0.supervisor.poke();
+    }
+
+    fn start(&self) -> Result<(), String> {
+        self.0
+            .start()
+            .map_err(|error| format!("No pude arrancar el enjambre: {error}"))
+    }
+
+    fn start_server(&self) -> Result<(), String> {
+        self.0
+            .server
+            .start()
+            .map(|_| ())
+            .map_err(|error| format!("No pude arrancar el servidor del enjambre: {error}"))
     }
 }
 
@@ -132,12 +223,12 @@ fn join_spanish(parts: &[String]) -> String {
     }
 }
 
-/// La frase única que nombra todo lo pendiente (código, nunca el LLM).
-pub fn resume_question(
+/// Las partes que nombran lo pendiente y su total.
+fn pending_parts(
     tasks: &[Map<String, Value>],
     chains: &[Map<String, Value>],
     swarms: &[HeldSwarm],
-) -> String {
+) -> (Vec<String>, usize) {
     let mut parts: Vec<String> = Vec::new();
     for row in tasks.iter().take(2) {
         parts.push(task_part(row));
@@ -176,6 +267,16 @@ pub fn resume_question(
         many => parts.push(format!("{} enjambres guardados", many.len())),
     }
     let total = tasks.len() + chains.len() + swarms.len();
+    (parts, total)
+}
+
+/// La frase única que nombra todo lo pendiente (código, nunca el LLM).
+pub fn resume_question(
+    tasks: &[Map<String, Value>],
+    chains: &[Map<String, Value>],
+    swarms: &[HeldSwarm],
+) -> String {
+    let (parts, total) = pending_parts(tasks, chains, swarms);
     let list = join_spanish(&parts);
     if list.is_empty() {
         return String::new();
@@ -185,6 +286,31 @@ pub fn resume_question(
     } else {
         format!("Quedaron pendientes {list}. ¿Quieres que los reanude?")
     }
+}
+
+/// El aviso de fallo cerrado: no se reanuda nada y lo pendiente sigue guardado.
+fn blocked_text(
+    reason: &str,
+    tasks: &[Map<String, Value>],
+    chains: &[Map<String, Value>],
+    swarms: &[HeldSwarm],
+) -> String {
+    let reason = collapse_spaces(reason);
+    let reason = py_rstrip(&reason);
+    let reason = if reason.chars().count() > 160 {
+        format!("{}…", py_rstrip(head_chars(reason, 159)))
+    } else {
+        reason.to_string()
+    };
+    let reason = reason.trim_end_matches('.').to_string();
+    let (parts, _) = pending_parts(tasks, chains, swarms);
+    let list = join_spanish(&parts);
+    let tail = if list.is_empty() {
+        String::new()
+    } else {
+        format!(" Sigue pendiente {list}.")
+    };
+    format!("{reason}. No reanudo nada.{tail}")
 }
 
 /// ¿La frase contiene alguna de las palabras (sueltas)?
@@ -218,28 +344,31 @@ fn is_accept(key: &str) -> bool {
 impl VoiceApp {
     /// Al abrir: retiene lo pendiente y pregunta una vez (DX-4).
     ///
-    /// No vigila ni lanza nada: solo deja el enjambre guardado en pausa y
-    /// escribe la pregunta en el chat (y la dice, si no hay silencio).
+    /// Devuelve `true` solo si se pudo dejar todo en pausa; con un fallo, el
+    /// arranque no debe levantar el supervisor.
     // DECISION: se pregunta como aviso (`announce`) y no como confirmación: así
     // `arm_confirmation` (F48) nunca rearma algo de una sesión anterior.
     // DECISION: no se vigila de forma pasiva hasta el «sí»: una cadena podría
     // lanzar su paso siguiente sola, que es justo lo que se evita.
-    pub(crate) fn begin_pending_resume(&self) {
+    // DECISION: si no se puede inventariar o pausar el enjambre, la app falla
+    // cerrada: informa el fallo, conserva lo pendiente y no reanuda nada.
+    pub(crate) fn begin_pending_resume(&self) -> bool {
         if self.inner.agents.pending_resume.lock().is_some() {
-            return;
+            return self.pending_resume_is_safe();
         }
         let pending = self.collect_pending_resume();
         if pending.is_empty() {
-            return;
+            return true;
         }
         log(format!("Pendiente al abrir: {}", pending.text));
         *self.inner.agents.pending_resume.lock() = Some(pending.clone());
         self.inner.chat.chat.add_note(&pending.text);
         if timestamp() < *self.inner.session.mute_until.lock() {
             // DECISION: en silencio la pregunta queda solo en el chat.
-            return;
+            return pending.blocked.is_none();
         }
         self.queue_announcement(&pending.text, true);
+        pending.blocked.is_none()
     }
 
     /// El arranque: retiene lo pendiente y, en producción, levanta el enjambre.
@@ -247,18 +376,51 @@ impl VoiceApp {
     // DECISION: el servidor y el supervisor del enjambre sí arrancan (los usa
     // `ezs` en la sesión), pero los enjambres guardados quedan en pausa antes
     // de que el supervisor haga su primera pasada; solo el «sí» los reactiva.
+    // Con un fallo de retención solo arranca el servidor, nunca el supervisor.
     pub(crate) fn start_pending_resume(&self) {
-        self.begin_pending_resume();
-        let stack = self.inner.agents.swarm.lock().clone();
-        let Some(stack) = stack else {
+        self.start_pending_resume_with(self.inner.runtime.background);
+    }
+
+    /// Igual que [`Self::start_pending_resume`] con el arranque forzado en pruebas.
+    pub(crate) fn start_pending_resume_with(&self, background: bool) {
+        let safe = self.begin_pending_resume();
+        if !background {
+            return;
+        }
+        let Some(hold) = self.swarm_hold() else {
             return;
         };
-        if !self.inner.runtime.background {
-            return;
+        let result = if safe {
+            hold.start()
+        } else {
+            hold.start_server()
+        };
+        if let Err(error) = result {
+            log(error);
         }
-        if let Err(error) = stack.start() {
-            log(format!("No pude arrancar el enjambre: {error}"));
+    }
+
+    /// ¿La retención vigente se pudo asegurar?
+    fn pending_resume_is_safe(&self) -> bool {
+        self.inner
+            .agents
+            .pending_resume
+            .lock()
+            .as_ref()
+            .is_none_or(|pending| pending.blocked.is_none())
+    }
+
+    /// El tablero del enjambre: el doble inyectado o el `SwarmStack` real.
+    fn swarm_hold(&self) -> Option<Arc<dyn SwarmHold>> {
+        if let Some(hold) = self.inner.agents.swarm_hold.lock().clone() {
+            return Some(hold);
         }
+        self.inner
+            .agents
+            .swarm
+            .lock()
+            .clone()
+            .map(|stack| Arc::new(StackHold(stack)) as Arc<dyn SwarmHold>)
     }
 
     /// Todo lo que quedó pendiente, con el enjambre ya en pausa.
@@ -272,46 +434,41 @@ impl VoiceApp {
             .filter(|row| !value_text(row, "address").is_empty())
             .collect();
         let chains = self.inner.agents.tasks.chains();
-        let swarms = self.hold_saved_swarms();
-        let text = resume_question(&tasks, &chains, &swarms);
+        let (swarms, blocked) = self.hold_saved_swarms();
+        let text = match &blocked {
+            Some(reason) => blocked_text(reason, &tasks, &chains, &swarms),
+            None => resume_question(&tasks, &chains, &swarms),
+        };
         PendingResume {
             tasks,
             chains,
             swarms,
             text,
             declined: false,
+            blocked,
         }
     }
 
-    /// Deja los enjambres guardados en pausa (el supervisor no los despierta).
-    fn hold_saved_swarms(&self) -> Vec<HeldSwarm> {
-        let stack = self.inner.agents.swarm.lock().clone();
-        let Some(stack) = stack else {
-            return Vec::new();
+    /// Deja en pausa los enjambres activos; `Err` si no se pudo asegurar.
+    fn hold_saved_swarms(&self) -> (Vec<HeldSwarm>, Option<String>) {
+        let Some(hold) = self.swarm_hold() else {
+            return (Vec::new(), None);
         };
-        let live = match stack.store().live() {
+        let live = match hold.live() {
             Ok(live) => live,
-            Err(error) => {
-                log(format!("No pude leer los enjambres guardados: {error}"));
-                return Vec::new();
-            }
+            Err(error) => return (Vec::new(), Some(error)),
         };
+        let mut failure = None;
         let mut held = Vec::with_capacity(live.len());
-        for info in live {
-            if info.status == "active" {
-                if let Err(error) = stack.service.pause(&info.id) {
-                    log(format!(
-                        "No pude dejar el enjambre {} en pausa: {error}",
-                        info.id
-                    ));
+        for swarm in live {
+            if !swarm.was_paused {
+                if let Err(error) = hold.pause(&swarm.id) {
+                    failure = Some(error);
                 }
             }
-            held.push(HeldSwarm {
-                id: info.id,
-                goal: info.goal,
-            });
+            held.push(swarm);
         }
-        held
+        (held, failure)
     }
 
     /// Un «sí», «no» o «descártalo» para lo pendiente del arranque.
@@ -325,6 +482,25 @@ impl VoiceApp {
         if is_discard(&key) {
             self.discard_pending_resume(&pending);
             return true;
+        }
+        if pending.blocked.is_some() {
+            // Fail closed: mientras no se pueda asegurar la pausa, no se reanuda.
+            if is_refuse(&key) {
+                if let Some(slot) = self.inner.agents.pending_resume.lock().as_mut() {
+                    slot.declined = true;
+                }
+                return true;
+            }
+            if is_accept(&key) || is_resume_command(&key) {
+                let text =
+                    "No reanudo nada: sigue sin poder asegurarse la pausa del enjambre guardado.";
+                self.inner.chat.chat.add_note(text);
+                if timestamp() >= *self.inner.session.mute_until.lock() {
+                    self.queue_announcement(text, false);
+                }
+                return true;
+            }
+            return false;
         }
         if pending.declined {
             // Tras un «no», un «sí» suelto puede responder a otra cosa.
@@ -357,17 +533,17 @@ impl VoiceApp {
         let app = self.clone();
         self.start_worker("ezagent-resume-pending", move || {
             app.resume_pending_tasks();
-            let stack = app.inner.agents.swarm.lock().clone();
-            let Some(stack) = stack else {
+            let Some(hold) = app.swarm_hold() else {
                 return;
             };
             for swarm in &pending.swarms {
-                match stack.service.resume(&swarm.id) {
-                    Ok(()) => stack.supervisor.poke(),
-                    Err(error) => log(format!(
-                        "No pude reanudar el enjambre {}: {error}",
-                        swarm.id
-                    )),
+                if swarm.was_paused {
+                    // Ya estaba en pausa antes de abrir: no es una recuperación.
+                    continue;
+                }
+                match hold.resume(&swarm.id) {
+                    Ok(()) => hold.poke(),
+                    Err(error) => log(error),
                 }
             }
         });
@@ -393,14 +569,11 @@ impl VoiceApp {
                 log(format!("No pude borrar una cadena pendiente: {error}"));
             }
         }
-        let stack = self.inner.agents.swarm.lock().clone();
-        if let Some(stack) = stack {
+        let hold = self.swarm_hold();
+        if let Some(hold) = hold {
             for swarm in &pending.swarms {
-                if let Err(error) = stack.service.stop(&swarm.id) {
-                    log(format!(
-                        "No pude descartar el enjambre {}: {error}",
-                        swarm.id
-                    ));
+                if let Err(error) = hold.stop(&swarm.id) {
+                    log(error);
                 }
             }
         }
