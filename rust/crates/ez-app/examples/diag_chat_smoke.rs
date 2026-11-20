@@ -1050,7 +1050,7 @@ fn main() {
     }
     let alive = app.hud().chat_is_open();
     let panics = panic_lines(&temp.join("logs"));
-    eprintln!("RSS pico: {peak_mb} MB");
+    eprintln!("RSS pico: {peak_mb} MB (décimas: {ticks})");
     if panics.is_empty() {
         eprintln!("registro temporal: sin PÁNICO");
     } else {

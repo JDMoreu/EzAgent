@@ -653,6 +653,49 @@ fn a_slow_history_does_not_eat_the_opening_animation() {
     assert!(renders > 0, "el contenido no se pintó nunca");
 }
 
+/// DX-1f: el cuadro que termina el morph no maqueta bajo el candado.
+///
+/// `step` pasa a `Open` dentro del cuadro. Si ese cuadro tomara el camino
+/// estable, maquetaría el historial **con el candado del panel tomado** (lo
+/// que DX-1b quitó, y la app volvía a quedarse sin responder). El cuadro que
+/// cruza el final sigue siendo del morph; el historial se maqueta en el
+/// siguiente, con la vista fuera del candado.
+#[test]
+fn the_frame_that_ends_the_morph_does_not_lay_out_the_history() {
+    let (panel, _) = open_panel(empty_view());
+    {
+        let mut state = panel.state.lock();
+        state.view = Some(SendView(Box::new(sample_view())));
+        state.anim = Anim {
+            state: AnimState::Opening,
+            t0: ez_core::metrics::monotonic() - MORPH_SECS,
+            p: 1.0,
+        };
+        state.content = compose::ContentCache::default();
+    }
+    let _ = panel.render();
+    assert_eq!(panel.state.lock().anim.state, AnimState::Open);
+    let layouts = panel
+        .state
+        .lock()
+        .view
+        .as_ref()
+        .map_or(0, |view| view.layouts());
+    assert_eq!(
+        layouts, 0,
+        "el cuadro que termina el morph maquetó el historial"
+    );
+    // El siguiente cuadro ya es el panel estable: ahí llega el contenido.
+    let _ = panel.render();
+    let layouts = panel
+        .state
+        .lock()
+        .view
+        .as_ref()
+        .map_or(0, |view| view.layouts());
+    assert!(layouts > 0, "el contenido no llegó al panel abierto");
+}
+
 /// Un parser que entra en pánico: la maquetación del historial falla.
 struct PanicHost;
 

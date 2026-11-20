@@ -352,7 +352,13 @@ impl ChatPanel {
         let now = monotonic();
 
         // (1) The signature of the content and the state of the morph.
-        let (sig, anim) = {
+        //
+        // DECISION: the state is read **before** `step` (DX-1f). `step` turns
+        // the morph into `Open` in the frame that crosses its end, and that
+        // frame used to take the stable path: it laid out the history under
+        // the panel lock, which is what DX-1b removed. The frame that ends the
+        // morph is still a morph frame; the next one is the stable panel.
+        let (sig, was_open) = {
             let mut state = self.state.lock();
             let PanelState {
                 anim,
@@ -369,7 +375,10 @@ impl ChatPanel {
             };
             self.refresh_view(view, pal_seen, base, content);
             update_live(self.ui.as_ref(), view, act, last, now);
-            (compose::content_signature(view), anim.state)
+            (
+                compose::content_signature(view),
+                anim.state == AnimState::Open,
+            )
         };
 
         // (2) The content layer, with the view out of the state.
@@ -381,7 +390,7 @@ impl ChatPanel {
         // (the closing reused the layer and did animate). The morph paints the
         // frame and the content arrives with the first frame of the open
         // panel, still on the paint thread.
-        if anim == AnimState::Open && !self.content_is_fresh(&sig) {
+        if was_open && !self.content_is_fresh(&sig) {
             self.paint_content(now, sig.clone());
         }
 
@@ -432,7 +441,7 @@ impl ChatPanel {
             act: *act,
             now,
         };
-        if anim.state == AnimState::Open {
+        if was_open {
             let frame = compose::stable(&mut scene, base, content, window_rect);
             record_frame(anim, p, now, window_rect, &sig, content, &frame);
             frame
