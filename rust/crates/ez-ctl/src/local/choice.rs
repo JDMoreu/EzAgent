@@ -8,10 +8,12 @@
 use std::path::{Path, PathBuf};
 
 use ez_core::config::VoiceConfig;
+use ez_herdr::driver::text_list;
 use ez_herdr::subagents::Registry;
 use ez_scan::capacity::Thresholds;
 use ez_scan::recommend::{self, Catalog, Pressure, Recommendation, Request, Size};
 use ez_scan::usage::{self, UsageDirs, UsageReport};
+use serde_json::Value;
 
 use super::{LocalDelegate, LocalError};
 
@@ -81,13 +83,16 @@ pub(crate) struct Filled {
 /// vino y se avisa: la persona manda.
 pub(crate) fn fill(request: &LocalDelegate, inputs: &Inputs) -> Result<Filled, LocalError> {
     let automatic = request.agent.trim().is_empty();
-    if !automatic && request.model.is_some() && request.effort.is_some() {
+    if !automatic && request.model.is_some() {
+        // La persona ya eligió el modelo: solo falta el esfuerzo, y nunca se
+        // avisa de un modelo que no faltaba (fallo de IR-4).
+        let (effort, warnings) = complete_effort(request, inputs);
         return Ok(Filled {
             agent: request.agent.clone(),
             model: request.model.clone(),
-            effort: request.effort.clone(),
+            effort,
             chosen: None,
-            warnings: Vec::new(),
+            warnings,
         });
     }
     let query = Request {
@@ -127,6 +132,84 @@ pub(crate) fn fill(request: &LocalDelegate, inputs: &Inputs) -> Result<Filled, L
         chosen: Some(chosen_line(automatic, &recommendation)),
         warnings: recommendation.warnings,
     })
+}
+
+/// El esfuerzo de un modelo elegido a mano y los avisos si no hay ninguno.
+///
+/// El modelo ya lo puso la persona: aquí solo se completa el esfuerzo con los
+/// niveles del agente o, si no los declara, se avisa de solo eso.
+fn complete_effort(request: &LocalDelegate, inputs: &Inputs) -> (Option<String>, Vec<String>) {
+    if let Some(effort) = request.effort.clone() {
+        return (Some(effort), Vec::new());
+    }
+    let model = request.model.as_deref().unwrap_or_default();
+    match effort_for(&inputs.cfg, &request.agent, model, &request.role) {
+        Some(effort) => (Some(effort), Vec::new()),
+        None => (
+            None,
+            vec![format!(
+                "No pude completar el esfuerzo: {} no declara niveles para {model}.",
+                request.agent
+            )],
+        ),
+    }
+}
+
+/// El esfuerzo válido del agente para un modelo: el del modelo, el del perfil
+/// o el más cercano al de fábrica del papel.
+fn effort_for(cfg: &VoiceConfig, agent: &str, model: &str, role: &str) -> Option<String> {
+    let profiles = cfg.get("agent_profiles")?.as_object()?;
+    let key = cfg
+        .get("agents")
+        .and_then(Value::as_object)
+        .and_then(|agents| ez_core::config::resolve_agent_key(agent, agents, Some(profiles)))
+        .unwrap_or_else(|| agent.trim().to_string());
+    let profile = profiles.get(&key)?.as_object()?;
+    let tail = model.split('#').next().unwrap_or(model);
+    let tail = tail.rsplit('/').next().unwrap_or(tail);
+    let mut levels = Vec::new();
+    if let Some(by_model) = profile.get("model_efforts").and_then(Value::as_object) {
+        if let Some(found) = by_model
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(tail))
+        {
+            levels = text_list(Some(found.1));
+        }
+    }
+    if levels.is_empty() {
+        levels = text_list(profile.get("efforts"));
+    }
+    let wanted = recommend::desired_effort(role);
+    if let Some(exact) = levels
+        .iter()
+        .find(|level| level.eq_ignore_ascii_case(wanted))
+    {
+        return Some(exact.clone());
+    }
+    let wanted_rank = effort_rank(wanted)?;
+    // Mismo orden que la recomendación: el más cercano y, en empate, el más
+    // alto para no bajar la calidad sin decirlo.
+    levels
+        .iter()
+        .filter_map(|level| {
+            let rank = effort_rank(level)?;
+            Some((rank.abs_diff(wanted_rank), std::cmp::Reverse(rank), level))
+        })
+        .min_by_key(|(distance, reversed, _)| (*distance, *reversed))
+        .map(|(_, _, level)| level.clone())
+}
+
+fn effort_rank(level: &str) -> Option<u8> {
+    match level.trim().to_lowercase().as_str() {
+        "off" | "none" => Some(0),
+        "minimal" => Some(1),
+        "low" => Some(2),
+        "default" | "medium" => Some(3),
+        "high" => Some(4),
+        "xhigh" => Some(5),
+        "max" | "ultra" => Some(6),
+        _ => None,
+    }
 }
 
 /// «Elegí OpenCode · opencode-go/deepseek-v4.1-flash · high porque …».
@@ -315,6 +398,47 @@ mod tests {
         assert_eq!(filled.model.as_deref(), Some("sonnet"));
         assert_eq!(filled.effort.as_deref(), Some("low"));
         assert!(filled.chosen.is_none());
+    }
+
+    #[test]
+    fn con_modelo_explicito_sin_esfuerzo_solo_completa_el_esfuerzo() {
+        let filled = fill(
+            &request("opencode", Some("deepseek-v4.1-flash"), None),
+            &inputs(report()),
+        )
+        .expect("relleno");
+        assert_eq!(filled.agent, "opencode");
+        assert_eq!(filled.model.as_deref(), Some("deepseek-v4.1-flash"));
+        assert_eq!(filled.effort.as_deref(), Some("high"));
+        assert!(filled.chosen.is_none());
+        assert!(filled.warnings.is_empty(), "{:?}", filled.warnings);
+    }
+
+    #[test]
+    fn sin_niveles_de_esfuerzo_el_aviso_habla_solo_del_esfuerzo() {
+        let filled = fill(
+            &request("qwen", Some("qwen3-coder-plus"), None),
+            &inputs(report()),
+        )
+        .expect("relleno");
+        assert_eq!(filled.model.as_deref(), Some("qwen3-coder-plus"));
+        assert!(filled.effort.is_none());
+        assert!(
+            filled
+                .warnings
+                .iter()
+                .all(|warning| !warning.contains("modelo")),
+            "{:?}",
+            filled.warnings
+        );
+        assert!(
+            filled
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("esfuerzo")),
+            "{:?}",
+            filled.warnings
+        );
     }
 
     #[test]

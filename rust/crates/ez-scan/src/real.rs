@@ -115,50 +115,7 @@ impl Probe for RealProbe {
         parent: &str,
         thresholds: &crate::Thresholds,
     ) -> Result<Vec<SubagentUsage>, String> {
-        if parent.trim().is_empty() {
-            return Ok(Vec::new());
-        }
-        let herdr = herdr();
-        let argv = vec![
-            herdr.hc_path(),
-            "ls".to_string(),
-            "--json".to_string(),
-            "--label".to_string(),
-            format!("ez.parent={}", parent.trim()),
-        ];
-        let completed = herdr
-            .run_command(&argv, 10.0, false)
-            .map_err(|error| format!("No pude listar los subagentes: {error}"))?;
-        let data = parse_json(&herdr.hc_path(), &completed.stdout)?;
-        let Some(Value::Array(terminals)) = data.get("terminals") else {
-            return Ok(Vec::new());
-        };
-        let mut out = Vec::new();
-        for terminal in terminals {
-            let Some(object) = terminal.as_object() else {
-                continue;
-            };
-            if object.get("state").and_then(Value::as_str) != Some("live") {
-                continue;
-            }
-            let address = text_of(object.get("address"));
-            let name = text_of(object.get("name"));
-            let (memory_mb, processes) = terminal_tree(&herdr, &address).unwrap_or((0, Vec::new()));
-            let reason = crate::resources::heavy_reason(memory_mb, &processes, thresholds);
-            out.push(SubagentUsage {
-                name: if name.is_empty() {
-                    address.clone()
-                } else {
-                    name
-                },
-                terminal: address,
-                agent: text_of(object.get("agent")),
-                memory_mb,
-                heavy: reason.is_some(),
-                heavy_reason: reason,
-            });
-        }
-        Ok(out)
+        subagents_with(&herdr(), parent, thresholds)
     }
 
     fn which(&self, program: &str) -> Option<PathBuf> {
@@ -194,8 +151,65 @@ impl Probe for RealProbe {
     }
 }
 
+/// El `hc` de la configuración cargada (la misma que `ez delegate`): con
+/// `hc_path` absoluto no hace falta que `hc` esté en el PATH.
 fn herdr() -> Herdr {
-    Herdr::new(VoiceConfig::new())
+    let cfg = VoiceConfig::load(None).unwrap_or_else(|error| {
+        tracing::warn!("No pude leer voice.json: {error}");
+        VoiceConfig::new()
+    });
+    Herdr::new(cfg)
+}
+
+/// Terminales vivas con `ez.parent=<parent>`, medidas con `herdr`.
+fn subagents_with(
+    herdr: &Herdr,
+    parent: &str,
+    thresholds: &crate::Thresholds,
+) -> Result<Vec<SubagentUsage>, String> {
+    if parent.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let argv = vec![
+        herdr.hc_path(),
+        "ls".to_string(),
+        "--json".to_string(),
+        "--label".to_string(),
+        format!("ez.parent={}", parent.trim()),
+    ];
+    let completed = herdr
+        .run_command(&argv, 10.0, false)
+        .map_err(|error| format!("No pude listar los subagentes: {error}"))?;
+    let data = parse_json(&herdr.hc_path(), &completed.stdout)?;
+    let Some(Value::Array(terminals)) = data.get("terminals") else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    for terminal in terminals {
+        let Some(object) = terminal.as_object() else {
+            continue;
+        };
+        if object.get("state").and_then(Value::as_str) != Some("live") {
+            continue;
+        }
+        let address = text_of(object.get("address"));
+        let name = text_of(object.get("name"));
+        let (memory_mb, processes) = terminal_tree(herdr, &address).unwrap_or((0, Vec::new()));
+        let reason = crate::resources::heavy_reason(memory_mb, &processes, thresholds);
+        out.push(SubagentUsage {
+            name: if name.is_empty() {
+                address.clone()
+            } else {
+                name
+            },
+            terminal: address,
+            agent: text_of(object.get("agent")),
+            memory_mb,
+            heavy: reason.is_some(),
+            heavy_reason: reason,
+        });
+    }
+    Ok(out)
 }
 
 fn version_of(probe: &RealProbe, program: &str) -> Option<String> {
@@ -315,7 +329,108 @@ fn is_runnable(_path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+    use std::sync::{Arc, Mutex};
+
+    use ez_herdr::herdr::{Completed, HerdrRuntime, RunError};
+    use serde_json::json;
+
     use super::*;
+
+    /// Doble de `HerdrRuntime` que solo conoce el `hc` de la configuración.
+    struct FakeHc {
+        path: PathBuf,
+        calls: Mutex<Vec<Vec<String>>>,
+    }
+
+    impl HerdrRuntime for FakeHc {
+        fn run(
+            &self,
+            argv: &[String],
+            _timeout: f64,
+            _anonymous: bool,
+        ) -> Result<Completed, RunError> {
+            self.calls.lock().expect("llamadas").push(argv.to_vec());
+            Ok(Completed {
+                stdout: "{\"terminals\": []}".to_string(),
+                stderr: String::new(),
+                returncode: 0,
+            })
+        }
+
+        fn which(&self, program: &str) -> Option<PathBuf> {
+            (Path::new(program) == self.path).then(|| self.path.clone())
+        }
+
+        fn monotonic(&self) -> f64 {
+            0.0
+        }
+
+        fn next_id(&self) -> String {
+            "abcd1234".to_string()
+        }
+
+        fn spawn(&self, _name: &str, task: Box<dyn FnOnce() + Send + 'static>) -> bool {
+            task();
+            true
+        }
+    }
+
+    /// Restaura la variable de entorno al salir.
+    struct Restore(&'static str, Option<OsString>);
+
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            match self.1.take() {
+                Some(value) => std::env::set_var(self.0, value),
+                None => std::env::remove_var(self.0),
+            }
+        }
+    }
+
+    #[test]
+    fn la_guarda_mide_con_el_hc_de_la_configuracion() {
+        let root = std::env::temp_dir().join(format!("ez-scan-hc-{}", std::process::id()));
+        let hc = root.join("herdr-core").join("hc.exe");
+        std::fs::create_dir_all(hc.parent().expect("carpeta")).expect("carpeta");
+        std::fs::write(&hc, "").expect("hc falso");
+        let mut cfg = VoiceConfig::new();
+        cfg.set("hc_path", json!(hc.to_string_lossy()));
+        let runtime = Arc::new(FakeHc {
+            path: hc.clone(),
+            calls: Mutex::new(Vec::new()),
+        });
+        let herdr = Herdr::with_runtime(cfg, runtime.clone());
+        let children =
+            subagents_with(&herdr, "t20b", &crate::Thresholds::default()).expect("medir");
+        assert!(children.is_empty());
+        let calls = runtime.calls.lock().expect("llamadas");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(Path::new(&calls[0][0]), hc);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn voice_json_manda_sobre_el_hc_de_fabrica() {
+        let root = std::env::temp_dir().join(format!("ez-scan-appdata-{}", std::process::id()));
+        let appdata = root.join("appdata");
+        let folder = appdata.join("EzAgent");
+        std::fs::create_dir_all(&folder).expect("carpeta");
+        let hc = root.join("hc.exe");
+        std::fs::write(&hc, "").expect("hc falso");
+        std::fs::write(
+            folder.join("voice.json"),
+            json!({"hc_path": hc.to_string_lossy()}).to_string(),
+        )
+        .expect("voice.json");
+        let _restore = {
+            let old = std::env::var_os("APPDATA");
+            std::env::set_var("APPDATA", &appdata);
+            Restore("APPDATA", old)
+        };
+        assert_eq!(Path::new(&herdr().hc_path()), hc);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn el_arbol_de_procesos_incluye_al_hijo() {

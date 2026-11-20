@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::agents::{self, AgentInfo};
 use crate::system::{self, SystemInfo};
+use crate::usage::{UsageReport, UsageState};
 
 /// El archivo que escribe `ez init`.
 pub const FILE_NAME: &str = "entorno.json";
@@ -24,8 +25,27 @@ pub struct Entorno {
     pub generated_ms: u64,
     pub system: SystemInfo,
     pub agents: Vec<AgentInfo>,
+    /// Uso y límites (§5) en el momento del escaneo, por agente.
+    pub usage: Vec<UsageSummary>,
     /// Lo que la persona debe declarar (planes y límites de uso).
     pub missing: Vec<String>,
+}
+
+/// El resumen de uso y límites de un agente.
+///
+/// No lleva tokens ni nada de las conversaciones: solo el estado, el plan, la
+/// ventana, el reinicio y de dónde salió el estado.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct UsageSummary {
+    pub key: String,
+    pub label: String,
+    pub state: UsageState,
+    pub plan: Option<String>,
+    pub window_hours: f64,
+    pub resets_ms: Option<u64>,
+    pub reset_text: Option<String>,
+    /// La explicación de dónde salió el estado (`Sources::state`).
+    pub source: String,
 }
 
 /// La ruta de `entorno.json`.
@@ -44,14 +64,34 @@ pub fn build(workdir: &Path) -> Result<Entorno, String> {
     });
     let system = system::system(workdir)?;
     let agents = agents::inventory(&crate::RealProbe, &cfg);
+    let usage = usage_summary(&crate::usage::report(&cfg));
     let missing = missing_declarations(&agents);
     Ok(Entorno {
         version: 1,
         generated_ms: now_ms(),
         system,
         agents,
+        usage,
         missing,
     })
+}
+
+/// El resumen de §5: estado, plan, ventana, reinicio y fuente, por agente.
+pub fn usage_summary(report: &UsageReport) -> Vec<UsageSummary> {
+    report
+        .agents
+        .iter()
+        .map(|agent| UsageSummary {
+            key: agent.key.clone(),
+            label: agent.label.clone(),
+            state: agent.state,
+            plan: agent.plan.clone(),
+            window_hours: agent.window_hours,
+            resets_ms: agent.resets_ms,
+            reset_text: agent.reset_text.clone(),
+            source: agent.sources.state.clone(),
+        })
+        .collect()
 }
 
 /// Escanea y escribe `entorno.json` de forma atómica.
@@ -131,7 +171,40 @@ mod tests {
                 herdr_app_version: None,
             },
             agents: Vec::new(),
+            usage: Vec::new(),
             missing: Vec::new(),
+        }
+    }
+
+    fn uso() -> UsageReport {
+        use crate::usage::{AgentUsage, Sources, TokenUsage};
+        UsageReport {
+            generated_ms: 7,
+            agents: vec![AgentUsage {
+                key: "opencode".into(),
+                label: "OpenCode".into(),
+                installed: true,
+                window_hours: 5.0,
+                used_percent: Some(42.0),
+                observed_window_hours: None,
+                tokens: Some(TokenUsage::new(10, 20, 0, 0)),
+                messages: Some(2),
+                cost_usd: None,
+                models: Vec::new(),
+                limit: None,
+                resets_ms: Some(99),
+                reset_text: Some("a las 12".into()),
+                plan: Some("OpenCode Go".into()),
+                priority: None,
+                state: UsageState::Cerca,
+                observed_ms: None,
+                sources: Sources {
+                    state: "42.0 % observado de la ventana".into(),
+                    ..Sources::default()
+                },
+                warnings: Vec::new(),
+            }],
+            warnings: Vec::new(),
         }
     }
 
@@ -147,6 +220,23 @@ mod tests {
             .join(format!(".entorno.json.{}.tmp", std::process::id()))
             .exists());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn el_resumen_de_uso_trae_estado_plan_ventana_reinicio_y_fuente() {
+        let summary = usage_summary(&uso());
+        assert_eq!(summary.len(), 1);
+        let entry = &summary[0];
+        assert_eq!(entry.key, "opencode");
+        assert_eq!(entry.state, UsageState::Cerca);
+        assert_eq!(entry.plan.as_deref(), Some("OpenCode Go"));
+        assert_eq!(entry.window_hours, 5.0);
+        assert_eq!(entry.resets_ms, Some(99));
+        assert_eq!(entry.reset_text.as_deref(), Some("a las 12"));
+        assert!(entry.source.contains("observado"));
+        let saved = serde_json::to_string(&summary).expect("JSON");
+        assert!(!saved.contains("tokens"), "{saved}");
+        assert!(!saved.contains("messages"), "{saved}");
     }
 
     #[test]
