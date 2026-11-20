@@ -618,3 +618,10 @@
   vigilarlas: se pidió probar que las tareas guardadas también se vean en espera.
 - Informe y worktree limpio comprobados. Sin pruebas propias aún; brief `DX-6b.md` y
   devolución enviados a `dx-6`. El humo visual queda pendiente de DX-7.
+
+### DX-5d — bloqueado por alcance; continúa como DX-5e
+- El informe señala que la identidad disponible no permite distinguir los turnos de forma
+  fiable dentro de los archivos originales. No cambió código. `DX-5e.md` amplía el alcance
+  a `ez-agent/src/runtime.rs`, `runtime/state.rs` y sus pruebas; pide verificar el ciclo
+  real, fallar cerrado ante ambigüedad y comprobar respuestas legítimas y abandono.
+- Informe y worktree limpio comprobados; brief enviado a `dx-5`.
