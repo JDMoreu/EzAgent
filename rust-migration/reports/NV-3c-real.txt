@@ -1,0 +1,10 @@
+app viva; hc real C:\Users\JDMoreu\AppData\Local\Programs\herdr-core\hc.exe; ez C:\Users\JDMoreu\Documents\EzAgent-wt\NV-3\rust\target\debug\examples\../ez.exe
+hijos reales: nv3c4540a (t21d) y nv3c4540b (t21f)
+ANUNCIO: Ojo: nv3c4540a (OpenCode · glm-5.3) está bloqueado: límite de uso del plan gratuito (se reinicia a las 19:00). ¿Lo reintento con la recomendación?
+ANUNCIO: Ojo: nv3c4540b (OpenCode · glm-5.3) falló: la terminal terminó sin informe (código 0).
+estado real: nv3c4540a = bloqueado (vigilante); nv3c4540b = fallido (vigilante)
+uso.json con glm-5.3: true
+oferta de reintento: Some("nv3c4540a")
+reintento: nv3c4540a-r1 terminal=t21g padre_hc="" viejo_vivo=false retry_of=Some("nv3c4540a")
+PÁNICO en el registro temporal: 0
+RESULT modo=real-hc bloqueado=true fallido=true reintento=true padre_voz=false viejo_vivo=false viva=true restos=0 panico=0
