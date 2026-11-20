@@ -461,3 +461,10 @@
   `target`. `cargo clean --release -p freetype-sys` → pasan. No es un fallo del código.
 - Mutación: maquetar todo el historial → fallan las 3 de `chat_virtualization`.
 - Humo visual aplazado hasta que la persona termine su prueba técnica (abre ventanas).
+
+### HD-0f — validado; supervisor fusionado (HD-0d + HD-0e + HD-0f)
+- Corrida del elefante sobre una copia (1416351): `probar.sh` en verde, con los casos 16
+  (pantalla que cambia), 17 (captura real), 18 (acentos y «→») y `ez tasks` del producto
+  leyendo los registros del supervisor (código 0, nombres, sin «registro ilegible»).
+- Mutación que antes sobrevivía (sin ventana de pantalla quieta) → falla el caso 16.
+- El supervisor queda **utilizable** de nuevo. Worktree HD-0d retirado; terminal cerrada.
