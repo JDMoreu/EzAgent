@@ -637,27 +637,31 @@ fn click_chat_close(_app: &VoiceApp) -> bool {
     false
 }
 
-/// Cuadros intermedios dentro de la duración de la animación.
+/// Cuadros intermedios presentados dentro de la duración de la animación.
 ///
 /// Se descartan los extremos (el cuadro inicial casi en 0 y el final en 1):
-/// una apertura que salta de 0 a 1 en un cuadro cuenta **cero**.
+/// una apertura que salta de 0 a 1 en un cuadro cuenta **cero**. El instante
+/// es el de entrega del cuadro (`ready`), no el del reloj de la animación: un
+/// cuadro que se compone en p = 0,5 pero se entrega 300 ms después no se ve
+/// "dentro" de la animación.
 fn middle_frames(frames: &[FrameRecord], seconds: f64) -> usize {
     frames
         .iter()
         .filter(|frame| {
-            frame.p > 0.02 && frame.p < 0.98 && frame.elapsed >= 0.0 && frame.elapsed <= seconds
+            frame.p > 0.02 && frame.p < 0.98 && frame.ready >= 0.0 && frame.ready <= seconds
         })
         .count()
 }
 
 /// Imprime un cuadro por línea, como la tabla del informe.
 fn print_frames(frames: &[FrameRecord]) {
-    say("fase       t(ms)      p    tamaño   alfa  contenido");
+    say("fase       t(ms)  listo(ms)      p    tamaño   alfa  contenido");
     for frame in frames {
         say(&format!(
-            "{:<8} {:>8.2} {:>6.3}   {:>4}x{:<4} {:>4}  {}",
+            "{:<8} {:>7.2} {:>9.2} {:>6.3}   {:>4}x{:<4} {:>4}  {}",
             frame.phase,
             frame.elapsed * 1000.0,
+            frame.ready * 1000.0,
             frame.p,
             frame.width,
             frame.height,

@@ -13,8 +13,11 @@ use parking_lot::Mutex;
 /// One frame the panel composed for its window.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FrameRecord {
-    /// Seconds since the current animation started.
+    /// Seconds since the animation started, at the instant of the frame.
     pub elapsed: f64,
+    /// Seconds since the animation started when the frame was ready to be
+    /// presented (the composition already finished).
+    pub ready: f64,
     /// `"opening"`, `"open"`, `"closing"` or `"closed"`.
     pub phase: &'static str,
     /// Eased morph progress: 0 is the bar shape, 1 the whole panel.
@@ -79,6 +82,7 @@ mod tests {
     fn frame(elapsed: f64) -> FrameRecord {
         FrameRecord {
             elapsed,
+            ready: elapsed,
             phase: "opening",
             p: 0.5,
             width: 440,

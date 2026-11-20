@@ -511,6 +511,7 @@ fn record_frame(
     }
     trace::push(trace::FrameRecord {
         elapsed: now - anim.t0,
+        ready: ez_core::metrics::monotonic() - anim.t0,
         phase: anim.state.as_str(),
         p,
         width: window.width,
