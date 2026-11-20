@@ -227,6 +227,8 @@ pub(super) fn register_launch(
         validation: None,
         notified: None,
     };
+    // DECISION: se guarda después del lanzamiento confirmado, con el registro
+    // todavía en `en_proceso`; un fallo al guardar no tumba la delegación.
     registry.create(&record).map_err(|error| {
         format!(
             "el subagente {} arrancó pero no pude guardar su registro: {}",

@@ -88,9 +88,10 @@ impl VoiceApp {
                 .announced
                 .lock()
                 .insert(record.name.clone(), record.state);
-            // El `notified` del disco se guarda fuera de la UI: el candado del
-            // registro puede esperar a otro escritor. Si el subagente ya cambió
-            // otra vez, este aviso quedó viejo y no se escribe.
+            // DECISION: el `notified` del disco se guarda fuera de la UI (el
+            // candado del registro puede esperar a otro escritor). Si el
+            // subagente ya cambió otra vez, este aviso quedó viejo y no se
+            // escribe.
             let app = self.clone();
             let registry = Arc::clone(&registry);
             let name = record.name.clone();
@@ -251,6 +252,8 @@ fn plain_key(text: &str) -> String {
 ///
 /// `HC_TERMINAL_ID` hace que `ez` busque el registro bajo el padre de la app.
 /// El nombre ya pasó `valid_name`; nunca se le pasa texto del subagente.
+// DECISION: se usa el `ez` compilado en vez de duplicar la elección `--auto`
+// de `ez-ctl`/IR-3 (lo autoriza la adenda de NV-3).
 fn run_ez_retry(name: &str) -> Result<String, String> {
     use std::process::Command;
 

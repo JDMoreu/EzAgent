@@ -87,6 +87,8 @@ pub fn parse_status_query(text: &str) -> Option<StatusQuery> {
             }
         }
         let name = name.trim_matches('.').trim();
+        // DECISION: las preguntas generales («¿cómo va todo?») no nombran un
+        // subagente y siguen al LLM.
         if GENERAL_WORDS.contains(&name) {
             continue;
         }
@@ -163,7 +165,8 @@ pub fn news_text(record: &Record) -> Option<String> {
         }
         TaskState::Failed => {
             let detail = last_detail(record).unwrap_or_else(|| "no sé por qué".to_string());
-            // `ez retry` marca el registro viejo; el reintento ya se contó.
+            // DECISION: `ez retry` marca el registro viejo; el reintento ya se
+            // contó y no hace falta anunciar el reemplazo como un fallo.
             if detail.starts_with("reemplazado por") {
                 return None;
             }
@@ -178,7 +181,7 @@ pub fn news_text(record: &Record) -> Option<String> {
         }
         TaskState::Validated => Some(validated_text(record, &label)),
         TaskState::InProgress => {
-            // El alta no es una novedad; volver de un bloqueo sí.
+            // DECISION: el alta no es una novedad; volver de un bloqueo sí.
             resumed_from_blocked(record).then(|| format!("{label} siguió trabajando."))
         }
     }

@@ -35,7 +35,7 @@
 
 ## Verificación
 - `cargo fmt -p ez-app -- --check`: sin diferencias (código 0).
-- `cargo clippy -p ez-app --all-targets -- -D warnings`: `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 3.74s` (código 0).
+- `cargo clippy -p ez-app --all-targets -- -D warnings`: `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 3.25s` (código 0).
 - `cargo test -p ez-app`: código 0; **368 pruebas de la librería en verde** (359 previas + 9 nuevas), más las de integración:
   `test result: ok. 368 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out`
   `test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out`
