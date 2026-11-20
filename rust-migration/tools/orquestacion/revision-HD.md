@@ -642,3 +642,12 @@
   y un fallo en `secondary_validation_fails_closed_without_a_secondary`: el mensaje no
   contiene «secundaria» (`monitor.rs:398`). Se devolvió al subagente para corregirlo sin
   compilar ni abrir ventanas. La validación y los humos siguen pendientes.
+
+### DX-7b — validación y devolución visual (DX-7c)
+- Corregido el mensaje: 12 pruebas de monitor en verde. Formato, clippy y pruebas completas
+  de `ez-app` (369 principales) y `ez-hud` (580 principales), más integraciones, pasaron
+  con un trabajo de compilación y un hilo. Las mutaciones de selección y de límite inferior
+  fueron detectadas; archivos restaurados.
+- Humo `chat` en `DISPLAY2`, verificado antes de abrir: barra dentro; chat terminó un
+  píxel fuera del borde inferior (`1528` frente a `1527`), sin pánico y código 1. Se pidió
+  corregir la ventana real sin relajar el chequeo en DX-7c. No se fusionó.
