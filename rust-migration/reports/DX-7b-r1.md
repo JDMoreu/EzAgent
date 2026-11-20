@@ -77,6 +77,15 @@ git diff --check
   → sin errores (solo avisos LF/CRLF de Git)
 ```
 
+### Validación independiente (recibida, no ejecutada en esta sesión)
+
+`cargo test -q -p ez-hud --lib win::monitor::tests -- --test-threads=1`: 11
+pruebas pasan y `secondary_validation_fails_closed_without_a_secondary` falla en
+`monitor.rs:398`. La causa era el texto del error: decía «monitor secundario
+disponible» y la prueba busca «secundaria». Se cambió a «no hay una pantalla
+secundaria disponible; los humos no abren ventanas en la principal». No se
+reejecutó la prueba en esta sesión.
+
 Queda por verificar, desde `rust/`:
 
 ```
@@ -101,8 +110,10 @@ porque no se abrieron ventanas.
 
 ## Pendiente o riesgos
 
-- **Verificación pendiente**: fmt, clippy, tests y los humos no se ejecutaron.
-  El brief pide además la salida real del humo `chat` en `DISPLAY2`; hay que
+- **Verificación pendiente**: fmt, clippy, tests y los humos no se ejecutaron en
+  esta sesión. Hay que reejecutar `cargo test -q -p ez-hud --lib
+  win::monitor::tests -- --test-threads=1` tras la corrección del mensaje. El
+  brief pide además la salida real del humo `chat` en `DISPLAY2`; hay que
   correrla antes de dar DX-7b por completado.
 - `Assert-SecondaryMonitor` depende de `System.Windows.Forms` en PowerShell. Si
   esa assembly no está disponible, el guion falla cerrado con el motivo, que es

@@ -100,7 +100,7 @@ pub fn require_secondary(monitors: &[(Rect, Rect, bool)]) -> Result<Rect, String
     choose_monitor(monitors, ScreenChoice::Secondary)
         .map(|(rect, _)| rect)
         .ok_or_else(|| {
-            String::from("no hay un monitor secundario disponible; los humos no abren ventanas en la principal")
+            String::from("no hay una pantalla secundaria disponible; los humos no abren ventanas en la principal")
         })
 }
 
