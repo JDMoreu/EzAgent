@@ -4,17 +4,22 @@
 //! (`rcMonitor` del monitor bajo el cursor), `taskbar_rect` y `clamp_pos`, que
 //! mantiene la ventana dentro de la pantalla. La lógica pura (elegir monitor a
 //! partir de rectángulos y recortar posiciones) no toca Win32 y se prueba aquí.
+//!
+//! DX-7: con `EZAGENT_TEST_MONITOR=secondary` todas las áreas que usan las
+//! ventanas (barra, chat, menú y vista rápida) son las del primer monitor no
+//! principal. Sin la variable —y en la app de la persona— todo sigue igual.
 
 use std::mem::size_of;
 
-use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::RECT;
+use windows::core::{w, BOOL, PCWSTR};
+use windows::Win32::Foundation::{LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    EnumDisplayMonitors, GetMonitorInfoW, MonitorFromPoint, HDC, HMONITOR, MONITORINFO,
+    MONITOR_DEFAULTTONEAREST,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, GetCursorPos, GetWindowRect, SystemParametersInfoW, SPI_GETWORKAREA,
-    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    FindWindowW, GetCursorPos, GetWindowRect, SystemParametersInfoW, MONITORINFOF_PRIMARY,
+    SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
 };
 
 /// `(left, top, right, bottom)` en píxeles físicos.
@@ -26,11 +31,137 @@ pub const EDGE_MARGIN: i32 = 18;
 /// Lo que devuelve el Python si la consulta de Win32 falla.
 pub const DEFAULT_WORK_AREA: Rect = (0, 0, 1920, 1080);
 
-/// Área de trabajo, ya sin la barra de tareas (`SPI_GETWORKAREA`).
+/// Variable **solo para pruebas**: `secondary` mueve las ventanas del HUD al
+/// primer monitor no principal; `primary` las deja donde siempre.
+///
+/// La app de la persona no la define; un valor desconocido se ignora.
+pub const TEST_MONITOR_ENV: &str = "EZAGENT_TEST_MONITOR";
+
+/// Monitor que piden las pruebas con [`TEST_MONITOR_ENV`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScreenChoice {
+    /// Monitor principal (el comportamiento de siempre).
+    Primary,
+    /// Primer monitor no principal, en el orden de `EnumDisplayMonitors`.
+    Secondary,
+}
+
+/// Interpreta el valor de [`TEST_MONITOR_ENV`] (sin leer el entorno).
+pub fn screen_choice(value: Option<&str>) -> Option<ScreenChoice> {
+    match value?.trim().to_ascii_lowercase().as_str() {
+        "secondary" => Some(ScreenChoice::Secondary),
+        "primary" => Some(ScreenChoice::Primary),
+        _ => None,
+    }
+}
+
+/// Monitor que pide el entorno, si pide alguno.
+pub fn requested_screen() -> Option<ScreenChoice> {
+    let value = std::env::var(TEST_MONITOR_ENV).ok();
+    screen_choice(value.as_deref())
+}
+
+/// Elige `(rcMonitor, rcWork)` del monitor pedido.
+///
+/// La lista es `(rcMonitor, rcWork, es_principal)`. `Primary` toma el primer
+/// principal (o el primero de la lista si ninguno lo está); `Secondary` toma el
+/// primer no principal y devuelve `None` si no hay ninguno.
+pub fn choose_monitor(
+    monitors: &[(Rect, Rect, bool)],
+    choice: ScreenChoice,
+) -> Option<(Rect, Rect)> {
+    match choice {
+        ScreenChoice::Primary => monitors
+            .iter()
+            .find(|(_, _, primary)| *primary)
+            .or_else(|| monitors.first())
+            .map(|(rect, work, _)| (*rect, *work)),
+        ScreenChoice::Secondary => monitors
+            .iter()
+            .find(|(_, _, primary)| !*primary)
+            .map(|(rect, work, _)| (*rect, *work)),
+    }
+}
+
+/// `true` si `rect` está entero dentro de `monitor`.
+pub fn rect_inside(rect: Rect, monitor: Rect) -> bool {
+    rect.0 >= monitor.0 && rect.1 >= monitor.1 && rect.2 <= monitor.2 && rect.3 <= monitor.3
+}
+
+/// Monitores del escritorio con `EnumDisplayMonitors` + `GetMonitorInfoW`.
+fn desktop_monitors() -> Vec<(Rect, Rect, bool)> {
+    // SAFETY: el callback solo escribe en el `Vec` que `desktop_monitors`
+    // mantiene vivo durante `EnumDisplayMonitors`; `info` es local y lleva su
+    // `cbSize`.
+    unsafe extern "system" fn collect(
+        monitor: HMONITOR,
+        _dc: HDC,
+        _rect: *mut RECT,
+        data: LPARAM,
+    ) -> BOOL {
+        // SAFETY: `data` es el puntero al `Vec` de `desktop_monitors`.
+        let found = unsafe { &mut *(data.0 as *mut Vec<(Rect, Rect, bool)>) };
+        let mut info = MONITORINFO {
+            cbSize: size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: `monitor` lo entrega Windows y `info` es local con su `cbSize`.
+        if unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
+            found.push((
+                as_rect(info.rcMonitor),
+                as_rect(info.rcWork),
+                info.dwFlags & MONITORINFOF_PRIMARY != 0,
+            ));
+        }
+        BOOL::from(true)
+    }
+
+    let mut found = Vec::new();
+    // SAFETY: el callback solo escribe en `found`, vivo durante la llamada.
+    let _ = unsafe {
+        EnumDisplayMonitors(
+            None,
+            None,
+            Some(collect),
+            LPARAM(&mut found as *mut Vec<(Rect, Rect, bool)> as isize),
+        )
+    };
+    found
+}
+
+/// Área de trabajo del monitor pedido, si existe.
+fn chosen_area(choice: ScreenChoice) -> Option<(Rect, Rect)> {
+    choose_monitor(&desktop_monitors(), choice)
+}
+
+fn as_rect(rect: RECT) -> Rect {
+    (rect.left, rect.top, rect.right, rect.bottom)
+}
+
+/// Área de trabajo, ya sin la barra de tareas.
+///
+/// Sin [`TEST_MONITOR_ENV`] usa `SPI_GETWORKAREA` (la principal). Con
+/// `secondary` usa el `rcWork` del primer monitor no principal; si no hay,
+/// avisa por `tracing` y devuelve la principal.
 ///
 /// El código anterior usaba `0x0048`, que no es esa constante: la llamada
 /// fallaba y la muesca se colaba bajo la barra.
 pub fn work_area() -> Rect {
+    if requested_screen() == Some(ScreenChoice::Secondary) {
+        match chosen_area(ScreenChoice::Secondary) {
+            Some((_, work)) => return work,
+            None => {
+                tracing::warn!(
+                    "EZAGENT_TEST_MONITOR=secondary sin monitor secundario; se usa la principal"
+                );
+            }
+        }
+    }
+    primary_work_area()
+}
+
+/// `SPI_GETWORKAREA`: el área de trabajo de la pantalla principal.
+fn primary_work_area() -> Rect {
     let mut rect = RECT::default();
     // SAFETY: `rect` es una estructura local viva durante la llamada y del tipo
     // que espera SPI_GETWORKAREA.
@@ -43,7 +174,7 @@ pub fn work_area() -> Rect {
         )
     };
     if result.is_ok() {
-        (rect.left, rect.top, rect.right, rect.bottom)
+        as_rect(rect)
     } else {
         DEFAULT_WORK_AREA
     }
@@ -55,6 +186,13 @@ pub fn work_area() -> Rect {
 /// superior. Sin coordenadas se usa el monitor bajo el cursor y
 /// `MONITOR_DEFAULTTONEAREST` como respaldo.
 pub fn monitor_rect(x: Option<i32>, y: Option<i32>) -> Rect {
+    // DX-7: en las pruebas, el monitor es el que pide la variable, aunque el
+    // puntero esté en el otro.
+    if let Some(choice) = requested_screen() {
+        if let Some((rect, _)) = chosen_area(choice) {
+            return rect;
+        }
+    }
     let (x, y) = match (x, y) {
         (Some(x), Some(y)) => (x, y),
         _ => {
@@ -90,6 +228,14 @@ pub fn monitor_rect(x: Option<i32>, y: Option<i32>) -> Rect {
 /// pantalla COMPLETA: sin esto, la ventana se colocaría justo donde la barra
 /// aparece al asomar el ratón.
 pub fn taskbar_rect() -> Option<Rect> {
+    // DX-7: la barra de tareas vive en la principal. Recortar contra ella
+    // movería las ventanas de la secundaria (su `y` cae dentro del rango del
+    // área vertical) hacia la mitad de la pantalla.
+    if requested_screen() == Some(ScreenChoice::Secondary)
+        && chosen_area(ScreenChoice::Secondary).is_some()
+    {
+        return None;
+    }
     // SAFETY: nombres constantes; el HWND devuelto se consulta de inmediato.
     let hwnd = unsafe { FindWindowW(w!("Shell_TrayWnd"), PCWSTR::null()) }.ok()?;
     if hwnd.0.is_null() {
@@ -189,5 +335,61 @@ mod tests {
         assert_eq!(monitor_for_point(&rects, -10, 500), Some(rects[0]));
         assert_eq!(monitor_for_point(&rects, 4000, 500), Some(rects[1]));
         assert_eq!(monitor_for_point(&rects, 1900, 500), Some(rects[0]));
+    }
+
+    #[test]
+    fn test_monitor_variable_understands_both_values() {
+        assert_eq!(
+            screen_choice(Some("secondary")),
+            Some(ScreenChoice::Secondary)
+        );
+        assert_eq!(
+            screen_choice(Some(" Primary ")),
+            Some(ScreenChoice::Primary)
+        );
+        assert_eq!(screen_choice(Some("DISPLAY2")), None);
+        assert_eq!(screen_choice(None), None);
+    }
+
+    #[test]
+    fn monitor_choice_uses_the_first_secondary() {
+        let primary = ((0, 0, 1920, 1080), (0, 0, 1920, 1040), true);
+        let secondary = ((-1080, -393, 0, 1527), (-1080, -393, 0, 1527), false);
+        let monitors = [primary, secondary];
+        assert_eq!(
+            choose_monitor(&monitors, ScreenChoice::Primary),
+            Some((primary.0, primary.1))
+        );
+        assert_eq!(
+            choose_monitor(&monitors, ScreenChoice::Secondary),
+            Some((secondary.0, secondary.1))
+        );
+    }
+
+    #[test]
+    fn vertical_secondary_on_the_left_keeps_its_negative_coordinates() {
+        let secondary = ((-1080, -393, 0, 1527), (-1080, -393, 0, 1527), false);
+        let monitors = [secondary, ((0, 0, 1920, 1080), (0, 0, 1920, 1080), true)];
+        let (rect, work) = choose_monitor(&monitors, ScreenChoice::Secondary).expect("secundaria");
+        assert_eq!(rect, secondary.0);
+        // El recorte se queda dentro de la vertical, con `x` e `y` negativos.
+        assert_eq!(clamp_in(work, None, -5000, -5000, 100), (-1071, -384));
+        assert_eq!(clamp_in(work, None, 5000, 5000, 100), (-109, 1418));
+    }
+
+    #[test]
+    fn without_secondary_the_choice_is_none() {
+        let primary = ((0, 0, 1920, 1080), (0, 0, 1920, 1040), true);
+        assert_eq!(choose_monitor(&[primary], ScreenChoice::Secondary), None);
+        assert_eq!(choose_monitor(&[], ScreenChoice::Primary), None);
+    }
+
+    #[test]
+    fn rect_inside_checks_every_edge() {
+        let monitor = (-1080, -393, 0, 1527);
+        assert!(rect_inside((-1000, -300, -100, 1000), monitor));
+        assert!(!rect_inside((-1000, -300, 10, 1000), monitor));
+        assert!(!rect_inside((-1000, -300, -100, 2000), monitor));
+        assert!(!rect_inside((-1100, -300, -100, 1000), monitor));
     }
 }

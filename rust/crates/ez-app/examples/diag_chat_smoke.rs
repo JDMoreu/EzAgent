@@ -16,7 +16,13 @@
 //! ```text
 //! cargo run --release -p ez-app --example diag_chat_smoke
 //! cargo run --release -p ez-app --example diag_chat_smoke -- chat
+//! cargo run --release -p ez-app --example diag_chat_smoke -- chat --primary
 //! ```
+//!
+//! DX-7: por omisión las ventanas se abren en el **monitor secundario**
+//! (`EZAGENT_TEST_MONITOR=secondary`); con `--primary` se ven en el principal.
+//! Al terminar imprime el rectángulo de cada ventana y falla si alguna quedó
+//! fuera del monitor pedido.
 //!
 //! El modo por omisión reproduce la secuencia que tumbó la app: llamada
 //! iniciada, «HUD: panel» (el menú de ajustes), tres segundos, «HUD: chat».
@@ -51,6 +57,7 @@ use ez_core::config::VoiceConfig;
 use ez_hud::model::chat::view::{BTN, HEADER_H, PAD};
 use ez_hud::win::chat::trace::{self, FrameRecord};
 use ez_hud::win::chat::{CLOSE_SECS, MARGIN, MORPH_SECS};
+use ez_hud::win::monitor::{monitor_rect, rect_inside, Rect, TEST_MONITOR_ENV};
 
 /// Segundos que el chat tiene que seguir vivo.
 const ALIVE_SECS: u64 = 10;
@@ -444,6 +451,96 @@ fn panic_lines(dir: &std::path::Path) -> Vec<String> {
         }
     }
     out
+}
+
+/// Rectángulos de las ventanas layered de este proceso (título, rectángulo).
+#[cfg(windows)]
+fn layered_windows() -> Vec<(String, Rect)> {
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{HWND, LPARAM, RECT};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetClassNameW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
+    };
+
+    unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        // SAFETY: `lparam` apunta al `Vec` vivo de `layered_windows`.
+        let list = unsafe { &mut *(lparam.0 as *mut Vec<(String, RECT)>) };
+        let mut pid = 0u32;
+        // SAFETY: `hwnd` lo entrega EnumWindows y `pid` es local.
+        unsafe {
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        }
+        if pid != std::process::id() {
+            return BOOL::from(true);
+        }
+        let mut class = [0u16; 128];
+        // SAFETY: el búfer es local y del tamaño que pide el API.
+        let length = unsafe { GetClassNameW(hwnd, &mut class) }.max(0) as usize;
+        if String::from_utf16_lossy(&class[..length.min(class.len())]) != "ezagent-layered-window" {
+            return BOOL::from(true);
+        }
+        let mut title = [0u16; 256];
+        // SAFETY: igual que el anterior.
+        let shown = unsafe { GetWindowTextW(hwnd, &mut title) }.max(0) as usize;
+        let mut rect = RECT::default();
+        // SAFETY: `rect` es local y válido durante la consulta.
+        if unsafe { GetWindowRect(hwnd, &mut rect) }.is_ok() {
+            list.push((
+                String::from_utf16_lossy(&title[..shown.min(title.len())]),
+                rect,
+            ));
+        }
+        BOOL::from(true)
+    }
+
+    let mut list: Vec<(String, RECT)> = Vec::new();
+    // SAFETY: el callback solo escribe en `list`, vivo durante la llamada.
+    unsafe {
+        let _ = EnumWindows(Some(collect), LPARAM(&mut list as *mut _ as isize));
+    }
+    list.into_iter()
+        .map(|(title, rect)| (title, (rect.left, rect.top, rect.right, rect.bottom)))
+        .collect()
+}
+
+#[cfg(not(windows))]
+fn layered_windows() -> Vec<(String, Rect)> {
+    Vec::new()
+}
+
+/// DX-7: nombre legible de las ventanas layered del HUD.
+fn window_label(title: &str) -> &str {
+    match title {
+        "drop" => "barra",
+        "EzAgent" => "chat",
+        "card" => "menú",
+        "peek" => "vista rápida",
+        other => other,
+    }
+}
+
+/// DX-7: imprime el monitor pedido y dónde quedó cada ventana propia; falla si
+/// alguna se salió del monitor.
+fn check_monitor() -> bool {
+    let monitor = monitor_rect(None, None);
+    let requested = std::env::var(TEST_MONITOR_ENV).unwrap_or_default();
+    say(&format!("monitor pedido: {requested:?} · rect {monitor:?}"));
+    let windows = layered_windows();
+    let mut inside = true;
+    for (title, rect) in &windows {
+        let ok = rect_inside(*rect, monitor);
+        inside &= ok;
+        say(&format!(
+            "ventana {:?}: rect {rect:?} dentro={ok}",
+            window_label(title)
+        ));
+    }
+    if windows.is_empty() {
+        say("ventanas: ninguna");
+        // DECISION: fuera de Windows no hay ventanas Win32 que comprobar.
+        return cfg!(not(windows));
+    }
+    inside
 }
 
 /// Hace clic en un botón de la barra como lo haría el ratón: los mismos
@@ -854,9 +951,23 @@ fn fuzz_windows(rounds: usize) {
 fn fuzz_windows(_rounds: usize) {}
 
 fn main() {
-    let mode = std::env::args()
-        .nth(1)
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    // DX-7: `--primary` deja las ventanas en la pantalla principal.
+    let primary = args.iter().any(|arg| arg == "--primary");
+    let mode = args
+        .iter()
+        .find(|arg| arg.as_str() != "--primary")
+        .cloned()
         .unwrap_or_else(|| "sequence".to_string());
+    // DECISION (DX-7): los humos usan la secundaria por omisión para no
+    // estorbar a la persona; la app real no define esta variable. Un valor
+    // explícito en el entorno se respeta; `--primary` manda sobre él.
+    if primary || std::env::var_os(TEST_MONITOR_ENV).is_none() {
+        std::env::set_var(
+            TEST_MONITOR_ENV,
+            if primary { "primary" } else { "secondary" },
+        );
+    }
     let big = mode == "big";
     // DX-1f: `anim` mide la animación de apertura y de cierre.
     let anim = mode == "anim";
@@ -998,8 +1109,13 @@ fn main() {
                 say(line);
             }
         }
+        let inside = check_monitor();
         app.shutdown();
-        std::process::exit(if code == 0 && panics.is_empty() { 0 } else { 1 });
+        std::process::exit(if code == 0 && panics.is_empty() && inside {
+            0
+        } else {
+            1
+        });
     }
 
     let deadline = Instant::now() + Duration::from_secs(ALIVE_SECS);
@@ -1064,8 +1180,9 @@ fn main() {
         }
     }
     eprintln!("RESULT chat_open={alive} alive_secs={ALIVE_SECS}");
+    let inside = check_monitor();
     app.shutdown();
-    if !alive || !panics.is_empty() || peak_mb > 1024 {
+    if !alive || !inside || !panics.is_empty() || peak_mb > 1024 {
         std::process::exit(1);
     }
 }

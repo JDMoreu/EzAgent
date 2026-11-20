@@ -22,6 +22,11 @@
 //! ./target/debug/examples/diag_subagents_smoke.exe             # fake-hc
 //! ./target/debug/examples/diag_subagents_smoke.exe --real-hc    # hc real
 //! ```
+//!
+//! DX-7: pone `EZAGENT_TEST_MONITOR=secondary` por omisión (las ventanas de
+//! sus pruebas, si hubiera, van a la pantalla secundaria); con `--primary` usa
+//! la principal. Este humo no abre el HUD (`hud_hidden`), así que no tiene
+//! ventanas propias que comprobar.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -360,7 +365,28 @@ fn fail(logs: &Path, temp: &Path, message: &str) -> i32 {
 }
 
 fn main() {
-    let mode = std::env::args().nth(1).unwrap_or_default();
+    use std::io::Write as _;
+
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let primary = args.iter().any(|arg| arg == "--primary");
+    let mode = args
+        .iter()
+        .find(|arg| arg.as_str() != "--primary")
+        .cloned()
+        .unwrap_or_default();
+    // DECISION (DX-7): la secundaria por omisión, para no estorbar a la
+    // persona; la app real no define esta variable. Un valor explícito en el
+    // entorno se respeta; `--primary` manda sobre él.
+    let test_monitor = ez_hud::win::monitor::TEST_MONITOR_ENV;
+    if primary || std::env::var_os(test_monitor).is_none() {
+        std::env::set_var(test_monitor, if primary { "primary" } else { "secondary" });
+    }
+    let monitor = ez_hud::win::monitor::monitor_rect(None, None);
+    let requested = std::env::var(test_monitor).unwrap_or_default();
+    let _ = writeln!(
+        std::io::stderr(),
+        "monitor de la prueba: {requested:?} · rect {monitor:?}"
+    );
     let code = if mode == "--real-hc" {
         real::run()
     } else {

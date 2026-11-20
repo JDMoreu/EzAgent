@@ -1,6 +1,11 @@
 # DX-3b: humo reproducible de whisper-server atado a la vida de la app (DX-3).
 #
 # Uso: powershell -NoProfile -File scripts\tests\humo-whisper.ps1
+#      powershell -NoProfile -File scripts\tests\humo-whisper.ps1 -Primary
+#
+# DX-7: la app de la prueba abre sus ventanas en la pantalla secundaria
+# (EZAGENT_TEST_MONITOR=secondary); con -Primary, en la principal. La app de la
+# persona no define esa variable.
 #
 # Requiere, desde rust/:
 #   cargo build --release -p ez-app --bin ezagent-voice
@@ -15,7 +20,8 @@
 
 param(
     [string]$App = "",
-    [string]$Fake = ""
+    [string]$Fake = "",
+    [switch]$Primary
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,6 +49,7 @@ $originalWhisperHome = $env:EZAGENT_WHISPER_HOME
 $originalWhisperUrl = $env:WHISPER_URL
 $originalWhisperEngine = $env:WHISPER_ENGINE
 $originalHome = $env:EZAGENT_HOME
+$originalTestMonitor = $env:EZAGENT_TEST_MONITOR
 $originalLlm = @{}
 foreach ($name in @("LLM_PROVIDER", "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "LLM_API_STYLE")) {
     $originalLlm[$name] = [Environment]::GetEnvironmentVariable($name)
@@ -154,6 +161,7 @@ try {
     $env:LLM_MODEL = "humo"
     $env:LLM_API_KEY = "humo"
     $env:LLM_API_STYLE = "openai"
+    $env:EZAGENT_TEST_MONITOR = if ($Primary) { "primary" } else { "secondary" }
 
     Write-Host "== 1. arranca, se mata sin aviso y el servidor muere =="
     $first = Start-VoiceApp
@@ -264,6 +272,7 @@ finally {
     $env:EZAGENT_HOME = $originalHome
     $env:WHISPER_URL = $originalWhisperUrl
     $env:WHISPER_ENGINE = $originalWhisperEngine
+    $env:EZAGENT_TEST_MONITOR = $originalTestMonitor
     foreach ($name in $originalLlm.Keys) {
         [Environment]::SetEnvironmentVariable($name, $originalLlm[$name])
     }

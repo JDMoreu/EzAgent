@@ -11,15 +11,28 @@
 //!
 //! ```text
 //! cargo run --release -p ez-hud --example panic_boundary
+//! cargo run --release -p ez-hud --example panic_boundary -- --primary
 //! ```
+//!
+//! DX-7: por omisión la ventana se abre en el **monitor secundario**
+//! (`EZAGENT_TEST_MONITOR=secondary`); con `--primary`, en el principal. Al
+//! final imprime el rectángulo de la ventana y falla si quedó fuera del monitor
+//! pedido.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ez_hud::win::layered::{LayeredWindow, RgbaFrame, WindowHooks, WindowOptions};
+use ez_hud::win::monitor::{monitor_rect, rect_inside, work_area, TEST_MONITOR_ENV};
 use windows::Win32::Foundation::{LPARAM, WPARAM};
-use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_LBUTTONDOWN};
+use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, PostMessageW, WM_LBUTTONDOWN};
+
+/// Escribe una línea del informe (el ejemplo no usa `eprintln!`).
+fn say(text: &str) {
+    use std::io::Write;
+    let _ = writeln!(std::io::stderr(), "{text}");
+}
 
 /// El clic llegó al callback (antes del pánico, para poder esperarlo).
 static HIT: AtomicBool = AtomicBool::new(false);
@@ -35,12 +48,25 @@ impl WindowHooks for PanicHook {
 }
 
 fn main() {
+    // DX-7: las pruebas, en la pantalla secundaria salvo que se pida la
+    // principal. Un valor explícito en el entorno se respeta; `--primary`
+    // manda sobre él.
+    let primary = std::env::args().any(|arg| arg == "--primary");
+    if primary || std::env::var_os(TEST_MONITOR_ENV).is_none() {
+        std::env::set_var(
+            TEST_MONITOR_ENV,
+            if primary { "primary" } else { "secondary" },
+        );
+    }
+    let work = work_area();
     let dir = std::env::temp_dir().join(format!("ezagent-dx1d-panic-{}", std::process::id()));
     // El hook escribe el mensaje y la ubicación de forma síncrona: el registro
     // del `tracing` es asíncrono y se pierde al abortar.
     ez_core::panics::install_hook_in(&dir);
 
     let mut options = WindowOptions::new(64, 64);
+    options.x = work.0;
+    options.y = work.1;
     options.title = String::from("dx1d-panic");
     options.interval = 1.0 / 60.0;
     let window = Arc::new(LayeredWindow::new(options));
@@ -82,6 +108,18 @@ fn main() {
     // El hook escribe la línea antes de desenrollar: si el proceso sigue vivo
     // y la línea está, el pánico no cruzó la frontera FFI.
     std::thread::sleep(Duration::from_millis(300));
+    // DX-7: la ventana tiene que haber quedado dentro del monitor pedido.
+    let mut rect = windows::Win32::Foundation::RECT::default();
+    // SAFETY: la ventana es propia y `rect` es local.
+    let inside = unsafe { GetWindowRect(window_handle, &mut rect) }.is_ok()
+        && rect_inside(
+            (rect.left, rect.top, rect.right, rect.bottom),
+            monitor_rect(None, None),
+        );
+    say(&format!(
+        "ventana dx1d-panic: rect ({}, {}, {}, {}) dentro={inside}",
+        rect.left, rect.top, rect.right, rect.bottom
+    ));
     let mut found = false;
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for entry in entries.flatten() {
@@ -97,6 +135,10 @@ fn main() {
     window.stop(true);
     if !found {
         eprintln!("el clic no llegó a un callback que entre en pánico");
+        std::process::exit(1);
+    }
+    if !inside {
+        say("la ventana se salió del monitor pedido");
         std::process::exit(1);
     }
     println!("VIVO: el pánico quedó atrapado en el callback");
