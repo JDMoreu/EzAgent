@@ -597,3 +597,17 @@
 - Informe de entrega y worktree limpio comprobados. Brief `DX-5c.md`; devolución enviada a
   `dx-5`. No se ejecutó el ejemplo que carga `voice.json` para respetar la prohibición de
   leer credenciales.
+
+### DX-4b — pruebas y mutaciones en verde; integración pendiente de DX-7
+- Corrida propia: fmt, clippy y `cargo test -p ez-app` en verde (381 pruebas principales
+  más integraciones). El subagente también informa la batería en verde.
+- Mutaciones restauradas: reanudar tareas al abrir hizo fallar la prueba de la cadena;
+  arrancar el supervisor tras fallar el inventario hizo fallar la prueba de cierre seguro.
+  Worktree limpio tras restaurar. Falta revisión final e integración después de DX-7.
+
+### DX-5c — revisión: devuelto (DX-5d)
+- La huella por texto no distingue pedidos idénticos ni con igual prefijo de 160 caracteres;
+  tampoco demuestra la identidad de un pedido. Se pidió ligar las elecciones al ciclo real
+  de la pregunta, sin depender del texto generado por el LLM, y probar ambos casos.
+- Informe de entrega y worktree limpio comprobados. Sin pruebas propias de DX-5c; brief
+  `DX-5d.md` y devolución enviados a `dx-5`.
