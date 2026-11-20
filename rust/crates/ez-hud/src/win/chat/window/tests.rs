@@ -756,6 +756,19 @@ fn the_panel_paints_one_soft_shadow() {
         assert_one_soft_shadow(&frame, 336, state);
     }
     // Redimensionado: el mismo panel en una ventana más alta.
+    //
+    // El bucle deja el panel en `Closing` y el morph apaga la sombra con el
+    // progreso (`shadow_k`): sin volver a `Open`, este cuadro dependía del
+    // reloj real (en debug el cierre ya había avanzado entre un cuadro y el
+    // siguiente y no quedaba sombra; en release sí).
+    {
+        let mut inner = panel.state.lock();
+        inner.anim = Anim {
+            state: AnimState::Open,
+            t0: 0.0,
+            p: 1.0,
+        };
+    }
     window.resize(472, 732);
     let frame = panel.render();
     assert_one_soft_shadow(&frame, 366, AnimState::Open);
