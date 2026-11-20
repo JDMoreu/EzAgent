@@ -548,3 +548,20 @@
 - «La animación del hub al chat no se está realizando, pero al cerrar el chat y pasar al
   hub sí»: DX-1f lanzado (`dx-1f` t212) desde `eco/main`: diagnóstico cuadro a cuadro,
   arreglo sin deshacer DX-1b ni DX-1d, modo `anim` en el humo que falla si la apertura salta.
+
+### NV-3 + NV-3b + NV-3c — validado y fusionado (77ff4a9)
+- La app registra sus lanzamientos bajo `voz`, los vigila con el `Watcher` de NV-1
+  (`NoticeSink` + modo sin padre-terminal), anuncia cada novedad una vez con frases del
+  código, responde «¿cómo va X?» y reintenta sin `--parent voz`.
+- Corrida del elefante: 17 suites de `ez-herdr` + `ez-app`. Mutaciones: volver a
+  `--parent voz` → falla `un_padre_sin_terminal_lanza_sin_parent…`; vigilante de la app sin
+  vueltas → falla `el_vigilante_de_la_app_bloquea_y_avisa…`. Humo `--real-hc` (hc real,
+  hijos falsos, `ez` real): bloqueado y fallido detectados por el vigilante, reintento
+  `-r1` con `padre_hc=""`, vieja cerrada, 0 restos, 0 PÁNICO.
+- Tras fusionar: 51 suites de `ez-herdr`, `ez-ctl`, `ez-scan`, `ez-app`, `ez-stt`, `ez-hud`
+  en verde.
+
+### Apagado programado (petición de la persona, 21:53)
+- `shutdown /s` a las 00:00; vigilante (`scratchpad/apagado.sh`) que a las 23:50 lo aplaza
+  una hora si el trabajo no terminó (y no aplaza si la sesión del agente principal ya no
+  existe). Si se termina antes, el agente principal apaga al cerrar.
