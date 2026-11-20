@@ -135,6 +135,44 @@ fn init_escribe_entorno_con_los_agentes_falsos() {
         .as_str()
         .unwrap_or_default()
         .ends_with("fakecodex.cmd"));
+    let usage = saved["usage"].as_array().expect("uso por agente");
+    for key in ["qwen", "codex"] {
+        let agent = usage
+            .iter()
+            .find(|agent| agent["key"] == key)
+            .unwrap_or_else(|| panic!("falta el uso de {key}: {usage:?}"));
+        assert!(agent["state"].is_string(), "{agent}");
+        assert!(
+            agent["window_hours"].as_f64().unwrap_or(0.0) > 0.0,
+            "{agent}"
+        );
+        assert!(
+            !agent["source"].as_str().unwrap_or_default().is_empty(),
+            "{agent}"
+        );
+        assert!(agent.get("tokens").is_none(), "sin tokens: {agent}");
+    }
+}
+
+#[test]
+fn recommend_respeta_un_modelo_con_punto_sin_comillas() {
+    let root = setup();
+    write(
+        &root
+            .path()
+            .join("appdata")
+            .join("EzAgent")
+            .join("modelos.toml"),
+        "[qwen3.coder-plus]\nagente = \"qwen\"\nnivel = \"alto\"\n\
+         costo = \"gratis\"\nfamilia = \"qwen\"\n",
+    );
+    let (code, out, err) = run(root.path(), &["recommend", "planner", "--json"]);
+    assert_eq!(code, 0, "salida: {out}\nerror: {err}");
+    let data = json(&out);
+    assert_eq!(data["ok"], true);
+    assert_eq!(data["recommendation"]["agent"], "qwen");
+    assert_eq!(data["recommendation"]["model"], "qwen3.coder-plus");
+    assert!(!err.contains("modelos.toml"), "aviso falso: {err}");
 }
 
 #[test]

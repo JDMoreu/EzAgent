@@ -2,12 +2,16 @@
 //!
 //! Formato, una tabla por modelo (el nombre es la clave):
 //! ```text
-//! [deepseek-v4.1-flash]
+//! ["deepseek-v4.1-flash"]
 //! agente = "opencode"   # opcional si el modelo está en los de fábrica
 //! nivel = "medio"       # alto | medio | bajo
 //! costo = "plan"        # gratis | plan | pago
 //! familia = "deepseek"
 //! ```
+//!
+//! El nombre va entre comillas: sin ellas, TOML lee `[deepseek-v4.1-flash]`
+//! como la tabla `deepseek-v4` con la subclave `1-flash`. Esa forma anidada
+//! también se acepta y se reconstruye como `deepseek-v4.1-flash`.
 //!
 //! Sin archivo mandan los valores de fábrica; un archivo con entradas válidas
 //! los reemplaza (la persona manda). Un archivo ilegible o sin entradas deja
@@ -193,6 +197,10 @@ impl Catalog {
                     // DECISION: un archivo vacío o solo de comentarios no deja
                     // la recomendación sin datos; se usan los de fábrica.
                     let mut factory = Self::factory();
+                    factory.warnings.push(
+                        "modelos.toml no tiene ninguna entrada válida; uso los valores de fábrica."
+                            .to_string(),
+                    );
                     factory.warnings.extend(parsed.warnings);
                     factory
                 } else {
@@ -211,6 +219,10 @@ impl Catalog {
     }
 
     /// Analiza el TOML tolerando entradas que falten o no se entiendan.
+    ///
+    /// Una tabla sin `nivel`/`costo` cuyas subtablas sí los tienen es el
+    /// nombre con punto sin citar (`[deepseek-v4.1-flash]`): se reconstruye
+    /// como `padre.hijo` para no perder la preferencia de la persona.
     pub fn parse(text: &str) -> Self {
         let mut catalog = Self::default();
         let table: toml::Table = match toml::from_str(text) {
@@ -223,61 +235,84 @@ impl Catalog {
             }
         };
         for (name, value) in table {
-            let Some(fields) = value.as_table() else {
-                catalog
-                    .warnings
-                    .push(format!("modelos.toml: «{name}» no es una tabla; lo salto."));
-                continue;
-            };
-            let Some(level) = field(fields, "nivel").and_then(Level::parse) else {
-                catalog.warnings.push(format!(
-                    "modelos.toml: «{name}» necesita nivel alto, medio o bajo; lo salto."
-                ));
-                continue;
-            };
-            let Some(cost) = field(fields, "costo").and_then(Cost::parse) else {
-                catalog.warnings.push(format!(
-                    "modelos.toml: «{name}» necesita costo gratis, plan o pago; lo salto."
-                ));
-                continue;
-            };
-            let agent = field(fields, "agente")
-                .map(str::to_string)
-                .or_else(|| factory_agent(&name))
-                .unwrap_or_default();
-            if agent.is_empty() {
-                catalog.warnings.push(format!(
-                    "modelos.toml: «{name}» no dice su agente; lo salto."
-                ));
-                continue;
-            }
-            let family = field(fields, "familia")
-                .map(str::to_string)
-                .unwrap_or_else(|| {
-                    // DECISION: sin familia no se descarta el modelo; queda como
-                    // «desconocida» y no cuenta para la regla de familia distinta.
-                    catalog.warnings.push(format!(
-                        "modelos.toml: «{name}» no dice su familia; uso «desconocida»."
-                    ));
-                    "desconocida".to_string()
-                });
-            if catalog.entries.iter().any(|entry| {
-                entry.agent.eq_ignore_ascii_case(&agent) && entry.model.eq_ignore_ascii_case(&name)
-            }) {
-                catalog.warnings.push(format!(
-                    "modelos.toml: «{name}» está dos veces para {agent}; uso la primera."
-                ));
-                continue;
-            }
-            catalog.entries.push(ModelEntry {
-                agent,
-                model: name,
-                level,
-                cost,
-                family,
-            });
+            catalog.take_entry(&name, &value);
         }
         catalog
+    }
+
+    /// Una tabla de primer nivel o una subtabla de un nombre con punto.
+    fn take_entry(&mut self, name: &str, value: &toml::Value) {
+        let Some(fields) = value.as_table() else {
+            self.warnings
+                .push(format!("modelos.toml: «{name}» no es una tabla; lo salto."));
+            return;
+        };
+        if fields.contains_key("nivel") || fields.contains_key("costo") {
+            self.push_entry(name, fields);
+            return;
+        }
+        let mut nested = 0;
+        for (child, child_value) in fields {
+            if child_value.is_table() {
+                nested += 1;
+                self.take_entry(&format!("{name}.{child}"), child_value);
+            }
+        }
+        if nested == 0 {
+            self.warnings.push(format!(
+                "modelos.toml: «{name}» necesita nivel alto, medio o bajo; lo salto."
+            ));
+        }
+    }
+
+    fn push_entry(&mut self, name: &str, fields: &toml::Table) {
+        let Some(level) = field(fields, "nivel").and_then(Level::parse) else {
+            self.warnings.push(format!(
+                "modelos.toml: «{name}» necesita nivel alto, medio o bajo; lo salto."
+            ));
+            return;
+        };
+        let Some(cost) = field(fields, "costo").and_then(Cost::parse) else {
+            self.warnings.push(format!(
+                "modelos.toml: «{name}» necesita costo gratis, plan o pago; lo salto."
+            ));
+            return;
+        };
+        let agent = field(fields, "agente")
+            .map(str::to_string)
+            .or_else(|| factory_agent(name))
+            .unwrap_or_default();
+        if agent.is_empty() {
+            self.warnings.push(format!(
+                "modelos.toml: «{name}» no dice su agente; lo salto."
+            ));
+            return;
+        }
+        let family = field(fields, "familia")
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                // DECISION: sin familia no se descarta el modelo; queda como
+                // «desconocida» y no cuenta para la regla de familia distinta.
+                self.warnings.push(format!(
+                    "modelos.toml: «{name}» no dice su familia; uso «desconocida»."
+                ));
+                "desconocida".to_string()
+            });
+        if self.entries.iter().any(|entry| {
+            entry.agent.eq_ignore_ascii_case(&agent) && entry.model.eq_ignore_ascii_case(name)
+        }) {
+            self.warnings.push(format!(
+                "modelos.toml: «{name}» está dos veces para {agent}; uso la primera."
+            ));
+            return;
+        }
+        self.entries.push(ModelEntry {
+            agent,
+            model: name.to_string(),
+            level,
+            cost,
+            family,
+        });
     }
 
     /// La familia de un modelo (por su nombre, con o sin proveedor).
@@ -362,6 +397,64 @@ mod tests {
             std::env::temp_dir().join(format!("ez-scan-modelos-vacio-{}.toml", std::process::id()));
         std::fs::write(&path, "# solo un comentario\n").expect("modelos.toml temporal");
         assert!(Catalog::load(&path).entries.len() >= 10);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn un_nombre_con_punto_sin_comillas_se_reconstruye() {
+        let path =
+            std::env::temp_dir().join(format!("ez-scan-modelos-punto-{}.toml", std::process::id()));
+        std::fs::write(
+            &path,
+            "[deepseek-v4.1-flash]\nagente = \"opencode\"\nnivel = \"medio\"\n\
+             costo = \"plan\"\nfamilia = \"deepseek\"\n",
+        )
+        .expect("modelos.toml temporal");
+        let catalog = Catalog::load(&path);
+        assert_eq!(catalog.entries.len(), 1, "{:?}", catalog.warnings);
+        assert_eq!(catalog.entries[0].model, "deepseek-v4.1-flash");
+        assert_eq!(catalog.entries[0].level, Level::Medio);
+        assert_eq!(catalog.entries[0].cost, Cost::Plan);
+        assert!(catalog.warnings.is_empty(), "{:?}", catalog.warnings);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn la_forma_citada_da_el_mismo_nombre() {
+        let catalog = Catalog::parse(
+            "[\"deepseek-v4.1-flash\"]\nagente = \"opencode\"\nnivel = \"medio\"\n\
+             costo = \"plan\"\nfamilia = \"deepseek\"\n",
+        );
+        assert_eq!(catalog.entries.len(), 1, "{:?}", catalog.warnings);
+        assert_eq!(catalog.entries[0].model, "deepseek-v4.1-flash");
+        assert!(catalog.warnings.is_empty(), "{:?}", catalog.warnings);
+    }
+
+    #[test]
+    fn sin_entradas_validas_avisa_de_la_fabrica_y_por_que() {
+        let path = std::env::temp_dir().join(format!(
+            "ez-scan-modelos-invalido-{}.toml",
+            std::process::id()
+        ));
+        std::fs::write(&path, "[roto]\nnivel = \"altísimo\"\n").expect("modelos.toml temporal");
+        let catalog = Catalog::load(&path);
+        assert!(catalog.entries.len() >= 10);
+        assert!(
+            catalog
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("valores de fábrica")),
+            "{:?}",
+            catalog.warnings
+        );
+        assert!(
+            catalog
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("roto") && warning.contains("nivel")),
+            "{:?}",
+            catalog.warnings
+        );
         let _ = std::fs::remove_file(&path);
     }
 
