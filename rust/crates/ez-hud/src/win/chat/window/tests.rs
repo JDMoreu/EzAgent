@@ -583,6 +583,76 @@ fn closing_paints_intermediate_frames_before_removing_the_window() {
     );
 }
 
+/// DX-1f: una apertura con historial lento tiene que animarse.
+///
+/// Antes, el primer cuadro de la apertura maquetaba todo el historial (aquí,
+/// dos copias lentas): cuando terminaba, el morph ya había pasado y la persona
+/// veía el panel aparecer de golpe. Durante el morph el historial no se
+/// maqueta; aparece cuando está, ya con el panel abierto.
+#[test]
+fn a_slow_history_does_not_eat_the_opening_animation() {
+    let copying = Arc::new(AtomicBool::new(false));
+    let mut view = ChatView::new(
+        Box::new(SlowModel {
+            messages: vec![ChatMessage::new(1, Role::User, "hola")],
+            copying: Arc::clone(&copying),
+            delay: Duration::from_millis(300),
+        }),
+        Box::new(FakeHost),
+        Box::new(FakeInput::default()),
+    );
+    view.configure(
+        440.0,
+        600.0,
+        1.0,
+        "dark",
+        crate::tokens::palette("dark").expect("the dark palette exists"),
+    );
+    let (panel, _recorder) = open_panel(view);
+    {
+        let mut state = panel.state.lock();
+        state.anim = Anim {
+            state: AnimState::Opening,
+            t0: ez_core::metrics::monotonic(),
+            p: 0.0,
+        };
+    }
+    let started = Instant::now();
+    let frame = panel.render();
+    let took = started.elapsed();
+    let (anim, p) = {
+        let state = panel.state.lock();
+        (state.anim.state, state.anim.p)
+    };
+    assert_eq!((frame.width, frame.height), (120, 120));
+    assert!(
+        took < Duration::from_millis(150),
+        "el primer cuadro de la apertura tardó {took:?}: maquetó el historial"
+    );
+    assert!(
+        anim == AnimState::Opening,
+        "el morph terminó en el primer cuadro"
+    );
+    assert!(p < 0.5, "la apertura empezó casi terminada: p={p}");
+    // El contenido llega después, cuando el panel ya está abierto.
+    {
+        let mut state = panel.state.lock();
+        state.anim = Anim {
+            state: AnimState::Open,
+            t0: 0.0,
+            p: 1.0,
+        };
+    }
+    let _ = panel.render();
+    let renders = panel
+        .state
+        .lock()
+        .view
+        .as_ref()
+        .map_or(0, |view| view.content_renders());
+    assert!(renders > 0, "el contenido no se pintó nunca");
+}
+
 /// Un parser que entra en pánico: la maquetación del historial falla.
 struct PanicHost;
 

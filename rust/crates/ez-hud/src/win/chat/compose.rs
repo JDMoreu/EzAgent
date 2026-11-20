@@ -292,6 +292,25 @@ pub fn compose_cached(
     compose(scene, p, live, window, content)
 }
 
+/// `_compose` during the morph: it never lays out the history (DX-1f).
+///
+/// DECISION: the first frame of the opening used to lay out the whole history
+/// here. With a real conversation that took longer than the morph, so the
+/// window presented its first frame when the animation was already over and
+/// the panel appeared all at once (the closing reused the layer and did
+/// animate). The morph now paints the shape and, if it is already there, the
+/// cached content layer; the history is laid out by the first frame of the
+/// open panel, on the paint thread.
+pub(crate) fn compose_morph(
+    scene: &mut Scene<'_>,
+    p: f64,
+    live: bool,
+    window: WindowRect,
+    content: &mut ContentCache,
+) -> Frame {
+    compose_inner(scene, p, live, window, content, false)
+}
+
 /// `_compose`: paints one frame of the panel (BGRA premultiplied).
 pub(crate) fn compose(
     scene: &mut Scene<'_>,
@@ -299,6 +318,19 @@ pub(crate) fn compose(
     live: bool,
     window: WindowRect,
     content: &mut ContentCache,
+) -> Frame {
+    compose_inner(scene, p, live, window, content, true)
+}
+
+/// `_compose`, with `build` deciding whether a missing content layer is laid
+/// out in this frame.
+fn compose_inner(
+    scene: &mut Scene<'_>,
+    p: f64,
+    live: bool,
+    window: WindowRect,
+    content: &mut ContentCache,
+    build: bool,
 ) -> Frame {
     let scale = scene.ui.scale();
     let margin = scale * MARGIN;
@@ -328,6 +360,7 @@ pub(crate) fn compose(
             lift,
             content,
             scene.anim == AnimState::Closing,
+            build,
         );
         if live {
             paint_live(
@@ -444,14 +477,20 @@ fn paint_content(
     lift: i32,
     content: &mut ContentCache,
     reuse: bool,
+    build: bool,
 ) {
     let sig = content_signature(scene.view);
     // Al cerrar, la capa de contenido es la que dejó el panel abierto (solo
     // cambia la geometría): recalcularla con un historial largo costaba más que
     // los 0,20 s del cierre y se comía todos sus cuadros intermedios.
     let miss = content.0.as_ref().is_none_or(|(cached, _)| cached != &sig);
-    if miss && !(reuse && content.0.is_some()) {
-        content.0 = Some((sig, scene.view.render_content(scene.now, false)));
+    if miss {
+        if build && !(reuse && content.0.is_some()) {
+            content.0 = Some((sig, scene.view.render_content(scene.now, false)));
+        } else if !build && content.0.is_none() {
+            // DX-1f: durante el morph no hay capa que pintar y no se maqueta.
+            return;
+        }
     }
     let layer = match content.0.as_ref() {
         Some((_, layer)) => layer,
