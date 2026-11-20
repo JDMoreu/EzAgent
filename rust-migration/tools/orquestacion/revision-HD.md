@@ -468,3 +468,15 @@
   leyendo los registros del supervisor (código 0, nombres, sin «registro ilegible»).
 - Mutación que antes sobrevivía (sin ventana de pantalla quieta) → falla el caso 16.
 - El supervisor queda **utilizable** de nuevo. Worktree HD-0d retirado; terminal cerrada.
+
+### NV-2 — validado y fusionado (0341579)
+- `ez retry` con sesión nueva, nombre `-rN` que continúa la serie, nota de §4, registro viejo
+  `fallido` («reemplazado por …») y nuevo con `retry_of`, cierre de la terminal vieja solo si
+  el encargo llegó a la nueva, `--auto` con la recomendación (lo agotado fuera) y reintento
+  automático por `planes.toml` con un rasgo inyectado en `ez watch`.
+- Corrida del elefante: 17 suites en verde. Mutaciones: sin continuar la serie → 1 fallo;
+  cerrar la vieja sin encargo entregado → 1; `--auto` que conserva el modelo → 1.
+- Pendiente: repetir `e2e_retry` (17/17 del subagente) con Herdr real cuando la persona
+  termine su prueba técnica.
+- NV-3 lanzado (`nv-3` t200) con adenda (padre fijo de la app, «¿cómo va X?» por código,
+  reintento por biblioteca, humo de la app real con registros falsos).
