@@ -480,3 +480,22 @@
   termine su prueba técnica.
 - NV-3 lanzado (`nv-3` t200) con adenda (padre fijo de la app, «¿cómo va X?» por código,
   reintento por biblioteca, humo de la app real con registros falsos).
+
+### IR-4 — validado y fusionado (4b3aab6)
+- `e2e_inventory` (hc real, carpetas y agentes falsos): 86/86 del subagente, **repetido por
+  el elefante 86/86** sin terminales sobrantes. Conflicto de `ez-ctl/Cargo.toml` (ejemplos
+  de NV-2 e IR-4) resuelto conservando los dos; `ez-ctl` 10 suites y ejemplos compilan.
+- Fallos del producto que encontró (van a **IR-5**): `modelos.toml` con nombres con punto
+  sin comillas se ignora en silencio; la guarda mide con el `hc` del PATH y no con
+  `hc_path` (falla abierta); aviso falso con modelo explícito sin esfuerzo; `entorno.json`
+  sin «Uso y límites» (§3).
+
+### Incidente de memoria 3 (19-nov ~19:40)
+- El guardián saltó: RAM libre 2,7 GB, virtual 2,4 GB. Mayores: un juego de la persona
+  (`Marvel-Win64-Shipping`, 6–8,5 GB, no se toca), OpenCode 4,7 GB (9 procesos), navegador
+  4,6 GB, `whisper-server` ×2 3,5 GB.
+- Medidas: cerradas las terminales `ir-4` y `dx-1d` (terminadas y fusionadas; `dx-1d`
+  seguía viva desde la tarde). Virtual libre → 4,6 GB. A NV-3 se le pidió
+  `CARGO_BUILD_JOBS=2` y un solo `cargo`. IR-5 escrito pero **no se lanza** hasta que haya
+  memoria. Guardián relanzado con umbrales críticos (virtual < 2,5 GB o RAM < 1,2 GB).
+- Lección: cerrar la terminal del subagente al fusionar (no dejarla para después).
