@@ -503,3 +503,18 @@
   Esc no basta en OpenCode) + `hc keys nv-3 esc esc` → `idle`; su `cargo check -p ez-app`
   terminó con la interrupción. Ningún subagente compila. Se reanuda cuando la RAM libre pase
   de 4,5 GB y la virtual de 6 GB en dos lecturas seguidas.
+
+### Memoria recuperada (19-nov ~20:00) y whisper cerrados
+- La persona cerró el juego. Con su permiso se cerraron todos los `whisper-server`: el
+  huérfano de las 07:55 (11628) con una ventana elevada que aceptó, y el de su app (1556),
+  que ya era huérfano: la app se había cerrado desde la bandeja a las 19:34 (registro
+  «Cierre solicitado desde la bandeja»), sin caída. RAM libre 16,4 GB.
+- NV-3 reanudado («Reanuda») e IR-5 lanzado.
+
+### IR-5 — validado y fusionado (99d7729)
+- Nombres con punto sin comillas reconstruidos (`padre.hijo`), aviso claro si se cae a la
+  fábrica; la guarda mide con el `hc` de `voice.json`; sin aviso falso con modelo explícito;
+  `entorno.json` con la sección de uso (sin tokens).
+- Corrida del elefante: 14 suites de `ez-scan` + `ez-ctl`. Mutaciones: sin reconstruir el
+  nombre → falla `un_nombre_con_punto_sin_comillas_se_reconstruye`; `voice.json` ignorado →
+  falla `voice_json_manda_sobre_el_hc_de_fabrica`. `e2e_inventory` 86/86 del subagente.
