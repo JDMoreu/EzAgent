@@ -69,7 +69,7 @@ pub(crate) fn run_watch(
     // `planes.toml`; `ez watch` solo instala el gancho (el vigilante no puede
     // depender de `ez-scan`).
     let appdata = env("APPDATA")
-        .map(PathBuf::from)
+        .map(|base| PathBuf::from(base).join("EzAgent"))
         .unwrap_or_else(ez_core::dirs::app_data_dir);
     watcher = watcher.with_auto_retry(Arc::new(super::retry::WatchAutoRetry {
         parent: command.parent.clone(),

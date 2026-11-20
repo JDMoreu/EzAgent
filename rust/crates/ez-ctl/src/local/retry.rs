@@ -63,6 +63,17 @@ pub(crate) fn build_retry(parsed: &mut Parsed) -> Result<LocalRetry, CliError> {
         same: parsed.flag("same"),
         keep: parsed.flag("keep"),
     };
+    for (flag, value) in [
+        ("agent", &command.agent),
+        ("model", &command.model),
+        ("effort", &command.effort),
+    ] {
+        if value.as_deref().is_some_and(|text| text.trim().is_empty()) {
+            return Err(CliError::Usage(format!(
+                "El valor de --{flag} no puede estar vacío."
+            )));
+        }
+    }
     if command.auto && command.same {
         return Err(CliError::Usage(
             "--auto y --same no se pueden usar juntos.".to_string(),
@@ -373,7 +384,7 @@ fn summary(
         line.push_str(" Conservé la terminal vieja (--keep).");
     } else if !old.terminal.is_empty() {
         line.push_str(&format!(
-            " La terminal vieja ({}) ya no estaba.",
+            " No cerré la terminal vieja ({}): ya no estaba viva.",
             old.terminal
         ));
     }

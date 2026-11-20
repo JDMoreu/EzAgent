@@ -473,31 +473,6 @@ fn all_terminals(sandbox: &Sandbox) -> Vec<serde_json::Map<String, Value>> {
         .unwrap_or_default()
 }
 
-/// Las terminales de `hc` que llevan esa etiqueta.
-fn terminals_with_label(sandbox: &Sandbox, label: &str) -> Vec<String> {
-    let args = vec![
-        "ls".to_string(),
-        "--all".to_string(),
-        "--json".to_string(),
-        "--label".to_string(),
-        label.to_string(),
-    ];
-    let output = proc::run(&sandbox.hc, &args, &EnvVars::default(), None);
-    let Ok(data) = proc::json(&output) else {
-        return Vec::new();
-    };
-    data.get("terminals")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.get("address").and_then(Value::as_str))
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 /// `hc kill` de una terminal de la prueba.
 fn kill(sandbox: &Sandbox, terminal: &str) {
     let args = vec!["kill".to_string(), terminal.to_string()];

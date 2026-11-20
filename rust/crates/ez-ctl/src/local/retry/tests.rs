@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use ez_core::config::VoiceConfig;
-use ez_herdr::subagents::{Change, Record, TaskState};
+use ez_herdr::subagents::{AutoRetry, Change, Record, Registry, TaskState};
 use ez_scan::recommend::{Catalog, Cost, Level, ModelEntry, Pressure};
 use ez_scan::usage::{AgentUsage, ModelUsage, Sources, UsageReport, UsageState};
 
@@ -159,6 +159,7 @@ fn el_analisis_toma_las_opciones_y_rechaza_las_mezclas() {
         &["dev1-opencode", "--auto", "--same"][..],
         &["dev1-opencode", "--auto", "--agent", "claude"][..],
         &["dev1-opencode", "--same", "--model", "sonnet"][..],
+        &["dev1-opencode", "--agent", ""][..],
         &["MALO"][..],
     ] {
         assert!(build_retry(&mut parsed(bad)).is_err(), "{bad:?}");
@@ -237,6 +238,41 @@ fn el_encargo_sale_del_archivo_y_si_falta_usa_las_primeras_letras() {
     assert_eq!(brief, "arregla el parser");
     assert!(used.is_none());
     assert_eq!(warnings.len(), 1);
+}
+
+#[test]
+fn sin_politica_el_gancho_del_vigilante_no_hace_nada() {
+    let folder = temp_folder("gancho");
+    let root = folder.join("subagentes");
+    let registry = Registry::at(&root);
+    let mut saved = record();
+    saved.state = TaskState::InProgress;
+    saved.history.clear();
+    registry.create(&saved).expect("registro");
+    registry
+        .transition(
+            "t6h",
+            "dev1-opencode",
+            TaskState::Blocked,
+            "vigilante",
+            "límite de uso",
+            |_| {},
+        )
+        .expect("bloqueado");
+    let blocked = registry
+        .get("t6h", "dev1-opencode")
+        .expect("leer")
+        .expect("registro");
+    let hook = WatchAutoRetry {
+        parent: "t6h".to_string(),
+        root,
+        appdata: folder.join("appdata"),
+    };
+    let result = hook
+        .auto_retry(&blocked, "límite de uso")
+        .expect("sin política");
+    assert!(result.is_none());
+    let _ = std::fs::remove_dir_all(&folder);
 }
 
 #[test]

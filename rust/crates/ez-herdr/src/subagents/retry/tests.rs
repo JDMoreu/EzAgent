@@ -144,6 +144,8 @@ impl HerdrRuntime for Fake {
 #[derive(Clone, Default)]
 struct Launcher {
     task: Arc<Mutex<String>>,
+    /// Si el encargo se entregó (por omisión, sí).
+    sent: Option<bool>,
 }
 
 impl LaunchSupport for Launcher {
@@ -171,10 +173,14 @@ impl LaunchSupport for Launcher {
         task: &str,
     ) -> Map<String, Value> {
         *self.task.lock().expect("tarea") = task.to_string();
-        json!({"ok": true, "task_sent": true, "warnings": []})
-            .as_object()
-            .cloned()
-            .expect("objeto")
+        json!({
+            "ok": true,
+            "task_sent": self.sent.unwrap_or(true),
+            "warnings": [],
+        })
+        .as_object()
+        .cloned()
+        .expect("objeto")
     }
 }
 
@@ -359,6 +365,40 @@ fn un_reintento_manual_enlaza_los_registros() {
 }
 
 #[test]
+fn un_fallido_tambien_se_puede_reintentar() {
+    let root = temp_root("fallido");
+    let registry = Registry::at(&root);
+    let mut old = old_record("dev1-opencode", "t11");
+    old.state = TaskState::Failed;
+    old.history.clear();
+    registry.create(&old).expect("viejo fallido");
+    let fake = Fake::new()
+        .route("hc:ls", vec![Reply::json(&json!({"terminals": []}))])
+        .route("hc:run", vec![run_ok("dev1-opencode-r1", "t20")]);
+    let herdr = herdr_of(&fake);
+    let outcome = retry(
+        &herdr,
+        Launcher::default(),
+        &accepted,
+        &request(old),
+        &registry,
+    )
+    .expect("reintento");
+    assert_eq!(outcome.row["name"], "dev1-opencode-r1");
+    let saved = registry
+        .get("t6h", "dev1-opencode")
+        .expect("leer")
+        .expect("viejo");
+    assert_eq!(saved.state, TaskState::Failed);
+    let new = registry
+        .get("t6h", "dev1-opencode-r1")
+        .expect("leer")
+        .expect("nuevo");
+    assert_eq!(new.retry_of.as_deref(), Some("dev1-opencode"));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn si_ya_existe_el_r1_el_nombre_es_r2() {
     let root = temp_root("r2");
     let registry = Registry::at(&root);
@@ -428,6 +468,41 @@ fn la_terminal_vieja_se_cierra_despues_de_que_la_nueva_arranca() {
             .map(String::as_str),
         Some("t11")
     );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn si_el_encargo_no_llega_no_se_cierra_la_vieja() {
+    let root = temp_root("sin-encargo");
+    let registry = Registry::at(&root);
+    let old = seed_blocked(&registry, "dev1-opencode", "t11");
+    let fake = Fake::new()
+        .route(
+            "hc:ls",
+            vec![Reply::json(&json!({
+                "terminals": [{"address": "t11", "state": "live"}]
+            }))],
+        )
+        .route("hc:run", vec![run_ok("dev1-opencode-r1", "t20")]);
+    let herdr = herdr_of(&fake);
+    let outcome = retry(
+        &herdr,
+        Launcher {
+            sent: Some(false),
+            ..Launcher::default()
+        },
+        &accepted,
+        &request(old),
+        &registry,
+    )
+    .expect("reintento");
+    assert!(!outcome.closed_old);
+    assert_eq!(fake.count_of("kill"), 0);
+    let new = registry
+        .get("t6h", "dev1-opencode-r1")
+        .expect("leer")
+        .expect("nuevo");
+    assert_eq!(new.state, TaskState::Failed);
     let _ = std::fs::remove_dir_all(&root);
 }
 

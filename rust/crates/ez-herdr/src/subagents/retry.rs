@@ -284,7 +284,9 @@ fn finish(
     );
     mark_old(registry, request, &name, &mut row);
     let terminal = text(&row, "terminal");
-    let closed_old = close_old(herdr, request, &terminal, &mut row);
+    // Sin encargo entregado la nueva no arrancó «bien»: la vieja se conserva.
+    let sent = row.get("task_sent").is_some_and(truthy);
+    let closed_old = sent && close_old(herdr, request, &terminal, &mut row);
     row.insert(
         "retry_of".to_string(),
         Value::String(request.old.name.clone()),
