@@ -5,6 +5,10 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 if command -v python3 >/dev/null 2>&1 && python3 -c 'pass' 2>/dev/null; then PYTHON=python3; else PYTHON=python; fi
+# DECISION (HD-0e): el registro lleva acentos («límite de uso»); el Python de
+# Windows imprime en cp1252 cuando la salida es una tubería y la comparación
+# fallaba. Todo lo que este script lee de vuelta va en UTF-8.
+export PYTHONIOENCODING=utf-8
 REAL_HC="$(command -v hc)"
 ENV_EXE="${EZ_ENV_EXE:-C:/Program Files/Git/usr/bin/env.exe}"
 # hc no inyecta HC_TERMINAL_ID en comandos directos: si falta, se deriva del
@@ -12,7 +16,7 @@ ENV_EXE="${EZ_ENV_EXE:-C:/Program Files/Git/usr/bin/env.exe}"
 if [ -z "${HC_TERMINAL_ID:-}" ] && [ -n "${1:-}" ]; then
   HC_TERMINAL_ID="$(hc get "$1" --json 2>/dev/null | $PYTHON -c "import json,sys; print(json.load(sys.stdin).get('address',''))")"
 fi
-[ -n "${HC_TERMINAL_ID:-}" ] || { echo "FALLO: ejecuta probar.sh desde una terminal de hc"; exit 3; }
+[ -n "${HC_TERMINAL_ID:-}" ] || echo "[pruebas] sin HC_TERMINAL_ID: la prueba corre fuera de hc (Git Bash); el padre falso se crea sin padre"
 WORK="${TEMP:-/tmp}/hd0-probar-$$"
 TOOLS="$WORK/tools"
 ADDRS=""
@@ -37,10 +41,18 @@ chmod +x "$WORK/bin/hc"
 
 # C0-2: padre falso propio. Todos los avisos van a él, nunca a la terminal de
 # la persona ni a la del agente principal.
+# HD-0d: la suite también se ejecuta fuera de hc (Git Bash), donde no hay
+# HC_TERMINAL_ID: entonces el padre falso se crea con --no-parent y no se toca
+# ninguna terminal de la persona.
 PARENT_CAP="$WORK/parent-notes.txt"
 : > "$PARENT_CAP"
+if [ -n "${HC_TERMINAL_ID:-}" ]; then
+  PARENT_PARENT="--parent $HC_TERMINAL_ID"
+else
+  PARENT_PARENT="--no-parent"
+fi
 PARENT_ADDR="$(hc run --bg --json --name "hd0bpadre$$" --cwd "$WORK" --no-notify \
-  --parent "$HC_TERMINAL_ID" -- "C:/Program Files/Git/bin/bash.exe" \
+  $PARENT_PARENT -- "C:/Program Files/Git/bin/bash.exe" \
   "$HERE/fake-parent.sh" "$PARENT_CAP" \
   | $PYTHON -c "import json,sys; print(json.load(sys.stdin).get('address',''))")"
 [ -n "$PARENT_ADDR" ] || { echo "FALLO: no pude crear el padre falso"; exit 3; }
@@ -55,6 +67,12 @@ mkrepo() { # mkrepo <carpeta> <id> <modo: exit|tui|fail|retry>
   printf '%s\n' "$id" > "$dir/.fake-id"
   printf '%s\n' "$mode" > "$dir/.fake-mode"
   printf 'Encargo de prueba %s. Escribe el informe y haz commit.\n' "$id" > "$WORK/prompt.txt"
+  # HD-0f: el informe del caso 18 va como archivo: hc no hereda el entorno del
+  # supervisor, así que el trabajador falso no puede leerlo de una variable.
+  if [ "$mode" = "acentos" ]; then
+    printf '%s\n' '## Resultado' "- Brief/tarea: $id" \
+      '- Estado: completado — verificación → ok' > "$dir/.fake-report"
+  fi
   git -C "$dir" init -q
   git -C "$dir" add -A
   git -C "$dir" -c user.email=hd0@example.com -c user.name=HD0Test commit -q -m "inicio"
@@ -90,12 +108,15 @@ check() { # check <nombre> <valor> <esperado>
   fi
 }
 notice() { # notice <nombre> <texto> — comprueba lo que recibió el padre falso
-  if grep -Fq "$2" "$PARENT_CAP"; then
-    echo "OK aviso $1"
-  else
-    echo "FALLO aviso $1: no aparece «$2»"
-    FAIL=1
-  fi
+  # hc send vuelve antes de que el padre falso lea y escriba la línea: se espera.
+  for _ in $(seq 1 40); do
+    if grep -Fq "$2" "$PARENT_CAP"; then
+      echo "OK aviso $1"; return
+    fi
+    sleep 0.25
+  done
+  echo "FALLO aviso $1: no aparece «$2»"
+  FAIL=1
 }
 
 changes() { git -C "$1" status --porcelain 2>/dev/null | wc -l | tr -d ' '; }
@@ -271,19 +292,203 @@ printf '%s\n' "$LAST_OUT" | grep -q "estado desconocido" \
 printf '%s\n' "$LAST_OUT" | grep -q "informe completado" \
   || { echo "FALLO: caso 7 no acabó tras recuperarse hc"; FAIL=1; }
 
-echo "[pruebas] caso 8: C0-3 no lanza si el nombre ya está vivo"
+echo "[pruebas] caso 8: HD-0d una terminal viva con el mismo nombre se sigue; no se mata ni se duplica"
 LIVE_ADDR="$(hc run --bg --json --name hd0t8 --cwd "$WORK" --no-notify \
-  --parent "$HC_TERMINAL_ID" -- "C:/Program Files/Git/bin/bash.exe" -c 'sleep 600' \
+  --parent "$HC_TERMINAL_ID" -- "C:/Program Files/Git/bin/bash.exe" -c 'sleep 60' \
   | $PYTHON -c "import json,sys; print(json.load(sys.stdin).get('address',''))")"
 [ -n "$LIVE_ADDR" ] || { echo "FALLO: caso 8 no pude crear la terminal previa"; FAIL=1; }
 ADDRS="$ADDRS $LIVE_ADDR"
 sleep 2
+# HD-0f: una vez el supervisor llegó tarde y la terminal de 25 s ya había
+# terminado; 60 s y esta comprobación dejan claro si la terminal previa vive.
+check "caso 8 terminal previa viva" "$(field "$LIVE_ADDR" "d.get('state','')")" "live"
 run_case HD0T8 "$WORK/live" exit EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd"
 code=$?
 [ "$code" -eq 0 ] || { echo "FALLO: caso 8 devolvió $code (esperado 0)"; FAIL=1; }
 printf '%s\n' "$LAST_OUT" | grep -q "name_taken" \
   && { echo "FALLO: caso 8 chocó con name_taken"; FAIL=1; }
+printf '%s\n' "$LAST_OUT" | grep -q "sigue viva con el nombre" \
+  && echo "OK caso 8: siguió la terminal viva en vez de matarla" \
+  || { echo "FALLO: caso 8 no siguió la terminal viva"; FAIL=1; }
 check "caso 8 una sola terminal con el nombre" "$(name_count hd0t8)" "1"
+
+echo "[pruebas] caso 9: HD-0d un python que devuelve \r\n no debe parecer «desconocido»"
+# Envoltorio que devuelve cada línea con \r\n, como el python de Windows.
+printf '%s\n' '#!/bin/bash' '"$EZ_REAL_PYTHON" "$@" | sed -e "s/\r$//" -e "s/$/\r/"' > "$WORK/bin/python-cr"
+chmod +x "$WORK/bin/python-cr"
+run_case HD0T9 "$WORK/cr" slow EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" \
+  EZ_PYTHON="$WORK/bin/python-cr" EZ_REAL_PYTHON="$PYTHON" \
+  EZ_UNKNOWN_GRACE=10 EZ_UNKNOWN_EVERY=10
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 9 devolvió $code (esperado 0)"; FAIL=1; }
+if [ -f "$WORK/cr/rust-migration/reports/HD0T9-r1.md" ]; then
+  echo "OK caso 9: el trabajador vivo terminó su informe"
+else
+  echo "FALLO caso 9: el trabajador vivo no dejó informe (lo mataron)"
+  FAIL=1
+fi
+check "caso 9 una sola terminal" "$(name_count hd0t9)" "1"
+printf '%s\n' "$LAST_OUT" | grep -q "estado desconocido" \
+  && { echo "FALLO: caso 9 vio «estado desconocido» (el \r no se quitó)"; FAIL=1; }
+printf '%s\n' "$LAST_OUT" | grep -q "informe completado en el intento 1" \
+  && echo "OK caso 9: terminó en el primer intento" \
+  || { echo "FALLO: caso 9 no terminó en el primer intento"; FAIL=1; }
+
+echo "[pruebas] caso 10: HD-0d/HD-0e C0-6 un aviso de límite de uso deja el intento «fallido» sin reintento"
+echo "[pruebas]   (HD-0e: solo cuenta con el agente parado y la pantalla quieta)"
+run_case HD0T10 "$WORK/limit" limit EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" \
+  PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=idle EZ_REAL_HC="$REAL_HC"
+code=$?
+[ "$code" -eq 2 ] || { echo "FALLO: caso 10 devolvió $code (esperado 2)"; FAIL=1; }
+printf '%s\n' "$LAST_OUT" | grep -q "límite de uso" \
+  || { echo "FALLO: caso 10 no detectó el límite de uso"; FAIL=1; }
+check "registro fallido por límite" "$(reg_field HD0T10 "d['state']")" "fallido"
+detalle="$(reg_field HD0T10 "d['history'][-1]['detail']")"
+case "$detalle" in
+  *"límite de uso"*) echo "OK registro detalle del límite: $detalle" ;;
+  *) echo "FALLO registro detalle del límite: «$detalle»"; FAIL=1 ;;
+esac
+notice "aviso de límite de uso" "hd0t10 (OpenCode · opencode/hy4-flash-free) falló: límite de uso:"
+check "caso 10 sin reintento" "$(name_count hd0t10)" "1"
+
+echo "[pruebas] caso 11: HD-0d C0-6 si EZ_MODEL cambia, se abre una sesión nueva"
+run_case HD0T11 "$WORK/model" exit EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" EZ_MODEL=opencode/m1
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 11 (primer modelo) devolvió $code (esperado 0)"; FAIL=1; }
+rm -f "$WORK/model/rust-migration/reports/HD0T11-r1.md"
+run_case HD0T11 "$WORK/model" exit EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" EZ_MODEL=opencode/m2
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 11 (modelo nuevo) devolvió $code (esperado 0)"; FAIL=1; }
+check "sesión nueva con el modelo nuevo" "$(grep -c -- '--session ses_hd0t11s2' "$WORK/model/.fake-argv.log")" "1"
+check "la sesión vieja no se repite" "$(grep -c -- '--session ses_hd0t11s1' "$WORK/model/.fake-argv.log")" "1"
+
+# HD-0e: la detección de límite de uso solo cuenta con el agente parado, la
+# pantalla quieta y una frase COMPLETA en las últimas 15 líneas.
+no_tocado() { # no_tocado <id> <carpeta> <log> — comprueba que no hubo límite
+  local id="$1" dir="$2" log="$3"
+  printf '%s\n' "$LAST_OUT" | grep -q "límite de uso" \
+    && { echo "FALLO caso $id: el supervisor tomó la pantalla por un límite de uso"; FAIL=1; return; }
+  if [ -f "$dir/rust-migration/reports/$id-r1.md" ]; then
+    echo "OK caso $id: el trabajador terminó su informe (no se lo tocó)"
+  else
+    echo "FALLO caso $id: el trabajador no dejó informe"; FAIL=1
+  fi
+  [ -f "$log" ] || { echo "FALLO caso $id: no hay log de pantalla"; FAIL=1; return; }
+}
+echo "[pruebas] caso 12: HD-0e palabras sueltas («quota», «rate limit») con el agente parado no son un límite"
+run_case HD0T12 "$WORK/chatter" chatter EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" \
+  PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=idle EZ_REAL_HC="$REAL_HC"
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 12 devolvió $code (esperado 0)"; FAIL=1; }
+no_tocado HD0T12 "$WORK/chatter" "$WORK/log/HD0T12-hc1.log"
+grep -Fq "quota" "$WORK/log/HD0T12-hc1.log" \
+  && echo "OK caso 12: las palabras sueltas estaban en la pantalla" \
+  || { echo "FALLO caso 12: la pantalla no tenía las palabras sueltas"; FAIL=1; }
+check "registro caso 12" "$(reg_field HD0T12 "d['state']")" "terminado"
+
+echo "[pruebas] caso 13: HD-0e palabras sueltas con el agente «working» tampoco son un límite"
+run_case HD0T13 "$WORK/chatterwork" chatter EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" \
+  PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=working EZ_REAL_HC="$REAL_HC"
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 13 devolvió $code (esperado 0)"; FAIL=1; }
+no_tocado HD0T13 "$WORK/chatterwork" "$WORK/log/HD0T13-hc1.log"
+check "registro caso 13" "$(reg_field HD0T13 "d['state']")" "terminado"
+
+echo "[pruebas] caso 14: HD-0e la frase de límite arriba de una pantalla larga no cuenta"
+run_case HD0T14 "$WORK/limittop" limit-top EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" \
+  PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=idle EZ_REAL_HC="$REAL_HC"
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 14 devolvió $code (esperado 0)"; FAIL=1; }
+no_tocado HD0T14 "$WORK/limittop" "$WORK/log/HD0T14-hc1.log"
+grep -Fq "Free limit reached" "$WORK/log/HD0T14-hc1.log" \
+  && echo "OK caso 14: la frase estaba en la pantalla (pero no en las últimas 15 líneas)" \
+  || { echo "FALLO caso 14: la frase no llegó a la pantalla"; FAIL=1; }
+check "registro caso 14" "$(reg_field HD0T14 "d['state']")" "terminado"
+
+echo "[pruebas] caso 15: HD-0e la frase completa con el agente «working» no cuenta"
+run_case HD0T15 "$WORK/limitwork" limit-work EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" \
+  PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=working EZ_REAL_HC="$REAL_HC"
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 15 devolvió $code (esperado 0)"; FAIL=1; }
+no_tocado HD0T15 "$WORK/limitwork" "$WORK/log/HD0T15-hc1.log"
+grep -Fq "Free limit reached" "$WORK/log/HD0T15-hc1.log" \
+  && echo "OK caso 15: la frase estaba en la pantalla (pero el agente estaba trabajando)" \
+  || { echo "FALLO caso 15: la frase no llegó a la pantalla"; FAIL=1; }
+check "registro caso 15" "$(reg_field HD0T15 "d['state']")" "terminado"
+
+echo "[pruebas] caso 16: HD-0f una pantalla que cambia con una frase de límite no es un límite"
+run_case HD0T16 "$WORK/changing" changing EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd"
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 16 devolvió $code (esperado 0)"; FAIL=1; }
+no_tocado HD0T16 "$WORK/changing" "$WORK/log/HD0T16-hc1.log"
+grep -Fq "Free limit reached" "$WORK/log/HD0T16-hc1.log" \
+  && echo "OK caso 16: la frase de límite estaba en la pantalla" \
+  || { echo "FALLO caso 16: la frase no llegó a la pantalla"; FAIL=1; }
+grep -Fq "contador" "$WORK/log/HD0T16-hc1.log" \
+  && echo "OK caso 16: la pantalla cambiaba (contador)" \
+  || { echo "FALLO caso 16: la pantalla no cambiaba"; FAIL=1; }
+check "registro caso 16" "$(reg_field HD0T16 "d['state']")" "terminado"
+
+echo "[pruebas] caso 17: HD-0f la captura real de OpenCode con el límite al final de la conversación"
+# Dato real de NV-1c; la frase se añade antes de las filas vacías, al final de
+# la conversación, como la vería la persona.
+awk 'BEGIN { done = 0 }
+  { if (!done && NR > 30 && $0 ~ /^[[:space:]]*$/) {
+      print "Free limit reached. Resets at 7:00 p.m."; done = 1 }
+    print }' \
+  "$HERE/NV-1c-pantalla-opencode.txt" > "$WORK/screen17.txt"
+run_case HD0T17 "$WORK/screen17" quiet EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd" \
+  PATH="$WORK/bin:$PATH" EZ_FAKE_STATUS=idle EZ_REAL_HC="$REAL_HC" \
+  EZ_FAKE_SCREEN="$(cygpath -w "$WORK/screen17.txt")"
+code=$?
+[ "$code" -eq 2 ] || { echo "FALLO: caso 17 devolvió $code (esperado 2)"; FAIL=1; }
+printf '%s\n' "$LAST_OUT" | grep -q "límite de uso" \
+  || { echo "FALLO: caso 17 no detectó el límite de la captura real"; FAIL=1; }
+check "registro caso 17 estado" "$(reg_field HD0T17 "d['state']")" "fallido"
+detalle="$(reg_field HD0T17 "d['history'][-1]['detail']")"
+case "$detalle" in
+  *"Free limit reached. Resets at 7:00 p.m."*) echo "OK registro detalle caso 17: $detalle" ;;
+  *) echo "FALLO registro detalle caso 17: «$detalle»"; FAIL=1 ;;
+esac
+notice "aviso caso 17" "hd0t17 (OpenCode · opencode/hy4-flash-free) falló: límite de uso:"
+check "caso 17 sin reintento" "$(name_count hd0t17)" "1"
+
+echo "[pruebas] caso 18: HD-0f un resumen con acentos y símbolos llega intacto al registro"
+run_case HD0T18 "$WORK/acentos" acentos EZ_AGENT=opencode EZ_AGENT_BIN="$HERE/fake-worker.cmd"
+code=$?
+[ "$code" -eq 0 ] || { echo "FALLO: caso 18 devolvió $code (esperado 0)"; FAIL=1; }
+check "resumen con acentos" "$(reg_field HD0T18 "d.get('summary','')")" \
+  "Estado: completado — verificación → ok"
+
+echo "[pruebas] producto lee el registro del supervisor"
+EZ_BIN="${EZ_BIN:-C:/Users/JDMoreu/Documents/EzAgent/rust/target/debug/ez.exe}"
+if [ -f "$EZ_BIN" ]; then
+  EZ_SUBAGENTS_DIR="$EZ_SUBAGENTS_DIR" "$EZ_BIN" tasks --parent "$HC_TERMINAL_ID" --json \
+    > "$WORK/tasks.json" 2> "$WORK/tasks.err"
+  code=$?
+  check "producto tasks código" "$code" "0"
+  names="$($PYTHON - "$WORK/tasks.json" <<'PY'
+import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding='utf-8'))
+except Exception:
+    print('sin JSON'); sys.exit(0)
+names = {r.get('name') for r in data if isinstance(r, dict)}
+esperados = {'hd0t%d' % i for i in range(1, 19)}
+falta = sorted(esperados - names)
+print('OK' if not falta else 'FALTA ' + ','.join(falta))
+PY
+)"
+  check "producto tasks nombres" "$names" "OK"
+  if grep -Fq "registro ilegible" "$WORK/tasks.err"; then
+    echo "FALLO producto tasks: stderr con «registro ilegible»"; FAIL=1
+  else
+    echo "OK producto tasks: stderr sin «registro ilegible»"
+  fi
+  [ -s "$WORK/tasks.err" ] && echo "[pruebas] stderr de ez tasks: $(cat "$WORK/tasks.err")"
+else
+  echo "FALLO producto tasks: no existe EZ_BIN=$EZ_BIN (no se salta la prueba)"; FAIL=1
+fi
 
 [ "${EZ_HUMO_REAL:-0}" = "1" ] && humo_real
 
