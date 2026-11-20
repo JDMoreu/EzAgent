@@ -24,13 +24,14 @@
 - `// DECISION` en `retry.rs`: si `hc get <padre>` no lo encuentra, el padre no es una terminal y el hijo se lanza sin `--parent`; el registro conserva el padre del viejo y `retry_of`. No se toca `ez-ctl`: su `ez retry` usa esta misma biblioteca.
 - `// DECISION` en `watch.rs`: en modo sin padre-terminal se listan todas las terminales de `hc ls --all` y el registro decide cuáles importan; no hay `hc get` del padre y la vida la fija el proceso de la app.
 - `// DECISION` en `subagents.rs` (app): el sink usa la frase corta de NV-3 (`news_text`); el texto del vigilante se usa solo cuando no hay estado nuevo (sin avance o archivo ilegible). El latido y el sink comparten `announced`, así una novedad se anuncia una sola vez aunque los dos la vean.
-- `// DECISION` en `services.rs`/`core.rs`: el vigilante solo se arranca en producción (`watch_subagents`) o con un `SubagentWatch` inyectado; el arnés de replay y los dobles de prueba no abren `hc`.
+- `// DECISION` en `subagents.rs`/`core.rs`: el vigilante solo se arranca en producción (`watch_subagents`) o con un `SubagentWatch` inyectado; el arnés de replay y los dobles de prueba no abren `hc`.
+- `// DECISION` en `subagents.rs` (app): la app prefiere su frase corta de NV-3; el texto largo del vigilante queda para lo que no es un cambio de estado.
 - Los tests nuevos del vigilante se dividieron en subarchivos (`watch/tests/sink.rs`, `app/subagents/tests/{port,watch}.rs`, `retry/tests/{nombres,sin_padre}.rs`) para no pasar de 600 líneas.
 - No se tocó `ez-ctl`; sí `ez-herdr/src/subagents.rs` (solo el `pub use NoticeSink`).
 
 ## Verificación
 - `cargo fmt -p ez-herdr -p ez-app -- --check`: sin diferencias (código 0).
-- `cargo clippy -p ez-herdr -p ez-app --all-targets -- -D warnings`: `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 4.58s` (código 0).
+- `cargo clippy -p ez-herdr -p ez-app --all-targets -- -D warnings`: `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 7.04s` (código 0).
 - `cargo test -p ez-herdr`: **327 pruebas de librería en verde** (más 1/1/2/27/1 de integración):
   `test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out`
 - `cargo test -p ez-app`: **369 pruebas de librería en verde** (más 3/1/2/1/2/1 de integración):

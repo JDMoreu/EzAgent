@@ -200,6 +200,8 @@ impl Watcher {
     ///
     /// Sin `hc get` de vida y sin el filtro `ez.parent`: el registro del padre
     /// es la única lista de hijos y se cruzan por la dirección de su terminal.
+    // DECISION: en la app no hay terminal `voz`; listar todas y cruzar por
+    // dirección evita inventar etiquetas `ez.parent` que `hc` no puede poner.
     pub fn without_parent_terminal(mut self) -> Self {
         self.parentless = true;
         self

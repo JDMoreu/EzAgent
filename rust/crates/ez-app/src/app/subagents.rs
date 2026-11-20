@@ -50,6 +50,8 @@ impl VoiceApp {
     /// En producción sale con el `hc` de la configuración; en las pruebas y el
     /// humo entra por [`SubagentWatch`]. Sin ninguno de los dos (dobles de
     /// prueba) no se arranca nada.
+    // DECISION: el vigilante se activa con `watch_subagents` (solo
+    // `VoiceApp::new`); el arnés de replay y los dobles no abren `hc`.
     pub(crate) fn start_subagent_watch(&self, setup: Option<SubagentWatch>, watch: bool) {
         let setup = match setup {
             Some(setup) => setup,
@@ -134,6 +136,8 @@ impl VoiceApp {
     /// El texto corto lo escribe `news_text` con el registro; el del vigilante
     /// solo se usa cuando no hay estado nuevo (un «sin avance» o un archivo
     /// ilegible). Nada del texto se ejecuta.
+    // DECISION: la app prefiere su frase corta de NV-3; el texto largo del
+    // vigilante queda para lo que no es un cambio de estado.
     pub(crate) fn subagent_notice(&self, record: Option<&Record>, fallback: &str) {
         match record {
             Some(record) => match news_text(record) {
