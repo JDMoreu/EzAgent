@@ -530,3 +530,21 @@
 - NV-3b: `NoticeSink` + modo sin padre-terminal en el vigilante, hilo en la app para `voz`,
   reintento con la colocación original (sin `--parent voz`), pruebas y humo con un hijo
   falso real en `hc`.
+
+### Pruebas visuales (19-nov ~21:25, con permiso de la persona)
+- DX-1c: humo `chat`, `real` y `big` (320 mensajes) vivos, sin `PÁNICO`, pico 143 MB.
+- DX-3: `scripts/tests/humo-whisper.ps1` TODO OK (4 pasos). Mutación sin
+  `KILL_ON_JOB_CLOSE` → «El servidor (PID 20992) sobrevivió al cierre forzado de la app»
+  (la prueba lo detecta); limpió sus procesos.
+- NV-2: `e2e_retry` 17/17 con Herdr real (faltaba compilar `fake-ws-agent` en el repo).
+- Revisado: el humo de DX-1c solo envía mensajes a ventanas de su propio proceso (filtro
+  por PID en los tres ayudantes). La app de la persona (abierta 21:21) terminó tras
+  «HUD: hangup» + «Hotkey: cancel» a las 21:23:20, sin evento de caída ni línea de cierre;
+  su `whisper-server` 13972 quedó huérfano (build sin DX-3) y se cerró.
+- Fusionados DX-1c (d97b5c1) y DX-3 (259e0d0). Worktrees retirados.
+
+### Observaciones de la persona → DX-1f
+- «Al cerrar la app también se cierre el servicio de whisper»: lo resuelve DX-3 (Job Object).
+- «La animación del hub al chat no se está realizando, pero al cerrar el chat y pasar al
+  hub sí»: DX-1f lanzado (`dx-1f` t212) desde `eco/main`: diagnóstico cuadro a cuadro,
+  arreglo sin deshacer DX-1b ni DX-1d, modo `anim` en el humo que falla si la apertura salta.
