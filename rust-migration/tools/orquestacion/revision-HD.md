@@ -635,3 +635,10 @@
 - Revisión estática de DX-5e: la detección de nombres no distingue negaciones y «no» se
   acepta como conector. Se preparó DX-5f; falta comprobar el caso con pruebas. No se ha
   lanzado otro subagente ni se han ejecutado pruebas por la carga del equipo.
+
+### DX-7b — prueba focalizada fallida
+- Entrega parcial; el subagente no ejecutó pruebas por límite de carga. Con un trabajo de
+  compilación y un hilo, `cargo test -p ez-hud --lib win::monitor::tests` dio 11 aprobadas
+  y un fallo en `secondary_validation_fails_closed_without_a_secondary`: el mensaje no
+  contiene «secundaria» (`monitor.rs:398`). Se devolvió al subagente para corregirlo sin
+  compilar ni abrir ventanas. La validación y los humos siguen pendientes.
