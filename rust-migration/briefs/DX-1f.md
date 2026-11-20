@@ -1,8 +1,8 @@
 # DX-1f — La animación de la barra al chat no se ve (la de vuelta sí)
 
 **Lee `AGENTS.md`, `rust-migration/reports/DX-1-r1.md`, `DX-1b-r1.md`, `DX-1d-r1.md` y
-`DX-1c-r1.md`.** Rama `work/DX-1f` desde `work/DX-1c` (virtualización del chat, que se
-fusiona en `eco/main` antes que esto).
+`DX-1c-r1.md`.** Rama `work/DX-1f` desde `eco/main` (ya con DX-1c, la virtualización del chat, y DX-3).
+
 
 ## Lo que ve la persona (19-nov noche, app de `eco/main` con DX-1b + DX-1d)
 Al abrir el chat desde la barra (el «hub») **no hay animación**: el chat aparece de golpe.
