@@ -518,3 +518,15 @@
 - Corrida del elefante: 14 suites de `ez-scan` + `ez-ctl`. Mutaciones: sin reconstruir el
   nombre → falla `un_nombre_con_punto_sin_comillas_se_reconstruye`; `voice.json` ignorado →
   falla `voice_json_manda_sobre_el_hc_de_fabrica`. `e2e_inventory` 86/86 del subagente.
+
+### NV-3 — revisión 1: devuelto (NV-3b)
+- Bien: la app registra sus lanzamientos bajo el padre `voz`, anuncia cada estado una vez
+  con frases del código, «¿cómo va X?» por atajo y herramienta, oferta de reintento; 368
+  pruebas; humo con registros escritos a mano (bloqueado y terminado anunciados, 0 PÁNICO).
+- Mal 1: nadie vigila a los hijos de `voz` (el vigilante exige un padre-terminal): sin
+  `bloqueado` por límite, sin `fallido` al morir sin informe. Lo central de §5 no ocurre.
+- Mal 2: el reintento usa `ez retry` con `HC_TERMINAL_ID=voz` → `hc run --parent voz`;
+  comprobado por el elefante: `not_found` («no terminal "voz"»).
+- NV-3b: `NoticeSink` + modo sin padre-terminal en el vigilante, hilo en la app para `voz`,
+  reintento con la colocación original (sin `--parent voz`), pruebas y humo con un hijo
+  falso real en `hc`.
