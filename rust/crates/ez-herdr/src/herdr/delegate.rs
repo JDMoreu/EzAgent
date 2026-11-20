@@ -47,6 +47,8 @@ pub struct DelegateRequest {
     pub effort: Option<String>,
     /// El contenido del encargo (el archivo `--brief`, ya leído).
     pub brief: String,
+    /// La ruta del archivo del encargo, para que `ez retry` lo relance.
+    pub brief_path: Option<String>,
     /// El nombre pedido; por omisión, el de §6.
     pub name: Option<String>,
     /// Dónde se ve el subagente en Herdr.

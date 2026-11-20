@@ -63,6 +63,8 @@ pub fn build_record(
         role: request.role.clone(),
         cwd,
         brief_head: one_line(&request.brief, 200),
+        brief_path: request.brief_path.clone(),
+        retry_of: None,
         state,
         since_ms: now,
         history: vec![Change {

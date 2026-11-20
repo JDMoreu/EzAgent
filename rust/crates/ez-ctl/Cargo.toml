@@ -17,6 +17,10 @@ path = "src/bin/ez.rs"
 name = "e2e_delegate"
 path = "examples/e2e_delegate.rs"
 
+[[example]]
+name = "e2e_retry"
+path = "examples/e2e_retry.rs"
+
 [dependencies]
 ez-core = { path = "../ez-core" }
 ez-herdr = { path = "../ez-herdr" }

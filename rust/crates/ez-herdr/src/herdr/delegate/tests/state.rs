@@ -36,11 +36,13 @@ fn la_delegacion_guarda_el_registro_del_subagente() {
         .route("hc:run", vec![hc_run_ok()])
         .route("hc:get", vec![hc_get_ok("dev1-opencode")]);
     let herdr = herdr_de(&fake);
+    let mut request = request();
+    request.brief_path = Some("C:\\ws\\encargo.md".to_string());
     let result = herdr
         .delegate(
             Launcher::default(),
             &accepted,
-            &request(),
+            &request,
             Some(&state(&root, false)),
         )
         .expect("delegación");
@@ -56,6 +58,8 @@ fn la_delegacion_guarda_el_registro_del_subagente() {
     assert_eq!(record.label, "OpenCode");
     assert_eq!(record.role, "developer");
     assert_eq!(record.brief_head, "arregla el parser");
+    assert_eq!(record.brief_path.as_deref(), Some("C:\\ws\\encargo.md"));
+    assert!(record.retry_of.is_none());
     let _ = std::fs::remove_dir_all(&root);
 }
 

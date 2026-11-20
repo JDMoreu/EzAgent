@@ -46,6 +46,8 @@ pub(super) fn rec(name: &str, parent: &str, terminal: &str, state: TaskState) ->
         role: "developer".to_string(),
         cwd: r"C:\work\proj".to_string(),
         brief_head: "Encargo de prueba".to_string(),
+        brief_path: None,
+        retry_of: None,
         state,
         since_ms: 1,
         history: Vec::new(),
