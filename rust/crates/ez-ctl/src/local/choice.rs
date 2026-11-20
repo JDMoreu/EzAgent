@@ -200,6 +200,8 @@ fn effort_for(cfg: &VoiceConfig, agent: &str, model: &str, role: &str) -> Option
 }
 
 fn effort_rank(level: &str) -> Option<u8> {
+    // DECISION: el orden y el desempate repiten los de `ez_scan::recommend`
+    // (fuera del alcance de IR-5); si cambian allí, cambian aquí.
     match level.trim().to_lowercase().as_str() {
         "off" | "none" => Some(0),
         "minimal" => Some(1),
